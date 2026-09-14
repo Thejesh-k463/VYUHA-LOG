@@ -95,11 +95,15 @@ interface PullResult {
   warnings?: string[];
 }
 
-/** One kept "not fetched" span, as GET projects it (C-6). */
+/** One kept "not fetched" span, as GET projects it (C-6). `fact` and `remedy`
+ *  are the server's own sentences (P15 / P16, lib/import/dhan-unfetched.ts
+ *  UnfetchedSpanRow); `remedy` is null when no day is left to name. */
 export interface UnfetchedSpan {
   from: string;
   to: string;
   reason: string;
+  fact: string;
+  remedy: string | null;
 }
 
 /** The slice of the pull route's JSON the message reads. */
@@ -314,44 +318,18 @@ export function pullGapLines(rows: GapRow[], aggregate: boolean, now: Date = new
  * past those days and no later pull will ask for them. Names the dates and the
  * remedy; states a fact.
  *
- * D2 (F-L1-3a's card half, v4.3.0 fix wave 1 follow-up). A span's `from` is
- * the LAST PULL's own IST day (dhan.ts catchUpRange), whose fills up to that
- * pull are already in the journal, and a Dhan tradebook states scrip names the
- * API's tickers do not match, so a tradebook for that day would import them
- * twice. The remedy starts the day AFTER `from`; a one-day span names no
- * import. The words mirror lib/import/api/dhan.ts toParsedFile and
- * lib/jobs/auto-pull.ts unfetchedDetail (sharing one helper would need
- * dhan.ts's private addDaysIso). The last pull's HH:MM is not on the wire, so
- * the card says "the last pull" — the server's words when the stamp is unknown.
- *
- * `rowSpans` are the row's own kept spans. A page-cap span that starts the day
- * after one of them (a range-cap span) ends began at the clamped window's
- * floor, a day no pull ran, and its remedy is the whole span, as the server's.
+ * P15 / P16 (v4.3.0 fix wave 2): the line is the SERVER's own sentences, as
+ * GET carries them — `fact`, then `remedy` when there is one — printed
+ * verbatim, in the pull warning's ISO dates. The card used to re-derive them
+ * from the dates alone: it hedged a truncated walk as "may be missing" where
+ * the pull says "were not read", and once a range-cap sibling was cleared it
+ * read a page-cap span at the clamped floor as the last pull's own day, naming
+ * a remedy that skipped a day no pull imported. Nothing is inferred here now.
+ * A span kept before the sentences were stored arrives with its audit row's
+ * summary as `fact` (lib/import/dhan-unfetched.ts), the server's words too.
  */
-export function unfetchedNotice(s: UnfetchedSpan, rowSpans: readonly UnfetchedSpan[] = []): string {
-  const a = dayLabel(s.from);
-  const b = dayLabel(s.to);
-  const page = s.reason === "page-cap";
-  if (page && rowSpans.some((r) => r.reason === "range-cap" && nextIsoDay(r.to) === s.from)) {
-    return `A Dhan pull stopped at its page limit: fills between ${a} and ${b} may be missing. Import a Dhan tradebook for ${a} to ${b} to bring those fills in.`;
-  }
-  const repeats = `tradebook for ${a} would repeat the fills already imported from it.`;
-  const restFrom = nextIsoDay(s.from);
-  if (restFrom > s.to) {
-    const fact = page
-      ? `A Dhan pull stopped at its page limit: fills on ${a} after the last pull may be missing.`
-      : `Not fetched from Dhan: fills on ${a} after the last pull.`;
-    return `${fact} A ${repeats}`;
-  }
-  const fact = page
-    ? `A Dhan pull stopped at its page limit: fills between ${a} and ${b} may be missing.`
-    : `Not fetched from Dhan: fills from ${a} to ${b} — they are older than the window a pull reads.`;
-  return `${fact} Fills on ${a} after the last pull were not fetched; a ${repeats} Import a Dhan tradebook for ${dayLabel(restFrom)} to ${b} to bring the rest in.`;
-}
-
-/** One ISO day later: dhan.ts addDaysIso's arithmetic, at UTC midnight so no zone shifts the day. */
-function nextIsoDay(isoDay: string): string {
-  return new Date(Date.parse(`${isoDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+export function unfetchedNotice(s: UnfetchedSpan): string {
+  return s.remedy ? `${s.fact} ${s.remedy}` : s.fact;
 }
 
 /**
@@ -1367,7 +1345,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
               >
                 <span>
                   {aggregate || brokerConns.length > 1 ? `${c.accountName ?? `Account ${c.accountId}`}: ` : ""}
-                  {unfetchedNotice(s, c.unfetched)}
+                  {unfetchedNotice(s)}
                 </span>
                 <Button size="sm" variant="secondary" onClick={() => clearUnfetched(c, s)} disabled={busy != null}>
                   Clear notice

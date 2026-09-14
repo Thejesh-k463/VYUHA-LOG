@@ -1,5 +1,5 @@
 import { buildChargeConfigSeed } from "@/lib/db/seed-data";
-import type { Broker, Exchange, Segment } from "@/lib/domain/constants";
+import { BROKERS, type Broker, type Exchange, type Segment } from "@/lib/domain/constants";
 import type { ChargeRates } from "./types";
 
 /**
@@ -271,6 +271,73 @@ export function epochSpans(
     );
   }
   return spans;
+}
+
+/**
+ * The STATUTORY columns of charge_config for a (segment, exchange, date), with
+ * no broker in the picture — for a charge that names no broker (an IPO exit
+ * with no broker recorded, R36).
+ *
+ * STT/CTT, exchange txn, IPFT, SEBI, stamp and GST are levied by statute or by
+ * the exchange, so every broker's row for a key carries the same values
+ * (DECISIONS 2026-08-12, the futExitSttPct precedent). The row is still picked
+ * DETERMINISTICALLY, never by map insertion order (which follows the DB's row
+ * order and so moves under an edit): among the rows whose window covers the
+ * date, the "default" plan first, then the broker's position in `BROKERS`
+ * (a broker outside that list sorts after it, by name), then the plan name.
+ *
+ * Returns a COPY — the map is never mutated — with every broker-set column
+ * neutralised: brokerage, DP, MTF interest, pledge and subscription are zero.
+ * A broker's DP tariff is not statute, so a brokerless charge carries none;
+ * borrowing the first broker's DP was considered and rejected.
+ *
+ * No commodity venue fallback applies here (that one is per broker key, see
+ * `pricingExchange`). Throws when no row covers the date, as `findRates` does.
+ */
+export function statutoryRatesFor(
+  map: RatesMap,
+  segment: Segment,
+  exchange: Exchange,
+  onDate: string,
+): ChargeRates {
+  const order = (b: string) => {
+    const i = (BROKERS as readonly string[]).indexOf(b);
+    return i < 0 ? BROKERS.length : i;
+  };
+  const hits: ChargeRates[] = [];
+  for (const list of map.values()) {
+    for (const r of list) {
+      if (r.segment === segment && r.exchange === exchange && covers(r, onDate)) hits.push(r);
+    }
+  }
+  if (hits.length === 0) {
+    throw new Error(`No charge_config for any broker / ${segment} / ${exchange} covering ${onDate}`);
+  }
+  hits.sort(
+    (a, b) =>
+      (a.plan === "default" ? 0 : 1) - (b.plan === "default" ? 0 : 1) ||
+      order(a.broker) - order(b.broker) ||
+      a.broker.localeCompare(b.broker) ||
+      a.plan.localeCompare(b.plan),
+  );
+  return {
+    ...hits[0],
+    planLabel: null,
+    subscriptionMonthly: 0,
+    brokerageFlat: null,
+    brokeragePct: 0,
+    brokerageCap: null,
+    brokerageFloor: 0,
+    dpCharge: 0,
+    dpPct: 0,
+    dpGstApplicable: false,
+    dpMinValue: 0,
+    mtfInterestAnnual: 0,
+    mtfRateUnknown: false,
+    mtfTiers: null,
+    pledgeCharge: 0,
+    unpledgeCharge: 0,
+  };
 }
 
 export function findRates(

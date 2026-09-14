@@ -47,6 +47,13 @@ interface OptionLegBase {
   /** The leg's own expiry when it has one. Additive — a leg built before v4.3
    *  carries none and inherits the group's expiry. */
   expiry?: string | null;
+  /** P14: a UL leg that is a FUTURE whose row stores no expiry date. `expiry`
+   *  stays null — never a fabricated day — and a cash holding never sets this,
+   *  which is the only thing that tells the two apart. */
+  expiryUnknown?: boolean;
+  /** P14: "YYYY-MM", the contract month a compact future symbol states
+   *  (`contractMonthOf`), when `expiryUnknown` and the symbol states one. */
+  contractMonth?: string | null;
 }
 
 /** An option leg, or (v4.3) the underlying itself. `kind` is the field to read;
@@ -266,7 +273,43 @@ export function classifyStrategy(legs: OptionLeg[], groupExpiry: string | null =
  */
 export function underlyingExpiresFirst(ulLegs: readonly OptionLeg[], expiries: readonly string[]): boolean {
   const latest = expiries[expiries.length - 1];
-  return !!latest && ulLegs.some((l) => !!l.expiry && l.expiry < latest);
+  return (
+    !!latest &&
+    ulLegs.some((l) =>
+      l.expiry
+        ? l.expiry < latest
+        : // P14: an undated future whose stated month is strictly before the last
+          // option leg's month settles first just as surely as a dated one.
+          !!l.expiryUnknown && !!l.contractMonth && l.contractMonth < latest.slice(0, 7),
+    )
+  );
+}
+
+/**
+ * P14: true when an underlying FUTURE stores no expiry and nothing places it
+ * against the last option leg — no stated contract month, the SAME month, or no
+ * option expiry to compare with. Whether it settles first is then unknown, so
+ * both figures read "Not computed" rather than a bound (invariant 6). A month
+ * strictly before is `underlyingExpiresFirst`'s; strictly after outlives the
+ * options and bounds like a cash holding. Shared with the card's note.
+ */
+export function underlyingExpiryUnknown(ulLegs: readonly OptionLeg[], expiries: readonly string[]): boolean {
+  const latestMonth = expiries.length ? expiries[expiries.length - 1].slice(0, 7) : null;
+  return ulLegs.some(
+    (l) => !l.expiry && !!l.expiryUnknown && (!latestMonth || !l.contractMonth || l.contractMonth === latestMonth),
+  );
+}
+
+const CONTRACT_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+// The compact monthly-future grammar of lib/engine/classify.ts (COMPACT_FUT),
+// which classifies such a name with expiry null: it states a month, not a day.
+const COMPACT_FUT_MONTH = /^[A-Z0-9&-]+?(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)FUT$/;
+
+/** P14: "YYYY-MM" from a compact future symbol ('NIFTY26SEPFUT' → '2026-09'); null otherwise. */
+export function contractMonthOf(name: string | null | undefined): string | null {
+  const m = COMPACT_FUT_MONTH.exec(String(name ?? "").trim().toUpperCase());
+  if (!m) return null;
+  return `20${m[1]}-${String(CONTRACT_MONTHS.indexOf(m[2]) + 1).padStart(2, "0")}`;
 }
 
 export function computeStrategy(
@@ -387,7 +430,8 @@ export function computeStrategy(
   });
 
   // §7: which tiles are model-dependent. Max loss survives when every far leg is
-  // long — the position cannot lose more than the net debit.
+  // long — intrinsic understates a long far leg, so the minimum on this curve is
+  // a floor under the real result.
   const multiExpiry = expiries.length > 1;
   const farLegsAllLong = optionLegs
     .filter((l) => legExpiry(l, expiry) !== nearestExpiry)
@@ -395,9 +439,12 @@ export function computeStrategy(
   // R104: a future under the book that settles before the last option leg
   // leaves that leg standing alone, so neither figure at its expiry is printed.
   const ulFirst = underlyingExpiresFirst(ulLegs, expiries);
+  // P14: a future the journal cannot place against the last option leg reads
+  // the same way — its settlement may come first, so no bound is stated.
+  const ulUnknown = underlyingExpiryUnknown(ulLegs, expiries);
   const notComputed = {
-    maxProfit: multiExpiry || ulFirst,
-    maxLoss: (multiExpiry && !farLegsAllLong) || ulFirst,
+    maxProfit: multiExpiry || ulFirst || ulUnknown,
+    maxLoss: (multiExpiry && !farLegsAllLong) || ulFirst || ulUnknown,
   };
 
   const label = (nc: boolean, v: number | null, atZeroOnly: boolean): CapLabel =>
@@ -450,6 +497,8 @@ export type PositionedLeg = OptionLeg & {
  * holds more than one expiry, it falls back to per-expiry sub-groups and names
  * each half — research note §8 Q3, so a trader holding an unrelated September
  * spread and October put still sees two named cards instead of one Custom.
+ * The split is refused when a half states an unbounded figure the whole book
+ * bounds (R102, QS-SPLIT).
  */
 export function buildStrategies(legs: PositionedLeg[]): StrategyGroup[] {
   const groups = new Map<string, PositionedLeg[]>();
@@ -480,10 +529,11 @@ export function buildStrategies(legs: PositionedLeg[]): StrategyGroup[] {
       .map(([e, sub]) => computeStrategy(symbol, e, sub, `${symbol}|${e}`));
     // R102: parking the underlying on the nearest expiry leaves a far short
     // call alone on its own card, reading "Unlimited" while the whole book is
-    // covered. When the book holds an underlying, a split that states an
-    // unbounded figure the whole contradicts is refused. Option-only splits
-    // are ruling 240's and unchanged here.
-    if (own.some((l) => legKind(l) === "UL") && splitContradictsWhole(whole, subs)) {
+    // covered. QS-SPLIT narrows ruling 240 further: ANY split — option-only
+    // included — that states an unbounded figure the whole book bounds is
+    // refused (a Sep short call covered by an Oct long call is not a naked
+    // short call). A split that contradicts nothing stays.
+    if (splitContradictsWhole(whole, subs)) {
       out.push(whole);
       continue;
     }

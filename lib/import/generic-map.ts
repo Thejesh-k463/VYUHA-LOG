@@ -294,12 +294,13 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     if (!date) { skipped++; undated++; continue; }
 
     const legKey = `${symbol}|${date}|${side}`;
+    const exchange = readExchange(cell(row, m.exchange));
     const existing = legs.get(legKey);
     if (existing) {
       existing.qty += qty;
       existing.value += qty * price;
       existing.charges += readNumber(cell(row, m.charges)) ?? 0;
-      if (!existing.exchange) existing.exchange = readExchange(cell(row, m.exchange));
+      if (!existing.exchange) existing.exchange = exchange;
     } else {
       legs.set(legKey, {
         symbol,
@@ -308,10 +309,13 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
         qty,
         value: qty * price,
         charges: readNumber(cell(row, m.charges)) ?? 0,
-        exchange: readExchange(cell(row, m.exchange)),
+        exchange,
         product: "unknown",
       });
     }
+    // P9: the value per NAMED venue, settled into `exchange`/`venues` below.
+    const leg = legs.get(legKey)!;
+    if (exchange) leg.venues = { ...leg.venues, [exchange]: (leg.venues?.[exchange] ?? 0) + qty * price };
 
     const t = extractTime(cell(row, m.time));
     if (t) {
@@ -333,6 +337,17 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
   }
 
   const product = productFromRows(rows, m) ?? opts.defaultProduct ?? null;
+  // P9 (v4.3.0, the R71 class): a merged day-side used to keep its first NAMED
+  // exchange, and `rowVenue` (pair-legs.ts) cannot see a minority venue inside
+  // one leg. The label is now the named venue carrying most of the leg's value
+  // (strict `>`: an exact tie keeps the first named, as before), and `venues`
+  // stays only when there are two or more, for `rowVenue` to weigh. Legs are NOT
+  // split per exchange — that moves which fills FIFO closes (R71, measured).
+  for (const leg of legs.values()) {
+    const named = Object.entries(leg.venues ?? {});
+    if (named.length > 1) leg.exchange = named.reduce((best, cur) => (round2(cur[1]) > round2(best[1]) ? cur : best))[0];
+    else delete leg.venues;
+  }
   const paired = pairLegs([...legs.values()]);
 
   const trades: NormalizedTrade[] = paired.map((p) => {

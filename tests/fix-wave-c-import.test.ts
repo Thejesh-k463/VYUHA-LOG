@@ -35,6 +35,10 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * the pre-read instant), R19 (a notice that cannot be saved stops the pull
  * before it commits), R27 (nothing new still moves the stamp) and R10 (a merge
  * carries the kept notice to the target).
+ *
+ * v4.3.0 FIX WAVE 2 adds R43 (a same-day re-pull replaces today's earlier
+ * snapshot in place when the match is unambiguous, and asks when it is not)
+ * and R42b (a SELL of a held lot is not a cross-source duplicate of it).
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -60,6 +64,18 @@ const R10_X = 50;
 const R10_Y = 51;
 const R19_AUTO = 52;
 const R42_AUTO = 53;
+const R43_ROUTE = 54;
+const R43_AUTO = 55;
+const R43_PAIR = 56;
+const R42B_ROUTE = 57;
+const R42B_AUTO = 58;
+const R43_ANGEL = 59;
+const P11_RANGE = 60;
+const P11_PAGE = 61;
+const P11_PAGE_NN = 62;
+const P11_AUTO_C = 63;
+const P11_AUTO_N = 64;
+const P15_LEGACY = 65;
 const CLIENT = "1000000009";
 const ENROLLED = { pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP", totpAckVersion: 1 };
 const ROOT = path.resolve(__dirname, "..");
@@ -87,6 +103,18 @@ beforeAll(async () => {
       { id: R10_Y, name: "R10 Y", isDefault: false },
       { id: R19_AUTO, name: "R19 auto", isDefault: false },
       { id: R42_AUTO, name: "R42 auto", isDefault: false },
+      { id: R43_ROUTE, name: "R43 route", isDefault: false },
+      { id: R43_AUTO, name: "R43 auto", isDefault: false },
+      { id: R43_PAIR, name: "R43 pair", isDefault: false },
+      { id: R42B_ROUTE, name: "R42b route", isDefault: false },
+      { id: R42B_AUTO, name: "R42b auto", isDefault: false },
+      { id: R43_ANGEL, name: "R43 angel", isDefault: false },
+      { id: P11_RANGE, name: "P11 range", isDefault: false },
+      { id: P11_PAGE, name: "P11 page", isDefault: false },
+      { id: P11_PAGE_NN, name: "P11 page nothing new", isDefault: false },
+      { id: P11_AUTO_C, name: "P11 auto commit", isDefault: false },
+      { id: P11_AUTO_N, name: "P11 auto nothing new", isDefault: false },
+      { id: P15_LEGACY, name: "P15 legacy", isDefault: false },
     ])
     .run();
 });
@@ -142,10 +170,11 @@ interface Fill {
  *  moves the frozen clock on while it answers, so a stamp taken AFTER the read
  *  differs from one taken before it (R42). `onlyAfterHistory` (a path prefix)
  *  limits that to the /positions read that follows THAT history walk — one
- *  connection's pull in a sweep that also pulls others. */
+ *  connection's pull in a sweep that also pulls others. `everyPage` (P11)
+ *  answers `fills` on EVERY history page, so the walk stops at the 50-page cap. */
 function stubDhan(
   fills: Fill[],
-  book: { positions?: Record<string, unknown>[]; advanceMs?: number; onlyAfterHistory?: string } = {},
+  book: { positions?: Record<string, unknown>[]; advanceMs?: number; onlyAfterHistory?: string; everyPage?: boolean } = {},
 ): string[] {
   const paths: string[] = [];
   vi.stubGlobal("fetch", async (url: string) => {
@@ -161,7 +190,7 @@ function stubDhan(
     const body =
       u.host === "auth.dhan.co"
         ? { accessToken: alive() }
-        : /^\/v2\/trades\/[\d-]+\/[\d-]+\/0$/.test(u.pathname)
+        : (book.everyPage ? /^\/v2\/trades\// : /^\/v2\/trades\/[\d-]+\/[\d-]+\/0$/).test(u.pathname)
           ? fills.map((f) => ({
               exchangeTradeId: f.id,
               orderId: `O-${f.id}`,
@@ -193,9 +222,23 @@ interface ConnLite {
   broker: string;
   accountId: number;
   lastPullAt: string | null;
-  unfetched?: { from: string; to: string; reason: string }[];
+  unfetched?: { from: string; to: string; reason: string; fact: string; remedy: string | null }[];
   catchUpFrom?: string | null;
 }
+
+/**
+ * P15 / P16 (fix wave 2): GET lists a kept span WITH the pull's own sentences.
+ * The range-cap span a pull keeps when the last stamp was 10:30 IST on day -120
+ * — the words of lib/import/api/dhan.ts toParsedFile, typed out here from the
+ * clock, never asked of it.
+ */
+const RANGE_CAP_120 = () => ({
+  from: istDay(-120),
+  to: istDay(-91),
+  reason: "range-cap",
+  fact: `Not fetched: fills from ${istDay(-120)} to ${istDay(-91)}. The last pull ran on ${istDay(-120)}, and a pull reads at most 90 days of Dhan's trade history, so this one started at ${istDay(-90)}. Fills on ${istDay(-120)} after 10:30 IST were not fetched; a tradebook for ${istDay(-120)} would repeat the fills already imported from it.`,
+  remedy: `To bring the rest in, import a Dhan tradebook for ${istDay(-119)} to ${istDay(-91)}.`,
+});
 
 /** The connection row exactly as the card receives it — through GET. */
 async function connOf(accountId: number): Promise<ConnLite> {
@@ -361,14 +404,17 @@ describe("C-6 · a clamped Dhan pull is said plainly, kept, and cleared only by 
     const res = await post({ action: "pull", broker: "dhan", accountId: C6_ROUTE, mode: "commit" });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect((json.warnings as string[]).some((w) => w.startsWith(`Not fetched: fills from ${LAST()} to ${GAP_END()}.`))).toBe(true);
+    const said = (json.warnings as string[]).find((w) => w.startsWith(`Not fetched: fills from ${LAST()} to ${GAP_END()}.`));
+    expect(said).toBeDefined();
 
     const conn = await connOf(C6_ROUTE);
     expect(Date.parse(conn.lastPullAt!)).toBeGreaterThan(Date.now() - 60_000);
     // THE assertion (red on revert): the span outlives the stamp that used to erase it.
-    expect(conn.unfetched).toEqual([{ from: LAST(), to: GAP_END(), reason: "range-cap" }]);
+    // P15 / P16: with the pull's sentences (was {from, to, reason} only).
+    expect(conn.unfetched).toEqual([RANGE_CAP_120()]);
     expect(bc.pullGapNotice(conn.lastPullAt, new Date(), conn.catchUpFrom)).toBeNull();
-    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain("Import a Dhan tradebook for");
+    // P15 / P16: the card's line IS the pull's warning (was toContain "Import a Dhan tradebook for").
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(said);
   });
 
   it("a later pull does not clear it; a clear naming another span changes nothing; the explicit clear does", async () => {
@@ -432,7 +478,7 @@ describe("C-6 · a clamp in the background auto-pull is recorded through the sam
 
     // THE assertion (red on revert): the background commit is not silent either.
     const conn = await connOf(C6_AUTO);
-    expect(conn.unfetched).toEqual([{ from: istDay(-120), to: istDay(-91), reason: "range-cap" }]);
+    expect(conn.unfetched).toEqual([RANGE_CAP_120()]); // P15 / P16: with the pull's sentences
   });
 });
 
@@ -584,7 +630,7 @@ describe("R19 · a notice that cannot be saved stops the pull before it commits"
 
     stubDhan(fills);
     expect((await commitPull(R19_ACC)).status).toBe(200);
-    expect((await connOf(R19_ACC)).unfetched).toEqual([{ from: istDay(-120), to: istDay(-91), reason: "range-cap" }]);
+    expect((await connOf(R19_ACC)).unfetched).toEqual([RANGE_CAP_120()]); // P15 / P16: with the pull's sentences
     expect(rowsOf(R19_ACC).map((r) => r.buy_qty)).toEqual([5]);
     expect(noticeRowsOf(R19_ACC)).toBe(1);
 
@@ -660,7 +706,8 @@ describe("R10 · an account merge carries the kept notice to the target", () => 
     addDhan(R10_X, stampOn(-120));
     stubDhan([{ id: "R10-B", side: "BUY", qty: 2, price: 300, at: `${istDay(-5)} 10:00:00` }]);
     expect((await commitPull(R10_X)).status).toBe(200);
-    const SPAN = [{ from: istDay(-120), to: istDay(-91), reason: "range-cap" }];
+    // P15 / P16: the carried span keeps the SOURCE pull's sentences, not the merge's summary.
+    const SPAN = [RANGE_CAP_120()];
     expect((await connOf(R10_X)).unfetched).toEqual(SPAN);
 
     const del = await import("@/lib/queries/account-delete");
@@ -668,5 +715,369 @@ describe("R10 · an account merge carries the kept notice to the target", () => 
     expect(res.ok, res.message).toBe(true);
     // THE assertion (empty on revert): the notice followed the book.
     expect((await connOf(R10_Y)).unfetched).toEqual(SPAN);
+  });
+});
+
+// ===========================================================================
+// v4.3.0 fix wave 2 — R43 (same-day re-pull) and R42b (side-aware cross-source)
+// ===========================================================================
+
+/** Today's /positions book: the same 100 TCS, bought and sold today. */
+const TCS_CLOSED_100 = { ...TCS_LONG_100, positionType: "CLOSED", sellAvg: 110, sellQty: 100, netQty: 0, realizedProfit: 1000 };
+
+const fullRowsOf = (accountId: number) =>
+  t.sqlite
+    .prepare(
+      "SELECT id, is_open, buy_qty, sell_qty, buy_date, sell_date, acquisition, import_batch_id, dedup_hash FROM trades WHERE account_id = ? ORDER BY id",
+    )
+    .all(accountId) as {
+    id: number;
+    is_open: number;
+    buy_qty: number;
+    sell_qty: number;
+    buy_date: string | null;
+    sell_date: string | null;
+    acquisition: string | null;
+    import_batch_id: number;
+    dedup_hash: string;
+  }[];
+
+const UPDATED = "1 position updated from today's earlier pull";
+
+describe("R43 · a same-day Dhan re-pull replaces today's earlier snapshot in place", () => {
+  it("route: pull 1 /positions BUY 100 (open); pull 2 the same frozen IST day BUY 100 / SELL 100 — one row, closed, the same id, and the card says so", async () => {
+    addDhan(R43_ROUTE, null);
+    stubDhan([], { positions: [TCS_LONG_100] });
+    expect((await commitPull(R43_ROUTE)).status).toBe(200);
+    const [first] = fullRowsOf(R43_ROUTE);
+    expect(first).toMatchObject({ is_open: 1, buy_qty: 100, sell_qty: 0 });
+
+    stubDhan([], { positions: [TCS_CLOSED_100] });
+    const pre = await post({ action: "pull", broker: "dhan", accountId: R43_ROUTE, mode: "preview" });
+    const summary = (await pre.json()).preview.summary;
+    expect.soft([summary.newCount, summary.dupCount, summary.supersededCount]).toEqual([0, 0, 1]);
+
+    const res = await commitPull(R43_ROUTE);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect.soft(json.result.warnings).toContain(`${UPDATED}.`);
+    expect.soft(bc.pullResultMessage("commit", json)).toContain(`${UPDATED}.`);
+    // THE assertion (two rows on revert).
+    const rows = fullRowsOf(R43_ROUTE);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: first!.id,
+      is_open: 0,
+      buy_qty: 100,
+      sell_qty: 100,
+      sell_date: istDay(0),
+      import_batch_id: first!.import_batch_id,
+    });
+    expect(rows[0]!.dedup_hash).not.toBe(first!.dedup_hash);
+
+    // A third pull of the same book is an ordinary duplicate.
+    stubDhan([], { positions: [TCS_CLOSED_100] });
+    const again = await commitPull(R43_ROUTE);
+    expect(again.status).toBe(409);
+    expect((await again.json()).nothingNew).toBe(true);
+  });
+
+  it("auto-pull: the sweep replaces the morning row too, and its line says what the commit did", async () => {
+    addDhan(R43_AUTO, null, ENROLLED);
+    stubDhan([], { positions: [TCS_LONG_100] });
+    expect((await commitPull(R43_AUTO)).status).toBe(200);
+    const [first] = fullRowsOf(R43_AUTO);
+
+    t.sqlite.prepare("UPDATE settings SET auto_pull_enabled = 1, last_auto_pull_date = NULL").run();
+    stubDhan([], { positions: [TCS_CLOSED_100] });
+    const out = await job.runAutoPull(new Date()); // the REAL pullOne
+    const mine = out.summary.find((e) => e.broker === "dhan" && e.accountId === R43_AUTO);
+    expect.soft(mine?.status).toBe("imported");
+    expect.soft(mine?.detail).toBe(UPDATED);
+    // THE assertion (two rows on revert).
+    expect(fullRowsOf(R43_AUTO).map((r) => [r.id, r.is_open, r.sell_qty])).toEqual([[first!.id, 0, 100]]);
+  });
+
+  /** One NIFTY call, as Dhan states it on /positions, in `productType`. */
+  const niftyCe = (productType: string, buyQty: number, buyAvg: number, sellQty = 0, sellAvg = 0) => ({
+    tradingSymbol: "NIFTY-Sep2026-24000-CE",
+    exchangeSegment: "NSE_FNO",
+    drvExpiryDate: "2026-09-29 14:30:00",
+    drvOptionType: "CALL",
+    drvStrikePrice: 24000,
+    positionType: buyQty === sellQty ? "CLOSED" : "LONG",
+    productType,
+    buyAvg,
+    buyQty,
+    sellAvg,
+    sellQty,
+    netQty: buyQty - sellQty,
+  });
+
+  const PAIR_EVENING = () => [niftyCe("MARGIN", 150, 90), niftyCe("INTRADAY", 75, 100, 75, 120)];
+  let pairBefore: ReturnType<typeof fullRowsOf> = [];
+
+  it("an INTRADAY + MARGIN pair of one NIFTY CE shares the key: NOT replaced — the route answers 409 needsForce and both rows stay as they were", async () => {
+    addDhan(R43_PAIR, null, ENROLLED);
+    // MARGIN first, so the row a changed INTRADAY position meets FIRST is the
+    // other product's (a partial overlap) — the report must still ask.
+    stubDhan([], { positions: [niftyCe("MARGIN", 150, 90), niftyCe("INTRADAY", 75, 100)] });
+    expect((await commitPull(R43_PAIR)).status).toBe(200);
+    const before = fullRowsOf(R43_PAIR);
+    expect(before.map((r) => [r.buy_qty, r.sell_qty, r.is_open])).toEqual([
+      [150, 0, 1],
+      [75, 0, 1],
+    ]);
+
+    // The INTRADAY position was closed by the evening; the MARGIN one is unchanged.
+    stubDhan([], { positions: PAIR_EVENING() });
+    const res = await commitPull(R43_PAIR);
+    // THE assertions (200 and a third row on revert).
+    expect(res.status).toBe(409);
+    expect((await res.json()).needsForce).toBe(true);
+    expect(fullRowsOf(R43_PAIR)).toEqual(before);
+    pairBefore = before;
+  });
+
+  it("…and the sweep answers 'collision' for the same evening book, writing nothing", async () => {
+    t.sqlite.prepare("UPDATE settings SET auto_pull_enabled = 1, last_auto_pull_date = NULL").run();
+    stubDhan([], { positions: PAIR_EVENING() });
+    const out = await job.runAutoPull(new Date()); // the REAL pullOne
+    // THE assertions ('imported' and a third row on revert).
+    expect(out.summary.find((e) => e.broker === "dhan" && e.accountId === R43_PAIR)?.status).toBe("collision");
+    expect(pairBefore).toHaveLength(2);
+    expect(fullRowsOf(R43_PAIR)).toEqual(pairBefore);
+  });
+
+  it("Angel One (QS-AO): the route passes the snapshot identity for its pull too — pull 2 the same day replaces the open BUY", async () => {
+    t.sqlite
+      .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json) VALUES (?, 'angelone', 'key', '', ?)")
+      .run(R43_ANGEL, JSON.stringify({ clientCode: "C1", pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP" }));
+    const stubAngel = (fills: Record<string, unknown>[]) =>
+      vi.stubGlobal("fetch", async (url: string) => {
+        const data = String(url).includes("loginByPassword") ? { jwtToken: "jwt" } : fills;
+        return new Response(JSON.stringify({ status: true, data }), { status: 200, headers: { "Content-Type": "application/json" } });
+      });
+    const fill = (side: "BUY" | "SELL", price: number, time: string) => ({
+      tradingsymbol: "TCS-EQ",
+      exchange: "NSE",
+      producttype: "DELIVERY",
+      transactiontype: side,
+      fillsize: 10,
+      fillprice: price,
+      filltime: time,
+    });
+    const pull = () => post({ action: "pull", broker: "angelone", accountId: R43_ANGEL, mode: "commit" });
+
+    stubAngel([fill("BUY", 100, "10:00:00")]);
+    expect((await pull()).status).toBe(200);
+    const [first] = fullRowsOf(R43_ANGEL);
+    stubAngel([fill("BUY", 100, "10:00:00"), fill("SELL", 110, "14:00:00")]);
+    const res = await pull();
+    expect(res.status).toBe(200);
+    expect((await res.json()).result.warnings).toContain(`${UPDATED}.`);
+    // THE assertion (two rows on revert of the route's option).
+    expect(fullRowsOf(R43_ANGEL).map((r) => [r.id, r.is_open, r.buy_qty, r.sell_qty])).toEqual([[first!.id, 0, 10, 10]]);
+  });
+});
+
+describe("R42b · a SELL of a held lot is not a cross-source duplicate of it (side-aware, Q-LOOP)", () => {
+  const D3 = () => istDay(-3);
+  const D2 = () => istDay(-2);
+  /** Pull 1 ON day -3 at 18:30 IST: today's book then was 100 TCS bought. */
+  async function holdLotFromDay3(accountId: number, auth: Record<string, unknown> | null) {
+    addDhan(accountId, null, auth);
+    vi.setSystemTime(new Date(`${D3()}T13:00:00.000Z`));
+    stubDhan([], { positions: [TCS_LONG_100] });
+    expect((await commitPull(accountId)).status).toBe(200);
+    vi.setSystemTime(NOW);
+    return fullRowsOf(accountId);
+  }
+  /** History for the catch-up: the day -3 buy (at or before the stamp, so `after` drops it) and a day -2 SELL 100. */
+  const history = (tag: string): Fill[] => [
+    { id: `${tag}-B`, side: "BUY", qty: 100, price: 100, at: `${D3()} 10:00:00` },
+    { id: `${tag}-S`, side: "SELL", qty: 100, price: 120, at: `${D2()} 14:00:00` },
+  ];
+
+  it("route: no 409 — the sale commits as its own row (basis unknown, dated), the lot is unchanged, and lastPullAt is the cutoff", async () => {
+    const [lot] = await holdLotFromDay3(R42B_ROUTE, null);
+    const saleDay = D2(); // read before /positions moves the frozen clock past IST midnight
+    stubDhan(history("R42B"), { advanceMs: 5 * 60_000 });
+    const res = await commitPull(R42B_ROUTE);
+    // THE assertions (409 same-quantity, stamp unmoved, on revert).
+    expect.soft(res.status).toBe(200);
+    expect.soft(lastPullAtOf(R42B_ROUTE)).toBe(NOW.toISOString());
+    const rows = fullRowsOf(R42B_ROUTE);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(lot);
+    expect(rows[1]).toMatchObject({ buy_qty: 0, sell_qty: 100, is_open: 1, acquisition: "unknown", sell_date: saleDay });
+  });
+
+  it("auto-pull: '+1 trade', and the stamp moves", async () => {
+    const [lot] = await holdLotFromDay3(R42B_AUTO, ENROLLED);
+    const stamped = lastPullAtOf(R42B_AUTO);
+    t.sqlite.prepare("UPDATE settings SET auto_pull_enabled = 1, last_auto_pull_date = NULL").run();
+    stubDhan(history("R42BA"));
+    const out = await job.runAutoPull(new Date()); // the REAL pullOne
+    const mine = out.summary.find((e) => e.broker === "dhan" && e.accountId === R42B_AUTO);
+    // THE assertions ('collision' and the stamp unmoved, on revert).
+    expect.soft(mine?.status).toBe("imported");
+    expect.soft(mine?.detail).toBe("+1 trade");
+    expect(lastPullAtOf(R42B_AUTO)).not.toBe(stamped);
+    expect(lastPullAtOf(R42B_AUTO)).toBe(NOW.toISOString());
+    const rows = fullRowsOf(R42B_AUTO);
+    expect(rows[0]).toEqual(lot);
+    expect(rows.map((r) => [r.buy_qty, r.sell_qty, r.acquisition])).toEqual([
+      [100, 0, null],
+      [0, 100, "unknown"],
+    ]);
+  });
+});
+
+// ===========================================================================
+// v4.3.0 fix wave 2 — P11 (a span kept before a commit that then throws) and
+// P15's legacy row, through the real route, sweep and GET
+// ===========================================================================
+
+/** The commit refuses every trade row — the TEST makes it throw; the product has no hook for it. */
+const refuseTrades = (name: string) =>
+  t.sqlite.exec(`CREATE TRIGGER ${name} BEFORE INSERT ON trades BEGIN SELECT RAISE(ABORT, 'refused by the test'); END`);
+const dropTrigger = (name: string) => t.sqlite.exec(`DROP TRIGGER IF EXISTS ${name}`);
+const openOf = async (accountId: number, reason: string) =>
+  (await connOf(accountId)).unfetched!.filter((s) => s.reason === reason).map((s) => [s.from, s.to]);
+
+describe("P11 · a span kept before a commit that throws is superseded on the retry, and an untruncated read clears a page-cap span", () => {
+  it("range-cap: the commit throws after the span was kept; the retry the NEXT day leaves ONE outstanding range-cap span, with the new `to`", async () => {
+    const OLD = stampOn(-120);
+    const [LAST, TO_NOW, TO_NEXT_DAY] = [istDay(-120), istDay(-91), istDay(-90)];
+    addDhan(P11_RANGE, OLD);
+    const fills: Fill[] = [{ id: "P11R-B", side: "BUY", qty: 5, price: 200, at: `${istDay(-5)} 10:00:00` }];
+    stubDhan(fills);
+    refuseTrades("zz_p11r");
+    try {
+      const refused = await commitPull(P11_RANGE);
+      expect(refused.status).toBe(422);
+      expect(rowsOf(P11_RANGE)).toEqual([]);
+      expect(lastPullAtOf(P11_RANGE)).toBe(OLD);
+    } finally {
+      dropTrigger("zz_p11r");
+    }
+    // R19 kept the span before the commit, and it stays (the dates are still unread).
+    expect(await openOf(P11_RANGE, "range-cap")).toEqual([[LAST, TO_NOW]]);
+
+    // The retry runs a day later: the floor moved, so the span's `to` did.
+    vi.setSystemTime(NOW.getTime() + DAY);
+    stubDhan(fills);
+    expect((await commitPull(P11_RANGE)).status).toBe(200);
+    // THE assertion (two overlapping spans on revert).
+    expect(await openOf(P11_RANGE, "range-cap")).toEqual([[LAST, TO_NEXT_DAY]]);
+    // Append-only: the old record, its clear, and the new record.
+    const trail = t.sqlite
+      .prepare(
+        "SELECT action, json_extract(after_json, '$.to') AS too, json_extract(after_json, '$.clearedAt') AS cleared FROM audit_log WHERE json_extract(after_json, '$.notice') = 'dhan-unfetched' AND json_extract(after_json, '$.accountId') = ? ORDER BY id",
+      )
+      .all(P11_RANGE) as { action: string; too: string; cleared: string | null }[];
+    expect(trail.map((r) => [r.action, r.too, r.cleared == null])).toEqual([
+      ["create", TO_NOW, true],
+      ["update", TO_NOW, false],
+      ["create", TO_NEXT_DAY, true],
+    ]);
+  });
+
+  it("page-cap, commit path: a truncated pull whose commit throws keeps the span; the same-window UNTRUNCATED retry commits and clears it", async () => {
+    const OLD = stampOn(-4);
+    addDhan(P11_PAGE, OLD);
+    // One fill on every page: the walk never meets an empty page and stops at the cap.
+    const fills: Fill[] = [{ id: "P11P-B", side: "BUY", qty: 5, price: 200, at: `${istDay(-2)} 10:00:00` }];
+    stubDhan(fills, { everyPage: true, positions: [TCS_LONG_100] });
+    refuseTrades("zz_p11p");
+    try {
+      expect((await commitPull(P11_PAGE)).status).toBe(422);
+      expect(lastPullAtOf(P11_PAGE)).toBe(OLD);
+    } finally {
+      dropTrigger("zz_p11p");
+    }
+    expect(await openOf(P11_PAGE, "page-cap")).toEqual([[istDay(-4), istDay(-1)]]);
+
+    stubDhan([], { positions: [TCS_LONG_100] }); // page 0 is empty: the walk is NOT truncated
+    expect((await commitPull(P11_PAGE)).status).toBe(200);
+    expect(rowsOf(P11_PAGE).map((r) => r.buy_qty)).toEqual([100]);
+    // THE assertion (the span still listed on revert).
+    expect(await openOf(P11_PAGE, "page-cap")).toEqual([]);
+  });
+
+  it("page-cap, nothing-new path: the untruncated re-read that finds nothing new clears the span with the stamp", async () => {
+    const OLD = stampOn(-4);
+    addDhan(P11_PAGE_NN, OLD);
+    stubDhan([{ id: "P11N-B", side: "BUY", qty: 5, price: 200, at: `${istDay(-2)} 10:00:00` }], { everyPage: true, positions: [TCS_LONG_100] });
+    expect((await commitPull(P11_PAGE_NN)).status).toBe(200);
+    expect(await openOf(P11_PAGE_NN, "page-cap")).toEqual([[istDay(-4), istDay(-1)]]);
+    t.sqlite.prepare("UPDATE broker_connections SET last_pull_at = ? WHERE account_id = ?").run(OLD, P11_PAGE_NN);
+
+    stubDhan([], { positions: [TCS_LONG_100] });
+    const again = await commitPull(P11_PAGE_NN);
+    expect(again.status).toBe(409);
+    expect((await again.json()).nothingNew).toBe(true);
+    // THE assertion (the span still listed on revert).
+    expect(await openOf(P11_PAGE_NN, "page-cap")).toEqual([]);
+  });
+
+  it("auto-pull: the sweep clears a covered page-cap span on its commit path AND on its nothing-new path", async () => {
+    const OLD = stampOn(-4);
+    // C: a truncated pull whose commit threw — nothing stored, span kept.
+    const truncating: Fill[] = [{ id: "P11A-B", side: "BUY", qty: 5, price: 200, at: `${istDay(-2)} 10:00:00` }];
+    addDhan(P11_AUTO_C, OLD, ENROLLED);
+    stubDhan(truncating, { everyPage: true, positions: [TCS_LONG_100] });
+    refuseTrades("zz_p11a");
+    try {
+      expect((await commitPull(P11_AUTO_C)).status).toBe(422);
+    } finally {
+      dropTrigger("zz_p11a");
+    }
+    // N: a truncated pull that committed today's book; its stamp put back.
+    addDhan(P11_AUTO_N, OLD, ENROLLED);
+    stubDhan(truncating, { everyPage: true, positions: [TCS_LONG_100] });
+    expect((await commitPull(P11_AUTO_N)).status).toBe(200);
+    t.sqlite.prepare("UPDATE broker_connections SET last_pull_at = ? WHERE account_id = ?").run(OLD, P11_AUTO_N);
+    for (const acc of [P11_AUTO_C, P11_AUTO_N]) expect(await openOf(acc, "page-cap")).toEqual([[istDay(-4), istDay(-1)]]);
+
+    t.sqlite.prepare("UPDATE settings SET auto_pull_enabled = 1, last_auto_pull_date = NULL").run();
+    stubDhan([], { positions: [TCS_LONG_100] }); // untruncated for every connection in the sweep
+    const out = await job.runAutoPull(new Date()); // the REAL pullOne
+    expect(out.summary.find((e) => e.accountId === P11_AUTO_C)?.status).toBe("imported");
+    expect(out.summary.find((e) => e.accountId === P11_AUTO_N)?.status).toBe("nothingNew");
+    // THE assertions (the span still listed on revert of either path).
+    expect(await openOf(P11_AUTO_C, "page-cap")).toEqual([]);
+    expect(await openOf(P11_AUTO_N, "page-cap")).toEqual([]);
+  });
+});
+
+describe("P15 · a span kept before the sentences were stored reads its audit row's own summary", () => {
+  it("GET sends the stored summary as `fact` with no remedy, and the card prints exactly that — never a re-derived line", async () => {
+    addDhan(P15_LEGACY, stampOn(-1));
+    const SUMMARY = `Not fetched: fills from ${istDay(-150)} to ${istDay(-121)}. (as a v4.3.0 fix-wave-1 build kept it)`;
+    t.db
+      .insert(t.schema.auditLog)
+      .values({
+        entity: "settings",
+        entityId: null,
+        action: "create",
+        summary: SUMMARY,
+        afterJson: {
+          notice: "dhan-unfetched",
+          broker: "dhan",
+          accountId: P15_LEGACY,
+          from: istDay(-150),
+          to: istDay(-121),
+          reason: "range-cap",
+          clearedAt: null,
+        },
+        source: "import",
+      })
+      .run();
+    const conn = await connOf(P15_LEGACY);
+    // THE assertion (a fact the card cannot print, on revert).
+    expect(conn.unfetched).toEqual([{ from: istDay(-150), to: istDay(-121), reason: "range-cap", fact: SUMMARY, remedy: null }]);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(SUMMARY);
   });
 });

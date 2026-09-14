@@ -337,4 +337,40 @@ describe("Kite exchange stamps and verifies WHOSE session it minted", () => {
     expect(decrypt(swing.access_token)).toBe("tok-swing");
     expect((t.sqlite.prepare("SELECT COUNT(*) AS n FROM trades WHERE account_id = 902").get() as { n: number }).n).toBe(0);
   });
+
+  /**
+   * P10 (v4.3.0 fix wave 2): an install that made a duplicate Kite pair before
+   * R4a/R9 existed has BOTH rows stamped with the same user_id. R9 used to
+   * refuse both at every exchange — each named the other. Only the NEWER
+   * connection (the larger broker_connections.id) is refused now; the original
+   * keeps pulling, and Data Quality flags the pair (R4b).
+   */
+  it("P10: of an existing duplicate pair, PRIMARY (the older row) exchanges normally and SWING (the newer) gets the 409 naming PRIMARY", async () => {
+    t.db
+      .insert(t.schema.accounts)
+      .values([
+        { id: 903, name: "P10 primary", isDefault: false },
+        { id: 904, name: "P10 swing", isDefault: false },
+      ])
+      .onConflictDoNothing()
+      .run();
+    const seed = t.sqlite.prepare(
+      "INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json) VALUES (?, 'zerodha', 'kitekey123', ?, ?)",
+    );
+    const bound = JSON.stringify({ apiSecret: "apisecret789", kiteUserId: "AB1234" });
+    const primaryId = Number(seed.run(903, "tok-primary", bound).lastInsertRowid);
+    const swingId = Number(seed.run(904, "tok-swing", bound).lastInsertRowid);
+    expect(primaryId).toBeLessThan(swingId);
+
+    const exchange = async (accountId: number) => {
+      stubKite("AB1234", `tok-new-${accountId}`);
+      const res = await post({ action: "pull", broker: "zerodha", mode: "preview", accountId, requestToken: `rt-${accountId}` });
+      return { status: res.status, message: ((await res.json()) as { message?: string }).message ?? "" };
+    };
+    const primary = await exchange(903);
+    const swing = await exchange(904);
+    // THE assertion ([409, 409] on revert — each refused, naming the other).
+    expect([primary.status, swing.status]).toEqual([200, 409]);
+    expect(swing.message).toContain('account "P10 primary"');
+  });
 });

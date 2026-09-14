@@ -2,7 +2,13 @@ import "server-only";
 import { and, eq, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { panelDismissals } from "@/lib/db/schema";
-import { isDismissed, type Dismissal, type DismissiblePanel } from "@/lib/domain/dismissals";
+import {
+  isDismissed,
+  PER_SUBJECT_PANELS,
+  type CurrentFingerprints,
+  type Dismissal,
+  type DismissiblePanel,
+} from "@/lib/domain/dismissals";
 import { getSelectedAccountId, getWriteAccountId } from "./accounts";
 
 /**
@@ -20,6 +26,15 @@ export function getDismissals(): Dismissal[] {
 /** Is this panel dismissed for the situation it currently describes? */
 export function panelHidden(panel: DismissiblePanel, fingerprint: string): boolean {
   return isDismissed(getDismissals(), panel, fingerprint);
+}
+
+/** Every dismissed fingerprint of one panel, read with the same account scope
+ *  as `getDismissals()` — for a per-subject panel, whose rows the page checks
+ *  one subject at a time (R13's "Keep my mark" on /risk). */
+export function getDismissedFingerprints(panel: DismissiblePanel): string[] {
+  return getDismissals()
+    .filter((d) => d.panel === panel)
+    .map((d) => d.fingerprint);
 }
 
 // ---------------------------------------------------------------------------
@@ -81,29 +96,35 @@ export function undismissPanels(panel?: DismissiblePanel): DismissalWriteResult 
  * Drop rows whose situation no longer exists. Called with the fingerprints the
  * app just computed, so anything not in the map is stale by definition — and a
  * stale fingerprint must never linger where a future state could collide into it.
+ * The one exception is a PER-SUBJECT panel (R13's `spot-close-diff`, one row per
+ * symbol): it is pruned only against the fingerprint LIST it is handed, and left
+ * alone by a caller that does not name it (see PER_SUBJECT_PANELS).
  *
  * Same invariant-9 refusal as the other two: the fingerprints handed in were
  * computed for whatever the caller was looking at, so pruning account #1's rows
  * against an aggregate view's fingerprints would delete decisions that account
  * never made.
  */
-export function pruneStaleDismissals(current: Map<DismissiblePanel, string>): DismissalWriteResult {
+export function pruneStaleDismissals(current: CurrentFingerprints): DismissalWriteResult {
   const accountId = dismissalWriteAccountId();
   if (accountId == null) return { ok: false, forbidden: true, message: AGGREGATE_REFUSAL };
   const panels = [...current.keys()];
   if (panels.length === 0) return { ok: true, message: "Nothing to prune." };
   for (const [panel, fp] of current) {
+    // A per-subject panel (R13's "Keep my mark") is handed EVERY current
+    // fingerprint; a row survives while its own is among them.
+    const keep = typeof fp === "string" ? [fp] : [...fp];
+    const scope = and(eq(panelDismissals.accountId, accountId), eq(panelDismissals.panel, panel));
     db.delete(panelDismissals)
-      .where(and(
-        eq(panelDismissals.accountId, accountId),
-        eq(panelDismissals.panel, panel),
-        notInArray(panelDismissals.fingerprint, [fp]),
-      ))
+      .where(keep.length > 0 ? and(scope, notInArray(panelDismissals.fingerprint, keep)) : scope)
       .run();
   }
-  // Panels the app no longer computes at all: remove wholesale.
+  // Panels the app no longer computes at all: remove wholesale — EXCEPT a
+  // per-subject panel this caller did not name. It computed nothing about that
+  // panel's subjects, so it cannot know which of them moved (PER_SUBJECT_PANELS).
+  const untouched = PER_SUBJECT_PANELS.filter((p) => !current.has(p));
   db.delete(panelDismissals)
-    .where(and(eq(panelDismissals.accountId, accountId), notInArray(panelDismissals.panel, panels)))
+    .where(and(eq(panelDismissals.accountId, accountId), notInArray(panelDismissals.panel, [...panels, ...untouched])))
     .run();
   return { ok: true, message: "Stale dismissals pruned." };
 }

@@ -215,6 +215,26 @@ function exchangeFrom(raw: string): Exchange | null {
   return null;
 }
 
+/**
+ * P9 (v4.3.0, the R71 class): settle a scrip-day-side leg's venue once all its
+ * fills are summed. The leg used to wear its FIRST fill's exchange, and
+ * `rowVenue` (pair-legs.ts) cannot see a minority venue inside one leg — so
+ * file order, not turnover, picked the rate card (5 of 143 legs on the real
+ * five-month tradebook span both venues). Now the label is the named venue
+ * carrying most of the leg's value (strict `>`, so an exact tie keeps the
+ * first-filled one), and `venues` is kept only when there are two or more, for
+ * `rowVenue` to weigh. The leg is NOT split per exchange: that moves which
+ * fills FIFO closes (measured on Paytm, R71).
+ */
+function settleVenues(leg: Leg): void {
+  const named = Object.entries(leg.venues ?? {});
+  if (named.length > 0) {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    leg.exchange = named.reduce((best, cur) => (r2(cur[1]) > r2(best[1]) ? cur : best))[0];
+  }
+  if (named.length < 2) delete leg.venues;
+}
+
 function productHint(raw: string): ProductHint {
   const s = norm(raw);
   if (s === "cnc") return "delivery";
@@ -625,22 +645,23 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
         p === "cnc" ? "delivery" : p === "mis" ? "intraday" : "unknown";
 
       const legKey = `${date}|${side}`;
+      const exchange = cExch >= 0 ? (r[cExch] || "").trim() || null : null;
       const existing = g.legs.get(legKey);
-      if (existing) {
-        existing.qty += qty;
-        existing.value = r2(existing.value + qty * price);
-      } else {
-        g.legs.set(legKey, {
-          symbol,
-          side,
-          date,
-          qty,
-          value: r2(qty * price),
-          charges: 0,
-          exchange: cExch >= 0 ? (r[cExch] || "").trim() || null : null,
-          product: legProduct,
-        });
-      }
+      const leg = existing ?? {
+        symbol,
+        side,
+        date,
+        qty: 0,
+        value: 0,
+        charges: 0,
+        exchange,
+        product: legProduct,
+      };
+      leg.qty += qty;
+      leg.value = r2(leg.value + qty * price);
+      // P9: the value per NAMED venue, settled into `exchange`/`venues` below.
+      if (exchange) leg.venues = { ...leg.venues, [exchange]: (leg.venues?.[exchange] ?? 0) + qty * price };
+      if (!existing) g.legs.set(legKey, leg);
       fillCount += 1;
       g.fills.push({
         side,
@@ -658,6 +679,7 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
 
     for (const g of groups.values()) {
       const dayLegs = [...g.legs.values()];
+      for (const leg of dayLegs) settleVenues(leg);
       const paired = pairLegs(dayLegs);
       allLegs.push(...dayLegs);
       allPaired.push(...paired);

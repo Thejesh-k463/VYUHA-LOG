@@ -6,8 +6,8 @@ import type { Broker, Exchange, Segment } from "../domain/constants";
  * turnover/premium (0.1% => 0.001) unless noted.
  *
  * The broker-set figures (brokerage, DP, MTF) are today's cards and carry no
- * history. The levies that have moved are EFFECTIVE-DATED: F&O STT (the F&O STT
- * SCHEDULES below, one boundary per NSE FATAX circular) and the exchange
+ * history. The levies that have moved are EFFECTIVE-DATED: F&O and equity
+ * delivery STT (the STT SCHEDULES below, one boundary per NSE FATAX circular) and the exchange
  * transaction charge + NSE IPFT (the EXCHANGE CHARGE EPOCHS below). A key is
  * split at the UNION of its boundaries; a key whose levies never moved keeps one
  * open-ended row.
@@ -101,9 +101,24 @@ const EPOCH_START = "1970-01-01";
  * options after the 2013/2016 changes, 3.7× on options sold before June 2016,
  * and 0.74× on futures sold before June 2013.
  *
- * NOT dated here: equity delivery STT was 0.125% on both sides until
- * 2012-06-30 (FATAX20990); eq_delivery and eq_mtf keep one 0.1% row. Commodity
- * segments carry CTT, a different levy under a different head.
+ * THE EQUITY DELIVERY STT SCHEDULE (v4.3.0 QS-EQ2012; the same owner ruling,
+ * rates only — charges already stored on trades are not rewritten):
+ *
+ *   https://nsearchives.nseindia.com/content/circulars/FATAX20990.pdf
+ *     Circular 1/2012, 12 Jun 2012 (Finance Act 2012, assent 28 May 2012),
+ *     "Effective rate till 30.06.2012 / New rate from 01.07.2012":
+ *       row 1, purchase of an equity share, settled by actual delivery:
+ *         "0.125 per cent / 0.1 per cent", Purchaser
+ *       row 2, sale of an equity share, settled by actual delivery:
+ *         "0.125 per cent / 0.1 per cent", Seller
+ *       row 3, sale settled otherwise than by actual delivery:
+ *         "0.025 per cent / 0.025 per cent (no change)", Seller
+ *
+ * eq_delivery and eq_mtf (an MTF buy and sell settle by delivery) take rows 1
+ * and 2: 0.125% both sides before 1 Jul 2012, 0.1% from it. When the 0.125%
+ * rate began is NOT verified (the circular cites NSE/F&A/7526 of 26 May 2006,
+ * which is not fetched), so it is extended back to 1970 under the same C-8
+ * ruling. Commodity segments carry CTT, a different levy under a different head.
  */
 export const STT_EPOCH_2026 = "2026-04-01";
 /** Finance (No. 2) Act 2024 (FATAX63809): futures 0.0125% → 0.02%, options 0.0625% → 0.10%. */
@@ -114,6 +129,8 @@ const STT_EPOCH_2023 = "2023-04-01";
 const STT_EPOCH_2016 = "2016-06-01";
 /** Finance Act 2013 (FATAX23500): futures 0.017% → 0.01%. Options did not move. */
 const STT_EPOCH_2013 = "2013-06-01";
+/** Finance Act 2012 (FATAX20990): equity delivery STT 0.125% → 0.1%, purchaser and seller. */
+export const STT_EPOCH_2012 = "2012-07-01";
 
 /** One dated STT regime, in force from `from` (inclusive) to the next entry's `from`. */
 type SttLevy = { from: string; pct: number; side: "both" | "sell" | "none" };
@@ -135,7 +152,13 @@ const STT_OPTIONS: SttLevy[] = [
   { from: STT_EPOCH_2026, pct: 0.0015, side: "sell" }, // FATAX73524
 ];
 
-/** A segment's STT schedule, oldest first. Only F&O carries history. */
+/** FATAX20990 rows 1 & 2: purchase and sale of an equity share settled by delivery — both sides, on traded value. */
+const STT_DELIVERY: SttLevy[] = [
+  { from: EPOCH_START, pct: 0.00125, side: "both" }, // FATAX20990 "0.125 per cent" till 30.06.2012; start unverified, extended back
+  { from: STT_EPOCH_2012, pct: 0.001, side: "both" }, // FATAX20990 "0.1 per cent" from 01.07.2012; FATAX73524 rows 1 & 2, No Change
+];
+
+/** A segment's STT schedule, oldest first. F&O and equity delivery carry history. */
 function sttScheduleFor(segment: Segment): SttLevy[] {
   switch (segment) {
     case "future":
@@ -145,7 +168,7 @@ function sttScheduleFor(segment: Segment): SttLevy[] {
       return STT_OPTIONS;
     case "eq_delivery":
     case "eq_mtf":
-      return [{ from: EPOCH_START, pct: 0.001, side: "both" }]; // 0.1% buy + sell (FATAX73524 rows 1 & 2, No Change)
+      return STT_DELIVERY;
     case "eq_intraday":
       return [{ from: EPOCH_START, pct: 0.00025, side: "sell" }]; // 0.025% sell (FATAX73524 row 3, No Change)
     case "commodity_future":

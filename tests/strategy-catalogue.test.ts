@@ -395,3 +395,37 @@ describe("closed-form strings keep the credit-positive convention (R97, R98)", (
     }
   });
 });
+
+/**
+ * R96 (v4.3.0 fix wave 2). The diagonal's closed form said "debit (long-far
+ * case)". The engine's curve (nearest expiry, far leg at intrinsic) gives the
+ * debit only when the long far strike is the nearer the money; further out it
+ * adds the strike distance, and a credit subtracts. Probe figures, hand-evaluated
+ * in the header's notation (N = option net, credit positive):
+ *   CE100 short near @3 + CE110 long far @5  → N = −2 → (10) − (−2) = 12
+ *   PE110 short near @12 + PE100 long far @5 → N = +7 → (10) − 7 = 3
+ *   CE110 short near @3 + CE100 long far @8  → N = −5 → −N = 5
+ */
+describe("the diagonal's max loss states both strike orders (R96)", () => {
+  const NEAR = "2026-09-24";
+  const FAR = "2026-10-29";
+  const at = (l: OptionLeg, expiry: string): OptionLeg => ({ ...l, expiry });
+
+  it("the engine's three probe figures, and the closed form that describes them", () => {
+    const further = computeStrategy("X", null, [at(ce(100, "short", 3), NEAR), at(ce(110, "long", 5), FAR)]);
+    expect(further.strategyId).toBe("diagonal-spread");
+    expect(further.maxLoss).toBe(-12);
+    expect(further.capLabel.maxLoss).toBe("At expiry");
+    const putCredit = computeStrategy("X", null, [at(pe(110, "short", 12), NEAR), at(pe(100, "long", 5), FAR)]);
+    expect(putCredit.strategyId).toBe("diagonal-spread");
+    expect(putCredit.maxLoss).toBe(-3);
+    const nearer = computeStrategy("X", null, [at(ce(110, "short", 3), NEAR), at(ce(100, "long", 8), FAR)]);
+    expect(nearer.strategyId).toBe("diagonal-spread");
+    expect(nearer.maxLoss).toBe(-5);
+
+    const def = getStrategyDef("diagonal-spread")!;
+    expect(def.maxLoss, "the closed form still names the debit alone").not.toBe("debit (long-far case)");
+    expect(def.maxLoss).toMatch(/−N when the long far strike is the nearer the money/);
+    expect(def.maxLoss).toMatch(/\(K2 − K1\) × qty − N when it is further out of the money/);
+  });
+});

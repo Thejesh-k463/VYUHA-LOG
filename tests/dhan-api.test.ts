@@ -201,6 +201,37 @@ describe("canonicalDerivativeName — F&O names built from Dhan's STATED drv* fi
     expect(cls.strike).toBe(78200);
     expect(cls.optionType).toBe("CE");
   });
+
+  // R103 (v4.3.0 fix wave 2): the underlying was `split("-")[0]`, so a
+  // hyphenated scrip lost everything after its first hyphen — BAJAJ-AUTO
+  // became BAJAJ. The underlying is what precedes the `-MonYYYY` expiry token.
+  it("R103: keeps a hyphenated underlying whole — BAJAJ-AUTO, never BAJAJ", () => {
+    const opt = canonicalDerivativeName(row({
+      tradingSymbol: "BAJAJ-AUTO-Sep2026-9000-CE", exchangeSegment: "NSE_FNO",
+      drvExpiryDate: "2026-09-29 14:30:00", drvOptionType: "CALL", drvStrikePrice: 9000,
+    }));
+    expect(opt).toBe("OPT BAJAJ-AUTO 29 Sep 2026 9000 CE");
+    expect(
+      canonicalDerivativeName(row({
+        tradingSymbol: "BAJAJ-AUTO-Sep2026-FUT", exchangeSegment: "NSE_FNO",
+        drvExpiryDate: "2026-09-29 14:30:00", drvOptionType: "NA", drvStrikePrice: 0,
+      })),
+    ).toBe("FUT BAJAJ-AUTO 29 Sep 2026");
+    const cls = classify({ tradingsymbol: opt!, exchangeHint: exchangeOf("NSE_FNO"), productHint: null });
+    expect(cls.symbol).toBe("BAJAJ-AUTO");
+    expect(cls.instrumentType).toBe("option");
+  });
+
+  // R85 (v4.3.0 fix wave 2): a commodity future, as Dhan states it.
+  it("R85: an MCX future builds its FUT name from the drv* facts and classifies as a commodity future", () => {
+    const name = canonicalDerivativeName(row({
+      tradingSymbol: "CRUDEOIL-Sep2026-FUT", exchangeSegment: "MCX_COMM",
+      drvExpiryDate: "2026-09-19 23:30:00", drvOptionType: "NA", drvStrikePrice: 0,
+    }));
+    expect(name).toBe("FUT CRUDEOIL 19 Sep 2026");
+    const cls = classify({ tradingsymbol: name!, exchangeHint: exchangeOf("MCX_COMM"), productHint: null });
+    expect(cls.segment).toBe("commodity_future");
+  });
 });
 
 describe("markOf — the broker's own mark for an open position", () => {
@@ -849,7 +880,8 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
     await dhan
       .dhanImportSource(creds())
       .fetchTrades({ from: "2026-06-11", to: "2026-09-09", onHistory: (r) => reads.push(r) });
-    expect(reads).toEqual([{ pages: 50, truncated: true, oldest: "2026-07-10", newest: "2026-07-29" }]);
+    // R82: a truncated walk kept nothing, so nothing was refused either.
+    expect(reads).toEqual([{ pages: 50, truncated: true, oldest: "2026-07-10", newest: "2026-07-29", refused: 0 }]);
 
     // F-L1-3a (fix wave 1): the walk is dropped whole, so the span runs to
     // YESTERDAY, and the remedy starts the day after the last pull's own day.
@@ -857,12 +889,20 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
     const line =
       "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-11 to 2026-09-08 were not read. Today's book came from /v2/positions. Fills on 2026-06-11 after 10:30 IST were not fetched; a tradebook for 2026-06-11 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-06-12 to 2026-09-08.";
     expect(pf.warnings).toContain(line);
+    // P15 / P16 (fix wave 2): the span also carries the warning's own two
+    // sentences, split at the remedy — what GET hands the card verbatim.
+    const fact =
+      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-11 to 2026-09-08 were not read. Today's book came from /v2/positions. Fills on 2026-06-11 after 10:30 IST were not fetched; a tradebook for 2026-06-11 would repeat the fills already imported from it.";
+    const remedyText = "To bring the rest in, import a Dhan tradebook for 2026-06-12 to 2026-09-08.";
+    expect(`${fact} ${remedyText}`).toBe(line);
     expect(pf.unfetched).toEqual([
       {
         from: "2026-06-11",
         to: "2026-09-08",
         reason: "page-cap",
         message: line,
+        fact,
+        remedyText,
         remedy: { from: "2026-06-12", to: "2026-09-08" },
         partial: { day: "2026-06-11", after: "10:30" },
       },
@@ -875,7 +915,7 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
     await dhan
       .dhanImportSource(creds())
       .fetchTrades({ from: "2026-09-05", to: "2026-09-09", onHistory: (r) => reads.push(r) });
-    expect(reads).toEqual([{ pages: 2, truncated: false, oldest: "2026-09-07", newest: "2026-09-07" }]);
+    expect(reads).toEqual([{ pages: 2, truncated: false, oldest: "2026-09-07", newest: "2026-09-07", refused: 0 }]);
     const pf = toParsedFile([], { from: "2026-09-05", to: "2026-09-09" }, reads[0]);
     expect(pf.unfetched).toEqual([]);
     expect(pf.warnings.some((w) => /Truncated/.test(w))).toBe(false);
@@ -1082,9 +1122,22 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
       ],
       [],
     ]);
-    const out = await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-09-05", to: "2026-09-09" });
+    const reads: dhan.DhanHistoryRead[] = [];
+    const out = await dhan
+      .dhanImportSource(creds())
+      .fetchTrades({ from: "2026-09-05", to: "2026-09-09", onHistory: (r) => reads.push(r) });
     expect(out).toEqual([]);
-    expect(dhan.normalizeDhanTrades([]).refused).toBe(0);
+    // R82 (v4.3.0 fix wave 2): the count used to stop at normalizeDhanTrades —
+    // four fills vanished and the pull said nothing. It now reaches the read
+    // and the pull's own warnings.
+    expect(reads.map((r) => r.refused)).toEqual([4]);
+    const pf = toParsedFile(out, { from: "2026-09-05", to: "2026-09-09" }, reads[0]);
+    expect(pf.warnings).toContain(
+      "4 fills from Dhan's trade history had no readable side, quantity, price or date and were refused rather than guessed.",
+    );
+    expect(toParsedFile(out, { from: "2026-09-05", to: "2026-09-09" }, { ...reads[0]!, refused: 0 }).warnings.join(" ")).not.toMatch(
+      /refused/,
+    );
   });
 });
 
@@ -1150,12 +1203,19 @@ describe("C-6 — a clamped pull names the dates it did not fetch, and the remed
     const line =
       "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
     expect(pf.warnings[1]).toBe(line);
+    // P15 / P16 (fix wave 2): the warning's own sentences ride on the span.
+    const fact =
+      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it.";
+    const remedyText = "To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
+    expect(`${fact} ${remedyText}`).toBe(line);
     expect(pf.unfetched).toEqual([
       {
         from: "2026-05-01",
         to: "2026-06-10",
         reason: "range-cap",
         message: line,
+        fact,
+        remedyText,
         remedy: { from: "2026-05-02", to: "2026-06-10" },
         partial: { day: "2026-05-01", after: "10:30" },
       },
@@ -1163,6 +1223,8 @@ describe("C-6 — a clamped pull names the dates it did not fetch, and the remed
     // A one-day span has no remedy at all: its only day is the last pull's own.
     const one = toParsedFile([], dhan.catchUpRange("2026-06-10T05:00:00Z", TODAY), null, "2026-06-10T05:00:00Z").unfetched[0]!;
     expect(one.remedy).toBeNull();
+    expect(one.remedyText).toBeNull();
+    expect(one.fact).toBe(one.message);
     expect(one.message).not.toMatch(/import a Dhan tradebook/);
     // A pull the cap did not touch hands back nothing.
     expect(toParsedFile([], { from: "2026-09-04", to: TODAY }).unfetched).toEqual([]);
@@ -1306,6 +1368,204 @@ describe("normalizeDhanTrades — every fill lands in exactly ONE position (M-1)
     // The same rule per COMPONENT, not just on the total.
     const brokerage = trades.reduce((s, t) => s + (t.reportedCharges?.brokerage ?? 0), 0);
     expect(Math.round(brokerage * 100) / 100).toBe(44);
+  });
+});
+
+// ===========================================================================
+// v4.3.0 fix wave 2 (W2-DHAN) — the fills a row lists are the lots pairLegs
+// actually paired it with, split in whole paise, stamped with pairLegs' venue.
+// ===========================================================================
+describe("normalizeDhanTrades — allocation mirrors pairLegs (R80, R83, R81, K2-TINY, R84, K2-M5, K1-M2, D1)", () => {
+  type C = Partial<Pick<dhan.DhanTradeRow, "brokerageCharges" | "sebiTax" | "stampDuty" | "stt">>;
+  const f = (
+    id: string,
+    side: "BUY" | "SELL",
+    qty: number,
+    price: number,
+    at: string,
+    charges: C = {},
+    segment = "NSE_EQ",
+    productType = "CNC",
+  ): dhan.DhanTradeRow => ({
+    exchangeTradeId: id,
+    orderId: `O-${id}`,
+    transactionType: side,
+    exchangeSegment: segment,
+    productType,
+    tradingSymbol: "TCS",
+    tradedQuantity: qty,
+    tradedPrice: price,
+    exchangeTime: at.length === 10 ? `${at} 10:00:00` : at,
+    ...charges,
+  });
+  const closedOf = <T extends { buyQty: number; sellQty: number }>(ts: T[]) => ts.filter((t) => t.buyQty > 0 && t.sellQty > 0);
+  const COMPONENTS = ["brokerage", "gst", "sttCtt", "sebi", "exchangeTxn", "stampDuty"] as const;
+
+  it("R80: a same-day sell drains its own day's buy first — the open remainder is the OLDER lot, with its own charges", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B1", "BUY", 100, 100, "2026-09-01", { brokerageCharges: 11 }),
+      f("B2", "BUY", 100, 110, "2026-09-02", { brokerageCharges: 13 }),
+      f("S", "SELL", 150, 120, "2026-09-02", { brokerageCharges: 7 }),
+    ]);
+    const open = trades.find((t) => t.sellQty === 0)!;
+    const [closed] = closedOf(trades);
+    expect(open.executions).toEqual([{ side: "buy", qty: 50, price: 100, date: "2026-09-01", time: "10:00" }]);
+    expect(open.reportedCharges!.total).toBe(5.5);
+    expect(closed!.reportedCharges!.total).toBe(25.5);
+  });
+
+  it("R80 (staged variant): the open remainder is ONE fill of the older lot, not a ladder of the same-day fills", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B1", "BUY", 100, 100, "2026-09-01", { brokerageCharges: 11 }),
+      f("B2a", "BUY", 30, 110, "2026-09-02 10:00:00", { brokerageCharges: 4 }),
+      f("B2b", "BUY", 30, 110, "2026-09-02 10:05:00", { brokerageCharges: 4 }),
+      f("B2c", "BUY", 40, 110, "2026-09-02 10:10:00", { brokerageCharges: 5 }),
+      f("S", "SELL", 150, 120, "2026-09-02 14:00:00", { brokerageCharges: 7 }),
+    ]);
+    const open = trades.find((t) => t.sellQty === 0)!;
+    expect(open.executions).toHaveLength(1);
+    expect(open.executions![0]).toMatchObject({ qty: 50, price: 100, date: "2026-09-01" });
+  });
+
+  it("R83: two sells — the 09-01 lot's row sells on 09-05, the same-day pair keeps its own fills; ₹5 each", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B1", "BUY", 100, 100, "2026-09-01", { brokerageCharges: 1 }),
+      f("B2", "BUY", 100, 105, "2026-09-03 10:00:00", { brokerageCharges: 2 }),
+      f("S1", "SELL", 100, 110, "2026-09-03 14:00:00", { brokerageCharges: 3 }),
+      f("S2", "SELL", 100, 120, "2026-09-05", { brokerageCharges: 4 }),
+    ]);
+    const old = trades.find((t) => t.buyDate === "2026-09-01")!;
+    expect(old.sellDate).toBe("2026-09-05");
+    expect(old.executions!.filter((e) => e.side === "sell")).toEqual([
+      { side: "sell", qty: 100, price: 120, date: "2026-09-05", time: "10:00" },
+    ]);
+    expect(trades.map((t) => t.reportedCharges!.total)).toEqual([5, 5]);
+  });
+
+  it("R81: BUY 400 with ₹0.02 SEBI, sold in four 100s — every row is stated, no share is negative, the paise sum", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B", "BUY", 400, 100, "2026-09-01", { sebiTax: 0.02 }),
+      f("S1", "SELL", 100, 101, "2026-09-02"),
+      f("S2", "SELL", 100, 102, "2026-09-03"),
+      f("S3", "SELL", 100, 103, "2026-09-04"),
+      f("S4", "SELL", 100, 104, "2026-09-05"),
+    ]);
+    expect(trades).toHaveLength(4);
+    for (const t of trades) {
+      expect(t.reportedCharges, "a row whose fills stated a charge is stated, even at a zero share").not.toBeNull();
+      for (const k of COMPONENTS) expect(t.reportedCharges![k]!).toBeGreaterThanOrEqual(0);
+    }
+    const sebi = trades.reduce((s, t) => s + (t.reportedCharges?.sebi ?? 0), 0);
+    expect(Math.round(sebi * 100) / 100).toBe(0.02);
+  });
+
+  it("R81: BUY 1000 with ₹0.15 SEBI and ₹0.15 stamp, sold in ten 100s — the smallest share is ≥ 0 and each component sums to 0.15", () => {
+    const rows = [f("B", "BUY", 1000, 100, "2026-09-01", { sebiTax: 0.15, stampDuty: 0.15 })];
+    for (let i = 0; i < 10; i++) rows.push(f(`S${i}`, "SELL", 100, 101 + i, `2026-09-${String(2 + i).padStart(2, "0")}`));
+    const { trades } = dhan.normalizeDhanTrades(rows);
+    expect(trades).toHaveLength(10);
+    const sebi = trades.map((t) => t.reportedCharges!.sebi!);
+    const stamp = trades.map((t) => t.reportedCharges!.stampDuty!);
+    expect(Math.min(...sebi, ...stamp)).toBeGreaterThanOrEqual(0);
+    expect(Math.round(sebi.reduce((a, b) => a + b, 0) * 100) / 100).toBe(0.15);
+    expect(Math.round(stamp.reduce((a, b) => a + b, 0) * 100) / 100).toBe(0.15);
+  });
+
+  it("K2-TINY: a 1-share open remainder whose share of ₹0.40 rounds to 0 is still STATED (0), never handed to the rate card", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B", "BUY", 100, 100, "2026-09-01 10:00:00", { brokerageCharges: 0.4 }),
+      f("S", "SELL", 99, 101, "2026-09-01 14:00:00", { brokerageCharges: 0.4 }),
+    ]);
+    const open = trades.find((t) => t.sellQty === 0)!;
+    expect(open.buyQty).toBe(1);
+    expect(open.reportedCharges).not.toBeNull();
+    expect(open.reportedCharges!.total).toBe(0);
+    const stored = trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0);
+    expect(Math.round(stored * 100) / 100).toBe(0.8);
+  });
+
+  it("R84: a BUY whose fill stated no charge at all is NOT stated — null, so the rate card prices it", () => {
+    const { trades } = dhan.normalizeDhanTrades([f("B", "BUY", 10, 100, "2026-09-01")]);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]!.reportedCharges).toBeNull();
+  });
+
+  // RE-PINNED (v4.3.0 fix wave 2, W2-FIXB, seam defect D1): K2-M5 keyed legs
+  // `date|side|exchange`, so a sale split across venues at one price became two
+  // rows sharing one dedupHash and commit dropped the second. Legs are keyed
+  // `date|side` again and carry `Leg.venues` (the P9 rule of zerodha.ts
+  // settleVenues / generic-map.ts). Measured on this fixture —
+  //   before: open 100 @ 101 [B 100 @ 101], ₹20, BSE; closed ₹7, "Bought on NSE, sold on BSE".
+  //   after:  open 100 @ 100.5 [B 50 @ 101, N2 50 @ 100], ₹12, BSE; closed ₹15, "Bought on NSE/BSE, sold on BSE".
+  it("K2-M5 + P9: an NSE 50 / BSE 100 / NSE 50 buy day is ONE leg at its majority venue — FIFO within the leg, the cross-exchange note on the closed row", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("N1", "BUY", 50, 100, "2026-09-01 10:00:00", { brokerageCharges: 1 }, "NSE_EQ"),
+      f("B", "BUY", 100, 101, "2026-09-01 10:05:00", { brokerageCharges: 20 }, "BSE_EQ"),
+      f("N2", "BUY", 50, 100, "2026-09-01 10:10:00", { brokerageCharges: 2 }, "NSE_EQ"),
+      f("S", "SELL", 100, 110, "2026-09-01 14:00:00", { brokerageCharges: 4 }, "BSE_EQ"),
+    ]);
+    expect(trades).toHaveLength(2);
+    const open = trades.find((t) => t.sellQty === 0)!;
+    const [closed] = closedOf(trades);
+    // One lot of 200 (₹20,100: NSE ₹10,000 / BSE ₹10,100): each row takes half its value.
+    expect(open).toMatchObject({ buyQty: 100, avgBuyPrice: 100.5, exchangeHint: "BSE" });
+    // The leg's fills go out in file order: the closed row took N1 and half of B.
+    expect(open.executions).toEqual([
+      { side: "buy", qty: 50, price: 101, date: "2026-09-01", time: "10:05" },
+      { side: "buy", qty: 50, price: 100, date: "2026-09-01", time: "10:10" },
+    ]);
+    expect(open.reportedCharges!.total).toBe(12);
+    expect(closed!.reportedCharges!.total).toBe(15);
+    // Consumed NSE ₹5,000 + BSE ₹5,050, sold on BSE ₹11,000: the majority venue is BSE.
+    expect(closed!.exchangeHint).toBe("BSE");
+    expect(closed!.importNotes ?? []).toContain("Bought on NSE/BSE, sold on BSE — one holding, the exchange is where the fill happened.");
+  });
+
+  it("D1 (wave 2 seam): a sale of 100 filled 50 on BSE and 50 on NSE at one price is ONE row at the majority venue — never two rows of one dedupHash", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B1", "BUY", 10, 100, "2026-09-04 11:00:00", {}, "BSE_EQ"),
+      f("B2", "BUY", 90, 100, "2026-09-04 11:05:00", {}, "NSE_EQ"),
+      f("S1", "SELL", 50, 110, "2026-09-07 10:00:00", {}, "BSE_EQ"),
+      f("S2", "SELL", 50, 110, "2026-09-07 10:05:00", {}, "NSE_EQ"),
+    ]);
+    // Per-venue legs made two closed rows of 50 / 50 on the same dates at the same prices.
+    expect(trades.map((t) => [t.buyQty, t.sellQty, t.grossPnl, t.exchangeHint])).toEqual([[100, 100, 1000, "NSE"]]);
+    expect(new Set(trades.map((t) => dedupHash(t))).size).toBe(trades.length);
+  });
+
+  it("P9 settle: on an exact row tie the sell leg's MAJORITY venue wins, not its first fill's (zerodha.ts settleVenues' rule)", () => {
+    // Consumed BSE ₹4,000; sold BSE ₹3,000 (first) + NSE ₹7,000: BSE ₹7,000 = NSE ₹7,000,
+    // and rowVenue's tie goes to the sell leg's label — the leg's majority, NSE.
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B", "BUY", 100, 40, "2026-09-01", {}, "BSE_EQ"),
+      f("S1", "SELL", 30, 100, "2026-09-02 10:00:00", {}, "BSE_EQ"),
+      f("S2", "SELL", 70, 100, "2026-09-02 10:05:00", {}, "NSE_EQ"),
+    ]);
+    expect(trades.map((t) => [t.buyQty, t.sellQty, t.exchangeHint])).toEqual([[100, 100, "NSE"]]);
+  });
+
+  it("P9: a buy day filled BSE 10 then NSE 90 is ONE open lot of 100 on NSE (the majority), not a BSE 10 and an NSE 90", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B1", "BUY", 10, 100, "2026-09-07 10:00:00", {}, "BSE_EQ"),
+      f("B2", "BUY", 90, 100, "2026-09-07 10:05:00", {}, "NSE_EQ"),
+    ]);
+    expect(trades.map((t) => [t.buyQty, t.sellQty, t.exchangeHint])).toEqual([[100, 0, "NSE"]]);
+  });
+
+  it("K1-M2: a history row states Dhan's six heads AND zero for the four it has no column for — DP arrives by its own export", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      f("B", "BUY", 10, 100, "2026-09-01", { brokerageCharges: 1, stt: 1 }),
+      f("S", "SELL", 10, 110, "2026-09-02", { brokerageCharges: 1, stt: 1 }),
+    ]);
+    expect(trades[0]!.reportedCharges).toMatchObject({ ipft: 0, dpCharges: 0, mtfInterest: 0, pledgeCharges: 0, total: 4 });
+    // An MTF row keeps mtfInterest UNSTATED: Dhan's trade history states no
+    // interest, and commit.ts labels any later accrual as estimated only while
+    // the file left it unstated (invariant 6).
+    const mtf = dhan.normalizeDhanTrades([
+      f("MB", "BUY", 10, 100, "2026-09-01", { brokerageCharges: 1 }, "NSE_EQ", "MTF"),
+    ]).trades[0]!;
+    expect(mtf.reportedCharges).toMatchObject({ ipft: 0, dpCharges: 0, pledgeCharges: 0 });
+    expect("mtfInterest" in mtf.reportedCharges!).toBe(false);
   });
 });
 

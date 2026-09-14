@@ -142,6 +142,39 @@ describe("positioning copy — 'local-first / 100% local & offline' is retired",
     if (fs.existsSync(gen)) expect(decode(fs.readFileSync(gen, "utf8"))).toContain(CELL);
   });
 
+  it("the landing page's broker-API pull count agrees with itself, the route and the pricing comparison", () => {
+    // v4.3.0 R22: the summary row said "4 broker-API pulls" while the full
+    // comparison table's Vyuha row said "3 API pulls" — one page, two numbers.
+    // The truth is the API_BROKERS table in the pull route: every native broker
+    // API it lists, minus OpenAlgo, which is a bridge TO a broker rather than a
+    // broker's own API (README.md:21 names the same four). The import registry
+    // carries no API-pull entry, so it cannot be the source for this count.
+    const route = fs.readFileSync(path.join(ROOT, "app/api/import/broker/route.ts"), "utf8");
+    const block = /const API_BROKERS[^=]*=\s*\{([\s\S]*?)\n\};/.exec(route);
+    expect(block, "API_BROKERS object literal not found in app/api/import/broker/route.ts").not.toBeNull();
+    const keys = [...block![1].matchAll(/^ {2}([a-z0-9]+): \{/gm)].map((m) => m[1]);
+    expect(keys, "API_BROKERS must still list OpenAlgo for the subtraction to mean anything").toContain("openalgo");
+    const brokerApis = keys.filter((k) => k !== "openalgo").length;
+
+    const pricing = /indianBrokers: "[^"]*?(\d+) broker-API pulls"/.exec(read("lib/domain/pricing-comparison.ts"));
+    expect(pricing, "pricing-comparison.ts indianBrokers no longer states a broker-API pull count").not.toBeNull();
+
+    const pages: [string, string][] = [["docs/sales/landing-page.html", read("docs/sales/landing-page.html")]];
+    const gen = path.join(ROOT, "docs/sales/landing-page.standalone.html");
+    if (fs.existsSync(gen)) pages.push(["docs/sales/landing-page.standalone.html", decode(fs.readFileSync(gen, "utf8"))]);
+    for (const [rel, html] of pages) {
+      const summary = /<td>Indian broker imports<\/td><td class="vy">[^<]*?(\d+) broker-API pulls<\/td>/.exec(html);
+      const table = /<tr class="vy"><td>Vyuha<\/td>(?:<td>[^<]*<\/td>)*?<td>[^<]*?(\d+) API pulls<\/td>/.exec(html);
+      expect(summary, `${rel}: summary row "Indian broker imports" no longer states N broker-API pulls`).not.toBeNull();
+      expect(table, `${rel}: full comparison table's Vyuha row no longer states M API pulls`).not.toBeNull();
+      expect(
+        { summary: Number(summary![1]), table: Number(table![1]) },
+        `${rel}: summary N and table M must both equal the route's broker-API count`,
+      ).toEqual({ summary: brokerApis, table: brokerApis });
+    }
+    expect(Number(pricing![1]), "pricing-comparison.ts broker-API pull count").toBe(brokerApis);
+  });
+
   it("PRIVACY keeps the four-kinds list, scoped to the desktop app", () => {
     // docs/DECISIONS.md :2318, :2560 and :2958 are anchored to this sentence.
     const privacy = read("docs/client/PRIVACY.md");

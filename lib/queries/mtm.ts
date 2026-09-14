@@ -25,13 +25,28 @@ export const getMtmMap = cache((): Map<string, number> => {
  * option moneyness for physical-settlement; derivative rows hold premiums, not spot.
  */
 export const getSpotMap = cache((): Map<string, number> => {
-  const rows = readMtmRows();
   const m = new Map<string, number>();
+  for (const [key, e] of getSpotMarkEntries()) m.set(key, e.price);
+  return m;
+});
+
+/**
+ * R13 — the same spot marks as `getSpotMap()`, WITH the day each belongs to
+ * (`as_of_date`), so /risk can print "mark · <day>" and compare the mark with a
+ * newer official close. One rule for both: `getSpotMap()` is derived from this.
+ *
+ * The row does not say WHO stored it — a typed mark, the bhavcopy auto-MTM and
+ * a live-feed mark share one shape — so nothing downstream may call it "typed".
+ * MONEY: `price` is REAL RUPEES per unit (invariant 1's documented exception).
+ */
+export const getSpotMarkEntries = cache((): Map<string, { price: number; asOf: string }> => {
+  const rows = readMtmRows();
+  const m = new Map<string, { price: number; asOf: string }>();
   for (const r of rows) {
     const ts = (r.tradingsymbol ?? "").trim().toUpperCase();
     if (ts.startsWith("OPT ") || ts.startsWith("FUT ")) continue; // skip option/future premium rows
     const key = r.symbol.toUpperCase();
-    if (!m.has(key)) m.set(key, r.price);
+    if (!m.has(key)) m.set(key, { price: r.price, asOf: r.asOfDate });
   }
   return m;
 });

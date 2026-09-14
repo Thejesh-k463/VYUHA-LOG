@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { openTempDb, type TempDb } from "./helpers/temp-db";
 import * as upstox from "@/lib/import/api/upstox";
 import {
   canonicalUpstoxSymbol,
@@ -164,6 +165,77 @@ describe("normalizeUpstoxTrades — the 2026-08-28 live book, end to end", () =>
     );
     expect(trades).toHaveLength(0);
     expect(refused).toBe(3);
+  });
+
+  it("QS-AO: a sell-only row is dated today and basis-unknown — a sale out of a holding the book cannot see, not an undated short", () => {
+    const { trades } = normalizeUpstoxTrades([fill({ transaction_type: "SELL", average_price: 450 })], TODAY);
+    expect(trades[0]).toMatchObject({ buyQty: 0, sellQty: 3, buyDate: null, sellDate: TODAY, basisUnknown: true });
+    expect(normalizeUpstoxTrades([fill(), fill({ transaction_type: "SELL" })], TODAY).trades[0]!.basisUnknown).toBeUndefined();
+    expect(normalizeUpstoxTrades([fill()], TODAY).trades[0]!.basisUnknown).toBeUndefined();
+  });
+});
+
+describe("R43 + QS-AO · a same-day re-pull replaces today's earlier row in place (commit, one temp database)", () => {
+  // ONE temp database for this file (AGENTS.md); nothing above imports
+  // `@/lib/db`. The hook's budget is the Windows runner's (AGENTS.md Testing):
+  // locally the file's tests measured 1.52-1.65 s, the hook almost all of it (2026-09-14), inside the 3 s local budget.
+  let t: TempDb;
+  let commit: typeof import("@/lib/import/commit");
+  const ACC = 902;
+  const FILE = `upstox-api-${TODAY}`;
+  const snap = { supersedeSnapshot: { fileName: FILE } };
+  const rowsOf = () =>
+    t.sqlite
+      .prepare("SELECT id, buy_qty, sell_qty, is_open, sell_date, import_batch_id FROM trades WHERE account_id = ? ORDER BY id")
+      .all(ACC) as { id: number; buy_qty: number; sell_qty: number; is_open: number; sell_date: string | null; import_batch_id: number }[];
+
+  beforeAll(async () => {
+    t = await openTempDb("upstox-api", { seed: true });
+    commit = await import("@/lib/import/commit");
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "upstox re-pull" }).run();
+  }, 120_000);
+  afterAll(() => t?.cleanup());
+
+  it("pull 1 BUY (open), pull 2 the same day BUY + SELL: one row, closed, the same id and batch, and the commit says so", () => {
+    const pull1 = toParsedFile(normalizeUpstoxTrades([fill()], TODAY));
+    expect(commit.commitParsedFile(pull1, FILE, null, ACC, snap).added).toBe(1);
+    const [first] = rowsOf();
+    expect(first).toMatchObject({ buy_qty: 3, sell_qty: 0, is_open: 1, sell_date: null });
+
+    const pull2 = toParsedFile(
+      normalizeUpstoxTrades([fill(), fill({ transaction_type: "SELL", average_price: 450.1, order_timestamp: "2026-08-28 14:10:00" })], TODAY),
+    );
+    const pre = commit.previewParsedFile(pull2, null, ACC, FILE, snap);
+    expect.soft([pre.summary.newCount, pre.summary.dupCount, pre.summary.supersededCount]).toEqual([0, 0, 1]);
+
+    const res = commit.commitParsedFile(pull2, FILE, null, ACC, snap);
+    expect.soft([res.added, res.skipped]).toEqual([0, 0]);
+    expect.soft(res.warnings).toContain("1 position updated from today's earlier pull.");
+    // THE assertion (two rows on revert).
+    const rows = rowsOf();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: first!.id, buy_qty: 3, sell_qty: 3, is_open: 0, sell_date: TODAY, import_batch_id: first!.import_batch_id });
+  });
+
+  it("a stored row whose identity carries an alias (a Data Quality close) is never rewritten: the pull asks instead", () => {
+    const other = { tradingsymbol: "ALIASED-EQ", trading_symbol: "ALIASED-EQ", instrument_token: "NSE_EQ|INE000A01001" };
+    const pull1 = toParsedFile(normalizeUpstoxTrades([fill(other)], TODAY));
+    expect(commit.commitParsedFile(pull1, FILE, null, ACC, snap).added).toBe(1);
+    t.sqlite.prepare("UPDATE trades SET import_notes = ? WHERE account_id = ? AND tradingsymbol = 'ALIASED'").run(`dedup-alias:${"a".repeat(40)}`, ACC);
+
+    const pull2 = toParsedFile(normalizeUpstoxTrades([fill(other), fill({ ...other, transaction_type: "SELL", average_price: 450 })], TODAY));
+    const pre = commit.previewParsedFile(pull2, null, ACC, FILE, snap);
+    // THE assertions (supersededCount 1 and no collision on revert of the alias guard).
+    expect(pre.summary.supersededCount).toBe(0);
+    expect(pre.crossSource?.risky).toBe(true);
+    const aliased = () => t.sqlite.prepare("SELECT buy_qty, sell_qty FROM trades WHERE account_id = ? AND tradingsymbol = 'ALIASED'").all(ACC);
+    const res = commit.commitParsedFile(pull2, FILE, null, ACC, snap);
+    expect((res.warnings ?? []).some((w) => w.includes("updated from today's earlier pull"))).toBe(false);
+    // A commit forced past the question adds the evening row beside the aliased one; it never rewrites it.
+    expect(aliased()).toEqual([
+      { buy_qty: 3, sell_qty: 0 },
+      { buy_qty: 3, sell_qty: 3 },
+    ]);
   });
 });
 

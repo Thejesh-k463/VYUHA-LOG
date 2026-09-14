@@ -5,10 +5,12 @@ import type { ParsedFile } from "@/lib/import/types";
 import {
   AUTO_CLOSE_NOTE,
   DEDUP_ALIAS_PREFIX,
+  isAutoCloseMerged,
   isLotIdentityFrozen,
   lotIdentityHashes,
   withLotCloseNote,
   withScaledRemainderNote,
+  withStaleCloseNote,
 } from "@/lib/import/close-open-lots";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
@@ -128,6 +130,21 @@ describe("lotIdentityHashes — the one door to a row's identity", () => {
     expect(isLotIdentityFrozen({ dedupHash: H1, importNotes: withLotCloseNote(null, H2) })).toBe(true);
     // A row written by wave 1 carries the sentence but no alias, and is frozen too.
     expect(isLotIdentityFrozen({ dedupHash: H1, importNotes: AUTO_CLOSE_NOTE })).toBe(true);
+  });
+
+  it("W2-DQ P4 — a Data Quality join is FROZEN but is not an auto-close MERGE; the two predicates split there", () => {
+    const stale = withStaleCloseNote(null, H2);
+    expect(isLotIdentityFrozen({ dedupHash: H1, importNotes: stale }), "the restore re-key must still skip it").toBe(true);
+    expect(isAutoCloseMerged({ dedupHash: H1, importNotes: stale })).toBe(false);
+
+    expect(isAutoCloseMerged({ dedupHash: H1, importNotes: null })).toBe(false);
+    expect(isAutoCloseMerged({ dedupHash: H1, importNotes: withLotCloseNote(null, H2) })).toBe(true);
+    expect(isAutoCloseMerged({ dedupHash: H1, importNotes: AUTO_CLOSE_NOTE })).toBe(true);
+    expect(isAutoCloseMerged({ dedupHash: H1, importNotes: withScaledRemainderNote(null, H1) })).toBe(true);
+    // An alias with no sentence at all is of unknown provenance: read as merged.
+    expect(isAutoCloseMerged({ dedupHash: H1, importNotes: `${DEDUP_ALIAS_PREFIX}${H2}` })).toBe(true);
+    // A joined lot an auto-close later ate from is merged, whatever else it says.
+    expect(isAutoCloseMerged({ dedupHash: H1, importNotes: withLotCloseNote(stale, "c".repeat(40)) })).toBe(true);
   });
 });
 
@@ -285,5 +302,42 @@ describe("S-1 — a scaled-down remainder is frozen too (the remainder is PLANTE
     expect(again.added).toBe(0);
     expect(again.skipped).toBe(1);
     expect(rowsOf(ACC)).toHaveLength(before);
+  });
+});
+
+// ─── W2-DQ P4: a lot JOINED from Data Quality is still skipped by the re-key ──
+
+describe("W2-DQ P4 — the restore re-key still skips a lot joined with its recorded sale (the REAL join)", () => {
+  const ACC = 624;
+  const ISIN = "INE000A01034";
+  const SYM = "PAYTMJOIN";
+  const buys = () => parsed([buyRow(SYM, 100, 100, "2026-04-01", { isin: ISIN })], "paytm");
+  const sells = () => parsed([sellRow(SYM, 100, 120, "2026-05-01", { isin: ISIN })], "paytm");
+
+  it("joined through closeStaleLot, it is frozen, not auto-close-merged, and its legs hash to another identity", () => {
+    newAccount(ACC, "identity-p4-join");
+    t.db.update(t.schema.settings).set({ selectedAccountId: ACC }).run();
+    expect(commit.commitParsedFile(buys(), "paytm-buys.csv", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sells(), "paytm-sells.csv", null, ACC).added).toBe(1);
+    const [lot, sale] = rowsOf(ACC).sort((a, b) => a.id - b.id);
+    const res = commit.closeStaleLot(lot.id, sale.id, "2026-05-01");
+    expect([res.ok, res.message]).toEqual([true, expect.stringContaining("Deleted items")]);
+
+    const joined = rowsOf(ACC);
+    expect(joined.map((r) => [r.id, r.buyQty, r.sellQty, r.isOpen])).toEqual([[lot.id, 100, 100, false]]);
+    expect(lotIdentityHashes(joined[0])).toEqual([lot.dedupHash, sale.dedupHash]);
+    expect(isLotIdentityFrozen(joined[0])).toBe(true);
+    expect(isAutoCloseMerged(joined[0])).toBe(false);
+    // The trap the skip closes: re-derived from the JOINED legs, the hash is neither file's.
+    const fromLegs = dedup.dedupHash({ ...buys().trades[0], sellQty: 100, avgSellPrice: 120, sellValue: 12000, sellDate: "2026-05-01" });
+    expect(fromLegs).not.toBe(lot.dedupHash);
+  });
+
+  it("rerunDataFixesAfterRestore leaves its hash alone, so both files still de-duplicate", () => {
+    const before = rowsOf(ACC)[0];
+    expect(dataFixes.rerunDataFixesAfterRestore(t.sqlite).length).toBeGreaterThan(0);
+    expect(rowsOf(ACC)[0].dedupHash, "a joined lot's born-with hash survives the restore re-key").toBe(before.dedupHash);
+    expect(commit.commitParsedFile(buys(), "paytm-buys.csv", null, ACC).added).toBe(0);
+    expect(commit.commitParsedFile(sells(), "paytm-sells.csv", null, ACC).added).toBe(0);
   });
 });

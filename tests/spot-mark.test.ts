@@ -9,13 +9,25 @@ import { todayIstIso } from "@/lib/domain/trading-day";
 import {
   UNKNOWN_SPOT,
   SPOT_SOURCE_LABEL,
+  SPOT_CLOSE_DIFF_PANEL,
+  closeDiffers,
   isContractKey,
+  isIsoDay,
   resolveSpotRef,
   spotChipLabel,
+  spotCloseFingerprint,
+  spotCloseNotice,
+  type DatedPrice,
   type SpotRef,
 } from "@/lib/risk/spot-ref";
 // The client half: the chip's own door and the body it posts.
-import { SPOT_MARK_ENDPOINT, spotMarkPayload, submitSpotMark } from "@/components/risk/spot-mark-editor";
+import {
+  SPOT_KEEP_MARK_ENDPOINT,
+  SPOT_MARK_ENDPOINT,
+  spotMarkPayload,
+  submitKeepMark,
+  submitSpotMark,
+} from "@/components/risk/spot-mark-editor";
 import { SPOT_DOOR_NOTE } from "@/components/risk/expiry-obligations";
 // PURE too (no DB, no React): the engine the page feeds the resolved ref into.
 import { computeSettlement, DEFAULT_SETTLEMENT_RATES } from "@/lib/analytics/settlement";
@@ -61,17 +73,33 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: routerRefresh }
 
 /* ── the reference price, and where it came from (pure) ──────────────────── */
 
-const typedMap = (o: Record<string, number>) => new Map(Object.entries(o));
+/** A per-symbol map of DATED prices — both sources carry their own day (R13).
+ *  (Was `typedMap` of bare prices; moved deliberately with the new signature.) */
+const dated = (o: Record<string, [price: number, asOf: string]>) =>
+  new Map<string, DatedPrice>(Object.entries(o).map(([k, [price, asOf]]) => [k, { price, asOf }]));
 
-describe("resolveSpotRef — typed mark ▸ newest EOD close ▸ unknown", () => {
-  it("falls back to the EOD close when nothing has been typed, and says so", () => {
-    const ref = resolveSpotRef("RELIANCE", new Map(), typedMap({ RELIANCE: 2950 }));
-    expect(ref).toEqual({ value: 2950, source: "eod" });
+describe("resolveSpotRef — stored mark ▸ newest EOD close ▸ unknown", () => {
+  it("falls back to the EOD close when no mark is stored, and carries the close's day", () => {
+    const ref = resolveSpotRef("RELIANCE", new Map(), dated({ RELIANCE: [2950, "2026-09-11"] }));
+    expect(ref).toEqual({ value: 2950, source: "eod", asOf: "2026-09-11" });
   });
 
-  it("lets a typed mark win over the EOD close", () => {
-    const ref = resolveSpotRef("RELIANCE", typedMap({ RELIANCE: 2900 }), typedMap({ RELIANCE: 2950 }));
-    expect(ref).toEqual({ value: 2900, source: "typed" });
+  it("lets a stored mark win over the EOD close, labelled 'mark' with its own day", () => {
+    const ref = resolveSpotRef(
+      "RELIANCE",
+      dated({ RELIANCE: [2900, "2026-09-14"] }),
+      dated({ RELIANCE: [2950, "2026-09-11"] }),
+    );
+    expect(ref).toEqual({ value: 2900, source: "mark", asOf: "2026-09-14", close: { price: 2950, asOf: "2026-09-11" } });
+  });
+
+  it("R13 / ruling 225: an OLDER mark still wins over a NEWER close — labelled 'mark', with its asOf", () => {
+    const ref = resolveSpotRef("SBIN", dated({ SBIN: [800, "2026-09-08"] }), dated({ SBIN: [820, "2026-09-11"] }));
+    expect(ref.value).toBe(800);
+    expect(ref.source).toBe("mark");
+    expect(ref.asOf).toBe("2026-09-08");
+    // …and the newer close rides along so the row can say it differs.
+    expect(ref.close).toEqual({ price: 820, asOf: "2026-09-11" });
   });
 
   it("stays UNKNOWN with neither — never 0 (invariant 6)", () => {
@@ -80,12 +108,59 @@ describe("resolveSpotRef — typed mark ▸ newest EOD close ▸ unknown", () =>
   });
 
   it("treats a stored 0 or a negative as no price at all", () => {
-    expect(resolveSpotRef("X", typedMap({ X: 0 }), typedMap({ X: 2950 }))).toEqual({ value: 2950, source: "eod" });
-    expect(resolveSpotRef("X", typedMap({ X: -5 }), new Map())).toEqual(UNKNOWN_SPOT);
+    expect(resolveSpotRef("X", dated({ X: [0, "2026-09-14"] }), dated({ X: [2950, "2026-09-11"] }))).toEqual({
+      value: 2950,
+      source: "eod",
+      asOf: "2026-09-11",
+    });
+    expect(resolveSpotRef("X", dated({ X: [-5, "2026-09-14"] }), new Map())).toEqual(UNKNOWN_SPOT);
   });
 
   it("is case-insensitive on the symbol, like every other mtm reader", () => {
-    expect(resolveSpotRef(" reliance ", new Map(), typedMap({ RELIANCE: 2950 })).source).toBe("eod");
+    expect(resolveSpotRef(" reliance ", new Map(), dated({ RELIANCE: [2950, "2026-09-11"] })).source).toBe("eod");
+  });
+});
+
+/* ── R13: does the official close say something the mark does not? ───────── */
+
+describe("closeDiffers — the matrix", () => {
+  const mark = (price: number, asOf: string): DatedPrice => ({ price, asOf });
+  it.each([
+    ["older mark, newer close", mark(800, "2026-09-08"), mark(800, "2026-09-11"), true],
+    ["same day, different price", mark(800, "2026-09-11"), mark(800.05, "2026-09-11"), true],
+    ["same day, equal at the paisa", mark(800.001, "2026-09-11"), mark(800.004, "2026-09-11"), false],
+    ["newer mark, older close", mark(800, "2026-09-14"), mark(820, "2026-09-11"), false],
+  ] as const)("%s → %s", (_name, m, c, want) => {
+    expect(closeDiffers(m, c)).toBe(want);
+  });
+});
+
+describe("spotCloseNotice — the row's line, and what hides it", () => {
+  const older: SpotRef = { value: 800, source: "mark", asOf: "2026-09-08", close: { price: 820.5, asOf: "2026-09-11" } };
+
+  it("states the close, its day and the mark — descriptive, no advice word", () => {
+    const n = spotCloseNotice("sbin", older);
+    expect(n?.text).toBe("Official close 2026-09-11: ₹820.50 — differs from your mark ₹800.00");
+    expect(n?.close).toEqual({ price: 820.5, asOf: "2026-09-11" });
+    expect(n?.fingerprint).toBe("SBIN|2026-09-11|82050");
+    expect(n?.text).not.toMatch(/\b(recommend|should|must|buy|sell)\b/i);
+  });
+
+  it("is null for a newer mark, an EOD ref, a mark with no close, and a kept mark against THIS close", () => {
+    expect(spotCloseNotice("SBIN", { ...older, asOf: "2026-09-14" })).toBeNull();
+    expect(spotCloseNotice("SBIN", { value: 820.5, source: "eod", asOf: "2026-09-11" })).toBeNull();
+    expect(spotCloseNotice("SBIN", { value: 800, source: "mark", asOf: "2026-09-08" })).toBeNull();
+    expect(spotCloseNotice("SBIN", older, ["SBIN|2026-09-11|82050"])).toBeNull();
+  });
+
+  it("comes back when the close moves: a kept fingerprint for an OLDER close hides nothing", () => {
+    const moved: SpotRef = { ...older, close: { price: 830, asOf: "2026-09-12" } };
+    expect(spotCloseNotice("SBIN", moved, ["SBIN|2026-09-11|82050"])?.fingerprint).toBe("SBIN|2026-09-12|83000");
+  });
+
+  it("the fingerprint is per symbol, and the panel is the one the dismissal route files under", () => {
+    expect(spotCloseFingerprint(" tcs ", { price: 4000, asOf: "2026-09-11" })).toBe("TCS|2026-09-11|400000");
+    expect(SPOT_CLOSE_DIFF_PANEL).toBe("spot-close-diff");
   });
 });
 
@@ -96,9 +171,10 @@ describe("resolveSpotRef — typed mark ▸ newest EOD close ▸ unknown", () =>
  * money assertion, and the branch charged an assigned writer the purchaser's
  * exercise STT (₹75 here) instead of its own delivery STT (₹700) — R77. */
 describe("an EOD-resolved ITM short stock option carries the writer's STT (R77/R79)", () => {
-  it("no typed mark + a close of 1500 → ITM 1400 CE ×500 → ₹700 delivery STT, in the tile total", () => {
-    const ref = resolveSpotRef("SBIN", new Map(), typedMap({ SBIN: 1500 }));
-    expect(ref).toEqual({ value: 1500, source: "eod" });
+  it("no stored mark + a close of 1500 → ITM 1400 CE ×500 → ₹700 delivery STT, in the tile total", () => {
+    // Moved to R13's dated signature: the close carries its own day.
+    const ref = resolveSpotRef("SBIN", new Map(), dated({ SBIN: [1500, "2026-09-19"] }));
+    expect(ref).toEqual({ value: 1500, source: "eod", asOf: "2026-09-19" });
     const s = computeSettlement(
       [
         {
@@ -135,13 +211,18 @@ describe("spotChipLabel — the chip says which number it is showing", () => {
     expect(spotChipLabel({ value: null, source: "eod" })).toBe("spot?");
   });
 
-  it("names the EOD close rather than letting it pass as a typed number", () => {
-    expect(spotChipLabel({ value: 2950, source: "eod" })).toContain("EOD close");
+  it("names the EOD close and its day", () => {
+    expect(spotChipLabel({ value: 2950, source: "eod", asOf: "2026-09-11" })).toBe("₹2,950.00 · EOD close · 2026-09-11");
     expect(spotChipLabel({ value: 2950, source: "eod" })).not.toContain("typed");
   });
 
-  it("names a typed mark", () => {
-    expect(spotChipLabel({ value: 2900.5, source: "typed" })).toBe("₹2,900.50 · typed");
+  it("names a stored mark 'mark' and its day — never 'typed' (R13)", () => {
+    expect(spotChipLabel({ value: 2900.5, source: "mark", asOf: "2026-09-14" })).toBe("₹2,900.50 · mark · 2026-09-14");
+  });
+
+  it("R13: no source label says 'typed' — the DB cannot tell a typed mark from an automatic one", () => {
+    expect(Object.keys(SPOT_SOURCE_LABEL).sort()).toEqual(["eod", "mark", "none"]);
+    for (const label of Object.values(SPOT_SOURCE_LABEL)) expect(label).not.toMatch(/typed/i);
   });
 });
 
@@ -170,6 +251,14 @@ describe("spotMarkPayload — what reaches the typed-mark route", () => {
     expect(() => spotMarkPayload("RELIANCE", 0)).toThrow(RangeError);
     expect(() => spotMarkPayload("RELIANCE", -1)).toThrow(RangeError);
     expect(() => spotMarkPayload("RELIANCE", Number.NaN)).toThrow(RangeError);
+  });
+
+  it("R13 'Use official close': carries the CLOSE's own day, and only a real calendar day", () => {
+    expect(spotMarkPayload("sbin", 820.5, "2026-09-11")).toEqual({ symbol: "SBIN", price: 820.5, asOfDate: "2026-09-11" });
+    expect(() => spotMarkPayload("SBIN", 820.5, "2026-02-30")).toThrow(RangeError);
+    expect(() => spotMarkPayload("SBIN", 820.5, "11-09-2026")).toThrow(RangeError);
+    expect(isIsoDay("2024-02-29")).toBe(true);
+    expect(isIsoDay("2026-13-01")).toBe(false);
   });
 });
 
@@ -221,6 +310,39 @@ describe("submitSpotMark — a POST to the route, then the refresh", () => {
     expect(spy).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it("R13 'Use official close' is the SAME door with the close's value and day", async () => {
+    const spy = stubFetch(okBody);
+    vi.stubGlobal("fetch", spy);
+    const refresh = vi.fn();
+    await submitSpotMark("SBIN", 820.5, refresh, "2026-09-11");
+    const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(SPOT_MARK_ENDPOINT);
+    expect(JSON.parse(String(init.body))).toEqual({ symbol: "SBIN", price: 820.5, asOfDate: "2026-09-11" });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("R13 'Keep my mark' posts the close it was shown to the dismissal route, then refreshes", async () => {
+    const spy = stubFetch({ ok: true, message: "kept" });
+    vi.stubGlobal("fetch", spy);
+    const refresh = vi.fn();
+    const res = await submitKeepMark("sbin", { price: 820.5, asOf: "2026-09-11" }, refresh);
+    expect(res.ok).toBe(true);
+    const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/risk/spot/dismiss");
+    expect(SPOT_KEEP_MARK_ENDPOINT).toBe("/api/risk/spot/dismiss");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ symbol: "SBIN", closeAsOf: "2026-09-11", closePrice: 820.5 });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("R13 'Keep my mark' does NOT refresh on a refusal (the All-accounts 403)", async () => {
+    vi.stubGlobal("fetch", stubFetch({ ok: false, message: "pick an account" }, 403));
+    const refresh = vi.fn();
+    const res = await submitKeepMark("SBIN", { price: 820.5, asOf: "2026-09-11" }, refresh);
+    expect(res).toEqual({ ok: false, message: "pick an account" });
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });
 
 /* ── the footer names BOTH doors, in plain words ─────────────────────────── */
@@ -230,7 +352,21 @@ describe("the panel's footer sentence", () => {
     expect(SPOT_DOOR_NOTE).toMatch(/spot chip/);
     expect(SPOT_DOOR_NOTE).toMatch(/bulk-MTM box/);
     expect(SPOT_DOOR_NOTE).toMatch(/end-of-day close/);
-    expect(SPOT_DOOR_NOTE).toMatch(/typed mark takes precedence/);
+    // R13, moved deliberately: "typed mark takes precedence" → "stored mark".
+    expect(SPOT_DOOR_NOTE).toMatch(/stored mark takes precedence/);
+  });
+
+  it("R13: says 'mark', never 'typed' — the DB cannot tell a typed mark from an automatic one", () => {
+    expect(SPOT_DOOR_NOTE).not.toMatch(/typed/i);
+    expect(SPOT_DOOR_NOTE).toMatch(/newer official close differs from the mark/);
+  });
+
+  it("R13: the chip's tooltips say 'typed' nowhere either", () => {
+    const editor = fs.readFileSync(path.join(process.cwd(), "components", "risk", "spot-mark-editor.tsx"), "utf8");
+    const titles = editor.slice(editor.indexOf("function sourceTitle"), editor.indexOf("export function SpotMarkEditor"));
+    expect(titles).toMatch(/return `/);
+    expect(titles).not.toMatch(/typed/i);
+    expect(titles).not.toMatch(/\b(recommend|should|must|buy|sell)\b/i);
   });
 
   it("is what the panel renders, and the one-door sentence is gone", () => {
@@ -305,13 +441,15 @@ describe("the editor component", () => {
     const page = fs.readFileSync(path.join(process.cwd(), "app", "risk", "page.tsx"), "utf8");
     const route = fs.readFileSync(path.join(process.cwd(), "app", "api", "risk", "spot", "route.ts"), "utf8");
     const panel = fs.readFileSync(path.join(process.cwd(), "components", "risk", "expiry-obligations.tsx"), "utf8");
-    expect(page).toMatch(/import \{ resolveSpotRef, type SpotRef \} from "@\/lib\/risk\/spot-ref"/);
-    expect(panel).toMatch(/import \{ UNKNOWN_SPOT, type SpotRef \} from "@\/lib\/risk\/spot-ref"/);
+    // Re-pinned for R13: the page also reads the dismissal panel name, the
+    // panel the notice builder, and the route the day validator — all pure.
+    expect(page).toMatch(/import \{ resolveSpotRef, SPOT_CLOSE_DIFF_PANEL, type SpotRef \} from "@\/lib\/risk\/spot-ref"/);
+    expect(panel).toMatch(/import \{ UNKNOWN_SPOT, spotCloseNotice, type SpotRef \} from "@\/lib\/risk\/spot-ref"/);
     // The panel may still take the COMPONENT from the client module — that is
     // the one thing a client module is for.
     expect(panel).toMatch(/import \{ SpotMarkEditor \} from "@\/components\/risk\/spot-mark-editor"/);
     // The route's hand-copied contract-key rule is gone; it calls the shared one.
-    expect(route).toMatch(/import \{ isContractKey \} from "@\/lib\/risk\/spot-ref"/);
+    expect(route).toMatch(/import \{ isContractKey, isIsoDay \} from "@\/lib\/risk\/spot-ref"/);
     expect(route).not.toMatch(/const isContractKey =/);
     // …and no server file names the client module for a VALUE.
     for (const [name, s] of [["page", page], ["route", route]] as const) {
@@ -493,15 +631,18 @@ const obligation = (id: number) => {
 };
 
 describe("/risk resolves the option's underlying reference", () => {
-  it("with no typed mark, the ref IS the newest EOD close, and the source is 'eod'", () => {
-    expect(refs().RELIANCE).toEqual({ value: 2950, source: "eod" });
+  it("with no stored mark, the ref IS the newest EOD close, and the source is 'eod' with the close's day", () => {
+    expect(refs().RELIANCE).toEqual({ value: 2950, source: "eod", asOf: iso(-1) });
     // Threaded all the way into the settlement maths: 2950 vs a 2800 call.
     expect(obligation(9001).moneyness).toBe("ITM");
     expect(obligation(9001).intrinsicPerUnit).toBe(150);
   });
 
-  it("with both on record, the typed mark wins — verdict included", () => {
-    expect(refs().TCS).toEqual({ value: 2900, source: "typed" });
+  it("with both on record, the stored mark wins — verdict included", () => {
+    // Moved for R13: labelled 'mark' (not 'typed') with its own day, and the
+    // older close rides along — a NEWER mark raises no close notice.
+    expect(refs().TCS).toEqual({ value: 2900, source: "mark", asOf: iso(0), close: { price: 4000, asOf: iso(-1) } });
+    expect(spotCloseNotice("TCS", refs().TCS, panelProps.spotCloseDismissed as string[])).toBeNull();
     // The typed 2900 makes the 3000 put ITM; the 4000 close would call it OTM.
     expect(obligation(9002).moneyness).toBe("ITM");
     expect(obligation(9002).intrinsicPerUnit).toBe(100);
@@ -597,6 +738,23 @@ describe("POST /api/risk/spot", () => {
   it("refuses an empty symbol with 400", async () => {
     expect((await post({ symbol: "   ", price: 100 })).status).toBe(400);
     expect((await post({ price: 100 })).status).toBe(400);
+  });
+
+  it("R13: an asOfDate after today (IST), or not a calendar day, is refused with 400 and writes nothing", async () => {
+    const tomorrow = new Date(Date.now() + 36 * 3_600_000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    for (const asOfDate of [tomorrow, "2099-01-01", "2026-02-30", "14-09-2026", 20260914]) {
+      const res = await post({ symbol: "SBIN", price: 999, asOfDate });
+      expect(res.status, `asOfDate ${String(asOfDate)} was accepted`).toBe(400);
+    }
+    expect(rowsFor("SBIN")).toHaveLength(1);
+    expect(mtm.getSpotMap().get("SBIN")).toBe(820.5);
+  });
+
+  it("R13: a past asOfDate files the mark on THAT day, and the default stays today", async () => {
+    const res = await post({ symbol: "WIPRO", price: 250.25, asOfDate: iso(-3) });
+    expect(res.status).toBe(200);
+    expect(rowsFor("WIPRO").map((r) => [r.asOfDate, r.price])).toEqual([[iso(-3), 250.25]]);
+    expect(mtm.getSpotMarkEntries().get("WIPRO")).toEqual({ price: 250.25, asOf: iso(-3) });
   });
 
   it("does not carry a CONTRACT tradingsymbol onto the spot it just wrote", async () => {

@@ -26,6 +26,8 @@ const STATUS: Record<StaleCloseCode, number> = {
   NOT_FOUND: 404,
   NO_PAIR: 409,
   PARTIAL: 409,
+  // W2-FIXD2 — a staged lot: listed on Data Quality, closed on its own ladder.
+  STAGED: 409,
   JOURNAL: 409,
   DELETE_FAILED: 500,
 };

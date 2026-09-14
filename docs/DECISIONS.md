@@ -6139,3 +6139,244 @@ Reverting only the card hunk turns 10 tests red. Three of its departures are rec
 **W1-PAYTM's measurements that never reached the wave-1 entry:** the brief's per-exchange-legs design moved August gross by
 −20,420.87 (rows 146 → 149, opening sells 38 → 39) and reddened the v3.8 guard, so `rowVenue` (the majority of the row's
 own turnover) was chosen instead.
+
+**The six UNVERIFIABLE, re-proved** by a probe-capable Opus verifier (a general-purpose agent). Details in
+`18-FIX-WORK-4.3.0/wave1-verifier.json`. The tree was restored after each item, and no probe was left.
+
+| Item | Result when only that fix is reverted |
+|---|---|
+| R19 | `fix-wave-c-import.test.ts:574` "expected 200 to be 500", and `:579` rows no longer `[]`. Each half of the fix (write first; throw) is caught on its own. |
+| R27 | `:637` "expected '2026-09-05T05:00:00.000Z' to be '2026-09-10T18:29:59.000Z'". The stamp is the pre-read instant. |
+| R10 | `:670` "expected [] to deeply equal [ { from: '2026-05-13', … } ]". |
+| R9 | `broker-auth-gate.test.ts:326` "expected 200 to be 409". |
+| R26 MTF close | Correct against an independent hand computation: the lot's stored charges 30.82 + the sale's stored 49.54 + the MTF interest priced as closePosition prices it. |
+
+- **Correction:** the subject of commit `654d534` says "6 re-proved by a probe-capable verifier". At commit time the
+  verifier was still running; the result above is what it found.
+- **The verifier's test grades.**
+  - The `eq_mtf` close pin gap is graded MEDIUM, above the re-check's LOW. The case asserts no `chargesTotal` / GST / net
+    P&L, so a broken total line in `closeStaleLot` (`commit.ts:1732-1735`) would stay green. Measured values: chargesTotal
+    209.69, GST 12.13, net P&L 4,790.31. It is already W2-DQ's R26-T.
+  - The R19 route case passes its 500 and "Nothing was committed" message when only the order is reverted. Graded LOW and
+    recorded, because the rows assertion catches it.
+
+**Wave 2's amended plan** (`18-FIX-WORK-4.3.0/plan-wave2.json`) runs in three phases:
+- **2a**, eight builders: W2-DHAN, W2-IDENTITY, W2-DQ, W2-HELP, W2-SPOT, W2-IPO, W2-UI, W2-DOCS.
+- **2b**, three builders that re-own cross-cutting files 2a changed: W2-PULLNOTICE, W2-VENUE, W2-STRAT.
+- **2c**, one builder: W2-EQ2012.
+
+The planner's mechanical checks: 42 findings mapped to exactly one builder each, and 0 duplicate owners inside any phase.
+A phase check (tsc + the whole unit suite + no probes + a rollback patch snapshot) runs between phases. Nothing is
+committed until the wave gate.
+
+## 2026-09-14 — v4.3.0 fix wave 2, phase 2a: eight Opus builders → one README-count red → W2-IPO2 added to 2b
+
+**Phase 2a.** Eight builders reported all findings fixed. No builder edited outside its set, and each quoted its
+red-on-revert in its report (`18-FIX-WORK-4.3.0/wave2a.json`).
+
+| Builder | Findings |
+|---|---|
+| W2-DHAN | R80, R83, R81, K2-TINY, R84, R85, R103, R82, K2-M5, K1-M2, D1 |
+| W2-IDENTITY | R43, R42b, QS-AO |
+| W2-DQ | P1–P4, R26-T |
+| W2-HELP | R11, R52, R93, R96, P7, P8 |
+| W2-SPOT | R13 |
+| W2-IPO | R36, QS-IPO |
+| W2-UI | P6, P12 |
+| W2-DOCS | R22 |
+
+**The phase check:**
+- `tsc` EXIT 0.
+- `vitest`: Test Files 1 failed | 389 passed (390); Tests 1 failed | 8195 passed | 35 skipped (8231).
+- The only red was `tests/readme-claims.test.ts:118`, the README's tests/ file count: 389 stated, 390 on disk after W2-SPOT
+  added `tests/spot-close-notice.test.ts`.
+- **Decision:** README count mismatches do not block a phase check. README.md is restated once, at the wave gate.
+- The rollback snapshot is `git diff --binary`, because `lib/domain/dismissals.ts` and `lib/import/cross-source.ts`
+  already carry NUL bytes at HEAD, and a plain patch records them only as "Binary files differ".
+
+**Recorded:**
+- **K1-M2 deviation (W2-DHAN).** A Dhan history row's reportedCharges now also states ipft 0, dpCharges 0 and
+  pledgeCharges 0, and mtfInterest 0 on every NON-MTF row. On an MTF row, mtfInterest is deliberately left unstated, so a
+  later interest accrual is not zeroed. The import computes no MTF interest, so the ten heads still sum to the total.
+- **R81.** The paise largest-remainder split re-pins `seams-v43-fix1`'s three-way split to the measured distribution.
+- **Transient reds.** W2-DHAN saw the `fix-wave-c-import` R43 group fail twice, in different combinations, while
+  W2-IDENTITY was editing `commit.ts` / `route.ts`. Four back-to-back runs alternating `dhan.ts` then gave 24 / 24 each, and
+  the phase check's whole-suite run passed it. Recorded as concurrent-edit noise; the wave gate re-checks it.
+
+**New pre-existing defect, reopened by the stopping rule (found by W2-IPO) → W2-IPO2 in phase 2b.** The BROKERED IPO exit
+(`lib/queries/ipos.ts` ~:38-63) passes `buyValue: allottedValue` into computeCharges. That levies the exchange transaction
+charge, the SEBI fee, IPFT and the GST on them on the allotment: about ₹307 + ₹10 + ₹57 per crore allotted on NSE.
+- An allotment is not a transaction on a recognised exchange, the same reason QS-IPO removed purchase STT (FATAX56235 row 1).
+- **Decision:** the broker path prices the exchange-turnover levies and their GST on the SELL value only, as the no-broker
+  fallback already does. Stamp duty on the allotment is unchanged.
+
+**Not fixed, recorded:** `docs/owner/pitch-deck/deck.html` (an owner-internal investor deck, not a shipped surface) is a
+dated artifact. It still says "3 broker-API pulls" (:123, :194, :223) and "1,962 unit tests" (:222). R22 was the public
+landing page, now 4 and guarded by `positioning-copy`. The deck is left as dated history rather than half-updated with a
+guessed fourth broker name. README :637's "three API pulls" sits inside a dated v2.99.96 note and stays.
+
+## 2026-09-14 — v4.3.0 fix wave 2, phase 2b: four builders + the S4b fixture; P17 re-decided on measurement
+
+**Phase 2b.** Four builders reported all findings fixed, and none edited outside its set. Reports:
+`18-FIX-WORK-4.3.0/wave2b.json`.
+- **W2-PULLNOTICE:** P10, P11, P15, P16.
+- **W2-VENUE:** P9, plus P17 investigated and pinned.
+- **W2-STRAT:** QS-SPLIT, P5, P13, P14.
+- **W2-IPO2:** the brokered IPO allotment levies.
+
+**The 2b check:** `tsc` EXIT 0; Tests 2 failed | 8227 passed | 35 skipped (8264).
+- One red is the non-blocking README file count.
+- The other is `tests/seams-v43-wave2.test.ts:648` (S4b), which failed deterministically on a solo re-run. P14 makes the
+  fixture's BANKNIFTY card, whose underlying future carries no stored expiry, read "Not computed" instead of
+  "Max loss −₹15,93,000". The product is right by the decided P14 rule. The test pins tile heading / tone / sign, so a
+  micro builder (W2-FIX2B) gives the fixture future a stored expiry and keeps the expected figure unchanged.
+
+**P17 — RE-DECIDED on measurement: no venue-rule change.**
+- **The trigger fired.** The five-month Paytm exchange line's gap to Paytm's stated ETT went from −4,857.87 at
+  `9e0e16f` to −5,524.88 at HEAD (HEAD's engine, EXCHANGE_LINE's method, `paytm-tradebook-2026-04-01_2026-08-28`).
+- **The rule's premise was refuted.** Pricing every FILL at the venue it actually filled on (the best any venue rule can
+  do) gives −5,284.22:
+  - NSE fills: ₹105.87 cr billed 32,501.96 (307.00 / cr), engine 32,500.74, a gap of −1.22.
+  - BSE fills: ₹49.70 cr billed 23,920.68 (481.30 / cr), engine 18,637.68 at the seeded 375, a gap of −5,283.00.
+- **The decomposition.** HEAD = −1.22 − 5,283.00 − 240.66 (the one-row limit); `9e0e16f` = −1.22 − 5,283.00 + 426.35.
+  R71 moved ₹9.81 cr of row turnover from BSE to NSE and brought the per-row figure CLOSER to the fill-exact one. The old,
+  smaller gap came from errors cancelling.
+- **The residual** is Paytm billing BSE fills above the seeded flat BSE rate (Apr–Jul at 481.30 / cr; August at 350.31):
+  BSE's per-scrip-group transaction charges, already open research at C-8 ("which BSE group Paytm bills … needs primary
+  BSE circulars or owner files").
+- **Decision:** `rowVenue` stays. A five-month `EXCHANGE_LINE` row is pinned exactly at HEAD (engine 50,897.76, stated
+  56,422.64, gap −5,524.88; `golden-books.test.ts:683-691`), with this breakdown in its comment. The BSE per-scrip-group
+  rate gap goes on the release note's not-in-this-release line.
+- Rejected: any venue assignment that shrinks the gap. It could only move NSE turnover onto BSE rows, which is the
+  first-fill defect R71 removed.
+
+**Recorded from the builders:**
+- **P10.** At the Kite token exchange, `findRivalConnection` takes `onlyOlderThan: conn.id`: only a row with a SMALLER id
+  (ids are monotonic) is a rival. Of an existing duplicate pair, only the NEWER connection gets the 409 naming the older
+  account. The original keeps pulling, and Data Quality still flags the pair (R4b). The save-time R4a check is unchanged.
+- **P11.** A pull's span write appends a clear row for any outstanding span with the same account + reason + `from` and a
+  different `to` (the same connection when both rows name one), in the caller's transaction. An account-merge carry keeps
+  plain from|to|reason idempotency.
+- **P15 / P16.** GET carries the server's `fact` and `remedy` sentences, and the card renders them.
+  `fact` includes the partial-day sentence when the span starts on the last pull's day, so message ===
+  [fact, remedyText].join(' ').
+- **P9.** `zerodha.ts` and `generic-map.ts` sum each merged date|side leg's value per named venue, and the label is the
+  majority venue (a tie keeps the first). `venues` is kept only when two or more venues are named, and legs are not split
+  per exchange. Measured on the 04-01 → 08-29 Zerodha book: 143 legs, 5 span both venues, 2 were stamped with the
+  minority (CMRGREEN 06-23 and MODISONLTD 07-16), 1 row moves NSE → BSE, charges 152,143.88 → 152,156.16, gross unchanged.
+  The 08-11 book is unchanged.
+- **P5, replacing K3-M1's exclusion.**
+  - Basis-unknown sale rows net against the long lots of the same INSTRUMENT: resolved symbol + instrument type, plus the
+    contract for a future. An equity sale never reduces a future.
+  - Where unknown sales exist, that instrument's long lots merge into one leg at their quantity-weighted entry price,
+    because the sale does not say which lot went.
+  - The net is floored at zero, so there is never a fabricated short.
+  - Books without unknown sales keep their legs exactly as before.
+- **QS-SPLIT (the owner's Q-SCOPE item 4).** R102's guard now covers every per-expiry split. A split is refused whenever a
+  sub-group states an unbounded figure that the whole-symbol read bounds. Ruling 240's split stays wherever it contradicts
+  nothing.
+- **W2-IPO2.** `lib/queries/ipos.ts` prices the broker path through `ipoSellChargeBreakdown`, the no-broker fallback's
+  own split. The allotment is the base of stamp duty only. Measured on the seed at 2026-06-15, ₹1 cr allotted and sold:
+
+  | Case | Before | After |
+  |---|---|---|
+  | Zerodha NSE | 12,263.46 | 11,889.40 (exchange 613.98 → 306.99, SEBI 20 → 10, IPFT 0.02 → 0.01, GST 114.12 → 57.06) |
+  | Zerodha BSE | 12,423.94 | 11,969.64 |
+  | Groww NSE | 12,295.32 | 11,921.26 |
+
+## 2026-09-14 — v4.3.0 fix wave 2, phase 2c + the seam pass: three seam defects wave 2 introduced → W2-FIXB
+
+**The fixture fix and the checks:**
+- **W2-FIX2B** gave the S4b fixture's underlying future a stored expiry. The expected "Max loss −₹15,93,000" came out
+  unchanged, so P14 stays correct and the tile test keeps its purpose.
+- **2b check:** Tests 1 failed | 8228 passed | 35 skipped. The one red is the README count only.
+- **W2-EQ2012 (QS-EQ2012):** equity delivery STT is 0.125% on both sides until 2012-06-30 and 0.1% from 2012-07-01. The
+  primary is NSE/FATAX/20990 (Circular 1/2012, 12 Jun 2012; fetched 2026-09-14, 48,985 bytes, SHA-256 `9652a713…`).
+  Rows 1–2 read "0.125 per cent | 0.1 per cent", and row 3 (non-delivery) stays 0.025%. When 0.125% began is unverified,
+  because the circular refers back to NSE/F&A/7526 of 2006, which was not fetched. It is extended back per ruling C-8.
+- **2c check:** Tests 1 failed | 8238 passed | 35 skipped. The one red is the README count only.
+
+**The seam tester** (`tests/seams-v43-fixB.test.ts`, 23 tests: 20 passed, 3 pinned as `it.fails`) found three product
+defects that wave 2 introduced between builders:
+- **D1 — money, data loss.** W2-DHAN's K2-M5 keyed Dhan legs `date|side|exchange`. A sale of 100 filled 50 on BSE and 50
+  on NSE at one price became two identical closed rows. `dedup.ts:49` hashes neither venue nor fills, so `commit.ts`'s
+  `seenInThisFile` dropped the second silently: WIPRO was stored 50/50, gross ₹500, instead of 100/100, gross ₹1,000. At
+  `654d534` it was one row.
+- **D2.** The same per-venue legs stored a same-day BSE 10 + NSE 90 buy as two open rows. Data Quality's books key on
+  exchange, so a later NSE sale of 100 paired with 90 only, and the BSE 10 was never listed.
+- **D3.** Data Quality treats `acquisition` NULL or `'unknown'` as basis not recorded (P3), but `/strategies` netted only
+  `'unknown'`. A v4.2.0 Angel One / Upstox NULL-basis sale therefore showed as a short underlying leg (max profit ₹2,500
+  instead of ₹500). A `'bonus'` sale was excluded by Data Quality but still became a short leg, reading Unlimited.
+
+**Decisions (no owner question; overrule here):**
+- **D1 / D2.** Dhan adopts the rule W2-VENUE settled for Zerodha and the generic mapper. Legs are keyed per `date|side`,
+  carry `Leg.venues` when two or more venues are named, and the row takes `rowVenue`'s majority of its own turnover (the
+  one-row limit). Rejected: adding the venue to the dedup hash, which is the 4.3.1 identity rebuild and would break
+  re-import dedup of every stored row.
+- **D3.** In the underlying join, a DELIVERY-segment sell-only row falls into one of three cases:
+  - With no recorded basis (`acquisition` NULL or `'unknown'`, and no acquisition price), it nets against that
+    instrument's long, floored at zero.
+  - With a recorded basis (bonus, ESOP, gift, or an acquisition price), it is a complete trade of shares acquired outside
+    the book. It is excluded: never a short, and never reducing a held lot.
+  - A futures sell-only row stays a genuine short.
+
+Built by the micro builder W2-FIXB. Its fixB pins flip from `it.fails` to `it`.
+
+**W2-FIXB, as built.** The ten-file scoped run is 515 passed and 1 expected fail; ten nearby files are 284 / 284; tsc and
+eslint are clean.
+- **D1 FIXED.** `dhan.ts` gains `settleVenues` (the `zerodha.ts` rule), legs are keyed `date|side`, each fill adds its
+  value to `leg.venues`, and every leg is settled before pairing. The dedup hash is unchanged.
+  - The 50 BSE / 50 NSE sale is one row `[100, 100, 1000, "NSE"]` with a unique hash, and a settle-tie pin was added.
+  - Red on revert: "expected [ [ 50, 50, 500, 'BSE' ], …(1) ] to deeply equal [ [ 100, 100, 1000, 'NSE' ] ]".
+  - K2-M5's own pin is re-pinned with measured values: the open row goes from 100 @ 101 (₹20) to 100 @ 100.5
+    [B 50@101, N 50@100] (₹12), and the closed row from ₹7 to ₹15, noted "Bought on NSE/BSE, sold on BSE".
+- **D3 FIXED.** `/strategies` reads Data Quality's own `hasRecordedBasis`: one rule on both surfaces. The `trades.ts`
+  projection adds `segment` and `acquisitionPrice`.
+  - A delivery sell-only row with no recorded basis nets, floored at zero. One with a recorded basis is skipped. A futures
+    row is read by its net side, so a futures sell-only row is a short even when stored as `'unknown'`. This deliberately
+    narrows P5, which had netted every `'unknown'` row, futures included.
+  - Measured before / after:
+
+    | Symbol | Before | After |
+    |---|---|---|
+    | ITC (NULL-basis sale) | 3 legs, max profit ₹2,500 | 1 leg, ₹500 |
+    | BEL (bonus sale) | Unlimited | bounded covered call |
+    | LT (price recorded) | short 40 + long 100 | long 100 |
+    | MARUTI (MTF) | short 30 + long 100 | long 70 |
+    | ADANIENT (future) | nothing | short 300 |
+
+  - Red on revert: 8 fail, including "expected '|ITC|Short Call|…' to contain '|1 leg|'".
+- **D2 NOT fixed by W2-FIXB, and correctly stopped: the cause is outside its set.** After D1, the day is one open row of 100,
+  but two buy executions make it `staged` (`commit.ts` `stagedFromExecutions`). `data-quality.ts` `isStaleLot` admits no
+  staged lot, so the pairs went from 90 shares to none. Any holding bought in more than one fill is therefore never listed
+  by R26.
+  - **Decision:** staged stale lots ARE listed, per the P1 / P2 rule of listing every open lot with a later sale. The
+    one-click close is offered for a staged lot only if `closeStaleLot` stores exactly what the app's own staged close
+    stores (invariants 4 and 5: weighted average, FIFO tranches, R frozen at first entry, the aggregate on the parent).
+    Otherwise the pair is listed without one-click, linked to the staged position's own close, and `closeStaleLot` plus its
+    route refuse a staged lot.
+  - Built by micro builder W2-FIXD2.
+
+**W2-FIXD2, D2 FIXED by branch (b); branch (a) was ruled out by measurement.**
+- **The parity probe.** A staged lot (10 + 90 @ ₹200) was closed once through `closeStaleLot` and once through the
+  ladder's own exit (`addLeg` exit 100 @ ₹250). The parent rows matched to the paisa: gross 5000, charges 64.43, net
+  4,935.57, R 49.36. But the join wrote NO exit leg, so the ladder read "openQty 100" beside a closed parent (invariant 5),
+  and `rebuildStagedTrade` re-opened the parent (net −23.74) after the sale row was already deleted. A one-click join of a
+  staged lot would silently lose the sale.
+- **As built.**
+  - `isStaleLot` admits staged lots, and `StaleOpenPair.staged` turns `oneClick` off.
+  - The card lists the pair and links to `/trades?symbol=…&view=open`, where the ladder books the exit (invariant 4).
+  - `closeStaleLot` refuses any lot that is staged or has `trade_legs` rows with code `STAGED`, and the route answers 409.
+  - The fixB D2 pin is now a plain `it` (Σ matchedQty 100). Red on revert across four mutants, e.g. "expected [ 200, true,
+    undefined ] to deeply equal [ 409, false, 'STAGED' ]" when both guards are removed.
+
+**Flagged by W2-FIXD2 for the wave-2 re-check** (verify first, then fix under the stopping rule if real):
+- (i) A sale filled more than once is itself staged, because its fills are stored as entry legs. It is listed, then
+  refused by the journal-entries check with "carries your own journal entries (legs)", while those legs are imported
+  fills. Misleading copy, and no remedy.
+- (ii) By code reading, `closePosition` (the manual close on `/risk`) also writes no exit leg for a staged lot. Can the
+  `/risk` UI reach a staged lot at all?
+
+**Wave-2 GATE:** `npm run verify` exits 0 — Test Files 391 passed (391); Tests 8278 passed | 35 skipped (8313);
+✓ Compiled successfully. No `components/live/*` file changed, so `e2e/z-live-desk` is not owed (CI runs the full e2e).
+README counts move to 8278 / 391.

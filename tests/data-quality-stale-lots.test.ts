@@ -1,11 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   assessDataQuality,
+  hasRecordedBasis,
   staleOpenPairs,
+  staleSaleRows,
   type QualityInputs,
   type QualityTrade,
 } from "@/lib/analytics/data-quality";
+import { computeCharges } from "@/lib/engine/charges";
+import { findRates } from "@/lib/engine/rates";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
@@ -26,6 +32,8 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// StaleLotFix calls `useRouter`, which needs a mounted app router: a framework stub.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 
 // ─────────────────────────────── the pure half ──────────────────────────────
 
@@ -150,8 +158,12 @@ describe("staleOpenPairs + the stale_open issue (pure)", () => {
     expect(staleOpenPairs([L, S]).map((p) => [p.lotId, p.oneClick])).toEqual([[L.id, true]]);
   });
 
-  it("a staged lot, another broker, or another exchange never pairs", () => {
-    expect(staleOpenPairs([lot({ staged: true }), sale()])).toEqual([]);
+  it("another broker or another exchange never pairs", () => {
+    // RE-PINNED (W2-FIXD2, seam defect D2): this line asserted that a staged lot
+    // never pairs — measured before: []; after: one listed pair, never
+    // one-click. The decided P1/P2 rule lists EVERY open lot with a later sale
+    // row in its book; the staged cases live in their own describe below.
+    expect(staleOpenPairs([lot({ staged: true }), sale()]).map((p) => [p.staged, p.oneClick])).toEqual([[true, false]]);
     expect(staleOpenPairs([lot(), sale({ broker: "zerodha" })])).toEqual([]);
     expect(staleOpenPairs([lot(), sale({ exchange: "BSE" })])).toEqual([]);
   });
@@ -167,6 +179,146 @@ describe("staleOpenPairs + the stale_open issue (pure)", () => {
   });
 });
 
+describe("W2-FIXD2 (seam D2) — a staged lot is listed against its sale, and never offered the one-step join (pure)", () => {
+  it("a holding bought in two fills on one day (ONE staged row of 100) + a sale of 100: listed for all 100, no one-click", () => {
+    const L = lot({ staged: true, buyDate: "2026-09-07" });
+    const S = sale({ acquisition: "unknown", sellDate: "2026-09-08" });
+    const pairs = staleOpenPairs([L, S]);
+    expect(pairs.map((p) => [p.lotId, p.saleId, p.lotQty, p.matchedQty, p.staged, p.oneClick])).toEqual([[L.id, S.id, 100, 100, true, false]]);
+    expect(staleIssues([L, S])[0].ids, "the critical stale_open issue counts it").toEqual([L.id]);
+    // Listed as a PAIR, so the sale is not also a stale_sale warning.
+    expect(saleIssues([L, S])).toEqual([]);
+  });
+
+  it("a staged short (a contract sold in two fills) is listed the same way, never one-click", () => {
+    const F = { segment: "future", instrumentType: "future", symbol: "NIFTY", tradingsymbol: "NIFTY26SEPFUT" };
+    const short = q({ ...F, staged: true, sellQty: 50, avgSellPrice: 100, sellDate: "2026-09-01" });
+    const cover = q({ ...F, buyQty: 50, avgBuyPrice: 90, buyDate: "2026-09-03" });
+    expect(staleOpenPairs([short, cover]).map((p) => [p.lotId, p.side, p.matchedQty, p.staged, p.oneClick])).toEqual([[short.id, "short", 50, true, false]]);
+  });
+});
+
+// ─────────── W2-DQ P1 / P2 / P3 (v4.3.0 fix wave 2) — the pure half ─────────
+
+const saleIssues = (trades: QualityTrade[]) => assessDataQuality(inputs(trades)).issues.filter((i) => i.code === "stale_sale");
+
+describe("W2-DQ P1 — sales are allocated to lots oldest lot first, and every lot a sale reaches is listed", () => {
+  it("L1 100 (09-01) + L2 100 (09-02) + one SELL 200 (09-05): BOTH lots listed, neither one-click", () => {
+    const L1 = lot({ buyDate: "2026-09-01" });
+    const L2 = lot({ buyDate: "2026-09-02" });
+    const S = sale({ sellQty: 200, sellDate: "2026-09-05" });
+    expect(staleOpenPairs([L1, L2, S]).map((p) => [p.lotId, p.saleId, p.lotQty, p.saleQty, p.oneClick])).toEqual([
+      [L1.id, S.id, 100, 200, false],
+      [L2.id, S.id, 100, 200, false],
+    ]);
+    expect(staleOpenPairs([L1, L2, S]).map((p) => p.matchedQty), "the sale's excess carries to the next lot").toEqual([100, 100]);
+    const [issue] = staleIssues([L1, L2, S]);
+    expect([issue.count, issue.ids]).toEqual([2, [L1.id, L2.id]]);
+  });
+
+  it("whole sale rows covering whole lots exactly stay one-click, each with its own lot (FIFO)", () => {
+    const L1 = lot({ buyDate: "2026-09-01" });
+    const L2 = lot({ buyDate: "2026-09-02" });
+    const S1 = sale({ sellDate: "2026-09-05" });
+    const S2 = sale({ sellDate: "2026-09-06" });
+    expect(staleOpenPairs([S2, L2, S1, L1]).map((p) => [p.lotId, p.saleId, p.matchedQty, p.oneClick])).toEqual([
+      [L1.id, S1.id, 100, true],
+      [L2.id, S2.id, 100, true],
+    ]);
+  });
+
+  it("a lot covered by PART of a sale is listed without the button, and so is the lot that took the rest", () => {
+    const L1 = lot({ buyDate: "2026-09-01" });
+    const L2 = lot({ buyQty: 50, buyDate: "2026-09-02" });
+    const S = sale({ sellQty: 150, sellDate: "2026-09-05" });
+    expect(staleOpenPairs([L1, L2, S]).map((p) => [p.lotId, p.lotQty, p.matchedQty, p.oneClick])).toEqual([
+      [L1.id, 100, 100, false],
+      [L2.id, 50, 50, false],
+    ]);
+  });
+
+  it("a sale is never allocated to a lot dated after it, and a lot no sale reaches is a holding, not listed", () => {
+    const L1 = lot({ buyDate: "2026-09-01" });
+    const later = lot({ buyDate: "2026-09-06" });
+    const S = sale({ sellQty: 200, sellDate: "2026-09-05" });
+    expect(staleOpenPairs([L1, later, S]).map((p) => [p.lotId, p.matchedQty])).toEqual([[L1.id, 100]]);
+
+    const held = lot({ buyDate: "2026-09-02" });
+    const S100 = sale({ sellDate: "2026-09-05" });
+    expect(staleOpenPairs([L1, held, S100]).map((p) => [p.lotId, p.saleId, p.oneClick])).toEqual([[L1.id, S100.id, true]]);
+    expect(staleIssues([L1, held, S100])[0].ids).toEqual([L1.id]);
+  });
+});
+
+describe("W2-DQ P3 — a sale whose basis the user recorded is never a stale-close candidate", () => {
+  it("a CLOSED ESOP sale at 50 beside a held market lot: no pair, no stale_open (was a CRITICAL one-click)", () => {
+    const L = lot({ buyDate: "2026-08-01" });
+    const S = sale({ isOpen: false, acquisition: "esop", acquisitionPrice: 50, sellDate: "2026-08-15" });
+    expect(staleOpenPairs([L, S]).map((p) => [p.lotId, p.saleId, p.lotQty, p.saleQty, p.oneClick])).toEqual([]);
+    expect(staleIssues([L, S])).toEqual([]);
+    // It is not a stale sale either: it is closed, and its basis is the user's.
+    expect(saleIssues([L, S])).toEqual([]);
+  });
+
+  it("either half of a recorded basis is enough; 'unknown' with no price is not a recorded basis", () => {
+    expect(hasRecordedBasis({ acquisition: "esop", acquisitionPrice: null })).toBe(true);
+    expect(hasRecordedBasis({ acquisition: "unknown", acquisitionPrice: 50 })).toBe(true);
+    expect(hasRecordedBasis({ acquisition: "unknown", acquisitionPrice: null })).toBe(false);
+    expect(hasRecordedBasis({ acquisition: null, acquisitionPrice: 0 })).toBe(false);
+    const L = lot({ buyDate: "2026-08-01" });
+    expect(staleOpenPairs([L, sale({ acquisition: "gift", sellDate: "2026-08-15" })])).toEqual([]);
+    expect(staleOpenPairs([L, sale({ acquisition: "unknown", acquisitionPrice: 50, sellDate: "2026-08-15" })])).toEqual([]);
+  });
+
+  it("the short pass reads the same rule: a purchase with a recorded basis never covers a short", () => {
+    const F = { segment: "future", instrumentType: "future", symbol: "NIFTY", tradingsymbol: "NIFTY26SEPFUT" };
+    const short = q({ ...F, sellQty: 50, avgSellPrice: 100, sellDate: "2026-09-01" });
+    const cover = q({ ...F, buyQty: 50, avgBuyPrice: 90, buyDate: "2026-09-03" });
+    expect(staleOpenPairs([short, cover]).map((p) => [p.lotId, p.side])).toEqual([[short.id, "short"]]);
+    expect(staleOpenPairs([short, { ...cover, acquisitionPrice: 90 }])).toEqual([]);
+  });
+});
+
+describe("W2-DQ P2 — a closing-trade row left open after its position closed is a WARNING (pure)", () => {
+  it("delivery: sales 40 + 60 beside a CLOSED lot 100 entered before them are listed; nothing is stale_open", () => {
+    const L = lot({ isOpen: false, sellQty: 100, avgSellPrice: 250, buyDate: "2026-08-20", sellDate: "2026-08-28" });
+    const S40 = sale({ sellQty: 40, sellDate: "2026-08-28" });
+    const S60 = sale({ sellQty: 60, sellDate: "2026-08-29" });
+    const report = assessDataQuality(inputs([L, S40, S60]));
+    expect(report.issues.filter((i) => i.code === "stale_open")).toEqual([]);
+    const [issue] = report.issues.filter((i) => i.code === "stale_sale");
+    expect(issue).toMatchObject({ severity: "warning", count: 2, href: "/data-quality#stale-open", ids: [S40.id, S60.id] });
+    expect(`${issue.title} ${issue.detail}`).not.toMatch(/\b(delete|should|must|recommend|consider|suggest)\b/i);
+    expect(staleSaleRows([L, S40, S60]).map((s) => [s.saleId, s.side, s.saleQty, s.closedLotIds])).toEqual([
+      [S40.id, "long", 40, [L.id]],
+      [S60.id, "long", 60, [L.id]],
+    ]);
+  });
+
+  it("narrow: no closed lot, a closed lot entered AFTER the sale, a sale still paired, or a recorded basis — no warning", () => {
+    const S = sale({ sellDate: "2026-08-28" });
+    expect(saleIssues([q({ symbol: "OTHER", tradingsymbol: "OTHER" }), S])).toEqual([]);
+    const closedLater = lot({ isOpen: false, sellQty: 100, buyDate: "2026-09-01", sellDate: "2026-09-02" });
+    expect(saleIssues([closedLater, S])).toEqual([]);
+    const closed = lot({ isOpen: false, sellQty: 100, buyDate: "2026-08-01", sellDate: "2026-08-02" });
+    const open = lot({ buyDate: "2026-08-20" });
+    expect(saleIssues([closed, open, S]), "an open lot still pairs it: stale_open's job").toEqual([]);
+    expect(saleIssues([closed, sale({ acquisition: "esop", sellDate: "2026-08-28" })])).toEqual([]);
+  });
+
+  it("mirrored for a short, and never in a segment that cannot hold a short", () => {
+    const F = { segment: "future", instrumentType: "future", symbol: "NIFTY", tradingsymbol: "NIFTY26SEPFUT" };
+    const coveredShort = q({ ...F, isOpen: false, sellQty: 50, buyQty: 50, sellDate: "2026-09-01", buyDate: "2026-09-02" });
+    const purchase = q({ ...F, buyQty: 50, avgBuyPrice: 90, buyDate: "2026-09-03" });
+    expect(staleSaleRows([coveredShort, purchase]).map((s) => [s.saleId, s.side, s.closedLotIds])).toEqual([
+      [purchase.id, "short", [coveredShort.id]],
+    ]);
+    // Delivery: a closed round trip then a new buy is a holding, never a purchase against a short.
+    const roundTrip = lot({ isOpen: false, sellQty: 100, buyDate: "2026-09-01", sellDate: "2026-09-01" });
+    expect(staleSaleRows([roundTrip, lot({ buyDate: "2026-09-03" })])).toEqual([]);
+  });
+});
+
 // ──────────────────────────────── the DB half ───────────────────────────────
 
 let t: TempDb;
@@ -174,6 +326,9 @@ let commit: typeof import("@/lib/import/commit");
 let route: typeof import("@/app/api/data-quality/close-stale/route");
 let dq: typeof import("@/lib/queries/data-quality");
 let trash: typeof import("@/lib/trash");
+let identity: typeof import("@/lib/import/broker-identity");
+let ratesDb: typeof import("@/lib/engine/rates-db");
+let StaleLotFix: typeof import("@/components/quality/stale-lot-fix").StaleLotFix;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -222,8 +377,8 @@ const selectAccount = (id: number) => t.db.update(t.schema.settings).set({ selec
  * the pull's sale as its own row — re-dated to what v4.2.0's Dhan adapter
  * wrote (`sellDate: closed ? today : null`) and stamped on the pull day.
  */
-function seedPair(accountId: number, sym: string, hint: NormalizedTrade["productHint"] = "delivery") {
-  t.db.insert(t.schema.accounts).values({ id: accountId, name: `stale-${sym}` }).run();
+function seedPair(accountId: number, sym: string, hint: NormalizedTrade["productHint"] = "delivery", name = `stale-${sym}`) {
+  t.db.insert(t.schema.accounts).values({ id: accountId, name }).run();
   expect(commit.commitParsedFile(buyFile(sym, hint), "dhan-api-2026-08-20", null, accountId).added).toBe(1);
   expect(commit.commitParsedFile(saleFile(sym, hint), "dhan-api-2026-08-28", null, accountId).added).toBe(1);
   const [L, S] = rowsOf(accountId);
@@ -256,6 +411,9 @@ beforeAll(async () => {
   route = await import("@/app/api/data-quality/close-stale/route");
   dq = await import("@/lib/queries/data-quality");
   trash = await import("@/lib/trash");
+  identity = await import("@/lib/import/broker-identity");
+  ratesDb = await import("@/lib/engine/rates-db");
+  ({ StaleLotFix } = await import("@/components/quality/stale-lot-fix"));
 }, 120_000);
 afterAll(() => t?.cleanup());
 
@@ -387,5 +545,194 @@ describe("an eq_mtf lot: interest runs to the CONFIRMED date, exactly as the man
     expect(joined.mtfInterest).toBe(manual.mtfInterest);
     expect(joined.pledgeCharges).toBe(manual.pledgeCharges);
     expect(joined.mtfFundedAmount).toBe(manual.mtfFundedAmount);
+
+    // R26-T (W2-DQ) — the joined row's chargesTotal, GST and net P&L, derived
+    // WITHOUT reading anything closeStaleLot wrote: each side's bill as the
+    // importer STORED it (L and S above were read before the join), plus the
+    // MTF interest and pledge fee (with the GST on the fee) priced by
+    // computeCharges over charge_config for the confirmed holding period.
+    // Measured 2026-09-14: 209.69 / 12.13 / 4,790.31 (the re-check's figures).
+    expect(L.mtfInterest + L.pledgeCharges + S.mtfInterest + S.pledgeCharges, "neither side carried MTF parts to replace").toBe(0);
+    const rates = findRates(ratesDb.loadRatesMap(), "dhan", "eq_mtf", "NSE", "2026-09-05");
+    const DAYS_HELD = 16; // 2026-08-20 → 2026-09-05, counted by hand
+    const mtf = computeCharges(
+      { segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, buyOrderCount: 0, sellOrderCount: 0, mtf: { fundedAmount: manual.mtfFundedAmount!, daysHeld: DAYS_HELD, pledgeScrips: 1 } },
+      rates,
+    );
+    expect(mtf.mtfInterest, "the independent pricing agrees with the twin's interest").toBe(manual.mtfInterest);
+    const expectedTotal = r2(L.chargesTotal + S.chargesTotal + mtf.total);
+    expect(joined.chargesTotal).toBe(expectedTotal);
+    expect(joined.gst).toBe(r2(L.gst + S.gst + mtf.gst));
+    expect(joined.netPnl).toBe(r2(5000 - expectedTotal));
+  });
+});
+
+// ──────────── W2-DQ P3 / P2 / P4 (v4.3.0 fix wave 2) — the DB half ──────────
+
+describe("W2-DQ P3 — a recorded-basis sale is refused by the join itself", () => {
+  it("an ESOP sale at 50 beside a held lot: POST close-stale gives NO_PAIR and changes neither row", async () => {
+    const ACC = 806;
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-esop" }).run();
+    const buy = parsed([trade({ tradingsymbol: "LTIM", buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-01" })]);
+    const sell = parsed([trade({ tradingsymbol: "LTIM", sellQty: 100, avgSellPrice: 250, sellValue: 25000, sellDate: "2026-08-15" })]);
+    expect(commit.commitParsedFile(buy, "ltim-buy", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell, "ltim-sell", null, ACC).added).toBe(1);
+    const [L, S] = rowsOf(ACC);
+    // The user confirmed the sale's basis: an ESOP allotment at 50, closed.
+    t.db.update(t.schema.trades).set({ isOpen: false, acquisition: "esop", acquisitionPrice: 50 }).where(eq(t.schema.trades.id, S.id)).run();
+    selectAccount(ACC);
+    const before = rowsOf(ACC);
+
+    expect(dq.getStaleOpenPairs()).toEqual([]);
+    expect(dq.getDataQualityReport().issues.filter((i) => i.code === "stale_open")).toEqual([]);
+    const { status, json } = await post({ lotId: L.id, saleId: S.id, exitDate: "2026-08-15" });
+    expect([status, json.ok, json.code]).toEqual([409, false, "NO_PAIR"]);
+    expect(rowsOf(ACC)).toEqual(before);
+  });
+});
+
+describe("W2-DQ P2 — after the manual close, the sale rows are listed as a warning", () => {
+  it("lot 100 with sales 40 + 60, closed by closePosition: both sale rows listed, stale_open 0, nothing removed", () => {
+    const ACC = 807;
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-manual" }).run();
+    const sell = (qty: number, day: string) =>
+      parsed([trade({ tradingsymbol: "BHEL", sellQty: qty, avgSellPrice: 250, sellValue: 250 * qty, sellDate: day })]);
+    expect(commit.commitParsedFile(buyFile("BHEL"), "bhel-buy", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell(40, "2026-08-28"), "bhel-s40", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell(60, "2026-08-29"), "bhel-s60", null, ACC).added).toBe(1);
+    const [L, S40, S60] = rowsOf(ACC);
+    selectAccount(ACC);
+    // The partial path: listed, no button — the card links to the manual close.
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.matchedQty, p.oneClick])).toEqual([
+      [L.id, S40.id, 40, false],
+      [L.id, S60.id, 60, false],
+    ]);
+
+    expect(commit.closePosition(L.id, 250, "2026-08-29").ok).toBe(true);
+
+    const report = dq.getDataQualityReport();
+    expect(report.issues.filter((i) => i.code === "stale_open")).toEqual([]);
+    const warning = report.issues.find((i) => i.code === "stale_sale");
+    expect(warning).toMatchObject({ severity: "warning", count: 2, ids: [S40.id, S60.id], href: "/data-quality#stale-open" });
+    const section = dq.getStaleOpenSection();
+    expect(section.pairs).toEqual([]);
+    expect(section.sales.map((s) => [s.saleId, s.saleQty, s.closedLotIds])).toEqual([
+      [S40.id, 40, [L.id]],
+      [S60.id, 60, [L.id]],
+    ]);
+    expect(rowsOf(ACC).map((r) => r.id), "listed, never removed").toEqual([L.id, S40.id, S60.id]);
+
+    // The stale section the warning links to renders them, with no join button.
+    const html = renderToStaticMarkup(React.createElement(StaleLotFix, section));
+    expect(html).toContain('id="stale-open"');
+    expect(html).toContain("Closing trades with no open position left to close");
+    expect(html.match(/data-stale-sales/g)).toHaveLength(1);
+    expect(html).toContain("recorded sale 40");
+    expect(html).toContain("recorded sale 60");
+    expect(html).not.toContain("Close with the recorded sale");
+  });
+});
+
+describe("W2-DQ P4 — a lot joined with its recorded sale stays a cross-account copy of its joined twin", () => {
+  /** Seed the same Dhan lot + sale into `accounts`, then join it in `joinIn` through the real route. */
+  async function seedTwins(accounts: number[], joinIn: number[], sym: string) {
+    const seeded = accounts.map((acc) => ({ acc, ...seedPair(acc, sym, "delivery", `stale-${sym}-${acc}`) }));
+    for (const s of seeded.filter((x) => joinIn.includes(x.acc))) {
+      selectAccount(s.acc);
+      const { status } = await post({ lotId: s.L.id, saleId: s.S.id, exitDate: "2026-08-28" });
+      expect(status).toBe(200);
+    }
+    selectAccount(0);
+    return seeded;
+  }
+
+  it("joined in BOTH books: every copy is removable under each hash, and the fix takes the joined lot", async () => {
+    const [a, b] = await seedTwins([808, 809], [808, 809], "HAL");
+    const groups = identity.listDuplicateTradeGroups().filter((g) => g.symbol === "HAL");
+    expect(groups.map((g) => g.dedupHash).sort()).toEqual([a.L.dedupHash, a.S.dedupHash].sort());
+    for (const g of groups) {
+      expect(g.accounts.map((x) => [x.id, x.removable]), `under ${g.dedupHash === a.L.dedupHash ? "the buy" : "the sale"} hash`).toEqual([
+        [808, true],
+        [809, true],
+      ]);
+    }
+    expect(identity.duplicateTradeIdsIn("dhan", a.L.dedupHash, 808)).toEqual([a.L.id]);
+    expect(identity.duplicateTradeIdsIn("dhan", a.S.dedupHash, 809)).toEqual([b.L.id]);
+  });
+
+  it("joined in ONE book only: that copy is still not removable, under either hash (fixA S3b's shape)", async () => {
+    const [a, b] = await seedTwins([810, 811], [810], "BEML");
+    const groups = identity.listDuplicateTradeGroups().filter((g) => g.symbol === "BEML");
+    expect(groups).toHaveLength(2);
+    for (const g of groups) expect(g.accounts.map((x) => [x.id, x.removable])).toEqual([[810, false], [811, true]]);
+    expect(identity.duplicateTradeIdsIn("dhan", a.L.dedupHash, 810)).toEqual([]);
+    expect(identity.duplicateTradeIdsIn("dhan", a.L.dedupHash, 811)).toEqual([b.L.id]);
+  });
+});
+
+// ─────────── W2-FIXD2 (seam D2) — a STAGED lot: listed, refused, linked ─────────
+
+describe("W2-FIXD2 — a staged lot (bought in two fills) and its recorded sale: listed, the join refuses it, the card links to the ladder", () => {
+  const ACC = 812;
+  const SYM = "TATASTEEL";
+  let L: NonNullable<ReturnType<typeof row>>;
+  let S: NonNullable<ReturnType<typeof row>>;
+  const legsOf = (tradeId: number) =>
+    t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, tradeId)).all().sort((a, b) => a.seq - b.seq);
+
+  it("the real importer stores ONE staged row of 100 with two entry legs, and the query lists it against all 100", () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-staged" }).run();
+    const buy = parsed([
+      trade({
+        tradingsymbol: SYM,
+        buyQty: 100,
+        avgBuyPrice: 200,
+        buyValue: 20000,
+        buyDate: "2026-08-20",
+        executions: [
+          { side: "buy", qty: 10, price: 200, date: "2026-08-20", time: "10:00:00" },
+          { side: "buy", qty: 90, price: 200, date: "2026-08-20", time: "10:05:00" },
+        ],
+      }),
+    ]);
+    expect(commit.commitParsedFile(buy, "staged-buy", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(saleFile(SYM), "staged-sale", null, ACC).added).toBe(1);
+    [L, S] = rowsOf(ACC);
+    expect([L.staged, L.isOpen, L.buyQty, S.sellQty, S.isOpen]).toEqual([true, true, 100, 100, true]);
+    expect(legsOf(L.id).map((g) => [g.kind, g.qty])).toEqual([["entry", 10], ["entry", 90]]);
+
+    selectAccount(ACC);
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.matchedQty, p.staged, p.oneClick, p.blocked])).toEqual([
+      [L.id, S.id, 100, true, false, null],
+    ]);
+    expect(dq.getDataQualityReport().issues.find((i) => i.code === "stale_open")?.ids).toEqual([L.id]);
+  });
+
+  it("POST close-stale refuses the staged lot with STAGED and changes neither row nor the ladder", async () => {
+    const beforeRows = rowsOf(ACC);
+    const beforeLegs = legsOf(L.id);
+    const { status, json } = await post({ lotId: L.id, saleId: S.id, exitDate: "2026-08-28" });
+    expect([status, json.ok, json.code]).toEqual([409, false, "STAGED"]);
+    expect(json.message).toMatch(/staged position/);
+    expect(json.message).toMatch(/Nothing was changed/);
+    expect(rowsOf(ACC)).toEqual(beforeRows);
+    expect(legsOf(L.id)).toEqual(beforeLegs);
+  });
+
+  it("closeStaleLot itself refuses it too, whatever the screen offered (defence in depth)", () => {
+    const res = commit.closeStaleLot(L.id, S.id, "2026-08-28");
+    expect([res.ok, res.code]).toEqual([false, "STAGED"]);
+    expect(row(L.id)!.isOpen).toBe(true);
+    expect(row(S.id)).toBeDefined();
+  });
+
+  it("the card lists the pair with no join button, and links to the position in Trades where its ladder books the exit", () => {
+    const html = renderToStaticMarkup(React.createElement(StaleLotFix, { pairs: dq.getStaleOpenPairs() }));
+    const text = html.replace(/<!-- -->/g, "").replace(/<[^>]*>/g, " ");
+    expect(text).toContain("open 100 @ 200.00 since 2026-08-20");
+    expect(html).not.toContain("Close with the recorded sale");
+    expect(text).toContain("staged position");
+    expect(html).toContain(`href="/trades?symbol=${SYM}&amp;view=open"`);
+    expect(text).not.toMatch(/\b(should|must|recommend|consider|suggest)\b/i);
   });
 });

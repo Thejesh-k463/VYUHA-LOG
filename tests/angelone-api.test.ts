@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { openTempDb, type TempDb } from "./helpers/temp-db";
 import * as angelone from "@/lib/import/api/angelone";
 import { normalizeAngelTrades, productHintOf, exchangeOf, toParsedFile, type AngelTradeRow } from "@/lib/import/api/angelone";
 // The live-feed adapters. Neither reaches `@/lib/db` except through a dynamic
-// import inside a function, so a value import here binds no connection — and
-// this file opens no temp database.
+// import inside a function, so a value import here binds no connection — which
+// is what lets the R43 block below open this file's one temp database.
 import { ANGELONE_QUOTE_MODE, ANGELONE_QUOTE_PATH, angelQuoteFetcher } from "@/lib/quotes/angelone";
 import { ANGELONE_SEARCH_SCRIP_PATH, angelSearchScrip } from "@/lib/quotes/angelone-tokens";
 
@@ -81,6 +82,80 @@ describe("normalizeAngelTrades", () => {
     );
     expect(trades).toHaveLength(0);
     expect(refused).toBe(3);
+  });
+
+  it("QS-AO: a sell-only row is dated today and basis-unknown — a sale out of a holding the book cannot see, not an undated short", () => {
+    const { trades } = normalizeAngelTrades([fill({ transactiontype: "SELL", fillprice: 160 })], TODAY);
+    expect(trades[0]).toMatchObject({ buyQty: 0, sellQty: 10, buyDate: null, sellDate: TODAY, basisUnknown: true });
+    // A round trip and an open buy carry no basis flag.
+    expect(normalizeAngelTrades([fill(), fill({ transactiontype: "SELL" })], TODAY).trades[0]!.basisUnknown).toBeUndefined();
+    expect(normalizeAngelTrades([fill()], TODAY).trades[0]!.basisUnknown).toBeUndefined();
+  });
+});
+
+describe("R43 + QS-AO · a same-day re-pull replaces today's earlier row in place (commit, one temp database)", () => {
+  // ONE temp database for this file (AGENTS.md). The static imports above
+  // reach no `@/lib/db`, so openTempDb binds the connection first. The hook's
+  // budget is the Windows runner's (AGENTS.md Testing): locally the file's
+  // tests measured 1.52 s, the hook almost all of it (2026-09-14), inside the
+  // 3 s local budget.
+  let t: TempDb;
+  let commit: typeof import("@/lib/import/commit");
+  const ACC = 901;
+  const FILE = `angelone-api-${TODAY}`;
+  const snap = { supersedeSnapshot: { fileName: FILE } };
+  const rowsOf = () =>
+    t.sqlite
+      .prepare("SELECT id, buy_qty, sell_qty, is_open, sell_date, import_batch_id, acquisition FROM trades WHERE account_id = ? ORDER BY id")
+      .all(ACC) as { id: number; buy_qty: number; sell_qty: number; is_open: number; sell_date: string | null; import_batch_id: number; acquisition: string | null }[];
+
+  beforeAll(async () => {
+    t = await openTempDb("angelone-api", { seed: true });
+    commit = await import("@/lib/import/commit");
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "ao re-pull" }).run();
+  }, 120_000);
+  afterAll(() => t?.cleanup());
+
+  it("pull 1 BUY (open), pull 2 the same day BUY + SELL: one row, closed, the same id and batch, and the commit says so", () => {
+    const pull1 = toParsedFile(normalizeAngelTrades([fill()], TODAY).trades);
+    expect(commit.commitParsedFile(pull1, FILE, null, ACC, snap).added).toBe(1);
+    const [first] = rowsOf();
+    expect(first).toMatchObject({ buy_qty: 10, sell_qty: 0, is_open: 1, sell_date: null });
+
+    const pull2 = toParsedFile(normalizeAngelTrades([fill(), fill({ transactiontype: "SELL", fillprice: 155, filltime: "14:45:01" })], TODAY).trades);
+    const pre = commit.previewParsedFile(pull2, null, ACC, FILE, snap);
+    expect.soft([pre.summary.newCount, pre.summary.dupCount, pre.summary.supersededCount]).toEqual([0, 0, 1]);
+    expect(pre.crossSource?.risky).toBe(false);
+
+    const res = commit.commitParsedFile(pull2, FILE, null, ACC, snap);
+    expect.soft([res.added, res.skipped]).toEqual([0, 0]);
+    expect.soft(res.warnings).toContain("1 position updated from today's earlier pull.");
+    // THE assertion (two rows on revert).
+    const rows = rowsOf();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: first!.id, buy_qty: 10, sell_qty: 10, is_open: 0, sell_date: TODAY, import_batch_id: first!.import_batch_id });
+  });
+
+  it("a stored row with a LADDER (two buy fills) is not rewritten: the preview asks instead, and nothing is replaced", () => {
+    const sym = "LADDER-EQ";
+    const pull1 = toParsedFile(
+      normalizeAngelTrades([fill({ tradingsymbol: sym }), fill({ tradingsymbol: sym, fillprice: 151, filltime: "10:30:00" })], TODAY).trades,
+    );
+    expect(commit.commitParsedFile(pull1, FILE, null, ACC, snap).added).toBe(1);
+    const legs = (t.sqlite.prepare("SELECT COUNT(*) AS n FROM trade_legs l JOIN trades x ON x.id = l.trade_id WHERE x.tradingsymbol = 'LADDER'").get() as { n: number }).n;
+    expect(legs, "pull 1 wrote a two-leg ladder").toBe(2);
+
+    const pull2 = toParsedFile(
+      normalizeAngelTrades(
+        [fill({ tradingsymbol: sym }), fill({ tradingsymbol: sym, fillprice: 151, filltime: "10:30:00" }), fill({ tradingsymbol: sym, transactiontype: "SELL", fillsize: 20, fillprice: 160, filltime: "14:00:00" })],
+        TODAY,
+      ).trades,
+    );
+    const pre = commit.previewParsedFile(pull2, null, ACC, FILE, snap);
+    // THE assertions (supersededCount 1 and no collision on revert of the ladder guard).
+    expect(pre.summary.supersededCount).toBe(0);
+    expect(pre.crossSource?.risky).toBe(true);
+    expect(pre.crossSource?.collisions[0]).toMatchObject({ symbol: "LADDER", sameSnapshot: true });
   });
 });
 

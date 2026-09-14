@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { encryptSecret, readSecret } from "@/lib/vault";
 import { recordAudit } from "@/lib/audit";
 import { toIst } from "@/lib/domain/trading-day";
-import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
+import { previewParsedFile, commitParsedFile, supersededFromWarnings, supersededPhrase } from "@/lib/import/commit";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
 import {
   catchUpAfter,
@@ -83,12 +83,13 @@ export type AutoPullStatus = "imported" | "nothingNew" | "collision" | "error" |
  * function plus the fact that realPullOne commits ONLY on "commit".
  */
 export function classifyPreview(pre: {
-  summary: { total: number; newCount: number };
+  summary: { total: number; newCount: number; supersededCount?: number };
   crossSource?: { risky?: boolean } | null;
 }): "nothingNew" | "collision" | "commit" {
   // Covers both "no trades today" and "every row already in the journal" —
-  // no commit, no empty import batch.
-  if (pre.summary.newCount === 0) return "nothingNew";
+  // no commit, no empty import batch. A row that replaces today's earlier
+  // snapshot (R43) is something to commit, though it is not new.
+  if (pre.summary.newCount === 0 && !(pre.summary.supersededCount ?? 0)) return "nothingNew";
   if (pre.crossSource?.risky) return "collision";
   return "commit";
 }
@@ -170,6 +171,8 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
   let parsed;
   /** C-6: Dhan history this pull did not read — kept only if it commits. */
   let unfetched: readonly DhanUnfetchedSpan[] = [];
+  /** P11: the window an UNTRUNCATED Dhan history walk read in full; null otherwise. */
+  let readWindow: { from: string; to: string } | null = null;
   /** R42: this pull's lastPullAt — Dhan's pre-/positions instant (`onCutoff`),
    *  else when the pull started. Never a post-commit clock. */
   const pulledAt = new Date().toISOString();
@@ -238,6 +241,8 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       });
       const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt);
       unfetched = pulled.unfetched;
+      const walked = read as DhanHistoryRead | null;
+      readWindow = range && walked && !walked.truncated ? { from: range.from, to: range.to } : null;
       parsed = pulled;
     } else if (conn.broker === "upstox") {
       parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
@@ -252,14 +257,17 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
   const owner = { connId: conn.id, accountId: conn.accountId, source: "auto-pull" };
   // Same file naming as the manual pull, so dedup and batch history line up.
   const fileName = `${conn.broker}-api-${today}`;
+  // R43 / QS-AO: every broker this sweep pulls states today's book, so a later
+  // pull the same day replaces the earlier snapshot of a changed position.
+  const snapshotOpts = { supersedeSnapshot: { fileName } };
   try {
-    const pre = previewParsedFile(parsed, null, conn.accountId, fileName);
+    const pre = previewParsedFile(parsed, null, conn.accountId, fileName, snapshotOpts);
     const cls = classifyPreview(pre);
     if (cls === "nothingNew") {
       // R27 (v4.3.0 fix wave 1): nothing new — for either total — is still a
       // successful read. Its spans and the stamp land in ONE transaction.
       try {
-        keepUnfetchedAndStamp(unfetched, owner, stamp);
+        keepUnfetchedAndStamp(unfetched, owner, stamp, readWindow);
       } catch (e) {
         return { ...base, status: "error", detail: unsavedDetail(e) };
       }
@@ -283,22 +291,29 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
     } catch (e) {
       return { ...base, status: "error", detail: unsavedDetail(e) };
     }
-    const res = commitParsedFile(parsed, fileName, null, conn.accountId);
+    const res = commitParsedFile(parsed, fileName, null, conn.accountId, snapshotOpts);
     // R42: the stamp is the instant taken before /v2/positions was read.
-    db.update(brokerConnections)
-      .set({ lastPullAt: stamp })
-      .where(eq(brokerConnections.id, conn.id))
-      .run();
+    // P11: with it, in one transaction, the clear of every page-cap span this
+    // pull's untruncated walk read in full.
+    keepUnfetchedAndStamp([], owner, stamp, readWindow);
     // "+N trades" is what the commit ADDED — the manual pull's "N added" — not
     // the preview's non-duplicate rows, which also count a row the pull repeats
     // and the commit then skips (F-L1-7). Auto-close is switched off for 4.3.0
     // (06-ANSWERS, v4.3.0 release-level-audit rulings, row 1), so a SELL of a
     // held lot lands as its own row, exactly as in v4.2.0, and reads "+1 trade"
-    // either way.
+    // either way. R43: a row that replaced today's earlier snapshot is said as
+    // what the commit said, and is not counted as a trade added.
+    const updated = supersededFromWarnings(res.warnings);
+    const what = [
+      res.added > 0 || updated === 0 ? `+${res.added} trade${res.added === 1 ? "" : "s"}` : null,
+      updated > 0 ? supersededPhrase(updated) : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
     return {
       ...base,
       status: "imported",
-      detail: `+${res.added} trade${res.added === 1 ? "" : "s"}${unfetchedDetail(unfetched)}`,
+      detail: `${what}${unfetchedDetail(unfetched)}`,
       newCount: pre.summary.newCount,
     };
   } catch (e) {

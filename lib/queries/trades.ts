@@ -257,12 +257,27 @@ export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
  * symbol — both inside the same account filter. No stored symbol changes; the
  * page resolves the leg's symbol through `isin`.
  *
- * A basis-unknown sale (`acquisition = 'unknown'`, stored open) is NOT an
- * underlying (K3-M1): read as one, it netted the holding into a phantom SHORT
- * and the card printed an "Unlimited" loss. Same predicate as the open count.
+ * A basis-unknown sale (`acquisition = 'unknown'`, stored open) is RETURNED,
+ * with its `acquisition`, and is never a leg of its own (P5). Read as a short
+ * it netted a holding into a phantom SHORT (K3-M1); left out, a partly sold
+ * holding covered naked calls — with auto-close OFF a later sale of a held lot
+ * is committed as exactly such a row and the lot keeps its full size. The page
+ * nets these sales against the same holding, floored at zero. Same account
+ * scope as every other row here.
+ *
+ * D3 (v4.3.0 fix wave 2, W2-FIXB): every delivery-segment sale is returned with
+ * its `segment` and `acquisitionPrice` too, so the page reads Data Quality's
+ * own basis predicate (`hasRecordedBasis`): a sale with NO recorded basis
+ * (acquisition NULL or 'unknown', no price) nets the holding; a sale WITH one
+ * (bonus, ESOP, gift, or a price) is a complete trade of shares acquired outside
+ * the book and is left out of the join. A future's sale stays a short.
  */
 const UNDERLYING_LEG_FIELDS = [
   "symbol", "instrumentType", "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice", "expiry", "isin",
+  // P5: the page nets a basis-unknown sale; P14: a compact future's stated month.
+  "acquisition", "tradingsymbol",
+  // D3: only a delivery-segment sell-only row nets or is left out; a recorded basis price.
+  "segment", "acquisitionPrice",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type UnderlyingLegRow = Pick<Trade, (typeof UNDERLYING_LEG_FIELDS)[number]>;
@@ -287,7 +302,6 @@ export const getOpenUnderlyingPositions = cache((): UnderlyingLegRow[] => {
   const isUnderlying = and(
     eq(trades.isOpen, true),
     inArray(trades.instrumentType, ["equity", "future"]),
-    sql`coalesce(${trades.acquisition}, '') != 'unknown'`,
     optionIsins.length ? or(byCase, inArray(trades.isin, optionIsins)) : byCase,
   );
   return db.select(pickCols(UNDERLYING_LEG_FIELDS)).from(trades)

@@ -24,12 +24,13 @@ import {
 import {
   legKind,
   underlyingExpiresFirst,
+  underlyingExpiryUnknown,
   type CapLabel,
   type OptionLeg,
   type StrategyGroup,
 } from "@/lib/analytics/strategies";
 import type { ShelfHistory, ShelfPostResult } from "@/lib/domain/strategy-shelf";
-import { OPTIONS_HELP_FOOTER, optionsAnchorId } from "@/lib/domain/options-help";
+import { OPTIONS_BEGINNER_LABEL, OPTIONS_HELP_FOOTER, optionsAnchorId } from "@/lib/domain/options-help";
 import { inr } from "@/lib/format";
 
 /** The em dash every un-computable figure renders. Never a 0 (invariant 6). */
@@ -49,8 +50,9 @@ export const STRATEGY_COPY = {
   /**
    * §6, Q6: ONE sentence, and the reason the tiles above it can read as
    * reachable when they are not. Exercise STT is charged on INTRINSIC value,
-   * which is an order of magnitude larger than squaring off and falls on
-   * exactly the shapes people let settle.
+   * a charge the gross tiles leave out and one that falls on exactly the shapes
+   * people let settle (R93: since 2026-04-01 NSE/FATAX/73524 charges 0.15% on
+   * premium and 0.15% on intrinsic, so no ratio between the two is stated).
    */
   sttNote:
     "STT on an exercised option is charged on intrinsic value, not on premium, so a long butterfly's stated maximum is unreachable if the position is left to settle.",
@@ -65,6 +67,14 @@ export const STRATEGY_COPY = {
    */
   underlyingExpiresFirstNote:
     "The underlying future expires before an option leg does, so max profit and max loss at the later option expiry depend on where the future settles first. Neither is computed here.",
+
+  /**
+   * P14: why both tiles are blank when an underlying FUTURE has no stored
+   * expiry and its symbol does not place it against the last option expiry.
+   * Not the sentence above: that one states an order this case does not know.
+   */
+  underlyingExpiryUnknownNote:
+    "No expiry date is stored for the underlying future, and its symbol does not place it before or after the last option expiry, so whether it settles first is unknown. Max profit and max loss are not computed here.",
 
   /** §6: the zero-price cap is a floor, not a forecast. */
   atZeroNote:
@@ -85,9 +95,16 @@ export const STRATEGY_COPY = {
    * screen printed before 4.3, which invariant 7 does not let a release take
    * away. `tests/strategies-copy.test.ts` counts those rows in the catalogue
    * and asserts this sentence spells that number.
+   *
+   * R11 (ruling 06-ANSWERS:258, Option A): the boundary is the SHAPE, not the
+   * legs. A short call that 4.2 named reads as a covered call once a holding of
+   * the underlying joins it, and a single-expiry pair reads as a calendar or a
+   * diagonal once a second expiry does — Pro shapes, so a free build prints
+   * "Custom (n legs)" for that book. The sentence says so rather than implying
+   * the sixteen names survive every book they once described.
    */
   proWithheldNote:
-    "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro. Your legs, the four figures and the payoff curve stay free.",
+    "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro, and a holding of the underlying or a second expiry can turn legs one of the sixteen once named into one of those shapes. Your legs, the four figures and the payoff curve stay free.",
 
   /**
    * The shelf, for a free build: a locked strip and one line. The picker's
@@ -98,6 +115,8 @@ export const STRATEGY_COPY = {
   shelfTitle: "Your shelf",
   shelfEmpty: "Nothing on the shelf.",
   browseTitle: "Browse the catalogue",
+  /** R52: the picker's beginner chip is /help's own word, from ONE constant. */
+  beginner: OPTIONS_BEGINNER_LABEL,
   /**
    * NO count here: `browse-drawer.tsx` appends the one derived from the rows it
    * was handed, and a count in the label printed "Browse all 40 (40)" (C-3).
@@ -234,12 +253,18 @@ export function netTone(strategyId: StrategyId | null, optionNet: number): NetTo
  * R104: the sentence a card carries when an underlying FUTURE settles before
  * an option leg — the reason both figures are blank. The flag is B1's own
  * `underlyingExpiresFirst`, so the sentence and the blank tiles cannot disagree.
+ * P14: a future with no stored expiry that nothing places carries its own
+ * sentence, from `underlyingExpiryUnknown` — the engine's other flag. A book
+ * holding both kinds carries both sentences.
  */
 export function underlyingExpiryNote(group: {
   ulLegs: readonly OptionLeg[];
   expiries: readonly string[];
 }): string | null {
-  return underlyingExpiresFirst(group.ulLegs, group.expiries) ? STRATEGY_COPY.underlyingExpiresFirstNote : null;
+  const notes: string[] = [];
+  if (underlyingExpiresFirst(group.ulLegs, group.expiries)) notes.push(STRATEGY_COPY.underlyingExpiresFirstNote);
+  if (underlyingExpiryUnknown(group.ulLegs, group.expiries)) notes.push(STRATEGY_COPY.underlyingExpiryUnknownNote);
+  return notes.length ? notes.join(" ") : null;
 }
 
 export const NET_LABEL: Record<"credit" | "debit", string> = {

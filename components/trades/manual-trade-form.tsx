@@ -18,6 +18,7 @@ import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { CheckCircle2, Paperclip } from "lucide-react";
+import { buildManualPreviewBody } from "@/components/trades/manual-preview-body";
 
 interface PreviewResp {
   classification: { segment: Segment; bucket: string; exchange: string; symbol: string; optionType: string | null };
@@ -191,9 +192,23 @@ export function ManualTradeForm({
     // before the debounced fetch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tradingsymbol || (bq <= 0 && sq <= 0)) { setPreview(null); return; }
-    const entryDate = buyDate || null;
-    const exitDate = open ? null : sellDate || null;
-    const shortFno = kind === "fno" && direction === "sell";
+    // The form's buy* state is the ENTRY and its sell* state the EXIT; the
+    // builder puts them on the sides createManualTrade stores — for a written
+    // (sell-direction) F&O trade the entry is the SELL side — so the preview
+    // prices the quantities, values, gross and dates the save will (P6, R56).
+    const body = buildManualPreviewBody({
+      broker, tradingsymbol,
+      productHint: productHint || null,
+      segment: segment || null,
+      exchange: exchange || null,
+      direction: kind === "fno" ? direction : "buy",
+      open,
+      entryQty: bq, entryPrice: bp, entryDate: buyDate || null,
+      exitQty: sq, exitPrice: sp, exitDate: sellDate || null,
+      // MTF-only (ignored server-side unless the classified segment is eq_mtf).
+      ownCapitalUsed: Number(ownCapitalUsed) >= 0 && ownCapitalUsed !== "" ? Number(ownCapitalUsed) : null,
+      daysHeld: Number(daysHeld) || 0,
+    });
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
       try {
@@ -201,25 +216,7 @@ export function ManualTradeForm({
           method: "POST",
           headers: { "content-type": "application/json" },
           signal: ctrl.signal,
-          body: JSON.stringify({
-            broker, tradingsymbol,
-            productHint: productHint || null,
-            segment: segment || null,
-            exchange: exchange || null,
-            buyValue: bq * bp, sellValue: sq * sp, buyQty: bq, sellQty: sq,
-            grossPnl: sq > 0 && bq > 0 ? sq * sp - bq * bp : 0,
-            // MTF-only (ignored server-side unless the classified segment is
-            // eq_mtf); daysHeld is forced 0 for an open position — interest
-            // can't have accrued before the daily accrual job runs from T+1.
-            ownCapitalUsed: Number(ownCapitalUsed) >= 0 && ownCapitalUsed !== "" ? Number(ownCapitalUsed) : null,
-            daysHeld: open ? 0 : Number(daysHeld) || 0,
-            isOpen: open,
-            // Priced at the date the save will store (R56). createManualTrade
-            // files a written (sell-direction) F&O entry on the SELL side and
-            // its exit on the BUY side, and an open trade has no exit date.
-            buyDate: shortFno ? exitDate : entryDate,
-            sellDate: shortFno ? entryDate : exitDate,
-          }),
+          body: JSON.stringify(body),
         });
         if (res.ok) setPreview(await res.json());
       } catch { /* aborted */ }

@@ -86,11 +86,20 @@ describe("charge_config epochs survive a re-seed", () => {
     );
     expect(mcx.map((r) => [r.effectiveFrom, r.effectiveTo])).toEqual([["1970-01-01", null]]);
 
-    // --- Equity delivery: STT "No Change" in circular 02/2026 — every epoch
-    // carries 0.1%; its epochs are the NSE exchange charge's alone. ------------
-    const delivery = pick("eq_delivery");
-    expect(delivery.map((r) => r.effectiveFrom).sort()).toEqual(["1970-01-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01"]);
-    for (const r of delivery) expect(r.sttPct).toBeCloseTo(0.001, 10);
+    // --- Equity delivery: STT 0.125% both sides till 30-Jun-2012, 0.1% from
+    // 1-Jul-2012 (FATAX20990 rows 1 & 2), "No Change" in circular 02/2026 —
+    // so the 2012 STT boundary plus the NSE exchange charge's four. ----------
+    // Re-pinned for QS-EQ2012 (v4.3.0 fix wave 2): before, 5 epochs all at 0.1%;
+    // after, 6 epochs, the 1970 one at 0.125%. Measured.
+    const delivery = [...pick("eq_delivery")].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    expect(delivery.map((r) => [r.effectiveFrom, r.sttPct])).toEqual([
+      ["1970-01-01", 0.00125],
+      ["2012-07-01", 0.001],
+      ["2023-04-01", 0.001],
+      ["2024-04-01", 0.001],
+      ["2024-10-01", 0.001],
+      ["2026-03-01", 0.001],
+    ]);
   });
 
   /**

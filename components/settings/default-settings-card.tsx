@@ -22,6 +22,11 @@ const FIELD_LABELS: Record<string, string> = {
   strategyShelfJson: "strategy shelf",
 };
 
+// v4.3.0 P12: restoreBaseline re-inserts the snapshot's charge rows and then
+// refreshes them (R7), so a row the user never edited follows this build's
+// rate card rather than the snapshot. Said BEFORE the click, in the toast's words.
+const UNEDITED_CHARGE_ROWS = "Charge rows you never edited follow this version's rate card.";
+
 export function DefaultSettingsCard() {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
@@ -47,7 +52,8 @@ export function DefaultSettingsCard() {
         <CardTitle>My Default Settings</CardTitle>
         <p className="mt-1 text-xs text-muted-foreground">
           Your first configuration was kept as a baseline — preferences plus the charge, margin and risk
-          rate tables. Change anything freely; one click brings it all back. Trades, journal data, your
+          rate tables. Change anything freely; one click returns your preferences, the margin and risk
+          tables and the charge rows you edited to that baseline. {UNEDITED_CHARGE_ROWS} Trades, journal data, your
           licence and the trial are never part of this.
         </p>
       </CardHeader>
@@ -56,7 +62,7 @@ export function DefaultSettingsCard() {
           <p className="rounded-md border border-border bg-card-hover/30 p-2.5">
             {diff.fields.length === 0
               ? "Preferences currently match your default."
-              : <>Restoring would change: <b>{diff.fields.map((f) => FIELD_LABELS[f] ?? f).join(", ")}</b> — plus all three rate tables back to the snapshot.</>}
+              : <>Restoring would change: <b>{diff.fields.map((f) => FIELD_LABELS[f] ?? f).join(", ")}</b> — plus the margin and risk tables and your edited charge rows back to the snapshot. {UNEDITED_CHARGE_ROWS}</>}
             {diff.capturedAt && <span className="text-muted-foreground"> Baseline saved {diff.capturedAt.slice(0, 10)}.</span>}
           </p>
         )}

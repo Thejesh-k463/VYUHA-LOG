@@ -59,10 +59,10 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * AUTO-CLOSE IS SWITCHED OFF FOR 4.3.0 (owner ruling 2026-09-11, 06-ANSWERS
  * "v4.3.0 release-level-audit rulings", row 1): lib/import/commit.ts is v4.2.0
  * again, so seam row 2's consumer (the close sentence) no longer exists and no
- * close happens — R72 is unreachable. The Angel One / Upstox sale still lands
- * as an OPEN SHORT with `sell_date` NULL and no basis flag: v4.2.0's shape,
- * which S2 pins as today's behaviour pending an owner decision (carried with
- * R72 to 4.3.1) — not as correct.
+ * close happens — R72 is unreachable. The Angel One / Upstox sale used to land
+ * as an OPEN SHORT with `sell_date` NULL and no basis flag (v4.2.0's shape).
+ * The owner selected QS-AO (v4.3.0 fix work): it now lands dated the pull's IST
+ * day and basis-unknown, Dhan's M-3 shape, and S2 pins that.
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -88,6 +88,9 @@ const UPSTOX = 77;
 const OPENALGO = 78;
 const RATES_BEFORE = 79;
 const RATES_AFTER = 80;
+const PAGE_FLOOR = 81;
+const DELIVERY_2011_BEFORE = 82;
+const DELIVERY_2011_AFTER = 83;
 const CLIENT = "1000000009";
 
 beforeAll(async () => {
@@ -103,7 +106,7 @@ beforeAll(async () => {
   t.db
     .insert(t.schema.accounts)
     .values(
-      [PAGE_ROUTE, PAGE_AUTO, EDGE_IN, EDGE_OUT, KITE, ANGEL, UPSTOX, OPENALGO, RATES_BEFORE, RATES_AFTER].map((id) => ({
+      [PAGE_ROUTE, PAGE_AUTO, EDGE_IN, EDGE_OUT, KITE, ANGEL, UPSTOX, OPENALGO, RATES_BEFORE, RATES_AFTER, PAGE_FLOOR, DELIVERY_2011_BEFORE, DELIVERY_2011_AFTER].map((id) => ({
         id,
         name: `seam ${id}`,
         isDefault: false,
@@ -189,7 +192,7 @@ interface ConnLite {
   broker: string;
   accountId: number;
   lastPullAt: string | null;
-  unfetched?: { from: string; to: string; reason: string }[];
+  unfetched?: { from: string; to: string; reason: string; fact: string; remedy: string | null }[];
   catchUpFrom?: string | null;
 }
 
@@ -219,12 +222,15 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
   const STAMP = "2026-09-07T05:00:00.000Z";
   const TRUNCATED =
     "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.";
-  // The card's line (components/import/broker-connect.tsx) is composed from the
-  // stored span alone. D2 (fix wave 1 follow-up, 2026-09-11): its remedy now
-  // starts the day after the last pull's own day, as TRUNCATED's does.
-  const NOTICE_FACT = "A Dhan pull stopped at its page limit: fills between 07 Sep 2026 and 10 Sep 2026 may be missing.";
-  const NOTICE_REMEDY = "Import a Dhan tradebook for 08 Sep 2026 to 10 Sep 2026 to bring the rest in.";
-  const SPAN = [{ from: "2026-09-07", to: "2026-09-10", reason: "page-cap" }];
+  // P15 / P16 (fix wave 2): the card's line (components/import/broker-connect.tsx)
+  // is the server's own two sentences, carried by GET and printed VERBATIM — so
+  // it is TRUNCATED, character for character. Re-pinned from two toContain
+  // fragments of the card's re-derived "may be missing … 08 Sep 2026" line
+  // (the weakened seam pin DECISIONS 2026-09-14 assigns to this builder).
+  const NOTICE_FACT =
+    "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it.";
+  const NOTICE_REMEDY = "To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.";
+  const SPAN = [{ from: "2026-09-07", to: "2026-09-10", reason: "page-cap", fact: NOTICE_FACT, remedy: NOTICE_REMEDY }];
 
   it("route: the commit names the truncation, GET lists a page-cap span, and the card prints the page-limit line", async () => {
     addDhan(PAGE_ROUTE, STAMP);
@@ -249,8 +255,7 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
     // THE assertion: the span outlives the lastPullAt move, and the card's line is the page-limit one.
     const conn = await connOf(PAGE_ROUTE);
     expect(conn.unfetched).toEqual(SPAN);
-    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_FACT);
-    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_REMEDY);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(TRUNCATED);
     // Pulled today: no gap line on top of the kept notice.
     expect(conn.catchUpFrom).toBeNull();
     expect(bc.pullGapNotice(conn.lastPullAt, new Date(), conn.catchUpFrom)).toBeNull();
@@ -275,9 +280,42 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
 
     const conn = await connOf(PAGE_AUTO);
     expect(conn.unfetched).toEqual(SPAN);
-    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_FACT);
-    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_REMEDY);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(TRUNCATED);
     expect(conn.lastPullAt).toBe(AT_IST_BOUNDARY.toISOString());
+  });
+
+  /**
+   * P15 (fix wave 2): a CLAMPED and truncated pull keeps a range-cap span and a
+   * page-cap span that starts at the 90-day floor (2026-06-13), a day no pull
+   * imported. The user clears the range-cap notice only. The card used to find
+   * no range-cap sibling, read the page-cap span as starting on the last pull's
+   * day, and name "14 Jun 2026" in its remedy — skipping the floor day.
+   */
+  it("P15 route: clamped + truncated, the range-cap notice cleared — the card's page-cap line IS the pull's, and names the floor day", async () => {
+    addDhan(PAGE_FLOOR, "2026-06-01T05:00:00.000Z"); // 10:30 IST on 1 Jun — past the floor
+    stubDhan([dhanFill("PF-1", "2026-09-08 10:00:00")], true);
+    const res = await post({ action: "pull", broker: "dhan", accountId: PAGE_FLOOR, mode: "commit" });
+    expect(res.status).toBe(200);
+    const PAGE_LINE =
+      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-13 to 2026-09-10 were not read. Today's book came from /v2/positions. To bring those fills in, import a Dhan tradebook for 2026-06-13 to 2026-09-10.";
+    expect((await res.json()).warnings as string[]).toContain(PAGE_LINE);
+    expect((await connOf(PAGE_FLOOR)).unfetched!.map((s) => s.reason)).toEqual(["range-cap", "page-cap"]);
+
+    const cleared = await post({
+      action: "clear-unfetched",
+      broker: "dhan",
+      accountId: PAGE_FLOOR,
+      from: "2026-06-01",
+      to: "2026-06-12",
+      reason: "range-cap",
+    });
+    expect(cleared.status).toBe(200);
+
+    const conn = await connOf(PAGE_FLOOR);
+    expect(conn.unfetched!.map((s) => [s.from, s.to, s.reason])).toEqual([["2026-06-13", "2026-09-10", "page-cap"]]);
+    // THE assertion ("… for 14 Jun 2026 to 10 Sep 2026 …" on revert of the card).
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(PAGE_LINE);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain("import a Dhan tradebook for 2026-06-13 to");
   });
 });
 
@@ -319,19 +357,18 @@ describe("S4 · catchUpFrom crosses to pullGapNotice at the exact 90-day edge, 0
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(paths).toContain("/v2/trades/2026-06-13/2026-09-11/0");
-    expect(json.warnings as string[]).toContain(
-      // F-L1-3a: the one-day span is the last pull's own day — stated as a
-      // fact, with no tradebook remedy (there is no day left to name).
-      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-06-12 after 00:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.",
-    );
+    // F-L1-3a: the one-day span is the last pull's own day — stated as a
+    // fact, with no tradebook remedy (there is no day left to name).
+    const ONE_DAY =
+      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-06-12 after 00:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.";
+    expect(json.warnings as string[]).toContain(ONE_DAY);
 
     const after = await connOf(EDGE_OUT);
-    expect(after.unfetched).toEqual([{ from: "2026-06-12", to: "2026-06-12", reason: "range-cap" }]);
-    // D2 (fix wave 1 follow-up, 2026-09-11): the card agrees with the pull's
-    // sentence above — a one-day span is the last pull's own day, and names no import.
-    expect(bc.unfetchedNotice(after.unfetched![0]!)).toBe(
-      "Not fetched from Dhan: fills on 12 Jun 2026 after the last pull. A tradebook for 12 Jun 2026 would repeat the fills already imported from it.",
-    );
+    expect(after.unfetched).toEqual([{ from: "2026-06-12", to: "2026-06-12", reason: "range-cap", fact: ONE_DAY, remedy: null }]);
+    // P15 / P16 (fix wave 2): the card prints the pull's sentence above VERBATIM
+    // (re-pinned from the card's own "Not fetched from Dhan: fills on 12 Jun 2026
+    // after the last pull. …" re-derivation) — a one-day span names no import.
+    expect(bc.unfetchedNotice(after.unfetched![0]!)).toBe(ONE_DAY);
     expect(bc.pullGapNotice(after.lastPullAt, new Date(), after.catchUpFrom)).toBeNull();
   });
 });
@@ -345,15 +382,15 @@ interface PullAdapter {
   account: number;
   /** The adapter's REAL normalize + toParsedFile for one fill on `day`. */
   pull: (side: "BUY" | "SELL", day: string, time: string) => ParsedFile;
-  /** Whether this adapter dates a sell-only row (see the header's defect). */
-  datesSellOnly: boolean;
+  /** Whether this adapter flags a sell-only row's basis as unknown (QS-AO). */
+  basisUnknownSellOnly: boolean;
 }
 
 const PULL_ADAPTERS: PullAdapter[] = [
   {
     name: "Kite (Zerodha)",
     account: KITE,
-    datesSellOnly: true,
+    basisUnknownSellOnly: false,
     pull: (side, day, time) =>
       kite.toParsedFile(
         kite.normalizeKiteTrades([
@@ -372,7 +409,7 @@ const PULL_ADAPTERS: PullAdapter[] = [
   {
     name: "Angel One",
     account: ANGEL,
-    datesSellOnly: false,
+    basisUnknownSellOnly: true,
     pull: (side, day, time) =>
       angel.toParsedFile(
         angel.normalizeAngelTrades(
@@ -394,7 +431,7 @@ const PULL_ADAPTERS: PullAdapter[] = [
   {
     name: "Upstox",
     account: UPSTOX,
-    datesSellOnly: false,
+    basisUnknownSellOnly: true,
     pull: (side, day, time) =>
       upstox.toParsedFile(
         upstox.normalizeUpstoxTrades(
@@ -418,7 +455,7 @@ const PULL_ADAPTERS: PullAdapter[] = [
   {
     name: "OpenAlgo (over Zerodha)",
     account: OPENALGO,
-    datesSellOnly: true,
+    basisUnknownSellOnly: false,
     pull: (side, day, time) =>
       openalgo.toParsedFile(
         "zerodha",
@@ -456,9 +493,12 @@ describe("S2 · every broker-API adapter's pulled SELL of a held lot reaches com
     expect(rows).toHaveLength(2);
     expect(rows[0], "the held lot is untouched").toEqual(lot);
     expect(rows[1]).toMatchObject({ isOpen: true, buyQty: 0, sellQty: 10 });
-    // Kite and OpenAlgo date a sell-only row; Angel One and Upstox leave it
-    // null — v4.2.0's shape, pending an owner decision (see the header).
-    expect(rows[1]!.sellDate).toBe(a.datesSellOnly ? "2026-09-02" : null);
+    // RE-PINNED DELIBERATELY for QS-AO (v4.3.0 fix work, plan-answers
+    // "Q-SCOPE"): every adapter now dates a sell-only row. Before, Angel One and
+    // Upstox measured `sellDate: null, acquisition: null` (v4.2.0's open-short
+    // shape, see the header); now they carry Dhan's M-3 shape.
+    expect(rows[1]!.sellDate).toBe("2026-09-02");
+    expect(rows[1]!.acquisition).toBe(a.basisUnknownSellOnly ? "unknown" : null);
   });
 });
 
@@ -484,6 +524,8 @@ const PRE_C8 = {
   eqNse: 0.0000297, eqBse: 0.0000375, optNse: 0.0003503, optBse: 0.000325,
   fut: 0.0000173, cfut: 0.000021, copt: 0.000418, ipft: 0.000000001,
 };
+/** 4.2.0's one delivery/MTF STT (0.1% both sides, every date): QS-EQ2012 gave the 1970 row 0.125%. */
+const PRE_EQ2012_DELIVERY_STT = 0.001;
 function plantOwner420(db: Database.Database): void {
   db.prepare(
     `DELETE FROM charge_config WHERE effective_from <> '1970-01-01'
@@ -498,8 +540,9 @@ function plantOwner420(db: Database.Database): void {
          WHEN segment = 'commodity_future' THEN :cfut
          WHEN segment = 'commodity_option' THEN :copt
          ELSE 0 END,
-       ipft_pct = CASE exchange WHEN 'NSE' THEN :ipft ELSE 0 END`,
-  ).run(PRE_C8);
+       ipft_pct = CASE exchange WHEN 'NSE' THEN :ipft ELSE 0 END,
+       stt_pct = CASE WHEN segment IN ('eq_delivery', 'eq_mtf') THEN :eqStt ELSE stt_pct END`,
+  ).run({ ...PRE_C8, eqStt: PRE_EQ2012_DELIVERY_STT });
   db.prepare(
     `UPDATE charge_config AS t SET effective_to = (SELECT min(n.effective_from) FROM charge_config n
        WHERE n.broker = t.broker AND n.plan = t.plan AND n.segment = t.segment AND n.exchange = t.exchange
@@ -547,6 +590,15 @@ const OPTION_DAYS: [string, string][] = [
   ["2026-03-31", "NIFTY26JUN24000CE"],
   ["2026-04-01", "NIFTY26JUN24000CE"],
 ];
+/** QS-EQ2012: a Dhan NSE delivery round trip before 1 Jul 2012 — 1,000 × ₹100 bought, sold at ₹101. */
+const DAY_2011 = "2011-03-15";
+const delivery2011File = (): ParsedFile => ({
+  sourceId: "seams-v43-release",
+  broker: "dhan",
+  format: "tradebook",
+  warnings: [],
+  trades: [roundTrip("INFY", DAY_2011, "delivery", 1000, 100, 101)],
+});
 const ratesFile = (): ParsedFile => ({
   sourceId: "seams-v43-release",
   broker: "dhan",
@@ -612,12 +664,21 @@ describe("S3 · the C-7/C-8 card, delivered by the desktop refresh, is what comm
     expect(opts.get("2024-09-30")).toMatchObject({ exchangeTxn: 70.06, sttCtt: 180 });
   });
 
+  it("before the refresh, the 4.2.0 card prices a 2011 delivery round trip at a flat 0.1% STT: ₹201 on ₹2,01,000", () => {
+    const res = importer.commitParsedFile(delivery2011File(), "seams-v43-release-2011-before.csv", null, DELIVERY_2011_BEFORE);
+    expect(res.added).toBe(1);
+    expect(byDay(DELIVERY_2011_BEFORE, "eq_delivery").get(DAY_2011)).toMatchObject({ sttCtt: 201 });
+  });
+
   // Re-pinned 2026-09-11 (v4.3.0 fix wave 1). R1 added 63 verified F&O STT
   // epochs (seed 459 -> 522 rows; FATAX23500/27711/32385/56235), so the owner's
   // 4.2.0 card gains 63 more rows than the 297 this pinned before; R54 added
   // `removed` to refreshRateCards' result. Measured, not derived.
-  it("the real sidecar refresh moves that card onto the template: 360 added, 135 refreshed, 0 removed, then 0 / 0 / 0", () => {
-    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 360, refreshed: 135, removed: 0 });
+  // Re-pinned 2026-09-14 (v4.3.0 fix wave 2, QS-EQ2012): the 36 delivery/MTF keys
+  // gained FATAX20990's 2012-07-01 epoch (seed 522 -> 558), so the first launch reads
+  // 396 / 135 / 0 where it read 360 / 135 / 0; the second launch is still 0 / 0 / 0. Measured.
+  it("the real sidecar refresh moves that card onto the template: 396 added, 135 refreshed, 0 removed, then 0 / 0 / 0", () => {
+    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 396, refreshed: 135, removed: 0 });
     expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 0, refreshed: 0, removed: 0 });
   });
 
@@ -635,5 +696,22 @@ describe("S3 · the C-7/C-8 card, delivered by the desktop refresh, is what comm
       const r = opts.get(d)!;
       expect({ day: d, exchangeTxn: r.exchangeTxn, ipft: r.ipft, sttCtt: r.sttCtt }).toEqual({ day: d, ...OPTION_EXPECTED[d] });
     }
+  });
+
+  /**
+   * QS-EQ2012 through the same seam: FATAX20990 rows 1 & 2 state 0.125 per cent on
+   * the purchaser AND the seller till 30.06.2012. Buy ₹1,00,000 + sell ₹1,01,000 =
+   * ₹2,01,000 turnover × 0.125% = ₹251.25, STT rounded to the rupee: ₹251. The flat
+   * 0.1% card (4.2.0, and this build before QS-EQ2012) stores ₹201.
+   */
+  it("after it, commit stores a 2011 delivery round trip at FATAX20990's 0.125% both sides: ₹251 on ₹2,01,000", () => {
+    const res = importer.commitParsedFile(delivery2011File(), "seams-v43-release-2011-after.csv", null, DELIVERY_2011_AFTER);
+    expect(res.added).toBe(1);
+    const r = byDay(DELIVERY_2011_AFTER, "eq_delivery").get(DAY_2011)!;
+    expect({ buyValue: r.buyValue, sellValue: r.sellValue, sttCtt: r.sttCtt }).toEqual({
+      buyValue: 100_000,
+      sellValue: 101_000,
+      sttCtt: 251,
+    });
   });
 });

@@ -203,6 +203,50 @@ ETATEST,INE000A01007,2026-04-02,NSE,sell,10,110,2026-04-02 09:20:00
     expect(gamma.grossPnl).toBe(600);
   });
 
+  // P9 (v4.3.0, the R71 class): a scrip-day-side that fills on BOTH exchanges
+  // is ONE leg, and it used to wear its FIRST fill's exchange — so file order,
+  // not where the turnover happened, picked the rate card. The leg now carries
+  // its value per venue and the row takes the venue of most of its own turnover.
+  describe("a day-side filled on both exchanges (P9)", () => {
+    it("an open lot filled ₹1,000 on BSE first and ₹9,000 on NSE is an NSE row", () => {
+      const csv = `Tradebook
+${HEAD_NO_PRODUCT}
+VENUETEST,INE000A01015,2026-04-01,BSE,buy,10,100,2026-04-01 09:20:00
+VENUETEST,INE000A01015,2026-04-01,NSE,buy,90,100,2026-04-01 09:21:00
+`;
+      const out = parseZerodha(ctx("zerodha-tradebook.csv", csv));
+      expect(out.trades).toHaveLength(1);
+      expect(out.trades[0].buyQty).toBe(100);
+      expect(out.trades[0].exchangeHint).toBe("NSE");
+    });
+
+    it("a round trip whose both days open with a small BSE fill is an NSE row, and says it spans both", () => {
+      const csv = `Tradebook
+${HEAD_NO_PRODUCT}
+VENUETEST,INE000A01015,2026-04-01,BSE,buy,10,100,2026-04-01 09:20:00
+VENUETEST,INE000A01015,2026-04-01,NSE,buy,90,100,2026-04-01 09:21:00
+VENUETEST,INE000A01015,2026-04-06,BSE,sell,10,110,2026-04-06 10:00:00
+VENUETEST,INE000A01015,2026-04-06,NSE,sell,90,110,2026-04-06 10:01:00
+`;
+      const out = parseZerodha(ctx("zerodha-tradebook.csv", csv));
+      expect(out.trades).toHaveLength(1);
+      const t = out.trades[0];
+      expect([t.buyQty, t.sellQty, t.grossPnl]).toEqual([100, 100, 1000]); // pairing untouched
+      expect(t.exchangeHint).toBe("NSE");
+      expect(t.importNotes).toContain("Bought on BSE/NSE, sold on BSE/NSE — one holding, the exchange is where the fill happened.");
+    });
+
+    it("an exact 50/50 split keeps the first fill's venue (the pre-P9 stamp), never the later one", () => {
+      const csv = `Tradebook
+${HEAD_NO_PRODUCT}
+VENUETEST,INE000A01015,2026-04-01,BSE,buy,50,100,2026-04-01 09:20:00
+VENUETEST,INE000A01015,2026-04-01,NSE,buy,50,100,2026-04-01 09:21:00
+`;
+      const out = parseZerodha(ctx("zerodha-tradebook.csv", csv));
+      expect(out.trades[0].exchangeHint).toBe("BSE");
+    });
+  });
+
   it("conserves quantity and value through the pairing", () => {
     const csv = `Tradebook
 ${HEAD_NO_PRODUCT}

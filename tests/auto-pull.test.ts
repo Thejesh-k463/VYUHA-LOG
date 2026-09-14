@@ -85,6 +85,12 @@ describe("classifyPreview — the manual flow's 409 shapes become skips (pure)",
     expect(job.classifyPreview({ summary: { total: 5, newCount: 5 }, crossSource: { risky: false } })).toBe("commit");
     expect(job.classifyPreview({ summary: { total: 5, newCount: 2 } })).toBe("commit");
   });
+  it("R43: a row that replaces today's earlier snapshot is committed, though it is not new", () => {
+    expect(job.classifyPreview({ summary: { total: 1, newCount: 0, supersededCount: 1 } })).toBe("commit");
+    // …and it still never forces past a risky collision.
+    expect(job.classifyPreview({ summary: { total: 2, newCount: 0, supersededCount: 1 }, crossSource: { risky: true } })).toBe("collision");
+    expect(job.classifyPreview({ summary: { total: 1, newCount: 0, supersededCount: 0 } })).toBe("nothingNew");
+  });
 });
 
 describe("runAutoPull — dispatch, skips recorded, one stamp per day", () => {

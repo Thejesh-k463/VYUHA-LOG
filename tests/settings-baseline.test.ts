@@ -186,3 +186,27 @@ describe("the shelf field does not manufacture a phantom difference (S-1)", () =
     }
   });
 });
+
+/**
+ * P12 (v4.3.0 wave-1 re-check): since R7, restoreBaseline re-inserts the
+ * snapshot's charge rows and then runs refreshChargeConfig, so charge rows the
+ * user never edited follow this build's rate card, not the snapshot. Only the
+ * post-restore toast said so; the pre-action copy still promised "all three
+ * rate tables back to the snapshot" and "one click brings it all back" — a
+ * promise confirmed by the user and not kept by the code.
+ */
+describe("the restore copy promises only what restoreBaseline does (P12)", () => {
+  const read = (...p: string[]) => fs.readFileSync(path.join(process.cwd(), ...p), "utf8");
+  const CLAUSE = "follow this version's rate card";
+
+  it("the card states the rate-card rule before the click, in the toast's words", () => {
+    const card = read("components", "settings", "default-settings-card.tsx");
+    expect(card).not.toContain("all three rate tables back to the snapshot");
+    expect(card).not.toContain("brings it all back");
+    expect(card).toContain(CLAUSE);
+    // The same clause the restore's own toast carries (settings-baseline.ts).
+    expect(read("lib", "queries", "settings-baseline.ts")).toContain(CLAUSE);
+    // Both pre-action surfaces render it: the header and the confirm line.
+    expect(card.match(/\{UNEDITED_CHARGE_ROWS\}/g)?.length).toBe(2);
+  });
+});

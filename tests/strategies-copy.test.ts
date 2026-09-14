@@ -13,9 +13,11 @@ import {
   figureDescriptor,
   helpHref,
   legCountLabel,
+  withholdForFree,
 } from "@/components/strategies/strategy-copy";
+import { buildStrategies, type PositionedLeg } from "@/lib/analytics/strategies";
 import { CATALOGUE } from "@/lib/analytics/strategy-catalogue";
-import { OPTIONS_HELP_FOOTER, OPTIONS_SECTION_ANCHOR } from "@/lib/domain/options-help";
+import { OPTIONS_BEGINNER_LABEL, OPTIONS_HELP_FOOTER, OPTIONS_SECTION_ANCHOR } from "@/lib/domain/options-help";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
 import { sebiRealityLine } from "@/lib/domain/options-help";
@@ -464,5 +466,70 @@ describe("the help says where a Custom card's link lands (R50)", () => {
     expect(body, "the help still says EVERY card links to its own entry").not.toMatch(
       /each card here links straight to its entry/,
     );
+  });
+});
+
+/**
+ * R11 (v4.3.0 fix wave 2, ruling 06-ANSWERS:258 Option A). The free tier keeps
+ * the sixteen pre-4.3 NAMES, not every book those names once described: a short
+ * call that 4.2 printed as "Short Call" is a covered call once a holding of the
+ * underlying joins it, and a calendar once a second expiry does — Pro shapes, so
+ * a free build withholds them. The copy beside the lock says so; this pins the
+ * engine half it describes.
+ */
+describe("a holding or a second expiry turns a legacy name into a withheld Pro shape (R11)", () => {
+  const leg = (over: Partial<PositionedLeg>): PositionedLeg => ({
+    symbol: "INFY",
+    expiry: "2026-09-24",
+    kind: "CE",
+    optionType: "CE",
+    strike: 1500,
+    side: "short",
+    qty: 100,
+    premium: 30,
+    ...over,
+  });
+  const shortCall = leg({});
+
+  it("the short call alone keeps its pre-4.3 name on a free build", () => {
+    const [g] = withholdForFree(buildStrategies([shortCall]), false);
+    expect(g.strategyId).toBe("short-call");
+    expect(g.proWithheld).toBe(false);
+  });
+
+  it("the same short call over a holding is a covered call, withheld on a free build", () => {
+    const holding = leg({ kind: "UL", optionType: undefined, strike: 0, side: "long", premium: 1450, expiry: null });
+    const [built] = buildStrategies([holding, shortCall]);
+    expect(built.strategyId, "the fixture must be the Pro shape").toBe("covered-call");
+    const [g] = withholdForFree([built], false);
+    expect(g.proWithheld).toBe(true);
+    expect(g.displayName).toBe(customName(2));
+  });
+
+  it("the same short call against a later long call is a calendar, withheld on a free build", () => {
+    const far = leg({ side: "long", premium: 45, expiry: "2026-10-29" });
+    const [built] = buildStrategies([shortCall, far]);
+    expect(built.strategyId, "the fixture must be the Pro shape").toBe("call-calendar-spread");
+    const [g] = withholdForFree([built], false);
+    expect(g.proWithheld).toBe(true);
+    expect(g.displayName).toBe(customName(2));
+  });
+
+  it("the sentence beside the lock names both routes into a Pro shape", () => {
+    expect(STRATEGY_COPY.proWithheldNote).toMatch(/holding of the underlying/);
+    expect(STRATEGY_COPY.proWithheldNote).toMatch(/second expiry/);
+  });
+});
+
+/**
+ * R52 (v4.3.0 fix wave 2). The picker printed "basics" on the same `beginner`
+ * flag /help prints as "Beginner". One constant now, read by both.
+ */
+describe("the picker's beginner chip is /help's word (R52)", () => {
+  it("renders STRATEGY_COPY.beginner, which IS the help desk's constant", () => {
+    expect(STRATEGY_COPY.beginner).toBe(OPTIONS_BEGINNER_LABEL);
+    const src = stripComments(fs.readFileSync(path.join(ROOT, "components/strategies/browse-drawer.tsx"), "utf8"));
+    expect(src, "the drawer still prints its own word").not.toMatch(/basics/);
+    expect(src).toContain("{STRATEGY_COPY.beginner}");
   });
 });

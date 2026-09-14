@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { mtmPrices } from "@/lib/db/schema";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { writeTypedMark } from "@/lib/queries/mtm";
-import { isContractKey } from "@/lib/risk/spot-ref";
+import { isContractKey, isIsoDay } from "@/lib/risk/spot-ref";
 
 export const runtime = "nodejs";
 
@@ -51,7 +51,7 @@ export const runtime = "nodejs";
 const bad = (message: string) => NextResponse.json({ ok: false, message, updated: 0 }, { status: 400 });
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => null)) as { symbol?: unknown; price?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { symbol?: unknown; price?: unknown; asOfDate?: unknown } | null;
   if (!body || typeof body !== "object") return bad("Bad request");
 
   const symbol = String(body.symbol ?? "").trim().toUpperCase();
@@ -69,7 +69,19 @@ export async function POST(req: Request) {
   // The same as-of default the bulk-MTM box uses — today's IST day, never a UTC
   // one and never a date this chip invented: every reader takes the newest
   // `as_of_date` as a string, so an invented day would outrank every real one.
-  const asOfDate = todayIstIso();
+  //
+  // R13 — "Use official close" posts the CLOSE's own day with the close's
+  // price, so the stored mark and the close then agree and the notice goes.
+  // Accepted only as a real calendar day no later than today (IST): a future
+  // day is exactly the invented date that would outrank every real one.
+  const today = todayIstIso();
+  let asOfDate = today;
+  if (body.asOfDate != null) {
+    if (!isIsoDay(body.asOfDate) || body.asOfDate > today) {
+      return bad("A mark's date is a calendar day (YYYY-MM-DD) no later than today (IST).");
+    }
+    asOfDate = body.asOfDate;
+  }
 
   // TRADINGSYMBOL. `undefined` tells `writeTypedMark` to carry whatever today's
   // row already holds, which is right for a key the live feed recorded — but

@@ -206,7 +206,8 @@ beforeAll(async () => {
       // call. `inArray(instrumentType, ["equity","future"])` is the half that
       // makes a covered call on a future readable at all.
       tradeRow({ accountId: PRIMARY, symbol: "BANKNIFTY", instrumentType: "option", optionType: "CE", strike: 54000, expiry: "2026-09-24", isOpen: true, sellQty: 30, avgSellPrice: 400 }),
-      tradeRow({ accountId: PRIMARY, symbol: "BANKNIFTY", instrumentType: "future", isOpen: true, buyQty: 30, avgBuyPrice: 53500 }),
+      // P14 (DECISIONS 2026-09-14): an undated future reads "Not computed"; a stored expiry = the call's keeps S4b's bounded tiles.
+      tradeRow({ accountId: PRIMARY, symbol: "BANKNIFTY", instrumentType: "future", expiry: "2026-09-24", isOpen: true, buyQty: 30, avgBuyPrice: 53500 }),
     ])
     .run();
 

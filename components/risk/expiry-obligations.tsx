@@ -9,7 +9,7 @@ import { inr, inrCompact, fmtDate } from "@/lib/format";
 // `UNKNOWN_SPOT` from there is what took /risk down. The values are pure and
 // live in lib/risk (tests/client-value-imports.test.ts guards the shape).
 import { SpotMarkEditor } from "@/components/risk/spot-mark-editor";
-import { UNKNOWN_SPOT, type SpotRef } from "@/lib/risk/spot-ref";
+import { UNKNOWN_SPOT, spotCloseNotice, type SpotRef } from "@/lib/risk/spot-ref";
 import {
   DEFAULT_SETTLEMENT_RATES,
   type SettlementSummary,
@@ -68,22 +68,28 @@ function Stat({ label, value, tone, note }: { label: string; value: string; tone
  *
  * The previous sentence named ONE of them ("Enter the underlying spot in the
  * bulk-MTM box below") and said nothing about the end-of-day close the page now
- * falls back to — so a row showing an EOD-derived ITM looked like it had been
- * typed. Pinned as a constant so a change to it is a deliberate edit of
+ * falls back to. Pinned as a constant so a change to it is a deliberate edit of
  * `tests/spot-mark.test.ts` in the same commit. Plain description only: no
  * verb here tells anyone what to do with a position.
+ *
+ * R13 — it no longer says "typed": `mtm_prices` cannot tell a typed mark from
+ * the bhavcopy auto-MTM or a live-feed mark, which are stored in the same row.
  */
 export const SPOT_DOOR_NOTE =
-  "Option moneyness rests on the underlying's cash price. Type it on the row's spot chip, or paste it in the bulk-MTM box below — both store the same dated mark under the underlying's symbol. With no typed mark, the newest end-of-day close on record is used and the chip says so; a typed mark takes precedence over it. With neither, obligations are shown conditionally.";
+  "Option moneyness rests on the underlying's cash price. Enter it on the row's spot chip, or paste it in the bulk-MTM box below — both store the same dated mark under the underlying's symbol, where an automatic end-of-day or live mark is also kept. A stored mark takes precedence over the end-of-day close; with no mark, the newest close on record is used, and the chip names the source and its date. When a newer official close differs from the mark, the row states both prices. With neither, obligations are shown conditionally.";
 
 export function ExpiryObligations({
   summary,
   spotRefs,
+  spotCloseDismissed,
 }: {
   summary: SettlementSummary;
   /** Per-UNDERLYING reference price and where it came from, keyed by
    *  upper-cased `trades.symbol` — resolved by the page, which owns the DB. */
   spotRefs?: Readonly<Record<string, SpotRef>>;
+  /** "Keep my mark" fingerprints (`spot-close-diff`) for the selected account —
+   *  a row whose current close matches one prints no close notice (R13). */
+  spotCloseDismissed?: readonly string[];
 }) {
   const { obligations } = summary;
   const spotFor = (symbol: string): SpotRef => spotRefs?.[symbol.trim().toUpperCase()] ?? UNKNOWN_SPOT;
@@ -211,7 +217,14 @@ export function ExpiryObligations({
                               ) : o.moneyness === "OTM" ? (
                                 <Badge variant="secondary">OTM</Badge>
                               ) : null}
-                              <SpotMarkEditor symbol={o.symbol} spot={spotFor(o.symbol)} />
+                              {/* R13: when a newer official close differs from
+                                  the stored mark, the row says so — descriptive
+                                  only; the editor offers both choices. */}
+                              <SpotMarkEditor
+                                symbol={o.symbol}
+                                spot={spotFor(o.symbol)}
+                                closeNotice={spotCloseNotice(o.symbol, spotFor(o.symbol), spotCloseDismissed)}
+                              />
                             </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>

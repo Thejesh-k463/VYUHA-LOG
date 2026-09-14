@@ -165,18 +165,27 @@ describe("the rate table is dated, because STT moves — one epoch per circular"
    * Re-pinned 2026-09-11; this used to assert verified === true on every epoch.
    * tests/stt-epoch-2024.test.ts pins the F&O windows, the 1970 pair and
    * verified => FATAX; this pins the marker rule over EVERY epoch, both ways.
-   * The note match is case-sensitive on purpose: eq_intraday's "earlier history
-   * is not verified here" is about history the table does not carry, and that
-   * epoch is verified.
+   *
+   * Tightened 2026-09-14 (QS-EQ2012, the test-low wave 1's re-check assigned
+   * here): the note match was a case-sensitive "NOT verified", so it passed
+   * eq_delivery 1970 (verified:true beside "Before 1 Jul 2012 it was 0.125% …
+   * neither this table nor the rate card carries that earlier rate") and
+   * eq_intraday 1970 (verified:true beside "Its earlier history is not verified
+   * here"). An epoch marked verified now fails when its note says, in any case,
+   * that something is not verified or not carried. eq_delivery was split at
+   * 2012-07-01 and eq_intraday 1970 re-marked false, so the pinned unverified
+   * list grows from 2 to 4, deliberately.
    */
   const FATAX_SOURCE = /^https:\/\/nsearchives\.nseindia\.com\/content\/circulars\/FATAX\d+\.pdf$/;
+  /** A note that disowns part of its own epoch: its start, its earlier history, or a rate it does not carry. */
+  const UNVERIFIED_NOTE = /\bnot\s+(?:yet\s+)?(?:verified|carried|carries)\b|\bunverified\b|\bnor\b[^.]*\bcarries\b/i;
   type Epoch = { segment: string; effectiveFrom: string; verified: unknown; sources?: unknown; note?: string };
   /** Null when the epoch's marker agrees with its sources and note; otherwise what is wrong. */
   const markerFault = (e: Epoch): string | null => {
     if (!Array.isArray(e.sources) || e.sources.length === 0) return "no sources";
     if (typeof e.verified !== "boolean") return "verified is not a boolean";
     const primary = e.sources.some((s) => typeof s === "string" && FATAX_SOURCE.test(s));
-    const expected = primary && !/NOT verified/.test(e.note ?? "");
+    const expected = primary && !UNVERIFIED_NOTE.test(e.note ?? "");
     return e.verified === expected ? null : `verified is ${e.verified}; its sources and note say ${expected}`;
   };
 
@@ -184,6 +193,8 @@ describe("the rate table is dated, because STT moves — one epoch per circular"
     expect(defaults.epochs.length).toBeGreaterThan(0);
     for (const e of defaults.epochs) expect(markerFault(e), `${e.segment} ${e.effectiveFrom}`).toBeNull();
     expect(defaults.epochs.filter((e) => !e.verified).map((e) => `${e.segment} ${e.effectiveFrom}`)).toEqual([
+      "eq_delivery 1970-01-01",
+      "eq_intraday 1970-01-01",
       "future 1970-01-01",
       "index_option 1970-01-01",
     ]);
@@ -198,6 +209,27 @@ describe("the rate table is dated, because STT moves — one epoch per circular"
     expect(markerFault({ ...real, sources: ["https://zerodha.com/z-connect/budget-2013-stt"] })).not.toBeNull();
     expect(markerFault({ ...start, verified: true })).not.toBeNull();
     expect(markerFault({ ...real, sources: [] })).not.toBeNull();
+  });
+
+  it("the marker rule goes red on a verified epoch whose note disowns its start or earlier history, in any case (QS-EQ2012)", () => {
+    const real = defaults.epochs.find((e) => e.segment === "future" && e.effectiveFrom === "2013-06-01")!;
+    // The two wave-1 escapes, the notes verbatim from the e0e6d90 JSON, each on an otherwise verified epoch.
+    const intraday1970 =
+      "Intraday (a sale settled otherwise than by actual delivery) STT 0.025% on the sale, as FATAX63809 and FATAX73524 row 3 state (No Change). Its earlier history is not verified here.";
+    const delivery1970 =
+      "Equity delivery STT 0.1% on both sides, from 1 Jul 2012 (FATAX20990: 0.125% -> 0.1% for purchaser and seller) and unchanged by FATAX63809 and FATAX73524 (rows 1 and 2). Before 1 Jul 2012 it was 0.125% on both sides; neither this table nor the rate card carries that earlier rate yet.";
+    expect(markerFault({ ...real, note: intraday1970 })).not.toBeNull();
+    expect(markerFault({ ...real, note: delivery1970 })).not.toBeNull();
+    expect(markerFault({ ...real, note: "The start is unverified." })).not.toBeNull();
+    // Flipping either shipped escape back to verified:true is caught.
+    for (const [segment, from] of [["eq_delivery", "1970-01-01"], ["eq_intraday", "1970-01-01"]] as const) {
+      const e = defaults.epochs.find((x) => x.segment === segment && x.effectiveFrom === from)!;
+      expect(markerFault({ ...e, verified: true }), `${segment} ${from}`).not.toBeNull();
+    }
+    // A verified epoch whose note states only what the circular states stays clean.
+    const delivery2012 = defaults.epochs.find((e) => e.segment === "eq_delivery" && e.effectiveFrom === "2012-07-01")!;
+    expect(delivery2012.verified).toBe(true);
+    expect(markerFault(delivery2012)).toBeNull();
   });
 });
 

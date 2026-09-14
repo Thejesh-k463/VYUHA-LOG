@@ -2,21 +2,33 @@ import "server-only";
 import { db } from "@/lib/db";
 import { ipos } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
-import { computeIpo, ipoSellCharges, summariseIpos, type IpoComputed, type IpoSellCharger, type IpoSummary } from "@/lib/analytics/ipo";
-import { computeCharges } from "@/lib/engine/charges";
-import { findRates } from "@/lib/engine/rates";
+import { computeIpo, ipoSellChargeBreakdown, ipoVenue, summariseIpos, type IpoComputed, type IpoSellCharger, type IpoSummary } from "@/lib/analytics/ipo";
+import { findRates, statutoryRatesFor } from "@/lib/engine/rates";
+import type { ChargeBreakdown, ChargeRates } from "@/lib/engine/types";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import type { Broker, Exchange } from "@/lib/domain/constants";
+import type { Broker } from "@/lib/domain/constants";
 import { getSelectedAccountId } from "./accounts";
 
 /**
  * Exit charges from the SAME engine and charge_config rates every other trade
- * uses (invariant 3). The allotment is the buy side — its stamp duty computes
- * on the allotted value, but with buyOrderCount 0 there is no buy brokerage,
- * because an allotment is not a brokered order. Only an IPO that names no
- * broker (or a broker with no rates row) falls back to the pure static
- * estimate, which the analytics module documents as exactly that.
+ * uses (invariant 3). The allotment's value is the base of stamp duty only:
+ * it carries no brokerage (an allotment is not a brokered order) and no
+ * exchange-turnover levy — exchange txn, the SEBI fee, IPFT and the GST on
+ * them price on the SELL value alone (W2-IPO2), because an allotment is not a
+ * transaction on a recognised stock exchange. Brokerage and DP are the
+ * broker's charges on the sale. Both paths share `ipoSellChargeBreakdown`.
+ *
+ * No purchase STT on the allotment (QS-IPO): FATAX56235 row 1 levies purchase
+ * STT only where the purchase "is entered into in a recognized stock
+ * exchange", and an allotment is not. eq_delivery's row says sttSide 'both',
+ * so the broker path prices on a COPY with sttSide 'sell' — the map is never
+ * mutated.
+ *
+ * An IPO that names no broker (or a broker with no row for the date) prices
+ * through `ipoSellChargeBreakdown` fed the STATUTORY columns of charge_config
+ * at (exchange, date) — `statutoryRatesFor`: no brokerage, no DP (R36). With
+ * no row at all it throws, as `findRates` does.
  *
  * Rates are resolved AT THE EXIT DATE, not today: an exit sold before a rate
  * change (e.g. an STT epoch boundary) must keep pricing at the epoch it
@@ -25,26 +37,40 @@ import { getSelectedAccountId } from "./accounts";
  * IPO passes no exit date and prices prospectively at today, which is the
  * only honest choice for a sale that has not happened.
  */
+export function chargeBreakdownFor(
+  broker: string | null,
+  exchange: string,
+  exitDate: string | null,
+  ratesMap: ReturnType<typeof loadRatesMap>,
+): (sellValue: number, allottedValue: number) => ChargeBreakdown {
+  const venue = ipoVenue(exchange);
+  const on = exitDate ?? todayIstIso();
+  let rates: ChargeRates | null = null;
+  if (broker) {
+    try {
+      rates = { ...findRates(ratesMap, broker as Broker, "eq_delivery", venue, on), sttSide: "sell" };
+    } catch {
+      rates = null;
+    }
+  }
+  if (!rates) {
+    const statutory = statutoryRatesFor(ratesMap, "eq_delivery", venue, on);
+    return (sellValue, allottedValue) => ipoSellChargeBreakdown(sellValue, allottedValue, statutory);
+  }
+  // The same sale + allotment-stamp split as the fallback, over the broker's
+  // row: exchange txn, SEBI, IPFT and their GST on the SELL value only (W2-IPO2).
+  const brokerRates = rates;
+  return (sellValue, allottedValue) => ipoSellChargeBreakdown(sellValue, allottedValue, brokerRates);
+}
+
 export function chargerFor(
   broker: string | null,
   exchange: string,
   exitDate: string | null,
   ratesMap: ReturnType<typeof loadRatesMap>,
 ): IpoSellCharger {
-  if (!broker) return ipoSellCharges;
-  let rates;
-  try {
-    rates = findRates(ratesMap, broker as Broker, "eq_delivery", (exchange === "BSE" ? "BSE" : "NSE") as Exchange, exitDate ?? todayIstIso());
-  } catch {
-    return ipoSellCharges;
-  }
-  return (sellValue, allottedValue) => {
-    if (sellValue <= 0) return 0;
-    return computeCharges(
-      { segment: "eq_delivery", buyValue: allottedValue, sellValue, buyQty: 1, sellQty: 1, buyOrderCount: 0, sellOrderCount: 1 },
-      rates,
-    ).total;
-  };
+  const breakdown = chargeBreakdownFor(broker, exchange, exitDate, ratesMap);
+  return (sellValue, allottedValue) => (sellValue <= 0 ? 0 : breakdown(sellValue, allottedValue).total);
 }
 
 export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } {

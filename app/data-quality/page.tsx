@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getDataQualityReport, getStaleOpenPairs } from "@/lib/queries/data-quality";
+import { getDataQualityReport, getStaleOpenSection } from "@/lib/queries/data-quality";
 import { crossAccountIssues, scoreIssues } from "@/lib/analytics/data-quality";
 import { listDuplicateConnections, listDuplicateTradeGroups } from "@/lib/import/broker-identity";
 import { DuplicateFix } from "@/components/quality/duplicate-fix";
@@ -24,6 +24,7 @@ export default function DataQualityPage() {
   const issues = [...report.issues, ...crossAccountIssues({ duplicateConnections, duplicateTradeGroups })];
   const score = scoreIssues(issues);
   const affected = new Set(issues.flatMap((x) => x.ids ?? [])).size;
+  const stale = getStaleOpenSection();
   return <>
     <PageHeader title="Data Quality Center" description="The health of every input that feeds P&L, risk, tax and behavioural analytics." actions={<Badge variant={score >= 90 ? "profit" : score >= 70 ? "warning" : "loss"}>{score}/100</Badge>} />
     <div className="space-y-5 p-6">
@@ -43,8 +44,9 @@ export default function DataQualityPage() {
         })}
       </CardContent></Card>
       {/* R26 — the stale open rows the `stale_open` issue counts, and the join
-          that closes each one with its recorded sale. Account-scoped. */}
-      <StaleLotFix pairs={getStaleOpenPairs()} />
+          that closes each one with its recorded sale; W2-DQ P2 — the closing
+          rows the `stale_sale` warning counts, listed only. Account-scoped. */}
+      <StaleLotFix pairs={stale.pairs} sales={stale.sales} />
       <DuplicateFix groups={duplicateTradeGroups} connections={duplicateConnections} />
       <p className="text-[0.6875rem] text-muted-foreground">The score is a completeness indicator, not a judgement of trading performance. Critical unknowns carry more weight because they can change reported money.</p>
     </div>

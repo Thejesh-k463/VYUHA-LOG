@@ -10,11 +10,15 @@ import { bundledSymbolByIsin } from "@/lib/import/isin-symbol";
 import { getSpotMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { getEntitlement } from "@/lib/queries/license";
-import { buildStrategies, type PositionedLeg } from "@/lib/analytics/strategies";
+import { buildStrategies, contractMonthOf, type PositionedLeg } from "@/lib/analytics/strategies";
 import { CATALOGUE, STRATEGY_IDS } from "@/lib/analytics/strategy-catalogue";
 import { parseShelf } from "@/lib/domain/strategy-shelf";
 import { sebiRealityLine } from "@/lib/domain/options-help";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
+import { hasRecordedBasis } from "@/lib/analytics/data-quality";
+
+/** The cash-equity segments a sell-only row can never be a short in (M-3). */
+const DELIVERY_SEGMENTS = new Set(["eq_delivery", "eq_mtf", "eq_intraday"]);
 
 /**
  * `/strategies` — the option structures the journal already holds (v4.3).
@@ -72,26 +76,79 @@ export default function StrategiesPage() {
   // covered call and no protective put. `premium` on a UL leg is its ENTRY
   // PRICE per unit — the field is named for the option case and carries the
   // same arithmetic (strategies.ts `payoffAt`).
-  const underlyingLegs: PositionedLeg[] = getOpenUnderlyingPositions().map((t) => {
+  // R105 + P13: the leg wears the option side's ticker so it groups with them.
+  // The STORED symbol, upper-cased as option symbols are, wins when an option
+  // leg already wears it — a listing that names the ISIN under a newer ticker
+  // (TATAMOTORS → TMPV) must not pull a holding off its own calls. The ISIN is
+  // only the fallback, for a row stored under the company name.
+  const optionSymbols = new Set(optionLegs.map((l) => l.symbol.toUpperCase()));
+  const legSymbol = (stored: string, isin: string | null): string => {
+    const upper = stored.toUpperCase();
+    return optionSymbols.has(upper) ? upper : (isin && bundledSymbolByIsin(isin)) || upper;
+  };
+
+  // P5: a basis-unknown sale is never a leg. It NETS against the same
+  // instrument's long in this scope, floored at zero — never a short the user
+  // did not hold (invariant 6), never calls covered by shares already sold.
+  // One instrument = symbol + type, and a future's own contract.
+  // D3 (v4.3.0 fix wave 2, W2-FIXB): a DELIVERY-segment sell-only row reads the
+  // SAME basis predicate Data Quality pairs by (`hasRecordedBasis`). Basis not
+  // recorded (acquisition NULL — how v4.2.0 stored Angel One and Upstox sales —
+  // or 'unknown', and no price) nets like P5's sale. A recorded basis (bonus,
+  // ESOP, gift, a price) makes it a complete trade of shares acquired outside
+  // the book: left out, never a short and never a reduction of a held lot. A
+  // futures sell-only row is a genuine short and is read by its net side.
+  const unknownSold = new Map<string, number>();
+  const held: { key: string; leg: PositionedLeg }[] = [];
+  for (const t of getOpenUnderlyingPositions()) {
+    const symbol = legSymbol(t.symbol, t.isin);
+    const isFuture = t.instrumentType === "future";
+    const key = `${symbol}|${t.instrumentType}|${isFuture ? (t.expiry ?? t.tradingsymbol.toUpperCase()) : ""}`;
+    const deliverySale = DELIVERY_SEGMENTS.has(t.segment) && t.buyQty === 0 && t.sellQty > 0;
+    if (deliverySale && hasRecordedBasis(t)) continue;
+    if (deliverySale || (!isFuture && t.acquisition === "unknown")) {
+      unknownSold.set(key, (unknownSold.get(key) ?? 0) + Math.max(0, t.sellQty - t.buyQty));
+      continue;
+    }
     const net = t.buyQty - t.sellQty;
     const side: "long" | "short" = net >= 0 ? "long" : "short";
     const qty = Math.abs(net) || Math.max(t.buyQty, t.sellQty);
-    return {
-      // R105: the leg wears the option side's ticker so it groups with them —
-      // resolved through the ISIN when the row carries one (a company-name
-      // row), else the stored symbol upper-cased as option symbols are.
-      symbol: (t.isin && bundledSymbolByIsin(t.isin)) || t.symbol.toUpperCase(),
-      // R104: a future's own expiry; a cash holding never expires.
-      expiry: t.instrumentType === "future" ? t.expiry : null,
-      kind: "UL" as const,
-      // A UL leg has no strike. It is excluded from the strike ladder by
-      // `computeStrategy`, so this is a placeholder and never a level.
-      strike: 0,
-      side,
-      qty,
-      premium: side === "long" ? t.avgBuyPrice : t.avgSellPrice,
-    };
-  });
+    // P14: a future stored with no expiry is marked, never read as a cash
+    // holding that outlives every option; its compact symbol may state a month.
+    const undated = isFuture && !t.expiry;
+    held.push({
+      key,
+      leg: {
+        symbol,
+        // R104: a future's own expiry; a cash holding never expires.
+        expiry: isFuture ? t.expiry : null,
+        ...(undated ? { expiryUnknown: true, contractMonth: contractMonthOf(t.tradingsymbol) ?? contractMonthOf(t.symbol) } : {}),
+        kind: "UL" as const,
+        // A UL leg has no strike. It is excluded from the strike ladder by
+        // `computeStrategy`, so this is a placeholder and never a level.
+        strike: 0,
+        side,
+        qty,
+        premium: side === "long" ? t.avgBuyPrice : t.avgSellPrice,
+      },
+    });
+  }
+  const underlyingLegs: PositionedLeg[] = [];
+  const nettedLots = new Map<string, PositionedLeg[]>();
+  for (const { key, leg } of held) {
+    if (leg.side === "long" && (unknownSold.get(key) ?? 0) > 0) nettedLots.set(key, [...(nettedLots.get(key) ?? []), leg]);
+    else underlyingLegs.push(leg);
+  }
+  for (const [key, lots] of nettedLots) {
+    const longQty = lots.reduce((s, l) => s + l.qty, 0);
+    const remaining = Math.max(0, longQty - (unknownSold.get(key) ?? 0));
+    // Priced from the long lots: their quantity-weighted entry price (a REAL
+    // per-unit level, invariant 1), since the sale does not say which lot went.
+    if (remaining > 0) {
+      const entry = lots.reduce((s, l) => s + l.qty * l.premium, 0) / longQty;
+      underlyingLegs.push({ ...lots[0], qty: remaining, premium: entry });
+    }
+  }
 
   const groups = withholdForFree(buildStrategies([...optionLegs, ...underlyingLegs]), pro);
 

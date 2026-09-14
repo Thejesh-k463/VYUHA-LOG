@@ -181,7 +181,8 @@ const GOLDEN: Golden[] = [
     charges: { mode: "engine" },
     // C-8: charges 151,916.35 → 152,074.08, net 751,071.05 → 750,913.32; no broker-stated charges — NSE cash from 1 Mar 2026 is FA73061's Rs 306.99 + IPFT 0.01/crore (was 297 + 0.01).
     // R71 (4.3.0): charges 152,074.08 → 152,143.88, net 750,913.32 → 750,843.52, gross unchanged — a row's exchange is now the venue of most of its OWN turnover, not its security's first leg: 5 rows NSE → BSE, 3 BSE → NSE (NSE/BSE 52/27 → 50/29).
-    commit: { net: 750843.52, gross: 902987.4, charges: 152143.88 },
+    // P9 (4.3.0): charges 152,143.88 → 152,156.16, net 750,843.52 → 750,831.24, gross unchanged — a scrip-day-side filled on both venues now carries its value per venue instead of its FIRST fill's exchange. 5 of 143 legs span both (₹49,62,012.04 off the stamped venue); 2 were stamped with the minority (CMRGREEN 06-23 buy NSE-first, BSE 15,27,900 / NSE 12,01,837; MODISONLTD 07-16 buy NSE-first, BSE 1,51,825 / NSE 82,266.40). 1 row moves NSE → BSE (CMRGREEN 06-22 → 07-01; NSE/BSE 50/29 → 49/30).
+    commit: { net: 750831.24, gross: 902987.4, charges: 152156.16 },
     note: "Equity tradebook, 3,530 fills / 58 symbols → 79 positions. No reference: a tradebook states no P&L and no charges (the engine's 152,143.88 is an estimate), and the Console P&L on this machine covers a different account and period.",
   },
   {
@@ -192,6 +193,7 @@ const GOLDEN: Golden[] = [
     charges: { mode: "engine" },
     // C-8: charges 51,606.06 → 51,650.91, net 470,177.54 → 470,132.69; no broker-stated charges — NSE cash from 1 Mar 2026 at FA73061's rate.
     // R71 (4.3.0): charges 51,650.91 → 51,614.70, net 470,132.69 → 470,168.90, gross unchanged — the row's own venue: 1 row NSE → BSE, 2 BSE → NSE (21/7 → 22/6).
+    // P9 (4.3.0): UNCHANGED, measured — 1 of 43 legs spans both venues (SRM 05-06 buy, NSE 5,29,586.30 / BSE 5,26,531.30) and its first fill was already the majority venue, so no row moves (22/6 before and after).
     commit: { net: 470168.9, gross: 521783.6, charges: 51614.7 },
     note: "The 1,554-fill tradebook of tests/private-reconciliation.test.ts (28 positions, 11 opening sells with no P&L, fill times throughout). No reference for the same reason as the row above.",
   },
@@ -678,6 +680,15 @@ const EXCHANGE_LINE: ExchangeLine[] = [
   // 350.31/crore against the seeded 375 (+178.20 on ₹7.22 crore); and −59.97 is the one-row limit — a row whose legs
   // span both venues is priced at ONE (engine per row 9,641.59 vs per fill 9,701.56). Pinned exactly so it cannot drift.
   { file: "paytm-tradebook-2026-08-01_2026-08-18.xlsx", family: "equity", head: "txn+ipft", source: "rows", engine: 9641.59, stated: 9523.68, gap: 117.91 },
+  // Paytm five months (P17, 4.3.0), measured per venue the same way against the file's own ETT column:
+  //   NSE fills bill 307.00/crore — engine per fill 32,500.74 vs 32,501.96 on ₹105.87 crore (−1.22);
+  //   BSE fills bill 481.30/crore against the seeded 375 — engine per fill 18,637.68 vs 23,920.68 on ₹49.70 crore (−5,283.00);
+  //   the one-row limit is −240.66 (engine per row 50,897.76 vs per fill 51,138.42).  −1.22 − 5,283.00 − 240.66 = −5,524.88.
+  // Before R71 (9e0e16f's paytm-tradebook.ts + pair-legs.ts, this engine) the first-fill stamp put ₹9.81 crore more turnover
+  // on BSE rows: engine 51,564.77, gap −4,857.87, and the one-row term was +426.35. R71 moved the per-row figure CLOSER to
+  // pricing every fill at its own venue (|−240.66| < |+426.35|); the gap grew because BSE bills above the seeded rate in
+  // Apr–Jul, which no venue rule can close — even per-fill pricing stops at −5,284.22. Shape unchanged (693 / 62 / 38).
+  { file: "paytm-tradebook-2026-04-01_2026-08-28.xlsx", family: "equity", head: "txn+ipft", source: "rows", engine: 50897.76, stated: 56422.64, gap: -5524.88 },
 ];
 
 describe("the exchange line against the broker's own stated exchange figure (C-8)", () => {
@@ -689,6 +700,12 @@ describe("the exchange line against the broker's own stated exchange figure (C-8
     }
     return parsedOf.get(file)!;
   };
+  // The five-month Paytm tradebook (7,544 executions) parses in 1.3–1.7 s locally, so every file is parsed once HERE
+  // rather than inside its `it` (which then costs two previews, 45–229 ms). This hook measured 1,793–1,915 ms locally;
+  // the raised timeout is for the Windows runner, > 15× slower (AGENTS.md § Testing).
+  beforeAll(async () => {
+    await Promise.all([...new Set(EXCHANGE_LINE.map((l) => l.file))].map(parse));
+  }, 60_000);
 
   it.each(EXCHANGE_LINE)("$file · $family · $head", async (l) => {
     const parsed = await parse(l.file);

@@ -938,3 +938,22 @@ describe("the /import-help entry states the Upstox verification as it stands (R2
     expect(text).toMatch(/pinned against Vyuha's own arithmetic for the trade report/);
   });
 });
+
+/**
+ * R11 (v4.3.0 fix wave 2, ruling 06-ANSWERS:258 Option A). The /strategies entry
+ * said the sixteen pre-4.3 shapes "keep their names on the free tier", full
+ * stop. The boundary is the SHAPE, not the legs: a short call that 4.2 named
+ * reads as a covered call once a holding of the underlying joins it, and as a
+ * calendar or a diagonal once a second expiry does — Pro shapes, which a free
+ * build prints as "Custom (n legs)". The sentence that states the sixteen now
+ * states that too. The engine half is pinned in tests/strategies-copy.test.ts.
+ */
+describe("the /strategies entry says which books lose a pre-4.3 name on the free tier (R11)", () => {
+  it("the sentence naming the sixteen also names the underlying and a second expiry", () => {
+    const body = HELP_ENTRIES.find((e) => e.href === "/strategies")!.body.join(" ");
+    const sixteen = body.split(/(?<=\.)\s+/).filter((s) => /\bsixteen\b/.test(s));
+    expect(sixteen, "no sentence names the sixteen").toHaveLength(1);
+    expect(sixteen[0], "the free-name sentence ignores a holding of the underlying").toMatch(/underlying/);
+    expect(sixteen[0], "the free-name sentence ignores a second expiry").toMatch(/second expiry|calendar/);
+  });
+});

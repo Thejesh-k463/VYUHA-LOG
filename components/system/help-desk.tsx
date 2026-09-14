@@ -10,6 +10,7 @@ import { badgeVariants } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { searchHelp, type HelpEntry } from "@/lib/domain/help-content";
 import {
+  OPTIONS_BEGINNER_LABEL,
   OPTIONS_HELP_FOOTER,
   OPTIONS_STYLES,
   OPTIONS_STYLE_LABEL,
@@ -171,7 +172,7 @@ export function HelpDesk({
                           </p>
                         </div>
                         {e.beginner && (
-                          <span className={cn(badgeVariants({ variant: "accent" }), "shrink-0")}>Beginner</span>
+                          <span className={cn(badgeVariants({ variant: "accent" }), "shrink-0")}>{OPTIONS_BEGINNER_LABEL}</span>
                         )}
                       </CardHeader>
                       <CardContent className="space-y-2 pt-0 text-sm text-foreground/90">

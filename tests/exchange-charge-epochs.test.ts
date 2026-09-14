@@ -34,6 +34,12 @@ type Class = {
 
 const EQ = ["eq_delivery", "eq_mtf", "eq_intraday"];
 /**
+ * Equity delivery and MTF keys are also split at the delivery STT boundary
+ * (QS-EQ2012; FATAX20990: 0.125% → 0.1% both sides from 2012-07-01); the
+ * exchange charge does not move there, and intraday STT did not move.
+ */
+const DELIVERY = ["eq_delivery", "eq_mtf"];
+/**
  * NSE F&O keys are also split at R1's STT boundaries (the exchange charge does
  * not move there): futures on 2013-06-01 (FATAX23500), options on 2016-06-01
  * (FATAX32385). BSE options gain 2016-06-01 and 2023-04-01 (FATAX56235) the same way.
@@ -43,9 +49,18 @@ const NSE_OPT = ["1970-01-01", "2016-06-01", "2023-04-01", "2024-04-01", "2024-1
 
 const CLASSES: Class[] = [
   {
-    name: "NSE cash (eq_delivery, eq_mtf, eq_intraday)",
-    match: (r) => r.exchange === "NSE" && EQ.includes(r.segment),
-    keys: 27,
+    name: "NSE cash, delivery and MTF",
+    match: (r) => r.exchange === "NSE" && DELIVERY.includes(r.segment),
+    keys: 18,
+    froms: ["1970-01-01", "2012-07-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01"],
+    txn: [0.0000345, 0.0000345, 0.0000325, 0.0000322, 0.0000297, 0.000030699],
+    ipft: [0.000000001, 0.000000001, 0.000001, 0.000001, 0.000001, 0.000000001],
+    perCrore: [345.01, 345.01, 335, 332, 307, 307],
+  },
+  {
+    name: "NSE cash, intraday",
+    match: (r) => r.exchange === "NSE" && EQ.includes(r.segment) && !DELIVERY.includes(r.segment),
+    keys: 9,
     froms: ["1970-01-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01"],
     txn: [0.0000345, 0.0000325, 0.0000322, 0.0000297, 0.000030699],
     ipft: [0.000000001, 0.000001, 0.000001, 0.000001, 0.000000001],
@@ -70,9 +85,18 @@ const CLASSES: Class[] = [
     perCrore: [5300.01, 5300.01, 5050, 5000, 3553, 3553, 3553],
   },
   {
-    name: "BSE cash (Group A / B / non-exclusive)",
-    match: (r) => r.exchange === "BSE" && EQ.includes(r.segment),
-    keys: 27,
+    name: "BSE cash (Group A / B / non-exclusive), delivery and MTF",
+    match: (r) => r.exchange === "BSE" && DELIVERY.includes(r.segment),
+    keys: 18,
+    froms: ["1970-01-01", "2012-07-01", "2022-12-01"],
+    txn: [0.0000345, 0.0000345, 0.0000375],
+    ipft: [0, 0, 0],
+    perCrore: [345, 345, 375],
+  },
+  {
+    name: "BSE cash (Group A / B / non-exclusive), intraday",
+    match: (r) => r.exchange === "BSE" && EQ.includes(r.segment) && !DELIVERY.includes(r.segment),
+    keys: 9,
     froms: ["1970-01-01", "2022-12-01"],
     txn: [0.0000345, 0.0000375],
     ipft: [0, 0],
@@ -118,7 +142,8 @@ const CLASSES: Class[] = [
 
 /** Statutory sell-side STT on `on` — typed from the NSE FATAX circulars (R1), not read from the seed. */
 function sttOn(segment: string, on: string): number {
-  if (segment === "eq_delivery" || segment === "eq_mtf") return 0.001;
+  // FATAX20990 rows 1 & 2: "0.125 per cent" till 30.06.2012 (start unverified), "0.1 per cent" from 01.07.2012
+  if (segment === "eq_delivery" || segment === "eq_mtf") return on < "2012-07-01" ? 0.00125 : 0.001;
   if (segment === "eq_intraday") return 0.00025;
   if (segment === "future") {
     // FATAX23500 (0.017% till 31.05.2013; start unverified), 23500, 56235, 63809, 73524
@@ -151,10 +176,11 @@ const perCrore = (r: SeedRow) => Math.round((r.exchangeTxnPct + r.ipftPct) * 1e7
 const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 describe("the seed's exchange-charge epochs", () => {
-  it("the classes partition all 117 keys and 522 rows", () => {
+  it("the classes partition all 117 keys and 558 rows", () => {
     expect(CLASSES.reduce((a, c) => a + keysOf(c).length, 0)).toBe(byKey.size);
     expect(byKey.size).toBe(117);
-    expect(seed).toHaveLength(522);
+    // Re-pinned for QS-EQ2012: 522 before, 558 after (+36 = 36 delivery/MTF keys × the 2012-07-01 epoch). Measured.
+    expect(seed).toHaveLength(558);
   });
 
   it.each(CLASSES)("$name: windows, transaction charge, IPFT and the per-crore total on every key", (c) => {

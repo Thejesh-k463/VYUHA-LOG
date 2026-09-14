@@ -9,7 +9,9 @@ import {
   saleJournalFields,
   staleJournalNote,
   staleOpenPairs,
+  staleSaleRows,
   type StaleOpenPair,
+  type StaleSaleRow,
 } from "@/lib/analytics/data-quality";
 import { getTrades } from "./trades";
 import { collectIdChunks } from "./delete";
@@ -26,7 +28,21 @@ export interface StaleOpenView extends StaleOpenPair {
  * the All-accounts view lists every book's pairs, each within its own book.
  */
 export function getStaleOpenPairs(): StaleOpenView[] {
+  return staleViewsOf(getTrades());
+}
+
+/**
+ * The whole stale section of the Data Quality page from ONE read of the book:
+ * the pairs (R26) and the closing-trade rows left open with no open position
+ * to pair (W2-DQ P2, the `stale_sale` warning). Account-scoped through
+ * `getTrades()` (invariant 8).
+ */
+export function getStaleOpenSection(): { pairs: StaleOpenView[]; sales: StaleSaleRow[] } {
   const all = getTrades();
+  return { pairs: staleViewsOf(all), sales: staleSaleRows(all) };
+}
+
+function staleViewsOf(all: ReturnType<typeof getTrades>): StaleOpenView[] {
   const pairs = staleOpenPairs(all);
   if (pairs.length === 0) return [];
   const saleIds = [...new Set(pairs.map((p) => p.saleId))];

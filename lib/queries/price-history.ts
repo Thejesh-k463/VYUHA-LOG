@@ -5,11 +5,27 @@ import { asc, desc, eq, inArray } from "drizzle-orm";
 
 /** Latest close per symbol from price_history (upper-cased keys). */
 export function getLatestCloseMap(): Map<string, number> {
-  const rows = db.select().from(priceHistory).orderBy(desc(priceHistory.date)).all();
   const m = new Map<string, number>();
+  for (const [key, e] of getLatestCloseEntries()) m.set(key, e.price);
+  return m;
+}
+
+/**
+ * R13 — the latest close per symbol WITH its own date, so /risk can print
+ * "EOD close · <day>" and tell a NEWER official close from an older mark.
+ * `getLatestCloseMap()` is derived from this, so the two cannot disagree.
+ * MONEY: `price` is REAL RUPEES per unit (invariant 1's documented exception).
+ */
+export function getLatestCloseEntries(): Map<string, { price: number; asOf: string }> {
+  const rows = db
+    .select({ symbol: priceHistory.symbol, date: priceHistory.date, close: priceHistory.close })
+    .from(priceHistory)
+    .orderBy(desc(priceHistory.date))
+    .all();
+  const m = new Map<string, { price: number; asOf: string }>();
   for (const r of rows) {
     const key = r.symbol.toUpperCase();
-    if (!m.has(key)) m.set(key, r.close); // first seen = latest by date
+    if (!m.has(key)) m.set(key, { price: r.close, asOf: r.date }); // first seen = latest by date
   }
   return m;
 }

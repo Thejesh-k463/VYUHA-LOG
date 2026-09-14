@@ -5,6 +5,9 @@ import {
   classifyStrategy,
   computeStrategy,
   buildStrategies,
+  contractMonthOf,
+  underlyingExpiresFirst,
+  underlyingExpiryUnknown,
   type OptionLeg,
   type PositionedLeg,
 } from "@/lib/analytics/strategies";
@@ -468,6 +471,120 @@ describe("an underlying FUTURE that expires before an option leg (R104)", () => 
       const [g] = buildStrategies(legs(e));
       expect(g.notComputed, String(e)).toEqual({ maxProfit: false, maxLoss: false });
       expect(g.capLabel.maxLoss, String(e)).not.toBe("Not computed");
+    }
+  });
+});
+
+describe("an option-only split never states an Unlimited the whole book bounds (QS-SPLIT)", () => {
+  // Ruling 240 splits a Custom symbol per expiry. R102 refused that split only
+  // when the book held an underlying; the same false "Unlimited" printed for an
+  // option-only book. A Sep short call is covered by the Oct long call ABOVE
+  // every strike (slope −1 + 1 = 0), so the whole bounds both figures while the
+  // Sep half alone reads as a naked short call.
+  const opt = (expiry: string, optionType: "CE" | "PE", strike: number, side: "long" | "short", premium: number): PositionedLeg => ({
+    symbol: "NIFTY",
+    expiry,
+    optionType,
+    strike,
+    side,
+    premium,
+    qty: 1,
+  });
+
+  it("Sep short CE100 + Oct long CE100 + Oct long PE100 stays ONE group, with no Unlimited and no Short Call", () => {
+    const groups = buildStrategies([
+      opt("2026-09-24", "CE", 100, "short", 4),
+      opt("2026-10-29", "CE", 100, "long", 7),
+      opt("2026-10-29", "PE", 100, "long", 6),
+    ]);
+    expect(groups.map((g) => g.key)).toEqual(["NIFTY"]);
+    expect(groups.flatMap((g) => [g.capLabel.maxProfit, g.capLabel.maxLoss])).not.toContain("Unlimited");
+    expect(groups.map((g) => g.name)).not.toContain("Short Call");
+  });
+
+  it("an unrelated Sep bull call spread + Oct long put still splits into two named cards (ruling 240)", () => {
+    const groups = buildStrategies([
+      opt("2026-09-24", "CE", 100, "long", 6),
+      opt("2026-09-24", "CE", 110, "short", 2),
+      opt("2026-10-29", "PE", 95, "long", 3),
+    ]);
+    expect(groups.map((g) => g.name)).toEqual(["Bull Call Spread", "Long Put"]);
+    expect(groups.map((g) => g.key)).toEqual(["NIFTY|2026-09-24", "NIFTY|2026-10-29"]);
+  });
+});
+
+describe("an underlying FUTURE whose expiry is not stored (P14)", () => {
+  // A compact monthly future ('NIFTY26SEPFUT') is classified with expiry null
+  // (lib/engine/classify.ts: the symbol states a month, not a day). Read as a
+  // cash holding it bounded a later short call. Only a stated month strictly
+  // before or after the last option leg's month places it.
+  const call: PositionedLeg = {
+    symbol: "NIFTY",
+    expiry: "2026-10-29",
+    optionType: "CE",
+    strike: 24500,
+    side: "short",
+    premium: 180,
+    qty: 75,
+  };
+  const fut = (over: Partial<PositionedLeg> = {}): PositionedLeg => ({
+    symbol: "NIFTY",
+    expiry: null,
+    kind: "UL",
+    strike: 0,
+    side: "long",
+    premium: 24000,
+    qty: 75,
+    expiryUnknown: true,
+    ...over,
+  });
+  const blank = { maxProfit: "Not computed", maxLoss: "Not computed" };
+
+  it("no stated month: both tiles read Not computed, and the name stays", () => {
+    const [g] = buildStrategies([fut(), call]);
+    expect(g.strategyId).toBe("covered-call");
+    expect(g.capLabel).toEqual(blank);
+    expect(g.notComputed).toEqual({ maxProfit: true, maxLoss: true });
+    expect(underlyingExpiryUnknown(g.ulLegs, g.expiries)).toBe(true);
+    expect(underlyingExpiresFirst(g.ulLegs, g.expiries), "not the settles-before case").toBe(false);
+  });
+
+  it("the SAME month as the last option leg is still unknown", () => {
+    const [g] = buildStrategies([fut({ contractMonth: "2026-10" }), call]);
+    expect(g.capLabel).toEqual(blank);
+    expect(underlyingExpiryUnknown(g.ulLegs, g.expiries)).toBe(true);
+  });
+
+  it("a month strictly BEFORE is decisive: it settles first (R104's case)", () => {
+    const [g] = buildStrategies([fut({ contractMonth: "2026-09" }), call]);
+    expect(g.capLabel).toEqual(blank);
+    expect(underlyingExpiresFirst(g.ulLegs, g.expiries)).toBe(true);
+    expect(underlyingExpiryUnknown(g.ulLegs, g.expiries)).toBe(false);
+  });
+
+  it("a month strictly AFTER is decisive: it outlives the call, and the figures stand", () => {
+    const [g] = buildStrategies([fut({ contractMonth: "2026-11" }), call]);
+    expect(g.notComputed).toEqual({ maxProfit: false, maxLoss: false });
+    expect(g.capLabel.maxLoss).not.toBe("Not computed");
+  });
+
+  it("a cash holding still bounds, and a dated Sep future keeps R104's flag", () => {
+    const [cash] = buildStrategies([fut({ expiryUnknown: undefined }), call]);
+    expect(cash.notComputed).toEqual({ maxProfit: false, maxLoss: false });
+    expect(underlyingExpiryUnknown(cash.ulLegs, cash.expiries)).toBe(false);
+    const [dated] = buildStrategies([fut({ expiryUnknown: undefined, expiry: "2026-09-24" }), call]);
+    expect(dated.capLabel).toEqual(blank);
+    expect(underlyingExpiresFirst(dated.ulLegs, dated.expiries)).toBe(true);
+    expect(underlyingExpiryUnknown(dated.ulLegs, dated.expiries)).toBe(false);
+  });
+
+  it("reads the contract month out of a compact future symbol, and nothing else", () => {
+    expect(contractMonthOf("NIFTY26SEPFUT")).toBe("2026-09");
+    expect(contractMonthOf("BANKNIFTY26OCTFUT")).toBe("2026-10");
+    expect(contractMonthOf("360ONE25APRFUT")).toBe("2025-04");
+    expect(contractMonthOf("M&M26DECFUT")).toBe("2026-12");
+    for (const s of ["NIFTY", "NIFTY26SEP24500CE", "FUT NIFTY 24 Sep 2026", "", null]) {
+      expect(contractMonthOf(s), String(s)).toBeNull();
     }
   });
 });

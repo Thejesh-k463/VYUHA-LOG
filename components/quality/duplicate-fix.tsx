@@ -46,8 +46,10 @@ export interface DuplicateFixAccount {
   /**
    * M-5 — this account's copy is a PLAIN single-source row, so removing it
    * removes nothing else. Resolved server-side by `isPlainDuplicateCopy`
-   * (lib/analytics/data-quality.ts); a merged lot is never removable and never
-   * gets a button.
+   * (lib/analytics/data-quality.ts); an auto-close merged lot is never
+   * removable and never gets a button. W2-DQ P4: a lot joined with its
+   * recorded sale is removable when another account holds the same identity
+   * set, since that book still holds every record this copy stands for.
    */
   removable: boolean;
 }

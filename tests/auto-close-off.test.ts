@@ -223,15 +223,14 @@ describe("(ii) · case 3 — a BUY against a held short: both rows open, the sho
 });
 
 describe("(iii) broker-pull shapes landing in a held book", () => {
-  it("Angel One: a pulled SELL of a held lot is stored as an OPEN SHORT with sell_date NULL and no basis flag", () => {
-    // KNOWN PRE-EXISTING SHAPE, PENDING AN OWNER DECISION. Pinned here as
-    // TODAY's behaviour, NOT as correct. lib/import/api/angelone.ts:321 (and
-    // upstox.ts:214) write `sellDate: closed ? today : null` and no basisUnknown,
-    // unchanged since v4.2.0, so a sell-only pull row is an open short with no
-    // exit date — the phantom-short shape M-3 ruled wrong for Dhan only
-    // (06-ANSWERS:269). The switch-off restores v4.2.0 and so restores this; the
-    // adapters were deliberately not touched. It is carried with R72 to the
-    // owner / 4.3.1. A change either way must redden this line and be seen.
+  it("Angel One (QS-AO): a pulled SELL of a held lot is its own row, dated the pull's IST day and basis-unknown; the held lot is untouched", () => {
+    // RE-PINNED DELIBERATELY for the owner's QS-AO selection (v4.3.0 fix work,
+    // plan-answers "Q-SCOPE"). Before: lib/import/api/angelone.ts (and
+    // upstox.ts) wrote `sellDate: closed ? today : null` and no basisUnknown, so
+    // a sell-only pull row was an open short with no exit date — measured
+    // `{ sellDate: null, acquisition: null }`. After: Dhan's M-3 shape, measured
+    // `{ sellDate: "2026-09-02", acquisition: "unknown" }`. Auto-close stays off,
+    // so the row is still open and the lot is still untouched.
     const ACC = 703;
     newAccount(ACC, "off-iii-angel");
     const pull = (side: "BUY" | "SELL", day: string) =>
@@ -259,7 +258,7 @@ describe("(iii) broker-pull shapes landing in a held book", () => {
     const rows = rowsOf(ACC);
     expect(rows).toHaveLength(2);
     expect(rows[0], "the held lot is untouched").toEqual(lot);
-    expect(rows[1]).toMatchObject({ buyQty: 0, sellQty: 10, isOpen: true, sellDate: null, acquisition: null });
+    expect(rows[1]).toMatchObject({ buyQty: 0, sellQty: 10, isOpen: true, sellDate: "2026-09-02", acquisition: "unknown" });
   });
 
   it("Dhan /positions sell-only (M-3): the sale is dated the IST day and basis-unknown; the held lot is untouched", () => {

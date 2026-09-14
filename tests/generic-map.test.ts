@@ -249,6 +249,49 @@ describe("applyMapping — execution shape", () => {
     expect(r.trades[0].exitTime).toBe("14:05");
   });
 
+  // P9 (v4.3.0, the R71 class): the merged scrip-day-side used to keep its first
+  // NAMED exchange, so a small BSE fill ahead of the day's NSE fills priced the
+  // whole row at BSE. The row now takes the venue of most of its own turnover.
+  describe("a day-side filled on both exchanges (P9)", () => {
+    const h2 = [...headers, "Exchange"];
+    const m2 = { ...m, exchange: 5 };
+
+    it("an open lot filled ₹1,000 on BSE first and ₹9,000 on NSE is an NSE row", () => {
+      const rows = [
+        ["06-07-2026", "VENUESTK", "BUY", "10", "100", "BSE"],
+        ["06-07-2026", "VENUESTK", "BUY", "90", "100", "NSE"],
+      ];
+      const r = applyMapping(h2, rows, m2, OPTS);
+      expect(r.trades).toHaveLength(1);
+      expect(r.trades[0].buyQty).toBe(100);
+      expect(r.trades[0].exchangeHint).toBe("NSE");
+    });
+
+    it("a round trip whose both days open with a small BSE fill is an NSE row, and says it spans both", () => {
+      const rows = [
+        ["06-07-2026", "VENUESTK", "BUY", "10", "100", "BSE"],
+        ["06-07-2026", "VENUESTK", "BUY", "90", "100", "NSE"],
+        ["08-07-2026", "VENUESTK", "SELL", "10", "110", "BSE"],
+        ["08-07-2026", "VENUESTK", "SELL", "90", "110", "NSE"],
+      ];
+      const r = applyMapping(h2, rows, m2, OPTS);
+      expect(r.trades).toHaveLength(1);
+      const t = r.trades[0];
+      expect([t.buyQty, t.sellQty, t.grossPnl]).toEqual([100, 100, 1000]); // pairing untouched
+      expect(t.exchangeHint).toBe("NSE");
+      expect(t.importNotes).toContain("Bought on BSE/NSE, sold on BSE/NSE — one holding, the exchange is where the fill happened.");
+    });
+
+    it("an exact 50/50 split keeps the first named venue, as before P9", () => {
+      const rows = [
+        ["06-07-2026", "VENUESTK", "BUY", "50", "100", ""],
+        ["06-07-2026", "VENUESTK", "BUY", "50", "100", "BSE"],
+        ["06-07-2026", "VENUESTK", "BUY", "50", "100", "NSE"],
+      ];
+      expect(applyMapping(h2, rows, m2, OPTS).trades[0].exchangeHint).toBe("BSE");
+    });
+  });
+
   it("adopts a product only when the whole file agrees on one", () => {
     const h2 = [...headers, "Product"];
     const mixed = [

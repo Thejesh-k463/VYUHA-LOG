@@ -33,7 +33,7 @@ import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } f
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
-import { lotIdentityHashes, withStaleCloseNote } from "./close-open-lots";
+import { isLotIdentityFrozen, lotIdentityHashes, withStaleCloseNote } from "./close-open-lots";
 import { saleJournalFields, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
 
 /** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
@@ -310,6 +310,146 @@ function supersededByBookNow(tx: TxLike, parsed: ParsedFile, accountId: number):
 }
 
 
+// ---------------------------------------------------------------------------
+// R43 (4.3.0) — a same-day re-pull supersedes today's earlier snapshot IN PLACE
+// ---------------------------------------------------------------------------
+
+/**
+ * A broker pull's snapshot identity: the pull's own file name,
+ * `${broker}-api-<IST day>`. Passed ONLY by the Dhan, Angel One and Upstox pull
+ * callers (the route's commit path and the auto-pull sweep).
+ *
+ * Every pull on one IST day files under the same name, and the cross-source
+ * check deliberately ignores rows from the same file — so when a position
+ * changed between two pulls (bought 100 in the morning, sold by the evening),
+ * the evening row hashed differently, nothing saw the morning row, and the
+ * book held the position twice.
+ *
+ * The evening row now REPLACES the morning row, but only when that is
+ * unambiguous: exactly one stored row and exactly one incoming row for the same
+ * account + broker + file + day + instrument (tradingsymbol, symbol, segment,
+ * exchange). The trades table has no product column, so an INTRADAY and a
+ * MARGIN position in one contract share that key; overwriting one with the
+ * other would erase a held position. In that case — and when the stored row
+ * carries a ladder (trade_legs) or an identity alias — nothing is replaced and
+ * the earlier snapshot stops being hidden from the collision check, so the user
+ * is asked. A product-keyed snapshot identity is 4.3.1 work.
+ */
+export interface SupersedeSnapshot {
+  fileName: string;
+}
+
+/** Rows today's earlier snapshot would be replaced by, and rows to ask about. */
+interface SnapshotPlan {
+  day: string;
+  /** incoming row index → the stored row it replaces */
+  supersede: Map<number, { id: number }>;
+  /** incoming row indices that are snapshot rows with a new hash, NOT replaced */
+  ask: Set<number>;
+}
+
+interface SnapshotStoredRow {
+  id: number;
+  tradingsymbol: string;
+  symbol: string;
+  segment: string;
+  exchange: string;
+  buyDate: string | null;
+  sellDate: string | null;
+  sourceFile: string | null;
+  dedupHash: string;
+  importNotes: string | null;
+}
+
+/** The IST day the pull's file name carries; today when it carries none. */
+function snapshotDayOf(snap: SupersedeSnapshot): string {
+  return /(\d{4}-\d{2}-\d{2})$/.exec(snap.fileName)?.[1] ?? todayIstIso();
+}
+
+/** A row of today's book: dated `day`, with every execution (if any) on `day`.
+ *  Dhan's /positions rows carry no executions; a history fill is never dated
+ *  today (fetchTrades drops those); an Angel One / Upstox trade-book row is
+ *  today's fills. */
+function isSnapshotRow(t: NormalizedTrade, day: string): boolean {
+  if (normalizeDate(t.buyDate) !== day && normalizeDate(t.sellDate) !== day) return false;
+  return (t.executions ?? []).every((e) => normalizeDate(e.date) === day);
+}
+
+const snapshotKey = (tradingsymbol: string, symbol: string, segment: string, exchange: string) =>
+  `${tradingsymbol.trim().toUpperCase()}|${symbol}|${segment}|${exchange}`;
+
+function planSnapshot(
+  snap: SupersedeSnapshot | null | undefined,
+  incoming: readonly { t: NormalizedTrade; b: BuiltRow }[],
+  isKnown: (hash: string) => boolean,
+  stored: readonly SnapshotStoredRow[],
+  hasLegs: (tradeIds: number[]) => Set<number>,
+): SnapshotPlan | null {
+  if (!snap) return null;
+  const day = snapshotDayOf(snap);
+  const storedByKey = new Map<string, SnapshotStoredRow[]>();
+  for (const r of stored) {
+    if (r.sourceFile !== snap.fileName || (r.buyDate !== day && r.sellDate !== day)) continue;
+    const k = snapshotKey(r.tradingsymbol, r.symbol, r.segment, r.exchange);
+    storedByKey.set(k, [...(storedByKey.get(k) ?? []), r]);
+  }
+  const keyOf = ({ t, b }: { t: NormalizedTrade; b: BuiltRow }) =>
+    snapshotKey(t.tradingsymbol, b.classification.symbol, b.classification.segment, b.classification.exchange);
+  const incomingPerKey = new Map<string, number>();
+  const snapshotRows: number[] = [];
+  incoming.forEach((row, i) => {
+    if (!isSnapshotRow(row.t, day)) return;
+    snapshotRows.push(i);
+    incomingPerKey.set(keyOf(row), (incomingPerKey.get(keyOf(row)) ?? 0) + 1);
+  });
+
+  const supersede = new Map<number, { id: number }>();
+  const ask = new Set<number>();
+  const single = new Map<number, SnapshotStoredRow>();
+  for (const i of snapshotRows) {
+    const row = incoming[i]!;
+    if (isKnown(row.b.dedup)) continue; // a duplicate: nothing to replace, nothing to ask
+    const k = keyOf(row);
+    const candidates = storedByKey.get(k) ?? [];
+    if (candidates.length === 1 && incomingPerKey.get(k) === 1 && !isLotIdentityFrozen(candidates[0]!)) {
+      single.set(i, candidates[0]!);
+    } else {
+      ask.add(i);
+    }
+  }
+  // A stored row with a ladder is never rewritten: its legs would describe a
+  // position the parent no longer holds (invariant 5), and they can carry the
+  // user's per-tranche stops.
+  const laddered = single.size ? hasLegs([...single.values()].map((r) => r.id)) : new Set<number>();
+  for (const [i, r] of single) {
+    if (laddered.has(r.id)) ask.add(i);
+    else supersede.set(i, { id: r.id });
+  }
+  return { day, supersede, ask };
+}
+
+/** The ids among `ids` that have at least one trade_legs row. */
+function tradeIdsWithLegs(tx: TxLike, ids: number[]): Set<number> {
+  if (ids.length === 0) return new Set();
+  return new Set(
+    tx.select({ tradeId: tradeLegs.tradeId }).from(tradeLegs).where(inArray(tradeLegs.tradeId, ids)).all().map((r) => r.tradeId),
+  );
+}
+
+/** The commit's words for rows replaced in place ("1 position updated from
+ *  today's earlier pull"); the commit's warning is this plus a full stop. */
+export const supersededPhrase = (n: number) =>
+  `${n} position${n === 1 ? "" : "s"} updated from today's earlier pull`;
+
+/** The count a commit's warnings state for rows replaced in place; 0 when none. */
+export function supersededFromWarnings(warnings: readonly string[] | undefined): number {
+  for (const w of warnings ?? []) {
+    const m = /^(\d+) positions? updated from today's earlier pull\.$/.exec(w);
+    if (m) return Number(m[1]);
+  }
+  return 0;
+}
+
 export interface PreviewRow {
   tradingsymbol: string;
   symbol: string;
@@ -342,7 +482,13 @@ export interface PreviewResult {
    * Recent-imports row all say the same sentence.
    */
   shape: ImportShape;
-  summary: { total: number; newCount: number; dupCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
+  /**
+   * `newCount` rows would be inserted and `dupCount` skipped as already held.
+   * `supersededCount` (R43, a pull only) would REPLACE today's earlier snapshot
+   * of the same position in place — neither new nor a duplicate, so
+   * `total = newCount + dupCount + supersededCount`.
+   */
+  summary: { total: number; newCount: number; dupCount: number; supersededCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
   reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
   /** Rows that look like trades already held from a DIFFERENT file kind. */
   crossSource?: CrossSourceReport;
@@ -418,6 +564,8 @@ export function previewParsedFile(
   /** Name of the file being previewed — lets the cross-source check exclude
    *  rows that came from this very file on an earlier import. */
   fileName = "",
+  /** R43: a broker pull's snapshot identity — see `SupersedeSnapshot`. */
+  options: { supersedeSnapshot?: SupersedeSnapshot | null } = {},
 ): PreviewResult {
   const parsed = applyProductOverrides(resolveSymbols(parsedIn), productOverrides);
   const { rates, defaults, accountId } = loadContext(accountIdIn);
@@ -437,13 +585,19 @@ export function previewParsedFile(
   const existing = new Set(existingRows.flatMap((r) => lotIdentityHashes(r)));
 
   const rows: PreviewRow[] = [];
-  let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, openCount = 0, openingSells = 0;
+  let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, supersededCount = 0, openCount = 0, openingSells = 0;
   const agg: Record<string, number> = { brokerage: 0, sttCtt: 0, exchangeTxn: 0, sebi: 0, stampDuty: 0, ipft: 0, gst: 0, dpCharges: 0 };
 
-  for (const t of parsed.trades) {
-    const b = buildRow(t, rates, overrides, defaults);
+  const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults) }));
+  // R43: the same plan the commit makes, against the same rows.
+  const snapshot = planSnapshot(options.supersedeSnapshot, built, (h) => existing.has(h), existingRows, (ids) =>
+    tradeIdsWithLegs(db, ids),
+  );
+
+  for (const [i, { t, b }] of built.entries()) {
     const isDuplicate = existing.has(b.dedup);
     if (isDuplicate) dupCount++;
+    else if (snapshot?.supersede.has(i)) supersededCount++;
     // Disjoint by construction: an opening sell also has buyQty !== sellQty, so
     // counting it as "open" as well would make the three counts overlap and
     // stop summing to the position total.
@@ -489,8 +643,9 @@ export function previewParsedFile(
     },
     summary: {
       total: rows.length,
-      newCount: rows.length - dupCount,
+      newCount: rows.length - dupCount - supersededCount,
       dupCount,
+      supersededCount,
       grossPnl: Math.round(grossPnl * 100) / 100,
       chargesTotal: Math.round(chargesTotal * 100) / 100,
       netPnl: Math.round(netPnl * 100) / 100,
@@ -501,7 +656,7 @@ export function previewParsedFile(
     // Rows that slipped past dedupHash because they came from a file kind that
     // states different facts. Reported, never merged — see cross-source.ts.
     crossSource: detectCrossSourceDuplicates(
-      parsed.trades.map((t) => ({
+      parsed.trades.map((t, i) => ({
         broker: parsed.broker,
         symbol: t.tradingsymbol,
         tradingsymbol: t.tradingsymbol,
@@ -512,6 +667,9 @@ export function previewParsedFile(
         buyDate: t.buyDate ?? null,
         sellDate: t.sellDate ?? null,
         dedupHash: dedupHash({ ...t, broker: parsed.broker } as never),
+        // R43: a snapshot row that will NOT replace today's earlier one meets
+        // that earlier one here, so the pull asks instead of adding a second row.
+        ...(snapshot?.ask.has(i) ? { snapshotDay: snapshot.day } : {}),
       })),
       existingRows.map((r) => ({
         id: r.id,
@@ -983,6 +1141,8 @@ export function commitParsedFile(
   fileName: string,
   productOverrides: Record<string, ProductHint> | null = null,
   accountIdIn?: number | null,
+  /** R43: a broker pull's snapshot identity — see `SupersedeSnapshot`. */
+  options: { supersedeSnapshot?: SupersedeSnapshot | null } = {},
 ): CommitResult {
   const parsed = applyProductOverrides(resolveSymbols(parsedIn), productOverrides);
   const { rates, defaults, accountId } = loadContext(accountIdIn);
@@ -998,14 +1158,29 @@ export function commitParsedFile(
       throw new Error(`The destination account (id ${accountId}) no longer exists — it was deleted while this import was in flight. Nothing was imported.`);
     }
     // R26: own hashes AND aliases, the same set the preview reads.
-    const existing = new Set(
-      tx
-        .select({ dedupHash: tradesTable.dedupHash, importNotes: tradesTable.importNotes })
-        .from(tradesTable)
-        .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
-        .all()
-        .flatMap((r) => lotIdentityHashes(r)),
+    const heldRows = tx
+      .select({
+        id: tradesTable.id,
+        dedupHash: tradesTable.dedupHash,
+        importNotes: tradesTable.importNotes,
+        tradingsymbol: tradesTable.tradingsymbol,
+        symbol: tradesTable.symbol,
+        segment: tradesTable.segment,
+        exchange: tradesTable.exchange,
+        buyDate: tradesTable.buyDate,
+        sellDate: tradesTable.sellDate,
+        sourceFile: tradesTable.sourceFile,
+      })
+      .from(tradesTable)
+      .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
+      .all();
+    const existing = new Set(heldRows.flatMap((r) => lotIdentityHashes(r)));
+    const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults) }));
+    // R43: decided ONCE, against the account as it stands before any write.
+    const snapshot = planSnapshot(options.supersedeSnapshot, built, (h) => existing.has(h), heldRows, (ids) =>
+      tradeIdsWithLegs(tx as unknown as TxLike, ids),
     );
+    let superseded = 0;
 
     const batch = tx
       .insert(importBatches)
@@ -1037,8 +1212,27 @@ export function commitParsedFile(
       parsed.trades.length > 0 && REFERENCE_SOURCE_IDS.includes(parsed.sourceId);
     const bookHeld = referenceCarryingTrades && holdsBookTrades(tx as unknown as TxLike, accountId, parsed.broker);
 
-    for (const t of parsed.trades) {
-      const b = buildRow(t, rates, overrides, defaults);
+    const writeLadder = (tradeId: number, t: NormalizedTrade) => {
+      let seq = 1;
+      const isShort = t.sellQty > t.buyQty; // must match orderExecutions (fix A6)
+      for (const ex of orderExecutions(t)) {
+        const opening = isShort ? ex.side === "sell" : ex.side === "buy";
+        tx.insert(tradeLegs)
+          .values({
+            tradeId,
+            kind: opening ? "entry" : "exit",
+            seq: seq++,
+            tradeDate: normalizeDate(ex.date) ?? normalizeDate(t.buyDate) ?? normalizeDate(t.sellDate) ?? "",
+            tradeTime: ex.time ?? null,
+            qty: ex.qty,
+            price: ex.price,
+            note: "Imported execution",
+          })
+          .run();
+      }
+    };
+
+    for (const [i, { t, b }] of built.entries()) {
       // Counted BEFORE the duplicate check, and over every parsed row: the
       // shape sentence describes the FILE, which is what the user reconciles
       // against their broker's statement. Added/skipped is a separate fact.
@@ -1067,6 +1261,77 @@ export function commitParsedFile(
           ? ["MTF interest not stated by the file — any interest shown is estimated from your configured rates"]
           : []),
       ];
+
+      // R43: today's earlier snapshot of this position is REPLACED in place —
+      // the broker's later statement of the same book. Only the columns the
+      // broker states change; the id, the import batch (the row stays in the
+      // morning's batch) and everything the user wrote on the row are kept.
+      const target = snapshot?.supersede.get(i);
+      if (target) {
+        const before = tx.select().from(tradesTable).where(eq(tradesTable.id, target.id)).get();
+        if (before) {
+          const patch = {
+            isin: t.isin,
+            buyQty: t.buyQty,
+            avgBuyPrice: t.avgBuyPrice,
+            buyValue: t.buyValue,
+            sellQty: t.sellQty,
+            avgSellPrice: t.avgSellPrice,
+            sellValue: t.sellValue,
+            closingPrice: t.closingPrice,
+            buyDate: normalizeDate(t.buyDate),
+            sellDate: normalizeDate(t.sellDate),
+            entryTime: t.entryTime ?? null,
+            exitTime: t.exitTime ?? null,
+            grossPnl: t.grossPnl,
+            chargesTotal: b.charges.total,
+            netPnl: b.netPnl,
+            unrealisedPnl: t.unrealisedPnl,
+            realisedPct: b.realisedPct,
+            isOpen: b.isOpen,
+            buyOrderCount: b.buyOrderCount,
+            sellOrderCount: b.sellOrderCount,
+            // R is the row's own risk figure (the user may have set it), not the default.
+            rMultiple: (before.riskAmount ?? 0) > 0 ? Math.round((b.netPnl / before.riskAmount!) * 100) / 100 : null,
+            brokerage: b.charges.brokerage,
+            sttCtt: b.charges.sttCtt,
+            exchangeTxn: b.charges.exchangeTxn,
+            sebi: b.charges.sebi,
+            stampDuty: b.charges.stampDuty,
+            ipft: b.charges.ipft,
+            gst: b.charges.gst,
+            dpCharges: b.charges.dpCharges,
+            mtfInterest: b.charges.mtfInterest,
+            pledgeCharges: b.charges.pledgeCharges,
+            dedupHash: b.dedup,
+            staged: stagedFromExecutions(t),
+            // An unknown basis is the file's fact; a basis the user chose is theirs.
+            acquisition:
+              before.acquisition == null || before.acquisition === "unknown"
+                ? (t.basisUnknown ? "unknown" : null)
+                : before.acquisition,
+            suggestedBasisPrice: t.suggestedBasisPrice ?? null,
+            importNotes: noteLines.length ? noteLines.join(" | ") : null,
+          };
+          tx.update(tradesTable).set(patch).where(eq(tradesTable.id, target.id)).run();
+          const keys = Object.keys(patch) as (keyof typeof patch)[];
+          const pick = (r: Record<string, unknown>) => Object.fromEntries(keys.map((k) => [k, r[k] ?? null]));
+          recordAudit({
+            entity: "trade",
+            entityId: target.id,
+            action: "update",
+            summary: `${t.tradingsymbol}: updated from today's earlier pull (${fileName})`,
+            before: pick(before),
+            after: pick({ ...before, ...patch }),
+            source: "import",
+          });
+          // The candidate had no ladder (planSnapshot), so a staged row gets its
+          // own, written exactly as an insert writes one.
+          if (patch.staged) writeLadder(target.id, t);
+          superseded++;
+          continue;
+        }
+      }
 
       const inserted = tx.insert(tradesTable)
         .values({
@@ -1137,25 +1402,7 @@ export function commitParsedFile(
       // real shape — three entries at three prices instead of one blended
       // average. Charges stay as computed on the aggregate here; opening the
       // staged panel reprices per fill.
-      if (inserted && stagedFromExecutions(t)) {
-        let seq = 1;
-        const isShort = t.sellQty > t.buyQty; // must match orderExecutions (fix A6)
-        for (const ex of orderExecutions(t)) {
-          const opening = isShort ? ex.side === "sell" : ex.side === "buy";
-          tx.insert(tradeLegs)
-            .values({
-              tradeId: inserted.id,
-              kind: opening ? "entry" : "exit",
-              seq: seq++,
-              tradeDate: normalizeDate(ex.date) ?? normalizeDate(t.buyDate) ?? normalizeDate(t.sellDate) ?? "",
-              tradeTime: ex.time ?? null,
-              qty: ex.qty,
-              price: ex.price,
-              note: "Imported execution",
-            })
-            .run();
-        }
-      }
+      if (inserted && stagedFromExecutions(t)) writeLadder(inserted.id, t);
     }
 
     tx.update(importBatches)
@@ -1172,6 +1419,7 @@ export function commitParsedFile(
     // successfully — that is the sanctioned exception to "nothing to import",
     // which stays a refusal for a TRADEBOOK that produced no rows.
     const commitWarnings: string[] = [];
+    if (superseded > 0) commitWarnings.push(`${supersededPhrase(superseded)}.`);
     const referenceRows = parsed.reference?.length ? parsed.reference : referenceFromReported(parsed.reported);
     const referenceStored = referenceRows.length
       ? persistReference(tx, referenceRows, accountId, parsed.broker, parsed.sourceId, batchId)
@@ -1564,7 +1812,7 @@ export function closePosition(
  * Why `closeStaleLot` refused — the stable wire value the route maps to an HTTP
  * status. Every refusal changes nothing.
  */
-export type StaleCloseCode = "BAD_DATE" | "NOT_FOUND" | "OTHER_ACCOUNT" | "NO_PAIR" | "PARTIAL" | "JOURNAL" | "DELETE_FAILED";
+export type StaleCloseCode = "BAD_DATE" | "NOT_FOUND" | "OTHER_ACCOUNT" | "NO_PAIR" | "PARTIAL" | "STAGED" | "JOURNAL" | "DELETE_FAILED";
 
 export interface StaleCloseResult {
   ok: boolean;
@@ -1597,6 +1845,7 @@ class StaleCloseAbort extends Error {}
  * In ONE transaction:
  *  1. the pair is RE-DERIVED from the book (`staleOpenPairs`, the same pure
  *     rule the screen used) and refused unless it still holds one-to-one;
+ *     a staged lot (or any lot with `trade_legs`) is refused (STAGED);
  *  2. S is refused when it carries the user's own journal fields (notes,
  *     tags, a playbook, an exit reason, attachments, legs) — removing it would
  *     remove them, and merging two rows' journals is not what the user wrote;
@@ -1653,6 +1902,23 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       const pair = staleOpenPairs(book).find((p) => p.lotId === lot.id && p.saleId === sale.id);
       if (!pair) {
         return { ok: false, code: "NO_PAIR", message: "These two rows no longer pair — the position is closed, the sale has gone, or an older position now takes the sale first. Nothing was changed." };
+      }
+      // W2-FIXD2 — a STAGED lot is never joined here, read from the stored row
+      // and its ladder rather than from the pure rule (defence in depth). This
+      // join writes the parent row only: no exit leg lands in trade_legs, so
+      // the ladder still reads the position open beside a closed parent
+      // (invariant 5), and the next rebuild of the ladder re-opens the parent
+      // with the sale row already removed (measured 2026-09-15). The ladder's
+      // own exit prices each tranche and keeps R frozen at the first entry
+      // (invariant 4).
+      const lotLegs = tx.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, lot.id)).all().length;
+      if (lot.staged || lotLegs > 0) {
+        const what = pair.side === "long" ? "sale" : "purchase";
+        return {
+          ok: false,
+          code: "STAGED",
+          message: `This is a staged position built from more than one fill, so it is not joined with the recorded ${what} in one step: its exit is booked on its own ladder in Trades, which prices each tranche. Nothing was changed.`,
+        };
       }
       if (!pair.oneClick) {
         return { ok: false, code: "PARTIAL", message: `The recorded sale is ${pair.saleQty} and the position holds ${pair.lotQty}, so they are not joined in one step. Nothing was changed.` };

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  OPTIONS_BEGINNER_LABEL,
   OPTIONS_HELP,
   OPTIONS_HELP_FOOTER,
   OPTIONS_STRATEGY_IDS,
@@ -17,6 +18,7 @@ import {
 import { searchHelp, type HelpHit } from "@/lib/domain/help-content";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
 import { computeSettlement, DEFAULT_SETTLEMENT_RATES } from "@/lib/analytics/settlement";
+import { computeStrategy, type OptionLeg } from "@/lib/analytics/strategies";
 
 /**
  * THE OPTIONS HELP DESK (v4.3 wave 2, B5).
@@ -589,5 +591,86 @@ describe("the help copy agrees with the exchange and the engine (v4.3.0 fix wave
     expect(p).toMatch(/Unlimited above the higher strike/);
     expect(p).toMatch(/two-for-one/);
     expect(p).not.toMatch(/on the side the net sits/);
+  });
+});
+
+/**
+ * v4.3.0 FIX WAVE 2 (W2-HELP) — R93, R96, P7, P8 and the /help half of R52.
+ *
+ *  - R93. The long call said exercise STT on intrinsic value "is an order of
+ *    magnitude larger" than STT on premium. NSE/FATAX/73524 charges 0.15% on
+ *    premium and 0.15% on intrinsic from 2026-04-01, so no ratio is stated. The
+ *    long call butterfly's "can exceed the whole debit" is TRUE for a cheap fly
+ *    after a large move (K4 skeptic) and stays.
+ *  - P7. A long ITM STOCK option left to settle pays delivery STT on the strike
+ *    value as well as exercise STT on intrinsic (settlement.ts: RELIANCE 2900 CE
+ *    × 250 → 725 + 38 = 763); the long-leg entries named the second charge only.
+ *    The clause joins the ONE STT sentence and carries no second "STT" token, so
+ *    the one-sentence gate above still holds.
+ *  - R96. The diagonal's max loss is the debit only when the long far strike is
+ *    the nearer the money; further out, the engine's curve adds the strike
+ *    distance (CE100 short near @3 + CE110 long far @5 → −12).
+ *  - P8. The split-strike combo's band between the strikes is flat only when the
+ *    call strike is above the put strike (R100's two-for-one variant is not).
+ */
+describe("the help copy agrees with the exchange and the engine (v4.3.0 fix wave 2)", () => {
+  const entry = (id: string) => {
+    const e = OPTIONS_HELP.find((x) => x.id === id);
+    if (!e) throw new Error(`no options help entry ${id}`);
+    return e;
+  };
+  const sttSentence = (e: OptionsHelpEntry) => prose(e).split(/(?<=\.)\s+/).filter((s) => /STT/.test(s))[0] ?? "";
+  const DELIVERY = /stock option settled by delivery[^.]*equity-delivery rate/;
+
+  it("R93 — no entry states a ratio between exercise STT and premium STT", () => {
+    const hits = OPTIONS_HELP.filter((e) => /order of magnitude/.test(prose(e))).map((e) => e.id);
+    expect(hits, `entries that still state the ratio: ${hits.join(", ")}`).toEqual([]);
+    // The fly's sentence is true after a large move and is deliberately kept.
+    expect(entry("long-call-butterfly").risk).toMatch(/can exceed the whole debit/);
+  });
+
+  it("P7 — every long-leg or holder STT sentence also states delivery STT on a stock option", () => {
+    const missing = OPTIONS_HELP.filter((e) => {
+      const s = sttSentence(e);
+      return /\b(long (call|put|leg|wing)s?|holder)\b/.test(s) && !DELIVERY.test(s);
+    }).map((e) => e.id);
+    expect(missing, `${missing.length} STT sentences name no delivery STT:\n${missing.join("\n")}`).toEqual([]);
+    // The seam at seams-v43-fixA.test.ts S1 reads the SHORT call's text for the
+    // delivery fact; the long call's own risk line states it too.
+    const longCall = entry("long-call").risk;
+    expect(longCall, "the long call's own risk line names no delivery STT").toMatch(DELIVERY);
+    expect(longCall).toMatch(/strike value/);
+    expect(longCall).toMatch(/index options settle in cash/);
+    expect(longCall, "S1's holder-pays fact is read from this substring").toContain("charged STT on intrinsic value");
+    // The scan fires on the sentence that was there.
+    expect(DELIVERY.test("A long put left to settle in the money is charged STT on intrinsic value, not on premium.")).toBe(false);
+  });
+
+  it("R96 — the diagonal's max loss adds the strike distance when the far strike is further out of the money", () => {
+    const legs: OptionLeg[] = [
+      { optionType: "CE", strike: 100, side: "short", premium: 3, qty: 1, expiry: "2026-09-24" },
+      { optionType: "CE", strike: 110, side: "long", premium: 5, qty: 1, expiry: "2026-10-29" },
+    ];
+    const g = computeStrategy("X", null, legs);
+    expect(g.strategyId).toBe("diagonal-spread");
+    expect(g.maxLoss, "debit 2 + distance 10").toBe(-12);
+    expect(g.capLabel.maxLoss).toBe("At expiry");
+    const p = entry("diagonal-spread").payoff;
+    expect(p).toMatch(/distance between the two strikes × quantity plus the debit/);
+    expect(p).toMatch(/the debit when the far strike is the nearer the money/);
+    expect(p, "the help still states the debit as the only max loss").not.toMatch(/max loss is the debit while the far leg is long/);
+  });
+
+  it("P8 — the split-strike combo's flat band is conditioned on the call strike being above the put strike", () => {
+    const w = entry("split-strike-combo").whoUses;
+    expect(w, "the band is still stated unconditionally").not.toMatch(/wants a band of indifference between the strikes/);
+    expect(w).toMatch(/only when the call strike is above the put strike/);
+  });
+
+  it("R52 — the desk's beginner chip is the shared constant, not a literal", () => {
+    expect(OPTIONS_BEGINNER_LABEL).toBe("Beginner");
+    const src = read(DESK);
+    expect(src).toContain("{OPTIONS_BEGINNER_LABEL}");
+    expect(src, "a hand-typed chip drifts from the picker's").not.toMatch(/>Beginner</);
   });
 });

@@ -14,6 +14,11 @@
 //    here; the estimate is the bucket rate on this IPO's net gain alone.
 
 import { classifyTerm, capitalGainsRatesFor, type GainTerm } from "@/lib/analytics/capital-gains";
+import { computeChargesPaise } from "@/lib/engine/charges";
+import { seedRatesMap, statutoryRatesFor, type RatesMap } from "@/lib/engine/rates";
+import type { ChargeBreakdown, ChargeRates } from "@/lib/engine/types";
+import { todayIstIso } from "@/lib/domain/trading-day";
+import { toPaise, toRupees } from "@/lib/money";
 
 export type IpoBoard = "mainboard" | "sme";
 export type IpoCategory = "retail" | "shni" | "bhni" | "employee" | "shareholder";
@@ -79,7 +84,6 @@ export interface IpoComputed extends IpoInput {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const rRupee = (n: number) => Math.round(n);
 
 /**
  * How exit charges are computed, injectable by the caller.
@@ -87,27 +91,101 @@ const rRupee = (n: number) => Math.round(n);
  * This module is PURE (invariant 2) and so cannot read `charge_config` itself
  * — but invariant 3 says statutory rates live ONLY there. The resolution:
  * the server caller (`lib/queries/ipos.ts`) injects a charger built on the
- * real engine + the IPO's broker's configured rates, and this pure FALLBACK
- * is used only when no broker is recorded on the IPO or the broker has no
- * rates row. It existed first as the ONLY path — which meant every exited
+ * real engine + the IPO's broker's configured rates, and the statutory-row
+ * FALLBACK (`ipoSellCharges`) is used only when no broker is recorded on the
+ * IPO or the broker has no rates row. A frozen-rate estimate existed first as
+ * the ONLY path — which meant every exited
  * IPO's net P&L was computed from rates the user could not edit, and that
  * number flowed into realised-net and capital compounding (defect D4,
  * 2026-08-12).
  */
 export type IpoSellCharger = (sellValue: number, allottedValue: number) => number;
 
-/** FALLBACK delivery-sell estimate (no brokerage; primary acquisition).
- *  Rates frozen at the 2026 budget's statutory values — used only when the
- *  IPO names no broker; the UI labels the result an estimate. */
-export function ipoSellCharges(sellValue: number, allottedValue: number): number {
+/**
+ * IPO exit charges over a charge_config row — a thin wrapper over the engine;
+ * no rate is written here. The server feeds it the IPO broker's row
+ * (`lib/queries/ipos.ts`), or, when the IPO names no broker (or its broker has
+ * no row), the STATUTORY columns (`statutoryRatesFor`, R36).
+ *
+ *  • the SALE is the only exchange trade: STT, exchange txn, IPFT and SEBI on
+ *    the sell value, GST over exchange + IPFT + SEBI (+ brokerage and a
+ *    GST-bearing DP when the row has them);
+ *  • the allotment is not bought on an exchange, so it carries no purchase STT
+ *    (FATAX56235 row 1) and no exchange levies (W2-IPO2 for the broker path)
+ *    — only stamp duty on its value;
+ *  • brokerage and DP come from the row, on the sale: a broker's row carries
+ *    them; the statutory row neutralises both (no broker is recorded, and DP
+ *    is a broker tariff).
+ */
+export function ipoSellChargeBreakdown(
+  sellValue: number,
+  allottedValue: number,
+  exitRates: ChargeRates,
+): ChargeBreakdown {
+  const rates: ChargeRates = { ...exitRates, sttSide: "sell" };
+  const sale = computeChargesPaise(
+    { segment: "eq_delivery", buyValue: 0, sellValue: toPaise(Math.max(0, sellValue)), buyQty: 0, sellQty: 1, buyOrderCount: 0, sellOrderCount: 1 },
+    rates,
+  );
+  // Only this call's STAMP is read — the allotment's value is its base.
+  const allotment = computeChargesPaise(
+    { segment: "eq_delivery", buyValue: toPaise(Math.max(0, allottedValue)), sellValue: 0, buyQty: 1, sellQty: 0, buyOrderCount: 0, sellOrderCount: 0 },
+    rates,
+  );
+  const p = {
+    brokerage: sale.brokerage,
+    sttCtt: sale.sttCtt,
+    exchangeTxn: sale.exchangeTxn,
+    sebi: sale.sebi,
+    stampDuty: allotment.stampDuty,
+    ipft: sale.ipft,
+    gst: sale.gst,
+    dpCharges: sale.dpCharges,
+    mtfInterest: 0,
+    pledgeCharges: 0,
+  };
+  const total = Object.values(p).reduce((s, v) => s + v, 0);
+  return {
+    brokerage: toRupees(p.brokerage),
+    sttCtt: toRupees(p.sttCtt),
+    exchangeTxn: toRupees(p.exchangeTxn),
+    sebi: toRupees(p.sebi),
+    stampDuty: toRupees(p.stampDuty),
+    ipft: toRupees(p.ipft),
+    gst: toRupees(p.gst),
+    dpCharges: toRupees(p.dpCharges),
+    mtfInterest: 0,
+    pledgeCharges: 0,
+    total: toRupees(total),
+  };
+}
+
+/** The fallback's total; 0 when nothing was sold. See `ipoSellChargeBreakdown`. */
+export function ipoSellCharges(sellValue: number, allottedValue: number, statutory: ChargeRates): number {
   if (sellValue <= 0) return 0;
-  const stt = rRupee(0.001 * sellValue); // 0.1% delivery sell
-  const exchange = 0.0000297 * sellValue; // NSE equity
-  const sebi = 0.000001 * sellValue;
-  const stamp = rRupee(0.00015 * allottedValue); // 0.015% buy-side stamp on allotment
-  const dp = 15.34; // delivery DP per scrip (incl GST)
-  const gst = 0.18 * (exchange + sebi);
-  return r2(stt + exchange + sebi + stamp + dp + gst);
+  return ipoSellChargeBreakdown(sellValue, allottedValue, statutory).total;
+}
+
+/** The venue charge_config prices an IPO at: BSE when stated, else NSE. */
+export function ipoVenue(exchange: string): "NSE" | "BSE" {
+  return exchange === "BSE" ? "BSE" : "NSE";
+}
+
+let seedMap: RatesMap | null = null;
+
+/**
+ * The charger `computeIpo` uses when the caller injects none — the client
+ * form's live preview, which has no DB. It prices from the canonical seed's
+ * statutory row at (venue, exit date or today IST) through the same fallback,
+ * so no rate is frozen in this module. The saved IPO is priced server-side
+ * from charge_config (`lib/queries/ipos.ts`).
+ */
+function seedFallbackCharger(i: IpoInput): IpoSellCharger {
+  return (sellValue, allottedValue) => {
+    seedMap ??= seedRatesMap();
+    const stat = statutoryRatesFor(seedMap, "eq_delivery", ipoVenue(i.exchange), i.exitDate || todayIstIso());
+    return ipoSellCharges(sellValue, allottedValue, stat);
+  };
 }
 
 /** STCG/LTCG estimate for an exited IPO. Pure; reuses the capital-gains rate engine. */
@@ -132,7 +210,7 @@ export function ipoTaxEstimate(
   };
 }
 
-export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = ipoSellCharges): IpoComputed {
+export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = seedFallbackCharger(i)): IpoComputed {
   const board: IpoBoard = i.board === "sme" ? "sme" : "mainboard";
   const discountPerShare = Math.max(0, i.discountPerShare ?? 0);
   const effectiveCost = Math.max(0, r2(i.appliedPrice - discountPerShare));

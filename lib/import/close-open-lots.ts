@@ -10,7 +10,8 @@
  * and is rebuilt in 4.3.1. Until then `planLotCloses`, `withLotCloseNote`,
  * `withScaledRemainderNote` and `splitByRemainder` have NO production caller —
  * they are dormant, pure library code kept with their unit tests. The
- * identity readers below (`lotIdentityHashes`, `isLotIdentityFrozen`) are
+ * identity readers below (`lotIdentityHashes`, `isLotIdentityFrozen`,
+ * `isAutoCloseMerged`) are
  * still read by Data Quality and the restore re-key — and, since R26, by
  * import dedup in `commit.ts` (preview and commit alike); without alias rows
  * they answer "own hash only, not frozen" for every row. In 4.3.0 the ONE
@@ -132,16 +133,41 @@ export function lotIdentityHashes(row: { dedupHash: string; importNotes: string 
 }
 
 /**
- * Has this row's identity been frozen by an auto-close?
+ * Has this row's identity been frozen by an auto-close — or by ANY alias?
  *
  * A frozen row's `dedup_hash` no longer describes its own legs, so anything
  * that RE-DERIVES a hash from the legs (the Paytm ISIN re-key, re-run on every
  * restore) must leave it alone — re-keying it would silently disconnect the
  * file that created it and let that file import again (S-2).
+ *
+ * W2-DQ P4 keeps this meaning on purpose: a lot joined from Data Quality
+ * (`STALE_CLOSE_NOTE` + an alias) is frozen too — its legs now state the sale,
+ * so a re-key from them would lose the buy file's identity. Whether a row is a
+ * MERGED lot for the duplicate scan is a different question, answered by
+ * `isAutoCloseMerged`.
  */
 export function isLotIdentityFrozen(row: { dedupHash: string; importNotes: string | null }): boolean {
   const notes = row.importNotes ?? "";
   return notes.includes(DEDUP_ALIAS_PREFIX) || notes.includes(AUTO_CLOSE_NOTE);
+}
+
+/**
+ * W2-DQ P4 — did an AUTO-CLOSE merge this row? True when the row carries
+ * `AUTO_CLOSE_NOTE` or `PARTIAL_CLOSE_NOTE`, or carries an alias WITHOUT
+ * `STALE_CLOSE_NOTE` (an alias of unknown provenance is read as merged — the
+ * safe answer for a delete).
+ *
+ * A lot the user joined with its recorded sale from Data Quality is NOT
+ * auto-close-merged: its alias is the sale the book itself had stored beside
+ * it, so when another account joined the SAME two records the two rows are
+ * plain cross-account copies of each other (`isPlainDuplicateCopy`'s twin
+ * clause). Read by the duplicate scan (lib/import/broker-identity.ts) only;
+ * the restore re-key keeps reading `isLotIdentityFrozen`.
+ */
+export function isAutoCloseMerged(row: { dedupHash: string; importNotes: string | null }): boolean {
+  const notes = row.importNotes ?? "";
+  if (notes.includes(AUTO_CLOSE_NOTE) || notes.includes(PARTIAL_CLOSE_NOTE)) return true;
+  return notes.includes(DEDUP_ALIAS_PREFIX) && !notes.includes(STALE_CLOSE_NOTE);
 }
 
 /**
@@ -199,9 +225,11 @@ export function withScaledRemainderNote(importNotes: string | null, ownHash: str
  * Its OWN sentence, not `AUTO_CLOSE_NOTE`: that one says "Closed
  * automatically", and nothing here was automatic — the user confirmed the
  * pair and its date. The alias is what makes a re-pull of the removed row a
- * duplicate; `isLotIdentityFrozen` then reads the lot as a merged lot, which
- * it now is (the restore re-key must leave it alone, and Data Quality's
- * duplicate scan must never offer it as a plain copy).
+ * duplicate; `isLotIdentityFrozen` then reads the lot as frozen, so the
+ * restore re-key leaves it alone. It is NOT an auto-close merge
+ * (`isAutoCloseMerged`, W2-DQ P4): Data Quality's duplicate scan offers it as
+ * a copy when another account holds a row with the same identity set, and
+ * never when the other book is unjoined (the identity sets then differ).
  */
 export const STALE_CLOSE_NOTE =
   "Closed from Data Quality with a closing trade this account had stored as its own row; that row was removed and its record is kept here as an alias.";

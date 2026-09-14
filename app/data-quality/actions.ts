@@ -67,7 +67,9 @@ export async function removeDuplicateCopy(input: {
   // and the row that closed a lot that account was holding; deleting it takes
   // the merged lot with it. `isPlainDuplicateCopy` is the one rule, re-derived
   // here from the database because the screen that submitted this was rendered
-  // before the last import ran.
+  // before the last import ran. W2-DQ P4: a lot joined with its recorded sale
+  // from Data Quality IS removable when another account holds a row with the
+  // same identity set — `holder.removable` already carries that clause.
   if (!holder.removable) {
     return {
       ok: false,

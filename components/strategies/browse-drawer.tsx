@@ -93,7 +93,7 @@ export function BrowseDrawer({
                         {r.name}
                         {r.beginner ? (
                           <Badge variant="secondary" size="xs">
-                            basics
+                            {STRATEGY_COPY.beginner}
                           </Badge>
                         ) : null}
                       </button>

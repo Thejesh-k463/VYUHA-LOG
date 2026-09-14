@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
+import type { DismissiblePanel } from "@/lib/domain/dismissals";
 
 /**
  * D-3 — a panel dismissal recorded from the All-accounts view must be REFUSED,
@@ -152,5 +153,64 @@ describe("the per-account path still works — the guard must not over-refuse", 
     expect(q.dismissPanel(PANEL, FP).ok).toBe(true);
     expect(q.pruneStaleDismissals(new Map()).ok).toBe(true);
     expect(rows()).toHaveLength(1); // nothing computed ⇒ nothing pruned
+  });
+});
+
+/**
+ * R13 — "Keep my mark" on /risk files ONE row PER SYMBOL under one panel,
+ * `spot-close-diff`, fingerprint `${SYMBOL}|${close day}|${close paise}`.
+ *
+ * The trap this pins: `pruneStaleDismissals` kept ONE fingerprint per panel
+ * and deleted WHOLESALE every panel missing from its map. Handed the Trades
+ * panels only, it would have wiped every kept mark on /risk; handed one spot
+ * fingerprint, it would have kept one symbol and deleted the rest. Today only
+ * tests call it (grep), which is exactly why the rule must be pinned before a
+ * caller appears.
+ */
+describe("R13: spot-close-diff — the prune can never wipe a symbol whose close is unchanged", () => {
+  const SPOT = "spot-close-diff" as const;
+  const SBIN = "SBIN|2026-09-11|82050";
+  const TCS_OLD = "TCS|2026-09-10|400000";
+  const TCS_NEW = "TCS|2026-09-11|401000";
+  const spotRows = () =>
+    rows()
+      .filter((r) => r.panel === SPOT)
+      .map((r) => r.fingerprint)
+      .sort();
+
+  it("two symbols are two live rows of one panel, read back through the scoped reader", () => {
+    selectAccount(SWING);
+    expect(q.dismissPanel(SPOT, SBIN).ok).toBe(true);
+    expect(q.dismissPanel(SPOT, TCS_OLD).ok).toBe(true);
+    expect(spotRows()).toEqual([SBIN, TCS_OLD]);
+    expect(q.getDismissedFingerprints(SPOT).sort()).toEqual([SBIN, TCS_OLD]);
+    selectAccount(PRIMARY);
+    expect(q.getDismissedFingerprints(SPOT)).toEqual([]); // account-scoped read
+  });
+
+  it("a prune that does not name the panel (a Trades-panel caller) leaves every spot dismissal alone", () => {
+    selectAccount(SWING);
+    expect(q.pruneStaleDismissals(new Map([[PANEL, FP]])).ok).toBe(true);
+    expect(spotRows()).toEqual([SBIN, TCS_OLD]);
+    // …and the one-fingerprint rule still holds for the panel it does name.
+    expect(rows().filter((r) => r.panel === PANEL).map((r) => r.fingerprint)).toEqual([FP]);
+  });
+
+  it("a prune handed the current closes keeps the unchanged symbol and removes the one whose close moved", () => {
+    selectAccount(SWING);
+    const current = new Map<DismissiblePanel, string | readonly string[]>([
+      [SPOT, [SBIN, TCS_NEW]],
+      [PANEL, FP],
+    ]);
+    expect(q.pruneStaleDismissals(current).ok).toBe(true);
+    expect(spotRows()).toEqual([SBIN]);
+    expect(rows().filter((r) => r.panel === PANEL)).toHaveLength(1);
+  });
+
+  it("the aggregate view still refuses the prune for this panel too", () => {
+    selectAccount(ALL);
+    expect(q.pruneStaleDismissals(new Map([[SPOT, [] as string[]]])).forbidden).toBe(true);
+    selectAccount(SWING);
+    expect(spotRows()).toEqual([SBIN]);
   });
 });

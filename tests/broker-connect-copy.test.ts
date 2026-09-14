@@ -17,7 +17,9 @@ import {
   pullResultMessage,
   tokenExpiredMessage,
   unfetchedNotice,
+  type UnfetchedSpan,
 } from "@/components/import/broker-connect";
+import { catchUpRange, toParsedFile, type DhanUnfetchedSpan } from "@/lib/import/api/dhan";
 
 /**
  * Consent / explainer copy pins (v3.6.0 WS3). Both live as ONE exported const
@@ -312,70 +314,88 @@ describe("pullResultMessage — what the card prints after a pull", () => {
  * span lives in the audit trail and the card shows it until the user clears
  * it. The sentence names the dates and the remedy; it states a fact.
  *
- * D2 (v4.3.0 fix wave 1 follow-up, 2026-09-11) — F-L1-3a's card half. A kept
- * span's `from` is the LAST PULL's own IST day, whose fills up to that pull are
- * already in the journal, so the tradebook remedy starts the day AFTER it: the
- * wording lib/import/api/dhan.ts toParsedFile and lib/jobs/auto-pull.ts
- * unfetchedDetail already use. A one-day span names no import at all.
+ * P15 / P16 (v4.3.0 fix wave 2) — the card prints the SERVER's sentences.
+ * Every span below is one lib/import/api/dhan.ts toParsedFile actually
+ * produces, projected exactly as GET projects it ({from, to, reason, fact,
+ * remedy}: lib/import/dhan-unfetched.ts UnfetchedSpanRow). The expected lines
+ * are LITERALS — the pull warning's words, in its ISO dates, the ONE date
+ * format both surfaces use. Re-pinned from the card's own "dd Mon yyyy"
+ * re-derivation (D2), which hedged a truncated walk as "may be missing" (P16)
+ * and misread a page-cap span at the clamped floor once its range-cap sibling
+ * was cleared (P15). Measured before: "A Dhan pull stopped at its page limit:
+ * fills between 13 Jun 2026 and 10 Sep 2026 may be missing. … Import a Dhan
+ * tradebook for 14 Jun 2026 to 10 Sep 2026 to bring the rest in."
  */
 describe("unfetchedNotice — the kept line for fills a pull never read", () => {
-  const RANGE = { from: "2026-05-01", to: "2026-06-10", reason: "range-cap" };
-  const PAGE = { from: "2026-06-11", to: "2026-09-09", reason: "page-cap" };
+  const TODAY = "2026-09-11";
   const SEBI = /\b(recommend|suggest|should|consider|buy|sell)\b/i;
+  /** GET's projection of a kept span (route.ts → outstandingUnfetched). */
+  const asGet = (s: DhanUnfetchedSpan): UnfetchedSpan => ({ from: s.from, to: s.to, reason: s.reason, fact: s.fact, remedy: s.remedyText });
+  /** The pull toParsedFile describes: the last stamp at 10:30 IST, a walk truncated or not. */
+  const pulled = (lastPullAt: string, truncated: boolean) =>
+    toParsedFile([], catchUpRange(lastPullAt, TODAY), { pages: truncated ? 50 : 1, truncated, oldest: null, newest: null }, lastPullAt);
+  const spanOf = (p: ReturnType<typeof pulled>, reason: string) => {
+    const s = p.unfetched.find((u) => u.reason === reason);
+    expect(s, `the server produced no ${reason} span`).toBeDefined();
+    expect(p.warnings, "the span's sentences are the warning the pull printed").toContain(s!.message);
+    return s!;
+  };
 
-  it("range cap: the dates, why, the last pull's own day as a fact, and a remedy from the day after it — verbatim", () => {
-    expect(unfetchedNotice(RANGE)).toBe(
-      "Not fetched from Dhan: fills from 01 May 2026 to 10 Jun 2026 — they are older than the window a pull reads. Fills on 01 May 2026 after the last pull were not fetched; a tradebook for 01 May 2026 would repeat the fills already imported from it. Import a Dhan tradebook for 02 May 2026 to 10 Jun 2026 to bring the rest in.",
+  it("range cap: the card line IS the pull's warning — the dates, why, the last pull's own day, and the day-after remedy", () => {
+    const span = spanOf(pulled("2026-05-01T05:00:00.000Z", false), "range-cap");
+    expect(unfetchedNotice(asGet(span))).toBe(
+      "Not fetched: fills from 2026-05-01 to 2026-06-12. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-12.",
     );
+    expect(unfetchedNotice(asGet(span))).toBe(span.message);
   });
 
-  it("page cap: the window that may be short, the last pull's own day as a fact, the same day-after remedy — verbatim", () => {
-    expect(unfetchedNotice(PAGE)).toBe(
-      "A Dhan pull stopped at its page limit: fills between 11 Jun 2026 and 09 Sep 2026 may be missing. Fills on 11 Jun 2026 after the last pull were not fetched; a tradebook for 11 Jun 2026 would repeat the fills already imported from it. Import a Dhan tradebook for 12 Jun 2026 to 09 Sep 2026 to bring the rest in.",
+  it("P16: a page-cap line says the fills 'were not read' — plainly, never 'may be missing'", () => {
+    const span = spanOf(pulled("2026-09-07T05:00:00.000Z", true), "page-cap");
+    const line = unfetchedNotice(asGet(span));
+    expect(line).toBe(
+      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.",
     );
+    expect(line).toContain("were not read");
+    expect(line).not.toContain("may be missing");
+  });
+
+  it("P15: a clamped + truncated pull's page-cap span ALONE (its range-cap sibling cleared) still names the floor day in its remedy", () => {
+    const p = pulled("2026-06-01T05:00:00.000Z", true);
+    spanOf(p, "range-cap");
+    const page = spanOf(p, "page-cap");
+    // The row as GET lists it after the user cleared the range-cap notice.
+    const line = unfetchedNotice(asGet(page));
+    expect(line).toBe(
+      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-13 to 2026-09-10 were not read. Today's book came from /v2/positions. To bring those fills in, import a Dhan tradebook for 2026-06-13 to 2026-09-10.",
+    );
+    expect(line).not.toContain("would repeat the fills already imported");
   });
 
   it("D2: a one-day span names NO import — only that day's unfetched fills, and that a tradebook would repeat the rest", () => {
-    const range = unfetchedNotice({ from: "2026-06-12", to: "2026-06-12", reason: "range-cap" });
-    expect(range).toBe(
-      "Not fetched from Dhan: fills on 12 Jun 2026 after the last pull. A tradebook for 12 Jun 2026 would repeat the fills already imported from it.",
+    const range = spanOf(pulled("2026-06-12T05:00:00.000Z", false), "range-cap");
+    const page = spanOf(pulled("2026-09-10T05:00:00.000Z", true), "page-cap");
+    expect(asGet(range).remedy).toBeNull();
+    expect(asGet(page).remedy).toBeNull();
+    expect(unfetchedNotice(asGet(range))).toBe(
+      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-06-12 after 10:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.",
     );
-    const page = unfetchedNotice({ from: "2026-09-10", to: "2026-09-10", reason: "page-cap" });
-    expect(page).toBe(
-      "A Dhan pull stopped at its page limit: fills on 10 Sep 2026 after the last pull may be missing. A tradebook for 10 Sep 2026 would repeat the fills already imported from it.",
+    expect(unfetchedNotice(asGet(page))).toBe(
+      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-10 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-10 after 10:30 IST were not fetched; a tradebook for 2026-09-10 would repeat the fills already imported from it.",
     );
-    for (const line of [range, page]) expect(line).not.toMatch(/import a Dhan tradebook/i);
+    for (const s of [range, page]) expect(unfetchedNotice(asGet(s))).not.toMatch(/import a Dhan tradebook/i);
   });
 
-  it("D2: no remedy names the span's first day — it starts the day after, across a month end too", () => {
-    expect(unfetchedNotice(RANGE)).not.toContain("Import a Dhan tradebook for 01 May 2026");
-    expect(unfetchedNotice(PAGE)).not.toContain("Import a Dhan tradebook for 11 Jun 2026");
-    expect(unfetchedNotice({ from: "2026-05-31", to: "2026-06-10", reason: "range-cap" })).toContain(
-      "Import a Dhan tradebook for 01 Jun 2026 to 10 Jun 2026 to bring the rest in.",
-    );
-  });
-
-  it("a page-cap span starting the day after its row's range-cap span began at the clamped floor, a day no pull ran — the remedy names it", () => {
-    // dhan.ts toParsedFile: a clamped AND truncated walk keeps both spans; the
-    // page-cap one starts at the window's floor, and the server's remedy is
-    // that whole span ("To bring those fills in, import a Dhan tradebook for …").
-    const row = [RANGE, PAGE];
-    expect(unfetchedNotice(PAGE, row)).toBe(
-      "A Dhan pull stopped at its page limit: fills between 11 Jun 2026 and 09 Sep 2026 may be missing. Import a Dhan tradebook for 11 Jun 2026 to 09 Sep 2026 to bring those fills in.",
-    );
-    // The range-cap span in that row keeps its own rule…
-    expect(unfetchedNotice(RANGE, row)).toBe(unfetchedNotice(RANGE));
-    // …and a range-cap span that does not end the day before changes nothing.
-    expect(unfetchedNotice(PAGE, [{ ...RANGE, to: "2026-06-09" }, PAGE])).toBe(unfetchedNotice(PAGE));
+  it("a span kept before the sentences were stored prints what GET sends for it — the audit row's own summary, no remedy", () => {
+    const summary = "Not fetched: fills from 2026-05-01 to 2026-06-12. (the sentence the pull kept)";
+    expect(unfetchedNotice({ from: "2026-05-01", to: "2026-06-12", reason: "range-cap", fact: summary, remedy: null })).toBe(summary);
   });
 
   it("carries no SEBI-forbidden verb", () => {
-    for (const reason of ["range-cap", "page-cap"]) {
-      for (const to of ["2026-06-10", "2026-05-01"]) {
-        expect(unfetchedNotice({ from: "2026-05-01", to, reason })).not.toMatch(SEBI);
+    for (const stamp of ["2026-05-01T05:00:00.000Z", "2026-06-01T05:00:00.000Z", "2026-09-07T05:00:00.000Z", "2026-09-10T05:00:00.000Z"]) {
+      for (const truncated of [false, true]) {
+        for (const s of pulled(stamp, truncated).unfetched) expect(unfetchedNotice(asGet(s))).not.toMatch(SEBI);
       }
     }
-    expect(unfetchedNotice(PAGE, [RANGE, PAGE])).not.toMatch(SEBI);
   });
 });
 
@@ -398,9 +418,10 @@ describe("the card reads those functions — the copy is not re-typed in JSX", (
     const at = code.indexOf('data-testid="pull-unfetched"');
     expect(at, "no kept-notice block").toBeGreaterThan(-1);
     const block = code.slice(at, at + 1200);
-    // D2: the row's own spans ride along, so a page-cap span at the clamped
-    // floor is read as the floor, not as the last pull's day.
-    expect(block).toContain("unfetchedNotice(s, c.unfetched)");
+    // P15: the span alone — the server's sentences carry everything, and no
+    // sibling span is read to re-derive them (was `unfetchedNotice(s, c.unfetched)`).
+    expect(block).toContain("unfetchedNotice(s)");
+    expect(block).not.toContain("c.unfetched)");
     expect(block).toMatch(/onClick=\{\(\) => clearUnfetched\(c, s\)\}/);
   });
 

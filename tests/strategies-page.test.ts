@@ -153,6 +153,35 @@ describe("the card's seams", () => {
     expect(underlyingExpiryNote(groupOf([call]))).toBeNull();
   });
 
+  it("a future whose expiry is not stored carries its OWN note, not the settles-before sentence (P14)", () => {
+    const fut = (over: Partial<PositionedLeg>): PositionedLeg => ({
+      symbol: "NIFTY",
+      expiry: null,
+      kind: "UL",
+      strike: 0,
+      side: "long",
+      qty: 75,
+      premium: 24000,
+      expiryUnknown: true,
+      ...over,
+    });
+    const call = ce({ side: "short", strike: 24500, expiry: "2026-10-29", premium: 180 });
+    const unknownNote = STRATEGY_COPY.underlyingExpiryUnknownNote;
+    expect(unknownNote).not.toBe(STRATEGY_COPY.underlyingExpiresFirstNote);
+    expect(underlyingExpiryNote(groupOf([fut({}), call]))).toBe(unknownNote);
+    expect(underlyingExpiryNote(groupOf([fut({ contractMonth: "2026-10" }), call]))).toBe(unknownNote);
+    // A stated month strictly before is R104's case; strictly after needs no note.
+    expect(underlyingExpiryNote(groupOf([fut({ contractMonth: "2026-09" }), call]))).toBe(
+      STRATEGY_COPY.underlyingExpiresFirstNote,
+    );
+    expect(underlyingExpiryNote(groupOf([fut({ contractMonth: "2026-11" }), call]))).toBeNull();
+    // A dated Sep future keeps R104's note; a cash holding has none.
+    expect(underlyingExpiryNote(groupOf([fut({ expiryUnknown: undefined, expiry: "2026-09-24" }), call]))).toBe(
+      STRATEGY_COPY.underlyingExpiresFirstNote,
+    );
+    expect(underlyingExpiryNote(groupOf([fut({ expiryUnknown: undefined }), call]))).toBeNull();
+  });
+
   it("every card links into /help, and a Custom group lands on the section top", () => {
     expect(helpHref("iron-condor")).toBe(`/help#${optionsAnchorId("iron-condor")}`);
     expect(helpHref("iron-condor")).toBe("/help#options-iron-condor");
@@ -1091,13 +1120,23 @@ describe("getOpenUnderlyingPositions (Q4) — account-scoped, and only where an 
     ]);
   });
 
-  it("projects the eight columns the page feeds into a UL leg, and nothing else", () => {
+  it("projects the twelve columns the page feeds into a UL leg, and nothing else", () => {
     select(PRIMARY);
     const [row] = trades.getOpenUnderlyingPositions();
     // `expiry` (R104: a future's own expiry) and `isin` (R105: the join key a
     // company-name symbol is resolved through) joined the original six.
+    // Re-pinned from eight (fix wave 2): `acquisition` (P5: the page nets a
+    // basis-unknown sale against the holding) and `tradingsymbol` (P14: the
+    // contract month a compact future states when no expiry is stored).
+    // Re-pinned from ten (W2-FIXB, seam defect D3): `segment` (only a
+    // delivery-segment sell-only row nets or is excluded; a future's stays a
+    // short) and `acquisitionPrice` (a recorded basis, Data Quality's own
+    // `hasRecordedBasis`). Measured before: 10 keys; after: 12.
     expect(Object.keys(row).sort()).toEqual(
-      ["avgBuyPrice", "avgSellPrice", "buyQty", "expiry", "instrumentType", "isin", "sellQty", "symbol"].sort(),
+      [
+        "acquisition", "acquisitionPrice", "avgBuyPrice", "avgSellPrice", "buyQty", "expiry", "instrumentType", "isin",
+        "segment", "sellQty", "symbol", "tradingsymbol",
+      ].sort(),
     );
     expect(row.avgBuyPrice).toBe(2900);
   });

@@ -46,8 +46,9 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  *    |                                         |                                               |   app/data-quality/page.tsx (DQ page, UI sibling)      |                                       |
  *  9 | lastPullAt / catchUpFrom per Dhan row   | route.ts:1013 R27 stamp + GET :319/:343 (PULL)| components/import/broker-connect.tsx:302 (UI, R47)     | ISO UTC instant → IST day             | S3c
  * 10 | a history fill after the R42 cutoff     | dhan.ts catchUpAfter / fetchTrades (PULL)     | commit.ts:1007 alias set (DQ)                          | "YYYY-MM-DD HH:MM:SS" IST             | S3c
- * 11 | PairedPosition.exchange (R71)           | lib/import/pair-legs.ts:467 (PAYTM)           | dhan.ts:719 exchangeHint → trades.exchange (PULL)      | "NSE" | "BSE"                         | S4 — DEFECT D1
- * 12 | DhanUnfetchedSpan {from,to,reason}      | dhan.ts:1217 (PULL) → GET route.ts:343        | broker-connect.tsx:317 unfetchedNotice (UI)            | ISO days; remedy is NOT on the wire   | S5 — D2 (fixed)
+ * 11 | PairedPosition.exchange (R71)           | lib/import/pair-legs.ts:467 (PAYTM)           | dhan.ts:719 exchangeHint → trades.exchange (PULL)      | "NSE" | "BSE"                         | S4 — D1 (fixed)
+ * 12 | DhanUnfetchedSpan {from,to,reason,      | dhan.ts:1217 (PULL) → GET route.ts:343        | broker-connect.tsx:317 unfetchedNotice (UI)            | ISO days; since fix wave 2 (P15/P16)  | S5 — D2 (fixed)
+ *    |   fact,remedy}                          |                                               |                                                        | the pull's sentences ride on the wire |
  * 13 | F&O STT epochs × pricingDate            | lib/db/seed-data.ts:128-134 (RATES)           | app/api/charges/preview/route.ts:59 (PREVIEW)          | fraction of premium → integer ₹       | S6
  * 14 | eq_delivery sttPct                      | charge_config (RATES) → app/risk/page.tsx:350 | settlement.ts:300 + expiry-obligations.tsx:274 (SETTLE)| fraction (0.001 = 0.1%)               | S7
  * 15 | charge_config after a restore           | lib/backup.ts:306 → seed-core.ts:204 (RATES)  | every other restored table + the preview route         | rows                                  | S8
@@ -61,7 +62,9 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  * the defect stands and goes red once it is fixed, which is the signal to flip
  * it to `it`.
  *
- *  D1 (S4) — R71's row venue never reaches a Dhan row. `normalizeDhanTrades`
+ *  D1 (S4) — FIXED in v4.3.0 fix wave 2 (W2-DHAN): each row now carries
+ *     pairLegs' `pos.exchange`, and the S4 assertion is a plain `it`. As found:
+ *     R71's row venue never reached a Dhan row. `normalizeDhanTrades`
  *     groups fills by `symbol|product` and stamps every position with
  *     `exchangeHint: exchangeOf(g.segment)` (lib/import/api/dhan.ts:719), the
  *     group's FIRST fill's venue, and never reads `pos.exchange`. A TCS bought
@@ -247,7 +250,7 @@ interface ConnLite {
   accountId: number;
   accountName?: string | null;
   lastPullAt: string | null;
-  unfetched?: { from: string; to: string; reason: string }[];
+  unfetched?: { from: string; to: string; reason: string; fact: string; remedy: string | null }[];
   catchUpFrom?: string | null;
 }
 
@@ -517,7 +520,7 @@ describe("S4 · the Dhan adapter stores the venue R71's pairLegs decides (PAYTM 
     { id: "V-S1", side: "SELL", qty: 100, price: 210, at: "2026-09-02 10:00:00", segment: "BSE_EQ" },
     { id: "V-B2", side: "BUY", qty: 10, price: 200, at: "2026-09-03 10:00:00", segment: "BSE_EQ" },
   ];
-  /** The legs as normalizeDhanTrades builds them: one per date|side, venue from the fill (dhan.ts:633-645). */
+  /** The legs as normalizeDhanTrades builds them: one per date|side (K2-M5 / P9, W2-FIXB), venue from the fill — each day-side here has one fill. */
   const LEGS: Leg[] = FILLS.map((f) => ({
     symbol: "TCS",
     side: f.side === "BUY" ? "buy" : "sell",
@@ -549,8 +552,13 @@ describe("S4 · the Dhan adapter stores the venue R71's pairLegs decides (PAYTM 
     ]);
   });
 
-  it.fails("DEFECT D1 — dhan.ts:719 stamps the group's first venue; the stored exchange must be pairLegs' row venue", () => {
+  // D1 FIXED (v4.3.0 fix wave 2, W2-DHAN): this was an `it.fails`. dhan.ts now
+  // stamps each row with pairLegs' own venue (`pos.exchange`), and each
+  // date|side leg carries its value per venue (K2-M5 / P9), so the stored
+  // exchanges are the R71 row venues.
+  it("D1 — the stored exchange is pairLegs' row venue, not the group's first fill's", () => {
     expect(stored).toEqual(pairLegs(LEGS).map((p) => p.exchange));
+    expect(stored).toEqual(["BSE", "BSE"]);
   });
 });
 
@@ -559,7 +567,8 @@ describe("S4 · the Dhan adapter stores the venue R71's pairLegs decides (PAYTM 
 // ============================================================================
 
 describe("S5 · a clamped pull's kept span, read back by the card (PULL → GET → UI)", () => {
-  let span: { from: string; to: string; reason: string } | undefined;
+  let span: NonNullable<ConnLite["unfetched"]>[number] | undefined;
+  let warning: string | undefined;
 
   it("the pull says a tradebook for its own last day would repeat fills, and GET keeps that one-day span", async () => {
     freezeAt("2026-09-10T19:00:00.000Z");
@@ -567,21 +576,23 @@ describe("S5 · a clamped pull's kept span, read back by the card (PULL → GET 
     stubDhan([{ id: "CL-1", side: "BUY", qty: 5, price: 200, at: "2026-07-01 10:00:00" }], []);
     const res = await pull(CLAMP);
     expect(res.status).toBe(200);
-    const warning = ((await res.json()) as { warnings: string[] }).warnings.find((w) => w.startsWith("Not fetched:"));
+    warning = ((await res.json()) as { warnings: string[] }).warnings.find((w) => w.startsWith("Not fetched:"));
     expect(warning).toContain("a tradebook for 2026-06-12 would repeat the fills already imported from it");
     expect(warning).not.toContain("import a Dhan tradebook for 2026-06-12");
     const [row] = await dhanRows(CLAMP);
-    expect(row.unfetched).toEqual([{ from: "2026-06-12", to: "2026-06-12", reason: "range-cap" }]);
+    // P15 / P16 (fix wave 2): GET now carries the pull's own sentences (fact, remedy).
+    expect(row.unfetched!.map((s) => [s.from, s.to, s.reason, s.remedy])).toEqual([["2026-06-12", "2026-06-12", "range-cap", null]]);
     span = row.unfetched![0];
   });
 
   // D2 FIXED (v4.3.0 fix wave 1 follow-up, 2026-09-11): this was an `it.fails`.
-  // The defect's own assertion is kept; the second one pins that the card now
-  // says what the pull's warning above says about that day.
+  // The defect's own assertion is kept. P15 / P16 (fix wave 2) re-pin the second
+  // one from the card's "A tradebook for 12 Jun 2026 would repeat …" fragment to
+  // the whole line: the card prints the pull's warning above, verbatim.
   it("D2 — the card does not tell the user to import the tradebook the pull says would double-count", () => {
     expect(span).not.toBeUndefined();
-    expect(bc.unfetchedNotice(span!)).not.toContain("Import a Dhan tradebook for 12 Jun 2026");
-    expect(bc.unfetchedNotice(span!)).toContain("A tradebook for 12 Jun 2026 would repeat the fills already imported from it.");
+    expect(bc.unfetchedNotice(span!)).not.toMatch(/import a Dhan tradebook for 2026-06-12/i);
+    expect(bc.unfetchedNotice(span!)).toBe(warning);
   });
 });
 

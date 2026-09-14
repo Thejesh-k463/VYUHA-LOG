@@ -303,6 +303,11 @@ export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { tr
   const trades: NormalizedTrade[] = [];
   for (const a of groups.values()) {
     const closed = a.sellQty > 0 && a.buyQty === a.sellQty;
+    // QS-AO (4.3.0): SOLD TODAY out of a holding the trade book cannot see. The
+    // sale is in today's book, so it is dated today, and its cost basis really
+    // is unknown — Dhan's M-3 shape. Undated and unflagged, it was stored as an
+    // open short with no exit date.
+    const sellOnly = a.sellQty > 0 && a.buyQty === 0;
     trades.push({
       broker: "angelone",
       tradingsymbol: a.symbol,
@@ -318,7 +323,8 @@ export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { tr
       unrealisedPnl: 0,
       // The trade book is the CURRENT day's fills, so today is the honest date.
       buyDate: a.buyQty > 0 ? today : null,
-      sellDate: closed ? today : null,
+      sellDate: closed || sellOnly ? today : null,
+      ...(sellOnly ? { basisUnknown: true } : {}),
       entryTime: a.executions.find((e) => e.side === "buy")?.time ?? null,
       exitTime: [...a.executions].reverse().find((e) => e.side === "sell")?.time ?? null,
       productHint: productHintOf(a.product),

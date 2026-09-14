@@ -1,7 +1,7 @@
 {
   "asOf": "2026-09-05",
   "what": "DATED statutory + broker rate epochs, in the same fraction convention as the charge_config table and the ChargeRates type (0.1% => 0.001). This file is a dated REFERENCE table for the sizing calculators and for seeding review — invariant 3 stands: the charges engine reads rates only from charge_config, and lib/risk/sizing.ts never feeds this file to the engine on its own. A caller passes a rates object in.",
-  "why": "F&O STT has moved five times: futures on 1 Jun 2013, options on 1 Jun 2016, and both on 1 Apr 2023, 1 Oct 2024 and 1 Apr 2026. A book that spans a change must be priced at the rate that applied on each trade's own date, so every row carries effectiveFrom and effectiveTo (exclusive). Each epoch names its own sources, and verified is true only where an NSE circular (a primary source) is cited.",
+  "why": "F&O STT has moved five times: futures on 1 Jun 2013, options on 1 Jun 2016, and both on 1 Apr 2023, 1 Oct 2024 and 1 Apr 2026. Equity delivery STT moved once, 0.125% -> 0.1% on 1 Jul 2012. A book that spans a change must be priced at the rate that applied on each trade's own date, so every row carries effectiveFrom and effectiveTo (exclusive). Each epoch names its own sources, and verified is true only where an NSE circular (a primary source) is cited.",
   "broker": "zerodha",
   "plan": "default",
   "exchange": "NSE",
@@ -15,6 +15,33 @@
     {
       "segment": "eq_delivery",
       "effectiveFrom": "1970-01-01",
+      "effectiveTo": "2012-07-01",
+      "verified": false,
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX20990.pdf"
+      ],
+      "note": "Equity delivery STT 0.125% on both sides until 30 Jun 2012 (FATAX20990 rows 1 and 2, 'Effective rate till 30.06.2012': 0.125 per cent, purchaser and seller). When this rate began is NOT verified: FATAX20990 cites NSE/F&A/7526 of 26 May 2006, which is not fetched, so the rate is extended back to 1970 (owner ruling C-8: the earliest verified schedule applies, and the gap is recorded).",
+      "rates": {
+        "brokerageFlat": 0,
+        "brokeragePct": 0,
+        "brokerageCap": null,
+        "brokerageFloor": 0,
+        "sttPct": 0.00125,
+        "sttSide": "both",
+        "exchangeTxnPct": 3.07e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 0.00015,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 15.34,
+        "dpPct": 0,
+        "dpGstApplicable": true,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "eq_delivery",
+      "effectiveFrom": "2012-07-01",
       "effectiveTo": null,
       "verified": true,
       "sources": [
@@ -22,7 +49,7 @@
         "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf",
         "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
       ],
-      "note": "Equity delivery STT 0.1% on both sides, from 1 Jul 2012 (FATAX20990: 0.125% -> 0.1% for purchaser and seller) and unchanged by FATAX63809 and FATAX73524 (rows 1 and 2). Before 1 Jul 2012 it was 0.125% on both sides; neither this table nor the rate card carries that earlier rate yet.",
+      "note": "Finance Act 2012: equity delivery STT 0.125% -> 0.1% on both sides from 1 Jul 2012 (FATAX20990 rows 1 and 2, 'New rate from 01.07.2012': 0.1 per cent, purchaser and seller). It has not moved since: FATAX73524 rows 1 and 2 state 0.1% both before and from 1 Apr 2026 (No Change).",
       "rates": {
         "brokerageFlat": 0,
         "brokeragePct": 0,
@@ -45,12 +72,13 @@
       "segment": "eq_intraday",
       "effectiveFrom": "1970-01-01",
       "effectiveTo": null,
-      "verified": true,
+      "verified": false,
       "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX20990.pdf",
         "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf",
         "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
       ],
-      "note": "Intraday (a sale settled otherwise than by actual delivery) STT 0.025% on the sale, as FATAX63809 and FATAX73524 row 3 state (No Change). Its earlier history is not verified here.",
+      "note": "Intraday (a sale settled otherwise than by actual delivery) STT 0.025% on the sale: FATAX20990 row 3 states 0.025 per cent both till 30.06.2012 and from 01.07.2012 (no change), and FATAX73524 row 3 states No Change. When this rate began is NOT verified: no earlier circular is fetched, so the rate is extended back to 1970.",
       "rates": {
         "brokerageFlat": null,
         "brokeragePct": 0.0003,

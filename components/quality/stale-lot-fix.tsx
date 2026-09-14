@@ -13,9 +13,17 @@
  * pulled (IST) and the user accepts or edits it before the write, because a
  * close date sets the charge rates, the holding period and MTF interest.
  *
- * A partial pair (quantities differ) and a sale carrying the user's own
- * journal entries get no button — they are stated, and the partial one links
- * to the manual close. The server re-derives every pair before it writes.
+ * A partial pair (quantities differ, or one sale allocated across several
+ * lots — W2-DQ P1) and a sale carrying the user's own journal entries get no
+ * button — they are stated, and the partial one links to the manual close.
+ * A STAGED lot (W2-FIXD2 — e.g. a holding bought in two fills on one day) is
+ * listed with no button and links to Trades, where its ladder books the exit:
+ * the join writes no exit leg, and the server refuses it (STAGED).
+ * The server re-derives every pair before it writes.
+ *
+ * W2-DQ P2 — the manual close leaves the recorded sale rows in the journal,
+ * open and with no lot. Those rows (the `stale_sale` warning) are listed in
+ * the same card, with a link to the trades table and NO action here.
  *
  * The write is a route handler + `fetch` + `router.refresh()`, never a server
  * action (AGENTS.md). Focus returns to the button that opened the dialog.
@@ -42,27 +50,46 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
 import { num } from "@/lib/format";
+import { serializeTradesQuery } from "@/lib/domain/trades-query";
 
 /** Structurally `StaleOpenView` (lib/queries/data-quality.ts), restated for the client. */
 export interface StaleLotFixPair {
   lotId: number;
   saleId: number;
+  symbol: string;
   tradingsymbol: string;
   side: "long" | "short";
   lotQty: number;
   lotPrice: number;
   lotDate: string;
   saleQty: number;
+  /** The part of the sale allocated to this lot (oldest lot first). */
+  matchedQty: number;
   salePrice: number;
   saleDate: string;
   saleDateStated: boolean;
   oneClick: boolean;
+  /** The lot is a staged position (W2-FIXD2): listed, closed on its own ladder. */
+  staged: boolean;
   blocked: string | null;
 }
 
-const what = (p: StaleLotFixPair) => (p.side === "long" ? "sale" : "purchase");
+/** Structurally `StaleSaleRow` (lib/analytics/data-quality.ts), restated for the client. */
+export interface StaleLotFixSale {
+  saleId: number;
+  symbol: string;
+  tradingsymbol: string;
+  side: "long" | "short";
+  saleQty: number;
+  salePrice: number;
+  saleDate: string;
+  saleDateStated: boolean;
+  closedLotIds: number[];
+}
 
-export function StaleLotFix({ pairs }: { pairs: StaleLotFixPair[] }) {
+const what = (p: { side: "long" | "short" }) => (p.side === "long" ? "sale" : "purchase");
+
+export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; sales?: StaleLotFixSale[] }) {
   const router = useRouter();
   const openerRef = React.useRef<HTMLButtonElement | null>(null);
   const [target, setTarget] = React.useState<StaleLotFixPair | null>(null);
@@ -99,7 +126,7 @@ export function StaleLotFix({ pairs }: { pairs: StaleLotFixPair[] }) {
     }
   }
 
-  if (pairs.length === 0) return null;
+  if (pairs.length === 0 && sales.length === 0) return null;
 
   return (
     <Card className="p-0" id="stale-open">
@@ -117,11 +144,25 @@ export function StaleLotFix({ pairs }: { pairs: StaleLotFixPair[] }) {
               <Badge variant="outline">{p.side}</Badge>
               <span className="text-muted-foreground">
                 open {num(p.lotQty, 0)} @ {num(p.lotPrice)} since {p.lotDate} · recorded {what(p)} {num(p.saleQty, 0)} @{" "}
-                {num(p.salePrice)} · {p.saleDateStated ? p.saleDate : `pulled ${p.saleDate}, no date stated`}
+                {num(p.salePrice)}
+                {p.matchedQty !== p.saleQty ? ` (${num(p.matchedQty, 0)} of it against this position)` : ""} ·{" "}
+                {p.saleDateStated ? p.saleDate : `pulled ${p.saleDate}, no date stated`}
               </span>
             </div>
             {p.blocked ? (
               <p className="mt-2 text-muted-foreground">{p.blocked}</p>
+            ) : p.staged ? (
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-stale-staged="">
+                <p className="text-muted-foreground">
+                  This is a staged position built from more than one fill, so it is not joined with the recorded {what(p)}{" "}
+                  in one step. Its exit is booked on its own ladder in Trades, which prices each tranche and keeps R at the
+                  first entry. The recorded {what(p)} row stays in the journal, and once no open position is left for it,
+                  it is listed here as a closing trade with no open position.
+                </p>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/trades${serializeTradesQuery({ symbol: p.symbol, view: "open" })}`}>Open in Trades</Link>
+                </Button>
+              </div>
             ) : p.oneClick ? (
               <div className="mt-2">
                 <Button type="button" size="sm" variant="outline" disabled={busy} onClick={(e) => open(p, e.currentTarget)}>
@@ -132,7 +173,9 @@ export function StaleLotFix({ pairs }: { pairs: StaleLotFixPair[] }) {
               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-muted-foreground">
                   The recorded {what(p)} is {num(p.saleQty, 0)} and the position holds {num(p.lotQty, 0)}, so they are not
-                  joined in one step. The manual close records the price you enter.
+                  joined in one step. The manual close records the price you enter; the recorded {what(p)} row stays in
+                  the journal, and once no open position is left for it, it is listed here as a closing trade with no
+                  open position.
                 </p>
                 <Button asChild size="sm" variant="outline">
                   <Link href="/risk">Open the manual close</Link>
@@ -141,6 +184,33 @@ export function StaleLotFix({ pairs }: { pairs: StaleLotFixPair[] }) {
             )}
           </div>
         ))}
+        {sales.length > 0 && (
+          <div className="space-y-2 pt-2" data-stale-sales="">
+            <p className="text-xs font-medium">Closing trades with no open position left to close</p>
+            {sales.map((s) => (
+              <div key={`sale:${s.saleId}`} className="rounded-md border border-border p-3 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{s.tradingsymbol}</p>
+                  <Badge variant="outline">{what(s)}</Badge>
+                  <span className="text-muted-foreground">
+                    recorded {what(s)} {num(s.saleQty, 0)} @ {num(s.salePrice)} ·{" "}
+                    {s.saleDateStated ? s.saleDate : `pulled ${s.saleDate}, no date stated`}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-muted-foreground">
+                    This row is still open on its own. The position in {s.tradingsymbol} entered on or before it (trade{" "}
+                    {s.closedLotIds.map((id) => `#${id}`).join(", ")}) is already closed, so no open position is left for it to
+                    close. It is listed here and not changed.
+                  </p>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/trades${serializeTradesQuery({ symbol: s.symbol, view: "open" })}`}>Open in Trades</Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
 
       <Dialog

@@ -31,7 +31,7 @@ import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
 // The SAME FIFO the Zerodha tradebook and the Dhan GTR parser pair with — a
 // catch-up window spans days, and a Monday buy closed on Wednesday is one
 // position. Forking that arithmetic here is how two sources start disagreeing.
-import { pairLegs, type Leg, type PairedPosition } from "@/lib/import/pair-legs";
+import { pairSymbolLegs, type Leg, type PairedPosition } from "@/lib/import/pair-legs";
 import { totp } from "@/lib/totp";
 
 /** One row from GET /v2/positions (the fields we consume). */
@@ -186,7 +186,13 @@ function isDerivativeSegment(segment: string): boolean {
  */
 export function canonicalDerivativeName(r: DhanDerivativeFacts): string | null {
   if (!isDerivativeSegment(r.exchangeSegment)) return null;
-  const underlying = String(r.tradingSymbol ?? "").split("-")[0]!.trim().toUpperCase();
+  // R103 (v4.3.0 fix wave 2): the underlying is everything BEFORE the
+  // `-MonYYYY` expiry token, so a hyphenated scrip stays whole (BAJAJ-AUTO,
+  // not BAJAJ). A symbol without that token keeps the first-hyphen fallback.
+  // Stored rows are not rewritten: an older "BAJAJ" row and a new "BAJAJ-AUTO"
+  // row of the same contract do not de-duplicate against each other.
+  const sym = String(r.tradingSymbol ?? "").trim();
+  const underlying = (/^(.+?)-[A-Za-z]{3}[0-9]{4}(?:-.*)?$/.exec(sym)?.[1] ?? sym.split("-")[0]!).trim().toUpperCase();
   const iso = drvExpiryIso(r.drvExpiryDate);
   if (!underlying || !iso) return null;
   const [y, m, d] = iso.split("-");
@@ -456,96 +462,160 @@ type FillTake = { fill: DhanFill; qty: number; charges: FillCharges };
 /**
  * Split ONE fill's stated charges across the takes that consumed it, exactly.
  *
- * Every take but the LAST gets its quantity share rounded to paise; the last
- * take gets `total − what the earlier takes already got`, per component. A
- * per-share pro-rata rounded independently does not conserve: ₹5.00 of
- * brokerage on a 300-share fill split three ways is 1.67 × 3 = ₹5.01, which is
- * how ₹44.00 charged came to be stored as ₹44.01 (seam audit D1, 2026-09-10).
+ * Per component, in INTEGER PAISE, by largest remainder: every take gets the
+ * floor of its quantity share of the stated paise, and the paise left over go
+ * one each to the takes with the largest fractional remainder (a tie goes to
+ * the earlier take). A per-share pro-rata rounded independently does not
+ * conserve: ₹5.00 of brokerage on a 300-share fill split three ways is
+ * 1.67 × 3 = ₹5.01, which is how ₹44.00 charged came to be stored as ₹44.01
+ * (seam audit D1, 2026-09-10).
+ *
+ * R81 (v4.3.0 fix wave 2): the predecessor gave the LAST take
+ * `target − what the earlier takes got`, which goes NEGATIVE when the earlier
+ * rounded shares overshoot — ₹0.02 over four takes was 0.01 × 3 and −0.01.
+ * Largest remainder cannot: every share lies in [0, stated], and the shares
+ * sum to the stated paise exactly. The sign is re-applied afterwards, so a
+ * negative stated component splits the same way.
  *
  * The target is the CONSUMED quantity's share, not the whole fill's — when
  * pairLegs conserves quantity (it does) every fill is drained and the target is
  * the fill's own stated charge, so the takes sum to it to the paisa.
  */
 function splitChargesByRemainder(fill: DhanFill, takes: FillTake[]): void {
-  if (takes.length === 0) return;
+  if (takes.length === 0 || !(fill.qty > 0)) return;
   const consumed = takes.reduce((s, t) => s + t.qty, 0);
   for (const key of CHARGE_KEYS) {
-    const stated = fill.charges[key];
-    const target = fill.qty > 0 ? r2(stated * (consumed / fill.qty)) : 0;
-    let given = 0;
+    const statedPaise = Math.round(fill.charges[key] * 100);
+    const sign = statedPaise < 0 ? -1 : 1;
+    const abs = Math.abs(statedPaise);
+    const target = consumed >= fill.qty ? abs : Math.round((abs * consumed) / fill.qty);
+    // Integer remainders over one denominator compare exactly — no float tie noise.
+    const rem = takes.map((t) => (abs * t.qty) % fill.qty);
+    const paise = takes.map((t, i) => (abs * t.qty - rem[i]) / fill.qty);
+    let left = target - paise.reduce((s, p) => s + p, 0);
+    const byRemainder = rem.map((r, i) => ({ r, i })).sort((a, b) => b.r - a.r || a.i - b.i);
+    for (const { i } of byRemainder) {
+      if (left <= 0) break;
+      paise[i]++;
+      left--;
+    }
     takes.forEach((t, i) => {
-      const share = i === takes.length - 1 ? r2(target - given) : fill.qty > 0 ? r2(stated * (t.qty / fill.qty)) : 0;
-      t.charges[key] = share;
-      given = r2(given + share);
+      t.charges[key] = paise[i] === 0 ? 0 : (sign * paise[i]) / 100;
     });
   }
 }
 
+/** One leg handed to pairLegs, with the fills (in file order) that built it. */
+type LegFills = { leg: Leg; fills: DhanFill[] };
+
 /**
- * Hand every fill to the position that consumed it — FIFO, and once only.
+ * P9 (the R71 class), the SAME rule as zerodha.ts settleVenues and
+ * generic-map.ts: once a scrip-day-side leg's fills are summed, its label is
+ * the named venue carrying most of its value (strict `>`, so an exact tie keeps
+ * the first-filled venue), and `venues` stays only when two or more venues are
+ * named, for pairLegs' `rowVenue` to weigh each row's own turnover. The leg is
+ * NOT split per exchange (seam defects D1 / D2, v4.3.0 fix wave 2).
+ */
+function settleVenues(leg: Leg): void {
+  const named = Object.entries(leg.venues ?? {});
+  if (named.length > 0) leg.exchange = named.reduce((best, cur) => (r2(cur[1]) > r2(best[1]) ? cur : best))[0];
+  if (named.length < 2) delete leg.venues;
+}
+
+/**
+ * Hand every fill to the position that consumed it — in pairLegs' OWN
+ * consumption order, and once only.
  *
  * `pairLegs` reports what each position holds but not WHICH fills it retired,
- * so the mapping is rebuilt here from the same two facts pairLegs pairs on:
- * fills go out oldest-first (file order is the within-day tiebreak, the only
- * sequence a dated fill states), and positions ask in the order they entered
- * (buy side) or exited (sell side). A fill big enough for two positions is
- * SPLIT, and each takes the quantity it needed — so the quantities in a
- * position's `executions` sum to its own buyQty/sellQty, and its charges are
- * that fill's charges split by the same shares, BY REMAINDER: every take but
- * the last gets its rounded share and the last gets what is left, per
- * component, so the takes of a fill sum to the charges Dhan stated on it to the
- * paisa (`splitChargesByRemainder`).
+ * so the mapping is rebuilt here from the order pairLegs consumes lots in
+ * (lib/import/pair-legs.ts `run`). Each LEG — one scrip-day-side — is one
+ * FIFO queue of its fills in file order, and the queues stand in the order
+ * pairLegs pushes the lots (date, then the order the legs were first seen).
+ * `positions` is pairSymbolLegs' UNSORTED output: every closed row in the order
+ * its sell leg was processed, then the opening sells, then the open lots.
  *
- * The predecessor filtered fills by each position's [buyDate, sellDate] window,
- * which double-counted every fill two overlapping windows both contained
- * (round-1 audit, 2026-09-10). Quantity is conserved by pairLegs, so the queues
- * empty exactly.
+ *  - A CLOSED row drains its own sell date's buy queues first (the exchange's
+ *    same-day netting, pairLegs' same-day pass), then the oldest non-empty.
+ *  - An OPEN row takes the rest, oldest first — exactly the lot left over.
+ *  - A sell-side row drains its own sell date's sell queues.
+ *
+ * R80 (v4.3.0 fix wave 2): the predecessor handed buys out of ONE date-ordered
+ * queue to positions sorted by buyDate. pairLegs retires the same-day lot
+ * first, so a sell of 150 against a 09-01 lot and a 09-02 lot left the 09-01
+ * lot open while the open row listed — and was charged for — the 09-02 fill.
+ * K2-M5 / P9: one queue per date|side leg, whatever venues its fills name — an
+ * NSE and a BSE fill of one day are ONE lot to pairLegs (its `venues` decide
+ * only the row's exchange), so they go out of one queue in file order.
+ *
+ * A fill big enough for two positions is SPLIT, and each takes the quantity it
+ * needed — so the quantities in a position's `executions` sum to its own
+ * buyQty/sellQty, and its charges are that fill's charges split by the same
+ * shares in whole paise (`splitChargesByRemainder`), summing to what Dhan
+ * stated on the fill to the paisa.
+ *
+ * The first version filtered fills by each position's [buyDate, sellDate]
+ * window, which double-counted every fill two overlapping windows both
+ * contained (round-1 audit, 2026-09-10). Quantity is conserved by pairLegs, so
+ * the queues empty exactly.
  */
-function allocateFills(fills: DhanFill[], positions: PairedPosition[]): FillTake[][] {
+function allocateFills(fills: DhanFill[], legs: LegFills[], positions: PairedPosition[]): FillTake[][] {
   const taken: FillTake[][] = positions.map(() => []);
   /** Every take of one fill, in the order the positions took it. */
   const perFill = new Map<DhanFill, FillTake[]>();
-  const ordered = fills
-    .map((f, i) => ({ f, i }))
-    .sort((a, b) => (a.f.date ?? "").localeCompare(b.f.date ?? "") || a.i - b.i);
+  // A ladder reads in the order the fills happened: date, then file order.
   const rank = new Map<DhanFill, number>();
-  ordered.forEach((x, k) => rank.set(x.f, k));
+  fills
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => (a.f.date ?? "").localeCompare(b.f.date ?? "") || a.i - b.i)
+    .forEach((x, k) => rank.set(x.f, k));
 
-  const hand = (side: "buy" | "sell") => {
-    const queue = ordered.filter((x) => x.f.side === side).map((x) => ({ fill: x.f, left: x.f.qty }));
-    const want = (p: PairedPosition) => (side === "buy" ? p.buyQty : p.sellQty);
-    const when = (p: PairedPosition) => (side === "buy" ? p.buyDate : p.sellDate) ?? "";
-    const order = positions
-      .map((p, i) => ({ p, i }))
-      .filter((x) => want(x.p) > 0)
-      .sort((a, b) => when(a.p).localeCompare(when(b.p)) || a.i - b.i);
-    let q = 0;
-    for (const { p, i } of order) {
-      let need = want(p);
-      while (need > 0 && q < queue.length) {
-        if (queue[q].left <= 0) {
-          q++;
-          continue;
-        }
-        const take = Math.min(need, queue[q].left);
-        queue[q].left -= take;
-        need -= take;
-        const t: FillTake = { fill: queue[q].fill, qty: take, charges: noCharges() };
-        taken[i].push(t);
-        const list = perFill.get(t.fill);
-        if (list) list.push(t);
-        else perFill.set(t.fill, [t]);
-      }
+  type Queue = { items: { fill: DhanFill; left: number }[]; at: number };
+  const queuesOf = (side: Leg["side"]) => {
+    // Date, then push order — Array#sort is stable, and pairLegs' own
+    // `chronological` keeps same-date, same-side legs in the order given.
+    const ordered = legs.filter((l) => l.leg.side === side).sort((a, b) => a.leg.date.localeCompare(b.leg.date));
+    const all: Queue[] = [];
+    const byDate = new Map<string, Queue[]>();
+    for (const l of ordered) {
+      const q: Queue = { items: l.fills.map((fill) => ({ fill, left: fill.qty })), at: 0 };
+      all.push(q);
+      const e = byDate.get(l.leg.date);
+      if (e) e.push(q);
+      else byDate.set(l.leg.date, [q]);
     }
+    return { all, byDate, head: 0 };
   };
-  hand("buy");
-  hand("sell");
-  // Charges are split only once the takes of a fill are ALL known — the last
-  // one carries the remainder, so a three-way split cannot round the same
-  // rupee three times.
+  const buys = queuesOf("buy");
+  const sells = queuesOf("sell");
+
+  const drain = (q: Queue, need: number, i: number): number => {
+    while (need > 0 && q.at < q.items.length) {
+      const item = q.items[q.at];
+      const take = Math.min(need, item.left);
+      item.left -= take;
+      need -= take;
+      if (item.left <= 0) q.at++;
+      const t: FillTake = { fill: item.fill, qty: take, charges: noCharges() };
+      taken[i].push(t);
+      const list = perFill.get(t.fill);
+      if (list) list.push(t);
+      else perFill.set(t.fill, [t]);
+    }
+    return need;
+  };
+  const hand = (side: ReturnType<typeof queuesOf>, i: number, want: number, sameDay: string | null) => {
+    let need = want;
+    if (sameDay) for (const q of side.byDate.get(sameDay) ?? []) need = drain(q, need, i);
+    while (side.head < side.all.length && side.all[side.head].at >= side.all[side.head].items.length) side.head++;
+    for (let k = side.head; k < side.all.length && need > 0; k++) need = drain(side.all[k], need, i);
+  };
+  positions.forEach((p, i) => {
+    if (p.buyQty > 0) hand(buys, i, p.buyQty, p.kind === "closed" ? p.sellDate : null);
+    if (p.sellQty > 0) hand(sells, i, p.sellQty, p.sellDate);
+  });
+  // Charges are split only once the takes of a fill are ALL known, so the
+  // largest-remainder paise are placed once across every take.
   for (const [fill, takes] of perFill) splitChargesByRemainder(fill, takes);
-  // Chronological again: the buy pass ran before the sell pass, and a ladder
-  // reads in the order the fills happened.
   for (const t of taken) t.sort((a, b) => (rank.get(a.fill) ?? 0) - (rank.get(b.fill) ?? 0));
   return taken;
 }
@@ -571,8 +641,9 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
     segment: string;
     isin: string | null;
     notes: string[];
-    /** Keyed `date|side` — one leg per scrip-day-side. */
-    legs: Map<string, Leg>;
+    /** Keyed `date|side` — one leg per scrip-day-side, its value per venue in
+     *  `Leg.venues` (K2-M5 / P9), with the fills that built it. */
+    legs: Map<string, LegFills>;
     fills: DhanFill[];
   };
   const groups = new Map<string, Group>();
@@ -624,48 +695,74 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
     const hint = productHintOf(productRaw);
     const legProduct: Leg["product"] = hint === "intraday" ? "intraday" : hint === "delivery" ? "delivery" : "unknown";
 
+    // K2-M5 (v4.3.0 fix wave 2): the day's first fill no longer names the venue
+    // of every fill that day. The leg stays ONE per scrip-day-side and carries
+    // its value per named venue (`Leg.venues`, settled below by the P9 rule of
+    // zerodha.ts settleVenues / generic-map.ts), and pairLegs' majority-turnover
+    // rule (rowVenue, R71) names each row's exchange. A leg per VENUE was tried
+    // and is wrong (seam defect D1, W2-FIXB): a sale filled 50 on BSE and 50 on
+    // NSE at one price became two rows of one dedupHash, and commit dropped the
+    // second; a buy of BSE 10 + NSE 90 became two open lots Data Quality books
+    // apart (D2). The one-row limit stands: a row is priced at ONE exchange.
+    const exchange = exchangeOf(r.exchangeSegment);
     const legKey = `${date}|${side}`;
+    const fill: DhanFill = { side, qty, price, date, time: tradeTimeOf(r), charges: fillCharges(r) };
     const existing = g.legs.get(legKey);
     if (existing) {
-      existing.qty += qty;
-      existing.value = r2(existing.value + qty * price);
+      existing.leg.qty += qty;
+      existing.leg.value = r2(existing.leg.value + qty * price);
+      existing.fills.push(fill);
     } else {
       g.legs.set(legKey, {
-        symbol: g.symbol,
-        side,
-        date,
-        qty,
-        value: r2(qty * price),
-        // Charges ride on the FILLS (Dhan states them per fill, in components)
-        // and are re-summed per position below; the leg's scalar would only
-        // round the same money twice.
-        charges: 0,
-        exchange: exchangeOf(r.exchangeSegment),
-        product: legProduct,
+        leg: {
+          symbol: g.symbol,
+          side,
+          date,
+          qty,
+          value: r2(qty * price),
+          // Charges ride on the FILLS (Dhan states them per fill, in components)
+          // and are re-summed per position below; the leg's scalar would only
+          // round the same money twice.
+          charges: 0,
+          exchange,
+          product: legProduct,
+        },
+        fills: [fill],
       });
     }
-    g.fills.push({ side, qty, price, date, time: tradeTimeOf(r), charges: fillCharges(r) });
+    // P9: the value per NAMED venue, settled into `exchange` / `venues` below.
+    const leg = g.legs.get(legKey)!.leg;
+    if (exchange) leg.venues = { ...leg.venues, [exchange]: (leg.venues?.[exchange] ?? 0) + qty * price };
+    g.fills.push(fill);
   }
 
   const trades: NormalizedTrade[] = [];
   for (const g of groups.values()) {
-    const positions = pairLegs([...g.legs.values()]);
-    const taken = allocateFills(g.fills, positions);
-    for (let i = 0; i < positions.length; i++) {
-      const pos = positions[i];
-      // Every fill lands in exactly ONE position — handed out FIFO, the same
-      // consumption order pairLegs uses for the quantity, and pro-rated by the
-      // quantity each position took when one fill spans two. A DATE WINDOW was
-      // the earlier rule and it was wrong: two positions that overlap in time
-      // both claimed the same fill, so its charges were stored twice and each
-      // row listed fills it never consumed (found by the round-1 skeptic,
-      // 2026-09-10 — ₹44 stored from ₹22 charged). Approximate for a symbol
-      // re-entered on one day (the Zerodha tradebook makes the same trade-off).
-      // The TOTALS are exact — and exact means EXACT, not ±₹0.01: allocateFills
-      // splits each fill by REMAINDER (last take gets total − earlier takes,
-      // per component), so summing the takes here only adds paise-denominated
-      // numbers and the file's stored charges equal what Dhan levied. Rounding
-      // each take's share independently made ₹44.00 store as ₹44.01 (D1).
+    const legs = [...g.legs.values()];
+    for (const l of legs) settleVenues(l.leg);
+    // pairSymbolLegs' UNSORTED output carries the order pairLegs consumed lots
+    // in, which allocateFills replays; every leg of a group is one symbol, so
+    // pairLegs(legs) is exactly this list stably sorted by entry date — the
+    // order the rows are emitted in below.
+    const raw = pairSymbolLegs(legs.map((l) => l.leg));
+    const taken = allocateFills(g.fills, legs, raw);
+    const emitOrder = raw
+      .map((_, k) => k)
+      .sort((a, b) => (raw[a].buyDate ?? raw[a].sellDate ?? "").localeCompare(raw[b].buyDate ?? raw[b].sellDate ?? ""));
+    for (const i of emitOrder) {
+      const pos = raw[i];
+      // Every fill lands in exactly ONE position — handed out in pairLegs' own
+      // consumption order (allocateFills), and split by the quantity each
+      // position took when one fill spans two. A DATE WINDOW was the earlier
+      // rule and it was wrong: two positions that overlap in time both claimed
+      // the same fill, so its charges were stored twice and each row listed
+      // fills it never consumed (found by the round-1 skeptic, 2026-09-10 — ₹44
+      // stored from ₹22 charged). Within one leg the fills go out in file
+      // order (the Zerodha tradebook makes the same trade-off). The TOTALS are
+      // exact — and exact means EXACT, not ±₹0.01: allocateFills splits each
+      // fill in whole paise by largest remainder, so summing the takes here
+      // only adds paise-denominated numbers and the file's stored charges equal
+      // what Dhan levied (D1, R81).
       const mine = taken[i];
       const executions: Execution[] = mine.map((m) => ({
         side: m.fill.side,
@@ -679,21 +776,36 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
         return a;
       }, noCharges());
       const total = r2(sum.brokerage + sum.gst + sum.sttCtt + sum.sebi + sum.exchangeTxn + sum.stampDuty);
-      // Only when Dhan actually stated charges. A zero total means the payload
-      // carried none, and reporting 0 as a FACT would override the rate card
-      // with a number the broker never sent.
-      const reportedCharges: Partial<ChargeBreakdown> | null =
-        total > 0
-          ? {
-              brokerage: r2(sum.brokerage),
-              gst: r2(sum.gst),
-              sttCtt: r2(sum.sttCtt),
-              sebi: r2(sum.sebi),
-              exchangeTxn: r2(sum.exchangeTxn),
-              stampDuty: r2(sum.stampDuty),
-              total,
-            }
-          : null;
+      // Only when Dhan actually stated charges on a fill this row consumed. A
+      // row whose fills stated nothing carries none, and reporting 0 as a FACT
+      // would override the rate card with a number the broker never sent (R84).
+      // K2-TINY (v4.3.0 fix wave 2): the test is what the FILLS stated, not this
+      // row's total — a 1-share remainder whose share of ₹0.40 rounds to 0 was
+      // handed to the rate card, storing more than Dhan levied.
+      const stated = mine.some((m) => CHARGE_KEYS.some((key) => m.fill.charges[key] !== 0));
+      // K1-M2 (v4.3.0 fix wave 2): Dhan's history states six heads. The other
+      // four are stated as 0, as the Dhan GTR and Paytm tradebook parsers do,
+      // or commit's {...computed, ...reported} keeps the engine's DP / IPFT
+      // beside Dhan's total and the heads no longer add up to it. Dhan's DP
+      // arrives through its own DP-charges export. mtfInterest stays UNSTATED on
+      // an MTF row: commit.ts labels any later accrual "estimated" only while
+      // the file left it unstated, and the import itself computes none.
+      const mtf = productHintOf(g.productRaw) === "mtf";
+      const reportedCharges: Partial<ChargeBreakdown> | null = stated
+        ? {
+            brokerage: r2(sum.brokerage),
+            gst: r2(sum.gst),
+            sttCtt: r2(sum.sttCtt),
+            sebi: r2(sum.sebi),
+            exchangeTxn: r2(sum.exchangeTxn),
+            stampDuty: r2(sum.stampDuty),
+            ipft: 0,
+            dpCharges: 0,
+            pledgeCharges: 0,
+            ...(mtf ? {} : { mtfInterest: 0 }),
+            total,
+          }
+        : null;
 
       trades.push({
         broker: "dhan",
@@ -716,7 +828,10 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
         exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
         // STATED by Dhan, not inferred from the calendar or the charges.
         productHint: productHintOf(g.productRaw),
-        exchangeHint: exchangeOf(g.segment),
+        // D1 (v4.3.0 fix wave 2): the venue pairLegs decided for THIS row (R71's
+        // majority turnover) — the group's first fill's venue only when none of
+        // the row's own legs names one.
+        exchangeHint: (pos.exchange as Exchange | null) ?? exchangeOf(g.segment),
         sourceFile: "dhan-api",
         executions: executions.length > 0 ? executions : null,
         reportedCharges,
@@ -1048,6 +1163,10 @@ export interface DhanHistoryRead {
   /** Earliest / latest fill date actually read; null when no fill states a readable date. */
   oldest: string | null;
   newest: string | null;
+  /** R82 (v4.3.0 fix wave 2): fills normalizeDhanTrades refused (no readable
+   *  side, quantity, price or date). Stated by `fetchTrades`, which is what
+   *  normalizes; the raw walk (`fetchDhanTrades`' own onRead) leaves it unset. */
+  refused?: number;
 }
 
 export async function fetchDhanTrades(
@@ -1138,8 +1257,8 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
         const walk: { read: DhanHistoryRead | null } = { read: null };
         const rows = await fetchDhanTrades(creds, { from: opts.from, to: opts.to ?? today }, onMinted, (r) => {
           walk.read = r;
-          opts.onHistory?.(r);
         });
+        let refused = 0;
         if (!walk.read?.truncated) {
           const after = opts.after ?? null;
           const notCovered = (r: DhanTradeRow) => {
@@ -1147,8 +1266,13 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
             const at = fillWallClock(r);
             return at == null || at > after;
           };
-          history.push(...normalizeDhanTrades(rows.filter((r) => tradeDateOf(r) !== today && notCovered(r))).trades);
+          const normalized = normalizeDhanTrades(rows.filter((r) => tradeDateOf(r) !== today && notCovered(r)));
+          history.push(...normalized.trades);
+          refused = normalized.refused;
         }
+        // R82: the refused count rides on the read, so toParsedFile can say it.
+        // A truncated walk kept nothing, so it refused nothing either.
+        if (walk.read) opts.onHistory?.({ ...walk.read, refused });
       }
       opts.onCutoff?.(new Date().toISOString());
       const positions = normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
@@ -1169,6 +1293,13 @@ export interface DhanUnfetchedSpan {
   to: string;
   reason: "range-cap" | "page-cap";
   message: string;
+  /** P15 / P16 (v4.3.0 fix wave 2): the warning's own sentences, which the
+   *  kept notice carries to the card VERBATIM. `fact` says what was not read,
+   *  followed by the last pull's own day when the span starts on it;
+   *  `remedyText` is the tradebook sentence, null when no day is left to name.
+   *  `message === [fact, remedyText].filter(Boolean).join(" ")`. */
+  fact: string;
+  remedyText: string | null;
   /** The days a Dhan tradebook can bring in WITHOUT repeating an import: the
    *  span minus the last pull's own IST day. Null when nothing is left. */
   remedy: { from: string; to: string } | null;
@@ -1215,11 +1346,11 @@ export function toParsedFile(
       const u = range.unfetched;
       const restFrom = addDaysIso(u.from, 1);
       const remedy = restFrom <= u.to ? { from: restFrom, to: u.to } : null;
-      const message =
-        `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so this one started at ${range.from}. ${partialDay(u.from)}` +
-        (remedy ? ` To bring the rest in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.` : "");
+      const fact = `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so this one started at ${range.from}. ${partialDay(u.from)}`;
+      const remedyText = remedy ? `To bring the rest in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.` : null;
+      const message = remedyText ? `${fact} ${remedyText}` : fact;
       warnings.push(message);
-      unfetched.push({ from: u.from, to: u.to, reason: "range-cap", message, remedy, partial: { day: u.from, after: lastHhmm } });
+      unfetched.push({ from: u.from, to: u.to, reason: "range-cap", message, fact, remedyText, remedy, partial: { day: u.from, after: lastHhmm } });
     }
     if (read?.truncated) {
       // F-L1-3a: fetchTrades kept NONE of a truncated walk, so the span is the
@@ -1231,23 +1362,37 @@ export function toParsedFile(
       const onLastPullDay = !range.unfetched;
       const restFrom = onLastPullDay ? addDaysIso(range.from, 1) : range.from;
       const remedy = restFrom <= yesterday ? { from: restFrom, to: yesterday } : null;
-      const message = [
+      const fact = [
         `Truncated: this pull stopped at the ${DHAN_TRADES_MAX_PAGES}-page limit of Dhan's trade history and kept none of what it read, so fills from ${range.from} to ${yesterday} were not read. Today's book came from /v2/positions.`,
         onLastPullDay ? partialDay(range.from) : null,
-        remedy ? `To bring ${onLastPullDay ? "the rest" : "those fills"} in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.` : null,
       ]
         .filter(Boolean)
         .join(" ");
+      const remedyText = remedy
+        ? `To bring ${onLastPullDay ? "the rest" : "those fills"} in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.`
+        : null;
+      const message = remedyText ? `${fact} ${remedyText}` : fact;
       warnings.push(message);
       unfetched.push({
         from: range.from,
         to: yesterday,
         reason: "page-cap",
         message,
+        fact,
+        remedyText,
         remedy,
         partial: onLastPullDay ? { day: range.from, after: lastHhmm } : null,
       });
     }
+  }
+  // R82 (v4.3.0 fix wave 2): a refused fill was counted and then dropped with
+  // no word. It is not coerced (a zero-share trade is worse than none), and the
+  // pull now says how many.
+  const refused = read?.refused ?? 0;
+  if (refused > 0) {
+    warnings.push(
+      `${refused} fill${refused === 1 ? "" : "s"} from Dhan's trade history had no readable side, quantity, price or date and were refused rather than guessed.`,
+    );
   }
   if (trades.length === 0) {
     warnings.push(

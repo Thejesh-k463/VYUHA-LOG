@@ -6,7 +6,8 @@ import { BhavcopyMtm } from "@/components/trackers/bhavcopy-mtm";
 import { LimitCheck } from "@/components/risk/limit-check";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getTrackerTrades } from "@/lib/queries/trades";
-import { getMtmMap, getSpotMap } from "@/lib/queries/mtm";
+import { getMtmMap, getSpotMap, getSpotMarkEntries } from "@/lib/queries/mtm";
+import { getDismissedFingerprints } from "@/lib/queries/dismissals";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { getSectorResolution } from "@/lib/queries/instruments";
 import { getAliasMap } from "@/lib/queries/aliases";
@@ -37,12 +38,12 @@ import {
   type BetaPosition,
   type StressPosition,
 } from "@/lib/risk/portfolio";
-import { getLatestCloseMap, getReturnsMap } from "@/lib/queries/price-history";
+import { getLatestCloseEntries, getReturnsMap } from "@/lib/queries/price-history";
 // PURE, and deliberately not from `components/risk/spot-mark-editor` — that
 // module is `"use client"`, so Next hands this server render a throwing
 // `registerClientReference` stub for every export of it, and calling
 // `resolveSpotRef()` below threw on any book with an open F&O position.
-import { resolveSpotRef, type SpotRef } from "@/lib/risk/spot-ref";
+import { resolveSpotRef, SPOT_CLOSE_DIFF_PANEL, type SpotRef } from "@/lib/risk/spot-ref";
 import { VarPanel } from "@/components/risk/var-panel";
 import { estimateMargin, type MarginPositionInput } from "@/lib/risk/margin";
 import { makeMtfResolver } from "@/lib/queries/mtf-margins";
@@ -288,16 +289,23 @@ export default function RiskPage() {
 
   // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
   //
-  // R7: when nothing has been TYPED for an underlying, the newest end-of-day
-  // close on record answers instead of nothing at all. `getLatestCloseMap()`
-  // had zero callers — every close the bhavcopy importer had already stored
-  // sat unread while the panel printed "spot?" over an option whose moneyness
-  // the book could in fact resolve. A typed mark still wins (`resolveSpotRef`),
-  // and the chip states which of the two it is, so an EOD-derived ITM is never
-  // read as a number the user typed. The map is prices only, so the close's own
-  // date is not carried — `getLatestCloseMap()` would have to return it, and
-  // lib/queries/price-history.ts is not this wave's to change.
-  const eodCloses = getLatestCloseMap();
+  // R7: when no mark is stored for an underlying, the newest end-of-day close
+  // on record answers instead of nothing at all — every close the bhavcopy
+  // importer had already stored used to sit unread while the panel printed
+  // "spot?" over an option whose moneyness the book could in fact resolve. A
+  // stored mark still wins (`resolveSpotRef`, ruling 225), and the chip states
+  // which of the two it is AND its day.
+  //
+  // R13: both sources now carry their own day (`getSpotMarkEntries()`,
+  // `getLatestCloseEntries()`). The chip says "mark", never "typed" —
+  // `mtm_prices` cannot tell a typed mark from the bhavcopy auto-MTM or a
+  // live-feed mark. When a NEWER official close differs from the mark, the row
+  // says so and offers "Use official close" / "Keep my mark"; a kept mark is a
+  // `spot-close-diff` dismissal, read here with the account scope every
+  // dismissal read has (`getSelectedAccountId()`, `accountId > 0 ? filter : all`).
+  const spotMarks = getSpotMarkEntries();
+  const eodCloses = getLatestCloseEntries();
+  const spotCloseDismissed = getDismissedFingerprints(SPOT_CLOSE_DIFF_PANEL);
   const spotRefs: Record<string, SpotRef> = {};
   const settlementInputs: SettlementInput[] = trades
     .filter((t) => t.isOpen && DERIVATIVE_SEGMENTS.has(t.segment))
@@ -319,12 +327,12 @@ export default function RiskPage() {
       // reference stays null = unknown, never 0 (invariant 6).
       const nonZero = (n: number | null | undefined) => (n != null && n > 0 ? n : null);
       const cashMark = nonZero(spot.get(t.symbol.toUpperCase()));
-      // TYPED MARK ▸ NEWEST EOD CLOSE ▸ unknown (R7) — for the option branch,
-      // whose chip states the source. The futures branch keeps its own chain
-      // (cash mark ▸ recorded close ▸ side-aware entry, ruling C-1): it has no
-      // chip to say where its delivery price came from, and changing what it
-      // prices with is not this wave's ruling.
-      const optionRef = resolveSpotRef(t.symbol, spot, eodCloses);
+      // STORED MARK ▸ NEWEST EOD CLOSE ▸ unknown (R7, R13) — for the option
+      // branch, whose chip states the source and its day. The futures branch
+      // keeps its own chain, mark first (stored cash mark ▸ recorded close ▸
+      // side-aware entry, ruling C-1): it has no chip to say where its delivery
+      // price came from, and changing what it prices with is not this ruling.
+      const optionRef = resolveSpotRef(t.symbol, spotMarks, eodCloses);
       if (t.instrumentType === "option") spotRefs[t.symbol.trim().toUpperCase()] = optionRef;
       const refPrice =
         t.instrumentType === "option"
@@ -397,10 +405,11 @@ export default function RiskPage() {
         <SebiRadarPanel report={radar} />
         {/* The page resolves the reference price (it owns the database) and
             hands it down; the chip writes a new one through
-            `POST /api/risk/spot` and `router.refresh()`, NOT through a server
+            `POST /api/risk/spot` (and "Keep my mark" through
+            `POST /api/risk/spot/dismiss`) and `router.refresh()`, NOT through a server
             action handed down from here — an action would remount the cockpit
             below and reset its open row (AGENTS.md, R7). */}
-        <ExpiryObligations summary={settlement} spotRefs={spotRefs} />
+        <ExpiryObligations summary={settlement} spotRefs={spotRefs} spotCloseDismissed={spotCloseDismissed} />
         <MarginPanel summary={marginSummary} rates={marginRates} />
         <MtfDriftCard drift={mtfDriftRows} bundleAsOf={MTF_BUNDLE_AS_OF} stale={mtfStale} />
         {exposures.length > 0 && (

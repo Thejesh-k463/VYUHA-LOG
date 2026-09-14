@@ -177,6 +177,84 @@ describe("reporting", () => {
   });
 });
 
+describe("side-aware (Q-LOOP, 4.3.0): buy against buy, sell against sell", () => {
+  // A Dhan catch-up pull brings the SELL of a lot the book holds as a BUY. The
+  // old max(buyQty, sellQty) compare called that "same-quantity", answered 409,
+  // never moved the stamp — and asked again on every pull.
+  const heldBuy = ex({ buyQty: 100, buyValue: 10000, sellQty: 0, sellValue: 0, buyDate: "2026-09-07", sourceFile: "dhan-api-2026-09-07" });
+
+  it("a SELL of a held BUY of the same quantity is no collision", () => {
+    const sale = inc({ buyQty: 0, buyValue: 0, sellQty: 100, sellValue: 12000, buyDate: null, sellDate: "2026-09-08" });
+    const r = detectCrossSourceDuplicates([sale], [heldBuy], "dhan-api-2026-09-10");
+    expect(r.collisions).toEqual([]);
+    expect(r.risky).toBe(false);
+  });
+
+  it("an opposite-side row of the same VALUE, or a multiple of the quantity, is no collision either", () => {
+    const sameValue = inc({ buyQty: 0, buyValue: 0, sellQty: 37, sellValue: 10000, buyDate: null, sellDate: "2026-09-08" });
+    const partial = inc({ buyQty: 0, buyValue: 0, sellQty: 50, sellValue: 6000, buyDate: null, sellDate: "2026-09-08" });
+    expect(detectCrossSourceDuplicates([sameValue, partial], [heldBuy], "dhan-api-2026-09-10").collisions).toEqual([]);
+  });
+
+  it("the same side at the same quantity is still 'same-quantity'", () => {
+    const echo = inc({ buyQty: 100, buyValue: 10010, buyDate: null });
+    const r = detectCrossSourceDuplicates([echo], [heldBuy], "dhan-pnl.csv");
+    expect(r.collisions.map((c) => c.kind)).toEqual(["same-quantity"]);
+    expect(r.risky).toBe(true);
+  });
+
+  it("a round trip still meets a sell-only P&L row on the sell side, and a held BUY on the buy side", () => {
+    const roundTrip = ex({ buyQty: 10, buyValue: 1000, sellQty: 10, sellValue: 1200, sellDate: "2026-07-02" });
+    const pnlSell = inc({ buyQty: 0, buyValue: 0, sellQty: 10, sellValue: 1200, buyDate: null, sellDate: null });
+    expect(detectCrossSourceDuplicates([pnlSell], [roundTrip], "pnl.csv").collisions.map((c) => c.kind)).toEqual(["same-quantity"]);
+    const closedHere = inc({ buyQty: 100, buyValue: 10000, sellQty: 100, sellValue: 12000, sellDate: "2026-09-08" });
+    expect(detectCrossSourceDuplicates([closedHere], [heldBuy], "gtr.csv").collisions.map((c) => c.kind)).toEqual(["same-quantity"]);
+  });
+});
+
+describe("R43 · today's earlier snapshot of the same pull is not 'a second trade in the same file'", () => {
+  const FILE = "dhan-api-2026-09-10";
+  const DAY = "2026-09-10";
+  const morning = (over: Partial<ExistingRow> = {}) =>
+    ex({ buyQty: 75, buyValue: 7500, buyDate: DAY, sourceFile: FILE, tradingsymbol: "OPT NIFTY 29 Sep 2026 24000 CE", symbol: "NIFTY", ...over });
+  const evening = (over: Partial<IncomingRow> = {}) =>
+    inc({
+      buyQty: 75, buyValue: 7500, sellQty: 75, sellValue: 9000, buyDate: DAY, sellDate: DAY,
+      tradingsymbol: "OPT NIFTY 29 Sep 2026 24000 CE", symbol: "NIFTY", ...over,
+    });
+
+  it("a snapshot row the commit will not replace meets the morning row: reported, risky, marked as the same snapshot", () => {
+    const r = detectCrossSourceDuplicates([evening({ snapshotDay: DAY })], [morning()], FILE);
+    expect(r.collisions).toHaveLength(1);
+    expect(r.collisions[0]).toMatchObject({ kind: "same-quantity", sameSnapshot: true });
+    expect(r.risky).toBe(true);
+  });
+
+  it("without snapshotDay the same-file row stays hidden, and a same-file row of another day stays hidden too", () => {
+    expect(detectCrossSourceDuplicates([evening()], [morning()], FILE).collisions).toEqual([]);
+    const yesterday = morning({ buyDate: "2026-09-09" });
+    expect(detectCrossSourceDuplicates([evening({ snapshotDay: DAY })], [yesterday], FILE).collisions).toEqual([]);
+  });
+
+  it("a PARTIAL overlap with the earlier snapshot is risky: the book grew, it did not gain a second position", () => {
+    const grown = evening({ buyQty: 150, buyValue: 15000, sellQty: 0, sellValue: 0, sellDate: null, snapshotDay: DAY });
+    const r = detectCrossSourceDuplicates([grown], [morning()], FILE);
+    expect(r.collisions.map((c) => c.kind)).toEqual(["partial-quantity"]);
+    expect(r.risky).toBe(true);
+    // The same partial overlap from ANOTHER file stays the soft note it always was.
+    expect(detectCrossSourceDuplicates([grown], [morning({ sourceFile: "other.csv" })], FILE).risky).toBe(false);
+  });
+
+  it("the most severe overlap is reported: a partial candidate met first does not hide a same-quantity one", () => {
+    const partialFirst = ex({ id: 1, buyQty: 500, buyValue: 267500, sourceFile: "a.csv" });
+    const exact = ex({ id: 2, buyQty: 1000, buyValue: 900000, sourceFile: "b.csv" });
+    const r = detectCrossSourceDuplicates([inc({ buyQty: 1000, buyValue: 500000 })], [partialFirst, exact], "pnl.csv");
+    expect(r.collisions).toHaveLength(1);
+    expect(r.collisions[0]).toMatchObject({ kind: "same-quantity", existing: { id: 2 } });
+    expect(r.risky).toBe(true);
+  });
+});
+
 describe("detectCrossBrokerEchoes — same instrument, same day, different broker", () => {
   // A trader with accounts at two brokers really can buy the same SENSEX
   // option twice in one day. Both trades are real and both stay — this note

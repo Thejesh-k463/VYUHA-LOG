@@ -62,6 +62,18 @@ const OPTIONS: Window[] = [
   { from: "2026-04-01", to: null, stt: 0.0015, circular: "FATAX73524" },
 ];
 const SCHEDULE = { future: FUTURES, index_option: OPTIONS, stock_option: OPTIONS } as const;
+/**
+ * QS-EQ2012: rows 1 & 2 of FATAX20990 (Circular 1/2012, 12 Jun 2012), purchase
+ * and sale of an equity share settled by actual delivery, BOTH sides, of traded
+ * value — eq_delivery and eq_mtf alike.
+ */
+const DELIVERY: Window[] = [
+  // "Effective rate till 30.06.2012: 0.125 per cent". When 0.125% began is NOT
+  // verified (the circular cites NSE/F&A/7526 of 2006, not fetched), so it is extended back.
+  { from: "1970-01-01", to: "2012-07-01", stt: 0.00125, circular: "FATAX20990" },
+  { from: "2012-07-01", to: null, stt: 0.001, circular: "FATAX20990" }, // "New rate from 01.07.2012: 0.1 per cent"
+];
+const isDelivery = (segment: string) => segment === "eq_delivery" || segment === "eq_mtf";
 type FnoSegment = keyof typeof SCHEDULE;
 const isFno = (segment: string): segment is FnoSegment => segment in SCHEDULE;
 /** The window `on` falls in. */
@@ -114,6 +126,20 @@ describe("the reference table (lib/data/charge-rates-defaults.json) states the c
     expect(ref.epochs.some((e) => e.segment === "stock_option")).toBe(false);
   });
 
+  it("equity delivery: FATAX20990's two windows, both sides, the circular on each; the unverified 1970 start is not marked verified (QS-EQ2012)", () => {
+    const eps = ref.epochs
+      .filter((e) => e.segment === "eq_delivery")
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    expect(eps.map((e) => [e.effectiveFrom, e.effectiveTo])).toEqual(DELIVERY.map((w) => [w.from, w.to]));
+    expect(eps.map((e) => e.rates.sttPct)).toEqual(DELIVERY.map((w) => w.stt));
+    expect(eps.map((e) => e.rates.sttSide)).toEqual(["both", "both"]);
+    eps.forEach((e, i) => expect(e.sources ?? [], e.effectiveFrom).toContain(FATAX(DELIVERY[i].circular)));
+    expect(eps.map((e) => e.verified)).toEqual([false, true]);
+    expect(eps[0].note).toMatch(/NOT verified/);
+    // The note that said the table did not carry the earlier rate is gone.
+    for (const e of eps) expect(e.note).not.toMatch(/neither this table nor the rate card carries/);
+  });
+
   it("every epoch names its own sources, and one marked verified cites a primary NSE circular", () => {
     expect(ref.epochs.filter((e) => e.verified).length).toBeGreaterThan(0);
     for (const e of ref.epochs) {
@@ -145,9 +171,41 @@ describe("the seed's F&O STT epochs", () => {
     }
   });
 
-  it("no other segment gains STT history: the 72 other keys carry one STT on every epoch, MCX keeps one open row, 522 rows in all", () => {
-    const others = [...byKey.entries()].filter(([, rows]) => !isFno(rows[0].segment));
-    expect(others).toHaveLength(72);
+  it("equity delivery and MTF: all 36 keys follow FATAX20990 — 0.125% both sides before 2012-07-01, 0.1% from it; only STT, the exchange charge and IPFT differ", () => {
+    const delivery = [...byKey.entries()].filter(([, rows]) => isDelivery(rows[0].segment));
+    expect(delivery).toHaveLength(36);
+    const rest = (r: SeedRow) => {
+      const o: Record<string, unknown> = { ...r };
+      for (const c of ["sttPct", "sttSide", "exchangeTxnPct", "ipftPct", "effectiveFrom", "effectiveTo"]) delete o[c];
+      return o;
+    };
+    for (const [k, rows] of delivery) {
+      const asc = oldestFirst(rows);
+      expect(asc.map((r) => r.effectiveFrom).slice(0, 2), k).toEqual(["1970-01-01", "2012-07-01"]);
+      expect(asc[0].effectiveTo, k).toBe("2012-07-01");
+      expect(asc.map((r) => r.sttPct), k).toEqual(asc.map((r) => (r.effectiveFrom! < "2012-07-01" ? 0.00125 : 0.001)));
+      expect(new Set(asc.map((r) => r.sttSide)), k).toEqual(new Set(["both"]));
+      for (const r of asc) expect(rest(r), `${k} ${r.effectiveFrom}`).toEqual(rest(asc[asc.length - 1]));
+    }
+  });
+
+  it("findRates: eq_delivery and eq_mtf, NSE and BSE, price 30 Jun 2012 at 0.125% and 1 Jul 2012 at 0.1% (FATAX20990)", () => {
+    const map = seedRatesMap();
+    for (const segment of ["eq_delivery", "eq_mtf"] as const) {
+      for (const exchange of ["NSE", "BSE"] as const) {
+        const at = (on: string) => findRates(map, "zerodha", segment, exchange, on);
+        expect(at("2012-06-30").sttPct, `${segment} ${exchange}`).toBe(0.00125);
+        expect(at("2012-06-30").sttSide, `${segment} ${exchange}`).toBe("both");
+        expect(at("2012-07-01").sttPct, `${segment} ${exchange}`).toBe(0.001);
+        expect(at("2012-07-01").sttSide, `${segment} ${exchange}`).toBe("both");
+        expect(at("2000-01-03").sttPct, `${segment} ${exchange}`).toBe(0.00125); // the earliest verified rate, extended back
+      }
+    }
+  });
+
+  it("no other segment gains STT history: the 36 intraday and MCX keys carry one STT on every epoch, MCX keeps one open row, 558 rows in all", () => {
+    const others = [...byKey.entries()].filter(([, rows]) => !isFno(rows[0].segment) && !isDelivery(rows[0].segment));
+    expect(others).toHaveLength(36);
     for (const [k, rows] of others) expect(new Set(rows.map((r) => `${r.sttPct}/${r.sttSide}`)).size, k).toBe(1);
     const mcx = others.filter(([, rows]) => rows[0].exchange === "MCX");
     expect(mcx).toHaveLength(18);
@@ -156,8 +214,9 @@ describe("the seed's F&O STT epochs", () => {
       expect([rows[0].effectiveFrom, rows[0].effectiveTo], k).toEqual([undefined, undefined]);
     }
     // 459 before R1: + 9 NSE futures keys × 2013-06-01, 18 NSE option keys × 2016-06-01,
-    // 18 BSE option keys × (2016-06-01, 2023-04-01) = +63.
-    expect(seed).toHaveLength(522);
+    // 18 BSE option keys × (2016-06-01, 2023-04-01) = +63 → 522.
+    // QS-EQ2012 (measured): 522 before, 558 after = + 36 delivery/MTF keys × 2012-07-01.
+    expect(seed).toHaveLength(558);
   });
 
   it("R1's own pins: the day before and the day of each boundary the pre-R1 seed priced at the Finance Act 2023 rates", () => {
@@ -240,6 +299,8 @@ const PRE_C8 = {
   eqNse: 0.0000297, eqBse: 0.0000375, optNse: 0.0003503, optBse: 0.000325,
   fut: 0.0000173, cfut: 0.000021, copt: 0.000418, ipft: 0.000000001,
   futStt: 0.000125, optStt: 0.000625,
+  // bbdc4ec's one delivery/MTF STT (0.1%, both sides): QS-EQ2012 gave the 1970 row 0.125%.
+  eqStt: 0.001,
 };
 /**
  * Back to bbdc4ec's own card (C-7 applied, C-8 and R1 not): F&O keys keep their
@@ -266,6 +327,7 @@ function plantPreC8(db: Raw): number {
        stt_pct = CASE
          WHEN effective_from = '1970-01-01' AND segment = 'future' THEN :futStt
          WHEN effective_from = '1970-01-01' AND segment IN ('index_option', 'stock_option') THEN :optStt
+         WHEN effective_from = '1970-01-01' AND segment IN ('eq_delivery', 'eq_mtf') THEN :eqStt
          ELSE stt_pct END`,
   ).run(PRE_C8);
   db.prepare(
@@ -371,11 +433,14 @@ describe("parity: seedDatabase() and refreshRateCards() agree on every planted s
   // Declaration order matters: each state is planted on the DB the previous one
   // left (= the template). The R54 state leaves a user-edited key, so it is last.
   const STATES: { name: string; plant: (db: Raw) => void; empty?: true; userKey?: string; expected: Counts }[] = [
-    { name: "an empty migrated DB", plant: (db) => expect(snapshot(db)).toEqual([]), empty: true, expected: { added: 522, refreshed: 0, removed: 0 } },
-    { name: "the owner's real DB (4.2.0: two epochs, corrupted 1970 rows)", plant: ownerState, expected: { added: 360, refreshed: 135, removed: 0 } },
-    { name: "the correct two-epoch DB (1970 → 2026-04-01 at FY25 STT)", plant: fy25State, expected: { added: 360, refreshed: 135, removed: 0 } },
-    { name: "bbdc4ec's own DB (C-7's three F&O epochs, pre-C-8 exchange charges)", plant: preC8State, expected: { added: 315, refreshed: 171, removed: 0 } },
-    { name: "the pre-v3.2 one-epoch DB", plant: preV32State, expected: { added: 405, refreshed: 99, removed: 0 } },
+    // Re-pinned for QS-EQ2012 (measured before → after; +36 = the 36 delivery/MTF keys' 2012-07-01 epoch,
+    // added; their 1970 rows were already refreshed for C-8, so `refreshed` does not move):
+    // empty 522 → 558; owner 360 → 396; fy25 360 → 396; bbdc4ec 315 → 351; pre-v3.2 405 → 441.
+    { name: "an empty migrated DB", plant: (db) => expect(snapshot(db)).toEqual([]), empty: true, expected: { added: 558, refreshed: 0, removed: 0 } },
+    { name: "the owner's real DB (4.2.0: two epochs, corrupted 1970 rows)", plant: ownerState, expected: { added: 396, refreshed: 135, removed: 0 } },
+    { name: "the correct two-epoch DB (1970 → 2026-04-01 at FY25 STT)", plant: fy25State, expected: { added: 396, refreshed: 135, removed: 0 } },
+    { name: "bbdc4ec's own DB (C-7's three F&O epochs, pre-C-8 exchange charges)", plant: preC8State, expected: { added: 351, refreshed: 171, removed: 0 } },
+    { name: "the pre-v3.2 one-epoch DB", plant: preV32State, expected: { added: 441, refreshed: 99, removed: 0 } },
     {
       name: "a user-edited open 1970 row with six stale seed epochs inside its window (R54)",
       plant: userEditedState,

@@ -294,6 +294,15 @@ describe("S1 · every paisa Dhan charged is stored once (F2 allocateFills → F1
       r2(rows.reduce((s, r) => s + r.chargesTotal, 0)),
       "the file's stored charges must equal the charges Dhan levied on its fills",
     ).toBe(chargedTotal(fills));
+    // K1-M2 (v4.3.0 fix wave 2): the per-head columns add up to the stored
+    // total. Dhan's history states six heads; the engine's DP / IPFT used to
+    // survive buildRow's {...computed, ...reported} beside Dhan's total.
+    for (const r of rows) {
+      const heads =
+        r.brokerage + r.sttCtt + r.exchangeTxn + r.sebi + r.stampDuty + r.ipft + r.gst + r.dpCharges + r.mtfInterest + r.pledgeCharges;
+      expect(r2(heads), "the ten stored heads must sum to the stored total").toBe(r.chargesTotal);
+      expect(r.dpCharges, "DP arrives through Dhan's DP-charges export, never beside its stated total").toBe(0);
+    }
   });
 
   it("BUY d1, BUY d2, SELL d3, SELL d4: two closed positions, ₹22 each, ₹44 charged", async () => {
@@ -381,8 +390,13 @@ describe("S1 · every paisa Dhan charged is stored once (F2 allocateFills → F1
     expect(importer.commitParsedFile(parsed, "dhan-api", null, THIRDS).added).toBe(3);
 
     const rows = storedRows(THIRDS);
-    // Two takes of the buy fill get the rounded share, the LAST the remainder.
-    expect(rows.map((r) => r.chargesTotal).sort((a, b) => b - a)).toEqual([14.67, 14.67, 14.66]);
+    // RE-PINNED (v4.3.0 fix wave 2, R81): was [14.67, 14.67, 14.66], measured
+    // [14.68, 14.67, 14.65] now. Each COMPONENT is split in whole paise by
+    // largest remainder, ties to the earlier take — so the leftover paise of
+    // sebi 0.10 (4/3/3) and stamp 0.50 (17/17/16) land on the first take, and
+    // brokerage 5.00 (167/167/166) on the first two. The old "last take gets the
+    // remainder" rule could go negative (R81); the ₹44 sum below is unchanged.
+    expect(rows.map((r) => r.chargesTotal).sort((a, b) => b - a)).toEqual([14.68, 14.67, 14.65]);
     expect(chargedTotal(fills)).toBe(44);
     expect(
       r2(rows.reduce((s, r) => s + r.chargesTotal, 0)),

@@ -684,6 +684,9 @@ export async function POST(req: Request) {
     let openAlgoBroker: Broker | null = null;
     /** C-6: Dhan history this pull did not read — kept only if it commits. */
     let unfetched: readonly DhanUnfetchedSpan[] = [];
+    /** P11: the history window an UNTRUNCATED Dhan walk read in full — the
+     *  page-cap spans inside it are cleared with the stamp. Null otherwise. */
+    let readWindow: { from: string; to: string } | null = null;
     /** R42: this pull's lastPullAt. Dhan's is the instant fetchTrades took
      *  just before /v2/positions (`onCutoff`); every other broker's is when
      *  the pull started. Never a post-commit clock. */
@@ -834,6 +837,8 @@ export async function POST(req: Request) {
         });
         const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt);
         unfetched = pulled.unfetched;
+        const walked = read as DhanHistoryRead | null;
+        readWindow = range && walked && !walked.truncated ? { from: range.from, to: range.to } : null;
         parsed = pulled;
       } else if (broker === "upstox") {
         // apiKey holds the year-long read-only Analytics token. normalize is
@@ -895,12 +900,18 @@ export async function POST(req: Request) {
           // BEFORE the stamp, the token cache and the fetch. Residual: a
           // pasted-token connection never learns a user_id and cannot be
           // refused here.
+          // P10 (v4.3.0 fix wave 2): only a connection saved BEFORE this one
+          // (a smaller broker_connections.id) is a rival here, so of an
+          // existing duplicate pair the NEWER connection is refused — R4a's
+          // "refuse the second connection" — and the original keeps pulling
+          // while Data Quality flags the pair (R4b).
           if (userId) {
             const rival = findRivalConnection({
               broker,
               apiKey: keyRead.value,
               authJson: JSON.stringify({ apiSecret, kiteUserId: userId }),
               accountId,
+              onlyOlderThan: conn.id,
             });
             if (rival) {
               const message = rivalMessage(broker, rival.accountName);
@@ -992,7 +1003,12 @@ export async function POST(req: Request) {
       // the wrong default for a journal.
       // Dedup is per (account, broker), so preview and commit must both run
       // against the connection's own account, not the selected view.
-      const pre = previewParsedFile(parsed, null, accountId, fileName);
+      // R43 / QS-AO (4.3.0): the three pulls that state TODAY's book re-state
+      // it on every pull, so a later pull the same day replaces the earlier
+      // snapshot of a changed position instead of adding a second row.
+      const snapshotPull = broker === "dhan" || broker === "angelone" || broker === "upstox";
+      const snapshotOpts = snapshotPull ? { supersedeSnapshot: { fileName } } : {};
+      const pre = previewParsedFile(parsed, null, accountId, fileName, snapshotOpts);
       const warnings = [...parsed.warnings];
       if (pre.crossSource?.message) warnings.push(pre.crossSource.message);
       if (pre.crossBroker) warnings.push(pre.crossBroker);
@@ -1004,13 +1020,13 @@ export async function POST(req: Request) {
         // plainly that the journal is unchanged — and no empty import batch
         // is created for a no-op. (Found live 2026-08-28: the native Upstox
         // pull exact-deduped 5/5 against the OpenAlgo rows, silently.)
-        if (pre.summary.total > 0 && pre.summary.newCount === 0 && body.force !== true) {
+        if (pre.summary.total > 0 && pre.summary.newCount === 0 && pre.summary.supersededCount === 0 && body.force !== true) {
           // R27 (v4.3.0 fix wave 1): nothing new is still a successful READ.
           // Its spans and the stamp land in ONE transaction. Unstamped, the
           // inclusive window re-read the same day on every pull and the card
           // kept printing "Pulls missed since".
           try {
-            keepUnfetchedAndStamp(unfetched, { connId: conn.id, accountId, source: "import" }, stamp);
+            keepUnfetchedAndStamp(unfetched, { connId: conn.id, accountId, source: "import" }, stamp, readWindow);
           } catch (e) {
             return unsavedNotice(e);
           }
@@ -1059,12 +1075,12 @@ export async function POST(req: Request) {
         } catch (e) {
           return unsavedNotice(e);
         }
-        const result = commitParsedFile(parsed, fileName, null, accountId);
+        const result = commitParsedFile(parsed, fileName, null, accountId, snapshotOpts);
         // R42: the stamp is the instant taken before /v2/positions was read.
-        db.update(brokerConnections)
-          .set({ lastPullAt: stamp })
-          .where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker)))
-          .run();
+        // P11: with it, in one transaction, the clear of every page-cap span
+        // this pull's untruncated walk read in full (`conn` is this account's
+        // row for this broker, so its id is the row the old update named).
+        keepUnfetchedAndStamp([], { connId: conn.id, accountId, source: "import" }, stamp, readWindow);
         revalidatePath("/trades");
         revalidatePath("/");
         return NextResponse.json({ ok: true, mode, result, warnings });

@@ -883,7 +883,7 @@ export const CATALOGUE: readonly StrategyDef[] = [
       },
     ],
     maxProfit: "model-dependent",
-    maxLoss: "debit (long-far case)",
+    maxLoss: "−N when the long far strike is the nearer the money; (K2 − K1) × qty − N when it is further out of the money (long-far case)",
     breakevens: "model-dependent",
     sources: "Nat 8, McM 14 (ch. unverified), Lean, optopsy",
     legacyFree: false,

@@ -175,7 +175,7 @@ function Figure({
   which: "maxProfit" | "maxLoss";
   value: number | null;
   cap: CapLabel;
-  /** R104's reason, when it is the reason: `capNote` would cite volatility. */
+  /** R104's or P14's reason, when it is the reason: `capNote` would cite volatility. */
   note: string | null;
 }) {
   const printed = cap === "Not computed" ? EM_DASH : value == null ? "Unlimited" : inr(value, { decimals: 0 });

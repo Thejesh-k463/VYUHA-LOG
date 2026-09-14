@@ -26,26 +26,46 @@
  */
 
 import { num } from "@/lib/format";
+// TYPE-ONLY: lib/domain/dismissals.ts imports node:crypto, and this module is
+// read by two client components. A type import is erased at compile time.
+import type { DismissiblePanel } from "@/lib/domain/dismissals";
 
-/** Where the reference price the panel judged moneyness with came from. */
-export type SpotSource = "typed" | "eod" | "none";
+/**
+ * Where the reference price the panel judged moneyness with came from.
+ *
+ * R13 — "mark", never "typed". `mtm_prices` cannot tell a number the user typed
+ * from a bhavcopy auto-MTM row or a live-feed mark: all three are the same row
+ * shape under the same symbol, so a chip that said "typed" claimed something
+ * the database cannot back.
+ */
+export type SpotSource = "mark" | "eod" | "none";
+
+/** A per-unit price and the day it belongs to (ISO `YYYY-MM-DD`). */
+export interface DatedPrice {
+  /** RUPEES per unit — invariant 1's documented REAL exception. */
+  price: number;
+  asOf: string;
+}
 
 export interface SpotRef {
   /** The underlying's cash price in RUPEES (a per-unit price — invariant 1's
    *  documented REAL exception), or `null` when the book has neither source. */
   value: number | null;
   source: SpotSource;
-  /** The EOD close's own date, when the caller knows it cheaply. */
+  /** The day `value` belongs to: the mark's own day, or the close's own day. */
   asOf?: string | null;
+  /** With a stored mark only: the newest end-of-day close on record, when there
+   *  is one, so the row can say when a newer official close differs (R13). */
+  close?: DatedPrice;
 }
 
-/** Neither a typed mark nor a close on record. */
+/** Neither a stored mark nor a close on record. */
 export const UNKNOWN_SPOT: SpotRef = { value: null, source: "none" };
 
 /** What the chip calls each source. "spot?" is kept verbatim from the badge
  *  the editor replaces — the unknown state reads the same as it always did. */
 export const SPOT_SOURCE_LABEL: Record<SpotSource, string> = {
-  typed: "typed",
+  mark: "mark",
   eod: "EOD close",
   none: "spot?",
 };
@@ -54,6 +74,11 @@ export const SPOT_SOURCE_LABEL: Record<SpotSource, string> = {
 const nonZero = (n: number | null | undefined): number | null =>
   n != null && Number.isFinite(n) && n > 0 ? n : null;
 
+const datedNonZero = (d: DatedPrice | null | undefined): DatedPrice | null => {
+  const price = nonZero(d?.price);
+  return price != null && d?.asOf ? { price, asOf: d.asOf } : null;
+};
+
 /** `mtm_prices` keys its derivative rows `OPT …` / `FUT …`. A spot mark is
  *  never one of those — it belongs to the cash underlying. */
 export function isContractKey(symbol: string): boolean {
@@ -61,32 +86,105 @@ export function isContractKey(symbol: string): boolean {
   return s.startsWith("OPT ") || s.startsWith("FUT ");
 }
 
+/** A real calendar day written `YYYY-MM-DD` (2026-02-30 is not one). */
+export function isIsoDay(s: unknown): s is string {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+}
+
 /**
- * The reference price for one underlying: a TYPED MARK ALWAYS WINS, then the
+ * The reference price for one underlying: the STORED MARK WINS, then the
  * newest end-of-day close on record, then unknown.
  *
- * The order is the ruling and it is also the only safe one: the typed mark is
- * the number the user just looked at, the close is yesterday's fact, and a
- * missing reference must stay missing rather than become 0 — a coerced zero
- * prints every put in the book as deep in-the-money.
+ * The order is the ruling (225) and it is also the only safe one: a missing
+ * reference must stay missing rather than become 0 — a coerced zero prints
+ * every put in the book as deep in-the-money. The mark wins EVEN WHEN IT IS
+ * OLDER than the close (R13): the page never swaps the number silently; the
+ * row says so through `spotCloseNotice`, and the user picks.
  */
 export function resolveSpotRef(
   symbol: string,
-  typedMarks: ReadonlyMap<string, number>,
-  eodCloses: ReadonlyMap<string, number>,
+  marks: ReadonlyMap<string, DatedPrice>,
+  eodCloses: ReadonlyMap<string, DatedPrice>,
 ): SpotRef {
   const key = symbol.trim().toUpperCase();
-  const typed = nonZero(typedMarks.get(key));
-  if (typed != null) return { value: typed, source: "typed" };
-  const eod = nonZero(eodCloses.get(key));
-  if (eod != null) return { value: eod, source: "eod" };
+  const mark = datedNonZero(marks.get(key));
+  const close = datedNonZero(eodCloses.get(key));
+  if (mark != null) {
+    return close != null
+      ? { value: mark.price, source: "mark", asOf: mark.asOf, close }
+      : { value: mark.price, source: "mark", asOf: mark.asOf };
+  }
+  if (close != null) return { value: close.price, source: "eod", asOf: close.asOf };
   return UNKNOWN_SPOT;
 }
 
-/** What the chip reads. With NEITHER source it reads exactly what the dead
- *  badge before it read — "spot?" — so nothing about the unknown state changed
- *  except that it is now clickable. */
+/**
+ * Does the official close say something the mark does not? (R13)
+ *
+ *  - a close on a LATER day than the mark → true;
+ *  - the SAME day at a different price, compared at the paisa → true;
+ *  - a mark NEWER than the close → false: today's mark (typed or live) is the
+ *    fresher number, and an older close has nothing to add to it.
+ *
+ * ISO days compare correctly as strings. Prices are REAL rupees per unit; the
+ * `× 100` is a comparison at the paisa, not a stored conversion (invariant 1).
+ */
+export function closeDiffers(mark: DatedPrice, close: DatedPrice): boolean {
+  if (close.asOf > mark.asOf) return true;
+  if (close.asOf < mark.asOf) return false;
+  return Math.round(mark.price * 100) !== Math.round(close.price * 100);
+}
+
+/** The panel a "Keep my mark" dismissal is filed under (`panel_dismissals`). */
+export const SPOT_CLOSE_DIFF_PANEL = "spot-close-diff" as const satisfies DismissiblePanel;
+
+/**
+ * ONE dismissal PER SYMBOL, keyed on the close it was shown for:
+ * `${SYMBOL}|${close day}|${close in paise}`. A newer close changes the day and
+ * a corrected close changes the paise — either way the fingerprint moves and
+ * the notice returns.
+ */
+export function spotCloseFingerprint(symbol: string, close: DatedPrice): string {
+  return `${symbol.trim().toUpperCase()}|${close.asOf}|${Math.round(close.price * 100)}`;
+}
+
+export interface SpotCloseNotice {
+  /** "Official close <day>: ₹X — differs from your mark ₹Y" — descriptive only. */
+  text: string;
+  close: DatedPrice;
+  fingerprint: string;
+}
+
+/**
+ * The line the row and the editor print when a newer (or same-day, different)
+ * official close disagrees with the stored mark — or null when there is nothing
+ * to say, or when the user kept the mark against THIS close.
+ */
+export function spotCloseNotice(
+  symbol: string,
+  spot: SpotRef,
+  dismissedFingerprints: readonly string[] = [],
+): SpotCloseNotice | null {
+  if (spot.source !== "mark" || spot.value == null || !spot.asOf || !spot.close) return null;
+  if (!closeDiffers({ price: spot.value, asOf: spot.asOf }, spot.close)) return null;
+  const fingerprint = spotCloseFingerprint(symbol, spot.close);
+  if (dismissedFingerprints.includes(fingerprint)) return null;
+  return {
+    text: `Official close ${spot.close.asOf}: ₹${num(spot.close.price, 2)} — differs from your mark ₹${num(spot.value, 2)}`,
+    close: spot.close,
+    fingerprint,
+  };
+}
+
+/** What the chip reads: "₹X · mark · <day>" or "₹X · EOD close · <day>". With
+ *  NEITHER source it reads exactly what the dead badge before it read —
+ *  "spot?" — so nothing about the unknown state changed except that it is now
+ *  clickable. The day stays ISO, so the server render and the client agree. */
 export function spotChipLabel(spot: SpotRef): string {
   if (spot.value == null) return SPOT_SOURCE_LABEL.none;
-  return `₹${num(spot.value, 2)} · ${SPOT_SOURCE_LABEL[spot.source]}`;
+  const day = spot.asOf ? ` · ${spot.asOf}` : "";
+  return `₹${num(spot.value, 2)} · ${SPOT_SOURCE_LABEL[spot.source]}${day}`;
 }

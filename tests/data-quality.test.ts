@@ -417,6 +417,32 @@ describe("isPlainDuplicateCopy — the removability rule, all three clauses", ()
   });
 });
 
+describe("isPlainDuplicateCopy — W2-DQ P4's twin clause (a lot joined with its recorded sale)", () => {
+  // A lot joined from Data Quality: own hash A (the buy), alias B (the sale),
+  // and NOT auto-close-merged. Its twin is the same two records in another book.
+  const joined = (accountId: number, hashes = [HASH_A, HASH_B]) => ({ identityHashes: hashes, autoClosed: false, accountId });
+
+  it("is removable under EITHER hash when another account holds a set-equal identity set", () => {
+    const group = [joined(1), joined(2, [HASH_B, HASH_A])];
+    expect(isPlainDuplicateCopy(group[0], HASH_A, group)).toBe(true);
+    expect(isPlainDuplicateCopy(group[0], HASH_B, group)).toBe(true);
+    expect(isPlainDuplicateCopy(group[1], HASH_A, group)).toBe(true);
+  });
+
+  it("refuses when the other book is unjoined — its rows state {A} and {B}, not {A, B}", () => {
+    const group = [joined(1), { identityHashes: [HASH_A], autoClosed: false, accountId: 2 }, { identityHashes: [HASH_B], autoClosed: false, accountId: 2 }];
+    expect(isPlainDuplicateCopy(group[0], HASH_A, group)).toBe(false);
+    expect(isPlainDuplicateCopy(group[0], HASH_B, group)).toBe(false);
+  });
+
+  it("refuses an auto-close merge, a twin in the SAME account, and a caller that passes no group", () => {
+    const merged = { identityHashes: [HASH_A, HASH_B], autoClosed: true, accountId: 1 };
+    expect(isPlainDuplicateCopy(merged, HASH_A, [merged, joined(2)])).toBe(false);
+    expect(isPlainDuplicateCopy(joined(1), HASH_A, [joined(1), joined(1)])).toBe(false);
+    expect(isPlainDuplicateCopy(joined(1), HASH_A)).toBe(false);
+  });
+});
+
 describe("the sentence a group with no plain copy carries", () => {
   it("states what the rows are and where the pull ends — and advises nothing (SEBI copy rule)", () => {
     expect(NO_PLAIN_COPY_NOTE).toMatch(/Import → Disconnect/);

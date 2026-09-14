@@ -197,6 +197,9 @@ export function normalizeUpstoxTrades(
   const trades: NormalizedTrade[] = [];
   for (const a of groups.values()) {
     const closed = a.sellQty > 0 && a.buyQty === a.sellQty;
+    // QS-AO (4.3.0): a sale out of a holding the trade book cannot see is
+    // dated today and basis-unknown (Dhan's M-3 shape), not an undated short.
+    const sellOnly = a.sellQty > 0 && a.buyQty === 0;
     trades.push({
       broker: "upstox",
       tradingsymbol: a.symbol,
@@ -211,7 +214,8 @@ export function normalizeUpstoxTrades(
       grossPnl: closed ? r2(a.sellVal - a.buyVal) : 0,
       unrealisedPnl: 0,
       buyDate: a.buyQty > 0 ? today : null,
-      sellDate: closed ? today : null,
+      sellDate: closed || sellOnly ? today : null,
+      ...(sellOnly ? { basisUnknown: true } : {}),
       entryTime: a.executions.find((e) => e.side === "buy")?.time ?? null,
       exitTime: [...a.executions].reverse().find((e) => e.side === "sell")?.time ?? null,
       productHint: productHintOf(a.product, isDerivativeExchange(a.exch)),

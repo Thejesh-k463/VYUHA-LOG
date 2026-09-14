@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { eq } from "drizzle-orm";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate } from "@/lib/engine/rates";
 import { todayIstIso } from "@/lib/domain/trading-day";
+// PURE and browser-safe (no DB) — safe to import statically beside openTempDb.
+import { buildManualPreviewBody, type ManualPreviewInput } from "@/components/trades/manual-preview-body";
+
+// createManualTrade is a server action; outside a request revalidatePath has
+// no store to write to.
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 /**
  * R56 (v4.3.0 release audit): the charge PREVIEW priced every trade at TODAY's
@@ -23,11 +30,13 @@ import { todayIstIso } from "@/lib/domain/trading-day";
 let t: TempDb;
 let POST: (req: Request) => Promise<Response>;
 let loadRatesMap: typeof import("@/lib/engine/rates-db").loadRatesMap;
+let createManualTrade: typeof import("@/app/trades/actions").createManualTrade;
 
 beforeAll(async () => {
   t = await openTempDb("charges-preview-date", { seed: true });
   ({ POST } = await import("@/app/api/charges/preview/route"));
   ({ loadRatesMap } = await import("@/lib/engine/rates-db"));
+  ({ createManualTrade } = await import("@/app/trades/actions"));
 });
 
 afterAll(() => t?.cleanup());
@@ -57,7 +66,12 @@ async function preview(body: Record<string, unknown>) {
     }),
   );
   expect(res.status).toBe(200);
-  return (await res.json()) as { breakdown: { total: number }; netPnl: number };
+  return (await res.json()) as {
+    classification: { segment: string; exchange: string };
+    breakdown: { total: number };
+    grossPnl: number;
+    netPnl: number;
+  };
 }
 
 /** What a SAVE of the same trade stores: computeCharges at pricingDate's epoch. */
@@ -109,6 +123,117 @@ describe("the charge preview prices at the trade's own date (R56)", () => {
 });
 
 /**
+ * P6 (v4.3.0 wave-1 re-check): the manual form holds the ENTRY in its buy*
+ * state and the EXIT in its sell* state, but createManualTrade files a written
+ * (sell-direction) F&O trade's entry on the SELL side. The preview sent the
+ * form's sides as they stood — 79.37 / −7579.37 for a trade saved at
+ * 83.37 / +7416.63.
+ *
+ * Nothing here models the save: the body comes from the form's own builder,
+ * the figure from the real route, and the stored row from the real server
+ * action (createManualTrade → commitManualTrade) fed the FormData the form
+ * submits for an F&O trade.
+ */
+describe("the manual form previews a written F&O trade on the sides the save stores (P6)", () => {
+  const SYM = "OPT NIFTY 31 Oct 2024 25000 CE";
+
+  type Leg = Pick<ManualPreviewInput, "direction" | "open" | "entryQty" | "entryPrice" | "entryDate" | "exitQty" | "exitPrice" | "exitDate">;
+
+  /** The builder input the form's preview effect assembles for kind "fno". */
+  const input = (leg: Leg): ManualPreviewInput => ({
+    broker: "zerodha",
+    tradingsymbol: SYM,
+    // The F&O form renders no product / segment / exchange inputs.
+    productHint: null,
+    segment: null,
+    exchange: null,
+    ownCapitalUsed: null,
+    daysHeld: 0,
+    ...leg,
+  });
+
+  /** The FormData the same form submits: hidden mirrors of the entry (buy*) and exit (sell*) state. */
+  function formData(leg: Leg): FormData {
+    const fd = new FormData();
+    const fields: Record<string, string> = {
+      broker: "zerodha",
+      tradingsymbol: SYM,
+      direction: leg.direction,
+      lotSize: "75",
+      buyQty: String(leg.entryQty),
+      avgBuyPrice: String(leg.entryPrice),
+      sellQty: leg.open ? "" : String(leg.exitQty),
+      avgSellPrice: leg.open ? "" : String(leg.exitPrice),
+      buyDate: leg.entryDate ?? "",
+    };
+    if (leg.open) fields.open = "true";
+    else fields.sellDate = leg.exitDate ?? "";
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    return fd;
+  }
+
+  async function savedRow(leg: Leg) {
+    const res = await createManualTrade({ ok: false, message: "" }, formData(leg));
+    expect(res, res.message).toMatchObject({ ok: true });
+    const row = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, res.tradeId!)).get();
+    expect(row).toBeDefined();
+    return row!;
+  }
+
+  it("a closed short (sell 75 @ 300 on 2024-09-30, bought back 75 @ 200 on 2024-10-03) previews what it saves", async () => {
+    const leg: Leg = {
+      direction: "sell", open: false,
+      entryQty: 75, entryPrice: 300, entryDate: DAY,
+      exitQty: 75, exitPrice: 200, exitDate: "2024-10-03",
+    };
+    const got = await preview({ ...buildManualPreviewBody(input(leg)) });
+    const row = await savedRow(leg);
+
+    expect(got.classification).toMatchObject({ segment: row.segment, exchange: row.exchange });
+    expect(got.breakdown.total).toBe(row.chargesTotal);
+    expect(got.grossPnl).toBe(row.grossPnl);
+    expect(got.netPnl).toBe(row.netPnl);
+    // The re-check's measured figures on this seed (reverting the side map
+    // previews 79.37 / −7579.37 against them).
+    expect([row.chargesTotal, row.netPnl]).toEqual([83.37, 7416.63]);
+  });
+
+  it("an open short (sell 75 @ 300 on 2024-09-30) previews the entry charges it saves", async () => {
+    const leg: Leg = {
+      direction: "sell", open: true,
+      entryQty: 75, entryPrice: 300, entryDate: DAY,
+      exitQty: 0, exitPrice: 0, exitDate: null,
+    };
+    const got = await preview({ ...buildManualPreviewBody(input(leg)) });
+    const row = await savedRow(leg);
+
+    expect(row.isOpen).toBe(true);
+    expect(got.breakdown.total).toBe(row.chargesTotal);
+    expect(got.netPnl).toBe(row.netPnl);
+    // Measured by the re-check; the unfixed preview gave 37.9.
+    expect(row.chargesTotal).toBe(50.9);
+  });
+
+  it("the builder files a written trade's entry date on the sell side and a long's on the buy side (R56 swap)", () => {
+    const legs = { entryQty: 75, entryPrice: 300, entryDate: DAY, exitQty: 75, exitPrice: 200, exitDate: "2024-10-03", open: false };
+    expect(buildManualPreviewBody(input({ ...legs, direction: "sell" }))).toMatchObject({
+      sellQty: 75, sellValue: 22500, sellDate: DAY,
+      buyQty: 75, buyValue: 15000, buyDate: "2024-10-03",
+      grossPnl: 7500,
+    });
+    expect(buildManualPreviewBody(input({ ...legs, direction: "buy" }))).toMatchObject({
+      buyQty: 75, buyValue: 22500, buyDate: DAY,
+      sellQty: 75, sellValue: 15000, sellDate: "2024-10-03",
+      grossPnl: -7500,
+    });
+    // An open trade has no exit leg, whatever the form's exit state holds.
+    expect(buildManualPreviewBody(input({ ...legs, direction: "sell", open: true }))).toMatchObject({
+      sellQty: 75, sellDate: DAY, buyQty: 0, buyValue: 0, buyDate: null, grossPnl: 0, isOpen: true,
+    });
+  });
+});
+
+/**
  * The route can only price what it is sent. These pins read the three callers'
  * source, the way tests/exit-trigger-writers.test.ts does, and fail if a form
  * stops sending the dates its save will price at.
@@ -122,15 +247,35 @@ describe("every preview caller sends the dates its save prices at", () => {
     return src.slice(at, src.indexOf("}),", at));
   };
 
-  it("manual-trade-form: controlled date inputs, sent, and in the effect's deps", () => {
+  // Re-pinned for P6 (was: the body merely contained "buyDate:" / "sellDate:",
+  // which stayed green with the short-F&O date swap removed — the re-check's
+  // "manual swap mutant"). The swap and the side map now live in the pure
+  // builder, pinned by behaviour above; this pins that the form hands the
+  // builder its ENTRY/EXIT state and the SAME direction its hidden input
+  // submits, and sends nothing but the builder's body.
+  it("manual-trade-form: controlled dates, handed to the builder as entry/exit with the submitted direction", () => {
     const src = read("components/trades/manual-trade-form.tsx");
     expect(src).toMatch(/name="buyDate" type="date" value=\{buyDate\}/);
     expect(src).toMatch(/name="sellDate" type="date" value=\{sellDate\}/);
-    const body = previewBody(src);
-    expect(body).toMatch(/buyDate:/);
-    expect(body).toMatch(/sellDate:/);
-    const deps = src.slice(src.indexOf("}),", src.indexOf('"/api/charges/preview"')));
-    expect(deps.slice(0, deps.indexOf("]);"))).toMatch(/\bbuyDate\b[\s\S]*\bsellDate\b/);
+    expect(src).toMatch(/import \{ buildManualPreviewBody \} from "@\/components\/trades\/manual-preview-body"/);
+    expect(src).toMatch(/name="direction" value=\{kind === "fno" \? direction : "buy"\}/);
+
+    const at = src.indexOf("buildManualPreviewBody({");
+    expect(at).toBeGreaterThan(-1);
+    const call = src.slice(at, src.indexOf("});", at));
+    expect(call).toMatch(/direction: kind === "fno" \? direction : "buy"/);
+    expect(call).toMatch(/\bopen\b/);
+    expect(call).toMatch(/entryQty: bq, entryPrice: bp, entryDate: buyDate \|\| null/);
+    expect(call).toMatch(/exitQty: sq, exitPrice: sp, exitDate: sellDate \|\| null/);
+
+    // The fetch sends the builder's body and re-maps no side of its own.
+    const fetchAt = src.indexOf('"/api/charges/preview"');
+    expect(fetchAt).toBeGreaterThan(at);
+    const effect = src.slice(fetchAt, src.indexOf("]);", fetchAt));
+    expect(effect).toMatch(/body: JSON\.stringify\(body\)/);
+    expect(effect).not.toMatch(/buyValue:|buyDate:|sellDate:/);
+    const deps = effect.slice(effect.lastIndexOf("["));
+    for (const d of ["buyDate", "sellDate", "kind", "direction", "open"]) expect(deps).toMatch(new RegExp(`\\b${d}\\b`));
   });
 
   it("edit-trade-dialog sends its buyDate / sellDate state", () => {

@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { accounts, brokerConnections, trades } from "@/lib/db/schema";
 import { readSecret, secretsEqual } from "@/lib/vault";
@@ -12,7 +12,7 @@ import {
 } from "@/lib/analytics/data-quality";
 // The identity half of R5/S-1 — PURE (no DB, no React), so reading it here
 // costs the Data Quality page nothing but the rule itself.
-import { isLotIdentityFrozen, lotIdentityHashes } from "@/lib/import/close-open-lots";
+import { isAutoCloseMerged, lotIdentityHashes } from "@/lib/import/close-open-lots";
 
 /**
  * WHO a broker connection belongs to, and where else that same client already
@@ -222,12 +222,17 @@ export interface RivalConnection {
  * @param accountId the account the save would land on. Its own row is skipped,
  *   so re-saving a connection (a new token, a kept key) is never a rival of
  *   itself.
+ * @param onlyOlderThan P10 (v4.3.0 fix wave 2): a broker_connections.id. Only
+ *   rows with a SMALLER id (saved earlier) count as rivals. The Zerodha token
+ *   exchange (R9) passes its own connection's id, so of an existing duplicate
+ *   pair only the newer connection is refused. The save (R4a) omits it.
  */
 export function findRivalConnection(input: {
   broker: string;
   apiKey?: string | null;
   authJson?: string | null;
   accountId: number;
+  onlyOlderThan?: number;
 }): RivalConnection | null {
   const mine = connectionIdentity(input);
   if (!mine) return null;
@@ -236,6 +241,7 @@ export function findRivalConnection(input: {
   const names = accountNames();
   for (const r of rows) {
     if (r.accountId === input.accountId) continue;
+    if (input.onlyOlderThan != null && r.id >= input.onlyOlderThan) continue;
     const theirs = connectionIdentity({ broker: r.broker, apiKey: r.apiKey, authJson: r.authJson });
     if (theirs && sameIdentity(mine, theirs)) {
       return { accountId: r.accountId, accountName: nameOf(names, r.accountId) };
@@ -294,7 +300,11 @@ interface DupRow {
   sellDate: string | null;
   /** Own hash FIRST, then every alias the row also stands for (M-5). */
   identityHashes: string[];
-  /** An auto-close (R5) assembled or reduced this row. */
+  /**
+   * An auto-close (R5) assembled or reduced this row — `isAutoCloseMerged`,
+   * NOT `isLotIdentityFrozen`: a lot joined from Data Quality is frozen for
+   * the restore re-key but is not a merge (W2-DQ P4).
+   */
   autoClosed: boolean;
 }
 
@@ -321,12 +331,14 @@ const toDupRow = (r: { id: number; accountId: number; broker: string; dedupHash:
   buyDate: r.buyDate,
   sellDate: r.sellDate,
   identityHashes: lotIdentityHashes({ dedupHash: r.dedupHash, importNotes: r.importNotes }),
-  autoClosed: isLotIdentityFrozen({ dedupHash: r.dedupHash, importNotes: r.importNotes }),
+  autoClosed: isAutoCloseMerged({ dedupHash: r.dedupHash, importNotes: r.importNotes }),
 });
 
-/** Is this row one account's PLAIN copy of `hash`? The one rule the button and
- *  the server action both read (lib/analytics/data-quality.ts). */
-const isPlainCopyOf = (r: DupRow, hash: string) => isPlainDuplicateCopy(r, hash);
+/** May this row go as one account's copy of `hash`, given every row of the
+ *  group? The one rule the button and the server action both read
+ *  (lib/analytics/data-quality.ts): a plain copy, or a joined lot whose twin in
+ *  another account holds the same identity set (W2-DQ P4). */
+const isPlainCopyOf = (r: DupRow, hash: string, group: readonly DupRow[]) => isPlainDuplicateCopy(r, hash, group);
 
 /**
  * Fold rows that stand for one (broker, hash) into a group, or null when they
@@ -343,7 +355,7 @@ function toGroup(rows: DupRow[], hash: string, names: Map<number, string>): Dupl
     a.rows += 1;
     // Every row this account holds in the group is deleted together, so one
     // merged lot makes the whole account's copy unremovable.
-    a.removable = a.removable && isPlainCopyOf(r, hash);
+    a.removable = a.removable && isPlainCopyOf(r, hash, rows);
     byAccount.set(r.accountId, a);
   }
   if (byAccount.size < 2) return null;
@@ -439,16 +451,23 @@ export function findDuplicateTradeGroup(broker: string, dedupHash: string): Dupl
  * The removability rule is applied HERE as well as on the button: a screen
  * rendered before an auto-close ran would otherwise still name a merged lot,
  * and that delete is data loss (M-5).
+ *
+ * The group is read across EVERY account of the broker (W2-DQ P4): the twin
+ * clause asks whether ANOTHER account holds the same identity set, and a read
+ * of this account alone cannot answer that. Only this account's ids are
+ * returned.
  */
 export function duplicateTradeIdsIn(broker: string, dedupHash: string, accountId: number): number[] {
   if (!Number.isInteger(accountId) || accountId <= 0) return [];
-  return db
+  const group = db
     .select(dupColumns)
     .from(trades)
-    .where(and(eq(trades.broker, broker), eq(trades.accountId, accountId)))
+    .where(eq(trades.broker, broker))
     .all()
     .map(toDupRow)
-    .filter((r) => r.identityHashes.includes(dedupHash) && isPlainCopyOf(r, dedupHash))
+    .filter((r) => r.identityHashes.includes(dedupHash));
+  return group
+    .filter((r) => r.accountId === accountId && isPlainCopyOf(r, dedupHash, group))
     .map((r) => r.id)
     .sort((a, b) => a - b);
 }

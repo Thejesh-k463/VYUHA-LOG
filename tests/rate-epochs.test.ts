@@ -120,9 +120,15 @@ describe("migration 0050 safety — nothing re-prices on upgrade", () => {
   });
 
   it("a single open-ended epoch gives the same answer on every date", () => {
+    // Re-pinned for QS-EQ2012 (v4.3.0 fix wave 2): eq_delivery is no longer one
+    // open-ended epoch — on 2001-01-01 its STT is now 0.00125 (was 0.001), the
+    // 2026-08-30 figure 0.001 (FATAX20990). The MCX key still holds exactly one
+    // open-ended row (no levy moved), so it is the key this rule is about.
     const m = seedRatesMap();
-    const a = findRates(m, "zerodha", "eq_delivery", "NSE", "2001-01-01");
-    const b = findRates(m, "zerodha", "eq_delivery", "NSE", "2026-08-30");
+    const a = findRates(m, "zerodha", "commodity_future", "MCX", "2001-01-01");
+    const b = findRates(m, "zerodha", "commodity_future", "MCX", "2026-08-30");
+    expect(epochsFor(m, "zerodha", "commodity_future", "MCX")).toHaveLength(1);
+    expect(b).toEqual(a);
     expect(a.sttPct).toBe(b.sttPct);
     expect(a.brokerageFlat).toBe(b.brokerageFlat);
   });

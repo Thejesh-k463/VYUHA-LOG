@@ -56,16 +56,27 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toaster";
-import { isContractKey, spotChipLabel, type SpotRef } from "@/lib/risk/spot-ref";
+import {
+  isContractKey,
+  isIsoDay,
+  spotChipLabel,
+  type DatedPrice,
+  type SpotCloseNotice,
+  type SpotRef,
+} from "@/lib/risk/spot-ref";
 
-/** The one door this chip writes through. */
+/** The one door this chip writes a mark through. */
 export const SPOT_MARK_ENDPOINT = "/api/risk/spot";
+/** R13 — "Keep my mark": a `spot-close-diff` dismissal, never a mark write. */
+export const SPOT_KEEP_MARK_ENDPOINT = "/api/risk/spot/dismiss";
 
 export interface SpotMarkBody {
   /** The UNDERLYING's symbol, upper-cased. */
   symbol: string;
   /** RUPEES per unit. */
   price: number;
+  /** R13 only — "Use official close" dates the mark on the CLOSE's own day. */
+  asOfDate?: string;
 }
 
 /**
@@ -73,11 +84,13 @@ export interface SpotMarkBody {
  *
  * Price only — no SL, no TSL, no target. The bulk-MTM door rewrites stops
  * across every matching open position when a line carries them, and a moneyness
- * chip must never touch a stop. No `asOf` either: the route dates the mark
- * `todayIstIso()`, and a date this chip invented would outrank every real day
- * for as long as the book exists.
+ * chip must never touch a stop. No `asOf` for a mark entered here: the route
+ * dates it `todayIstIso()`, and a date this chip invented would outrank every
+ * real day for as long as the book exists. The ONE date it ever carries is an
+ * official close's own day, for "Use official close" (R13) — a day on record,
+ * not an invented one, and the route refuses any day after today.
  */
-export function spotMarkPayload(symbol: string, price: number): SpotMarkBody {
+export function spotMarkPayload(symbol: string, price: number, asOfDate?: string): SpotMarkBody {
   const key = symbol.trim().toUpperCase();
   if (!key) throw new Error("A spot mark needs the underlying's symbol.");
   if (isContractKey(key)) {
@@ -88,7 +101,9 @@ export function spotMarkPayload(symbol: string, price: number): SpotMarkBody {
   if (!Number.isFinite(price) || price <= 0) {
     throw new RangeError(`A mark is a price above zero; got ${String(price)}.`);
   }
-  return { symbol: key, price };
+  if (asOfDate === undefined) return { symbol: key, price };
+  if (!isIsoDay(asOfDate)) throw new RangeError(`A mark's date is YYYY-MM-DD; got ${String(asOfDate)}.`);
+  return { symbol: key, price, asOfDate };
 }
 
 export interface SpotMarkResult {
@@ -109,8 +124,9 @@ export async function submitSpotMark(
   symbol: string,
   price: number,
   refresh: () => void,
+  asOfDate?: string,
 ): Promise<SpotMarkResult> {
-  const body = spotMarkPayload(symbol, price); // throws before the network is touched
+  const body = spotMarkPayload(symbol, price, asOfDate); // throws before the network is touched
   const res = await fetch(SPOT_MARK_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -124,19 +140,55 @@ export async function submitSpotMark(
   return { ok: true, message: data.message ?? "", updated: data.updated ?? 0 };
 }
 
+/**
+ * R13 — "Keep my mark": POST the close the row showed to the dismissal route,
+ * then re-read. The route builds the fingerprint from that close, so a newer or
+ * corrected close brings the notice back. Like `submitSpotMark`, `refresh` runs
+ * only when the route stored the dismissal.
+ */
+export async function submitKeepMark(
+  symbol: string,
+  close: DatedPrice,
+  refresh: () => void,
+): Promise<{ ok: boolean; message: string }> {
+  const key = symbol.trim().toUpperCase();
+  if (!key || isContractKey(key)) throw new Error("Keeping a mark needs the underlying's symbol.");
+  const res = await fetch(SPOT_KEEP_MARK_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol: key, closeAsOf: close.asOf, closePrice: close.price }),
+  });
+  const data = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+  if (!res.ok || !data?.ok) return { ok: false, message: data?.message || "The choice was not stored." };
+  refresh();
+  return { ok: true, message: data.message ?? "" };
+}
+
 function sourceTitle(spot: SpotRef, symbol: string): string {
-  if (spot.source === "typed") return `Typed mark for ${symbol} — it takes precedence over the end-of-day close.`;
-  if (spot.source === "eod") {
-    const dated = spot.asOf ? ` (${spot.asOf})` : "";
-    return `End-of-day close for ${symbol} on record${dated} — a typed mark takes precedence.`;
+  const dated = spot.asOf ? ` (${spot.asOf})` : "";
+  if (spot.source === "mark") {
+    return `Mark on record for ${symbol}${dated} — a stored mark takes precedence over the end-of-day close.`;
   }
-  return `No cash price for ${symbol} on record. Type it to resolve this option's moneyness.`;
+  if (spot.source === "eod") {
+    return `End-of-day close for ${symbol} on record${dated} — a stored mark takes precedence.`;
+  }
+  return `No cash price for ${symbol} on record. Enter it here to resolve this option's moneyness.`;
 }
 
 /**
- * The chip: what the moneyness rests on, and a click to change it.
+ * The chip: what the moneyness rests on, and a click to change it. With a
+ * `closeNotice` (R13) the row also states the newer official close, and the
+ * open editor offers "Use official close" / "Keep my mark".
  */
-export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef }) {
+export function SpotMarkEditor({
+  symbol,
+  spot,
+  closeNotice,
+}: {
+  symbol: string;
+  spot: SpotRef;
+  closeNotice?: SpotCloseNotice | null;
+}) {
   const router = useRouter();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState("");
@@ -201,13 +253,51 @@ export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef
     }
   }
 
+  /** R13 "Use official close": the SAME door as Save, with the close's value
+   *  and the close's own day — the mark and the close then agree. */
+  async function applyOfficialClose(close: DatedPrice) {
+    setBusy(true);
+    try {
+      const res = await submitSpotMark(symbol, close.price, () => router.refresh(), close.asOf);
+      if (res.ok) {
+        closeEditor();
+        setDraft("");
+        toast.success(`${symbol} mark set to the ${close.asOf} close.`);
+      } else {
+        toast.error(res.message || "The mark was not stored.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "The mark was not stored.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** R13 "Keep my mark": remembered against THIS close only. */
+  async function keepMark(close: DatedPrice) {
+    setBusy(true);
+    try {
+      const res = await submitKeepMark(symbol, close, () => router.refresh());
+      if (res.ok) {
+        closeEditor();
+        toast.success(`${symbol} mark kept.`);
+      } else {
+        toast.error(res.message || "The choice was not stored.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "The choice was not stored.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!editing) {
     const chip = (
       <Badge variant={spot.source === "none" ? "outline" : "secondary"} title={title}>
         {label}
       </Badge>
     );
-    return (
+    const button = (
       <button
         ref={attachChip}
         type="button"
@@ -221,40 +311,73 @@ export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef
         {chip}
       </button>
     );
+    if (!closeNotice) return button;
+    return (
+      <div className="flex flex-col items-start gap-0.5">
+        {button}
+        <span className="text-[10px] text-warning">{closeNotice.text}</span>
+      </div>
+    );
   }
 
   return (
-    <div className="flex items-center gap-1">
-      <Input
-        autoFocus
-        inputMode="decimal"
-        value={draft}
-        disabled={busy}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            void save();
-          }
-          if (e.key === "Escape") closeEditor();
-        }}
-        placeholder={`${symbol} spot`}
-        aria-label={`Underlying spot for ${symbol}`}
-        className="h-7 w-24 px-2 text-xs"
-      />
-      <Button type="button" size="sm" className="h-7 px-2 text-[11px]" disabled={busy} onClick={() => void save()}>
-        Save
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 px-2 text-[11px]"
-        disabled={busy}
-        onClick={() => closeEditor()}
-      >
-        Cancel
-      </Button>
+    <div className="flex flex-col items-start gap-1">
+      <div className="flex items-center gap-1">
+        <Input
+          autoFocus
+          inputMode="decimal"
+          value={draft}
+          disabled={busy}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void save();
+            }
+            if (e.key === "Escape") closeEditor();
+          }}
+          placeholder={`${symbol} spot`}
+          aria-label={`Underlying spot for ${symbol}`}
+          className="h-7 w-24 px-2 text-xs"
+        />
+        <Button type="button" size="sm" className="h-7 px-2 text-[11px]" disabled={busy} onClick={() => void save()}>
+          Save
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-[11px]"
+          disabled={busy}
+          onClick={() => closeEditor()}
+        >
+          Cancel
+        </Button>
+      </div>
+      {closeNotice ? (
+        <div className="flex flex-wrap items-center gap-1 text-[10px] text-warning">
+          <span>{closeNotice.text}</span>
+          <Button
+            type="button"
+            size="sm"
+            className="h-6 px-2 text-[11px]"
+            disabled={busy}
+            onClick={() => void applyOfficialClose(closeNotice.close)}
+          >
+            Use official close
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-[11px]"
+            disabled={busy}
+            onClick={() => void keepMark(closeNotice.close)}
+          >
+            Keep my mark
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

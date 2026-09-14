@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { computeIpo, summariseIpos, ipoSellCharges, ipoTaxEstimate, type IpoInput } from "@/lib/analytics/ipo";
 import { computeCharges } from "@/lib/engine/charges";
+import { seedRatesMap, statutoryRatesFor } from "@/lib/engine/rates";
 import type { ChargeRates } from "@/lib/engine/types";
 
 function ipo(p: Partial<IpoInput>): IpoInput {
@@ -13,23 +14,27 @@ function ipo(p: Partial<IpoInput>): IpoInput {
 
 describe("the charger is injected — invariant 3, defect D4", () => {
   it("an injected charger's figure lands in netPnl, replacing the static estimate", () => {
-    // The server injects a charge_config-backed charger; the hard-coded rates
-    // in ipoSellCharges are now only the no-broker fallback.
+    // The server injects a charge_config-backed charger; with none injected,
+    // computeIpo prices from the seed's statutory row (no frozen rates, R36).
     const flat = () => 100;
     const c = computeIpo(ipo({ allotted: true, allottedQty: 50, exitPrice: 140 }), flat);
     expect(c.charges).toBe(100);
     expect(c.netPnl).toBe(2000 - 100);
   });
 
-  it("without an injection the fallback estimate still applies", () => {
+  it("without an injection the fallback prices from the seed's statutory row (no frozen constants)", () => {
     const c = computeIpo(ipo({ allotted: true, allottedQty: 50, exitPrice: 140 }));
-    expect(c.charges).toBe(ipoSellCharges(140 * 50, 5000));
+    // Re-pinned (R36): 23.59 before (frozen rates + a flat DP 15.34), 8.26 after
+    // (STT 7 + exchange/IPFT 0.21 + SEBI 0.01 + GST 0.04 + stamp 1; no DP).
+    expect(c.charges).toBe(8.26);
   });
 
   it("engine parity: a real rates row prices the exit like any delivery sell with no buy brokerage", () => {
-    // Mirrors lib/queries/ipos.ts chargerFor — allotment is the buy side
-    // (stamp on allotted value) but carries zero buy orders, so a flat-fee
-    // broker contributes only sell-side brokerage.
+    // An injected engine charger reaches computeIpo unchanged; zero buy orders
+    // mean a flat-fee broker contributes only sell-side brokerage. This inline
+    // charger is NOT the production broker path: lib/queries/ipos.ts prices
+    // exchange txn / SEBI / IPFT and their GST on the sale only (W2-IPO2),
+    // pinned in tests/ipo-exit-rates.test.ts.
     const rates: ChargeRates = {
       broker: "zerodha", plan: "default", planLabel: null, subscriptionMonthly: 0,
       segment: "eq_delivery", exchange: "NSE",
@@ -63,10 +68,12 @@ describe("computeIpo", () => {
     expect(c.investedAllotted).toBe(5000); // 100×50 allotted
     expect(c.listingGain).toBe(1500); // (130−100)×50
     expect(c.grossPnl).toBe(2000); // (140−100)×50
-    expect(c.charges).toBeCloseTo(23.59, 1);
-    expect(c.netPnl).toBeCloseTo(1976.41, 1);
+    // Re-pinned (R36) to the engine fallback: charges 23.59 → 8.26, net
+    // 1976.41 → 1991.74, return 39.53 → 39.83 (the frozen DP 15.34 is gone).
+    expect(c.charges).toBeCloseTo(8.26, 1);
+    expect(c.netPnl).toBeCloseTo(1991.74, 1);
     expect(c.realised).toBe(true);
-    expect(c.returnPct).toBeCloseTo(39.53, 1);
+    expect(c.returnPct).toBeCloseTo(39.83, 1);
   });
 
   it("listed (holding): unrealised mark-to-listing, not realised", () => {
@@ -160,9 +167,11 @@ describe("ipoTaxEstimate — STCG/LTCG on exit", () => {
 });
 
 describe("ipoSellCharges", () => {
-  it("delivery-sell estimate (STT + exchange + SEBI + stamp + DP + GST)", () => {
-    expect(ipoSellCharges(7000, 5000)).toBeCloseTo(23.59, 1);
-    expect(ipoSellCharges(0, 0)).toBe(0);
+  it("engine wrapper over the statutory row (STT on the sale + exchange/IPFT/SEBI + GST + stamp on the allotment)", () => {
+    const stat = statutoryRatesFor(seedRatesMap(), "eq_delivery", "NSE", "2026-06-15");
+    // Re-pinned (R36): the frozen estimate gave 23.59 (with DP 15.34); the engine gives 8.26.
+    expect(ipoSellCharges(7000, 5000, stat)).toBe(8.26);
+    expect(ipoSellCharges(0, 0, stat)).toBe(0);
   });
 });
 
@@ -179,7 +188,7 @@ describe("summariseIpos", () => {
     expect(s.notAllottedCount).toBe(1);
     expect(s.exitedCount).toBe(1);
     expect(s.listedCount).toBe(1);
-    expect(s.realisedNet).toBeCloseTo(1976.41, 1);
+    expect(s.realisedNet).toBeCloseTo(1991.74, 1); // re-pinned (R36): 1976.41 before, the frozen DP gone
     expect(s.unrealised).toBe(1000);
   });
 
