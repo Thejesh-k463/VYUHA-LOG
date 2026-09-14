@@ -6560,3 +6560,60 @@ invariant or "a question is always better than a confident wrong answer"; overru
 
 **Wave 2R + 2F GATE:** `npm run verify` exits 0 — Test Files 397 passed (397); Tests 8416 passed | 35 skipped (8451);
 ✓ Compiled successfully. README counts move to 8416 / 397.
+Committed `ec89bbd`. **CI 34895595282 SUCCESS 6/6 on attempt 1**, the Windows job included. The scoped re-check of 2R + 2F
+follows.
+
+## 2026-09-15 — v4.3.0 waves 2R + 2F: the scoped re-check → 34 CONFIRMED, 0 REFUTED, 0 UNVERIFIABLE; 17 new findings → wave 2G (decided; the next session builds it)
+
+**The re-check.** Six probe-capable Opus reviewers (general-purpose agents) re-proved every 2R and 2F fix red-on-revert
+from probe copies of `a7e9288`, including OVERRIDE-DOUBLE against the pre-2F state. They touched no tracked file and left no
+probe. Verdicts and the full where / reproduce / evidence of every new finding: `18-FIX-WORK-4.3.0/wave2rf-recheck.json`.
+The build brief for the next wave: `18-FIX-WORK-4.3.0/wave2g-brief.md`.
+
+**Product findings that reopen work (stopping rule), with the decided designs** (no owner question; overrule here):
+- **M1 — medium (a double in practice), wave 2R+2F.** N3's supersede-key narrowing removed the ask for a BROKER-side
+  product conversion between two same-day pulls. A Dhan intraday position converted to CNC and grown lands as a new
+  position, 30 against the broker's 20; at `a7e9288` the same flow asked.
+  → **N3's narrowing is REVERSED.** An incoming snapshot row with 0 candidates on its supersede key, but at least one stored
+  same-file, same-day row of the same tradingsymbol (any segment or exchange), is ASKED with an `earlier-snapshot`
+  collision. "A question is always better than a confident wrong answer": N3's false ask (a genuinely new position of
+  another product) is the accepted cost.
+  → OVERRIDE-DOUBLE's code becomes redundant but stays. Its two lows (a setup-tag-only re-tag widens the scope; override
+  hashes are not account-scoped) now produce asks, never doubles, and are recorded.
+- **M2 — medium, wave 2R+2F.** After Data Quality's own one-click join of [L1, S1], the sibling pair [L2, S2] is refused as
+  AMBIGUOUS, because L1's exit (S1's date) is on or after L2's entry.
+  → A lot closed by the Data Quality join itself (it carries the stale-close note and its sale's alias, so its consumed
+  sale is recorded) never makes the book ambiguous. Only closes made elsewhere count.
+- **M3 — medium, earlier 4.3.0.** A same-day Dhan re-pull over a noted snapshot row sends kind `same-quantity` with
+  `sameSnapshot: true`, so the dialog still shows the other-source copy.
+  → The dialog's same-snapshot badge and copy follow `sameSnapshot: true` for ANY kind.
+- **L1 — low.** A merge-carried notice is lost when the target holds a span with the same from / to / reason from its own
+  client (the outstanding check is keyed by account only).
+  → The outstanding / idempotency key includes the connection; a carried span (`connId` null) is distinct.
+- **L2 — cosmetic.** The kept range-cap notice says "The last pull ran on <day>" under a card label showing a newer last
+  pull. → "The pull before it ran on <day>".
+- **L3 — low, wave 2R+2F.** The IPO route refuses EVERY edit of an IPO whose stored exit date is unreadable, notes
+  included. → Validate only an exit date the request changes; an unchanged stored value passes through, and clearing is
+  allowed.
+- **L4 — cosmetic.** The IPO form preview's Net P&L / Return / tax cells are computed before broker charges but labelled
+  plainly. → Label each derived cell "before broker charges" when a broker is chosen.
+- **L5 — low.** N17 still misfires in All-accounts: the admitting-symbol map spans accounts. → A per-account admitting map.
+- **L6 — cosmetic.** The N19 list names the collar, which no legacy-named book reaches by those routes (its option pair
+  is split-strike-combo). → Remove the collar from the note, the help sentence and the `lib/license.ts` comment.
+- **L7 — low, pre-existing.** In-app Help (`help-content.ts:490`) and the client README still promise that one click brings
+  the rate tables back. → State N25's rule. `docs/client` rides the client package at the bump.
+- **L8 — cosmetic.** `closeDiffers` rounds `Math.round(price * 100)` on the binary double, while the sentence uses Intl
+  rounding (1.005 shows as "1.01"). → One helper for the compared and displayed paise.
+- **L9 — cosmetic.** `VIDEO_SCRIPT.md:35` calls OpenAlgo "undocumented", but its setup guide ships in the client package.
+  → It is documented; it still ships off by default.
+
+**Test-only findings graded LOW — RECORDED, not fixed:**
+- N11's UI wiring is pinned through the exported controls, not the table and cockpit wiring.
+- The FILLS guard's legs-only half (`saleLegs > 0` with `staged` false) is unpinned. The 2G Data Quality builder may pin
+  it cheaply.
+- The popup's USE of `realisedNetScope` is unpinned, because no SSR test can open the popup.
+
+**Measured this session, for the record:** 13 workflows plus micro builders, all Opus (Fable had no credit), ≈ 20 M subagent
+tokens. The scoped re-check trend: wave 1 43 / 3 partial / 6 unverifiable → wave 2 47 / 1 / 0 → 2R + 2F 34 / 0 / 0. The
+new findings shrink each round in both severity and count (wave 1: 16 product including 6 medium; 2R + 2F: 3 medium +
+10 low / cosmetic).
