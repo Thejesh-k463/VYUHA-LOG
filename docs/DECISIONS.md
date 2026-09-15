@@ -7123,3 +7123,10 @@ sequences and cross-consumer consistency, which no unit test of a pure module ca
 (G-G2-1 ×2 in the harness, G-G3-1, G-G3-2 ×2 in the matrix): an `it.fails` goes RED the day its defect is fixed, so a fix
 must flip the pin in the same commit. README: 422 → 426 files, 8,835 → 9,218 tests. **Next:** fix wave 2M (the three
 findings, `vyuha-design-reviewer` first, one builder for the IPO / trash item) → the 2L re-check → wave 3.
+
+**CI on the guards commit `2bb0fa0` (run 35006280808): the unit-test job red on BOTH runners, e2e and bundle green — one file,
+`tests/readers-follow-writers.test.ts`: its self-test fetched the pre-fix texts with `git show 3feb22f:<path>`, and CI checks
+out SHALLOWLY (`fatal: invalid object name '3feb22f'`). A new FAIL signature for STATE §0.3 V1: a test that reads git history
+passes locally and fails on every runner. → The pre-fix texts are COMMITTED fixtures (`tests/fixtures/pre-fix-3feb22f/<path>.txt`,
+twelve files written from `git show`), and the helper routes a `HEAD:` ref to the working tree. Rule: a test never reads git
+history; it reads a committed fixture.

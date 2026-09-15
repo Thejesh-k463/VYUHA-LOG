@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import fs from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { REGISTRY, RULE, format, listSourceFiles, scanSource, scanTree, type RuleId, type ScanReport, type Violation } from "./helpers/field-rules";
@@ -30,15 +31,22 @@ import { REGISTRY, RULE, format, listSourceFiles, scanSource, scanTree, type Rul
  *
  * A GREEN SCAN IS NOT EVIDENCE ON ITS OWN — an empty array is what a broken
  * scanner returns too. Every rule below is therefore ALSO run over the PRE-FIX
- * text of the very code that carried the defect (`git show 3feb22f:<path>`, via
- * child_process) and over inline fixtures of the five shapes above, so the
+ * text of the very code that carried the defect (committed fixtures under tests/fixtures/pre-fix-3feb22f,
+ * written from git show 3feb22f:<path>) and over inline fixtures of the five shapes above, so the
  * scan is proven able to SEE the class before its silence is believed.
  *
  * No database, no route: this file reads source text only.
  */
 
-const git = (ref: string): string =>
-  execFileSync("git", ["show", ref], { cwd: process.cwd(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+/** Source text by ref. A `3feb22f:<path>` ref reads a COMMITTED fixture (tests/fixtures/pre-fix-3feb22f/<path>.txt,
+ *  written from `git show 3feb22f:<path>` on 2026-09-15) and a `HEAD:<path>` ref reads the working tree: CI checks out
+ *  shallowly, so git history is not available there (run 35006280808 failed on "invalid object name 3feb22f").
+ *  Regenerate a fixture with the same git command if it ever needs refreshing; never hand-edit one. */
+const git = (ref: string): string => {
+  const [sha, rel] = ref.split(/:(.+)/) as [string, string];
+  if (sha === "HEAD") return readFileSync(path.join(process.cwd(), rel), "utf8");
+  return readFileSync(path.join(process.cwd(), "tests", "fixtures", "pre-fix-" + sha, rel + ".txt"), "utf8");
+};
 
 /** The sha whose tree carried the three funded-0 readers (wave 2H, before 2I). */
 const PRE = "3feb22f";
