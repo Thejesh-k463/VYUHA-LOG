@@ -11,7 +11,7 @@ left to do*.
 
 ---
 
-## §0 START HERE — reconciled 2026-09-15 IST at `b6c1029` (fix wave 2H, CI 34963173558 SUCCESS 6/6) by the sixth session (the v4.3.0 fix work); the commit that landed this block is the next one in `git log`
+## §0 START HERE — reconciled 2026-09-15 IST at `8ff4288` (fix wave 2L, CI 34988232943 SUCCESS 6/6) by the seventh session (the v4.3.0 fix work); the commit that landed this block is the next one in `git log`
 
 **Read order, every session, in this order and no other:**
 
@@ -21,35 +21,35 @@ left to do*.
 4. `AGENTS.md` before any code change (on conflict AGENTS.md wins over this file; the code wins over both). Owner rulings: `06-ANSWERS.md` newest table LAST; `docs/DECISIONS.md` newest entries at the END (its header still says newest-first, but every entry since 2026-09-10 is appended — grep `^## 2026-`, never read it whole) — binding, never re-ask one.
 5. §3 of this file for where any other answer lives.
 
-**The one-line state (verified 2026-09-15 at `b6c1029`):** published release = **v4.2.0** (tag `9da7bc8` → `b488dde`).
+**The one-line state (verified 2026-09-15 at `8ff4288`):** published release = **v4.2.0** (tag `9da7bc8` → `b488dde`).
 
 - **In progress: the v4.3.0 fix work from the release-level audit.** The earlier commits, each CI 6/6:
-  - switch-off `9e0e16f`, wave 1 `e0e6d90`, wave 2 `a7e9288`, 2R + 2F `ec89bbd` (fifth session);
-  - **wave 2G `3feb22f`** (CI 34938773202) and **wave 2H `b6c1029`** (CI 34963173558), sixth session.
+  - switch-off `9e0e16f`, wave 1 `e0e6d90`, wave 2 `a7e9288`, 2R + 2F `ec89bbd` (fifth session); 2G `3feb22f`, 2H `b6c1029` (sixth);
+  - **waves 2I + 2J + 2K `cd1ab70`** (CI 34976760609) and **wave 2L + M1 `8ff4288`** (CI 34988232943), seventh session.
   - `lib/import/commit.ts` still carries no auto-close wiring against v4.2.0.
-- **Scoped re-checks:**
-  - wave 1 43 / 3 partial → wave 2 47 / 1 → 2R + 2F 34 / 0 / 0 → **2G: every fix CONFIRMED, 0 refuted, 0 unverifiable**;
-  - 2G's 12 findings became **wave 2H**: six builders plus FIVE seam rounds (the seam pass run to convergence), including
-    three pre-existing silent wrong numbers: closePosition on a partly closed row, and a linked IPO counted twice in
-    capital and in the tax pack / AIS.
-  - **2H's own scoped re-check is NOT run.**
-- **Owner rulings this session** (06-ANSWERS "v4.3.0 wave-3 ruling"):
-  - the ETF tax-head twin of R90 is FULLY fixed in 4.3.0;
-  - calendar months for every holding period;
-  - a row straddling 1-Apr-2023: per row plus a Data Quality warning;
-  - four pre-existing tax defects in 4.3.0: a staged partial sale missing from the tax year, the exemption / set-off per
-    person, a BSE code with no ISIN → blank, and s.111A before FY 2016-17 by date;
-  - MTF interest excluded from capital gains and shown separately;
-  - the STT deduction from capital gains fixed;
-  - buy-side charge classification: a note now, research later.
-- **Wave 3 is researched and ruled; no owner question is owed.**
-  - Research: `LIVE-DESK-RESEARCH/_data/etf-tax-primary-sources-2026-09-15/W3-TAX-DOSSIER.md` §A–§G. 135 claims, each
-    attacked by an independent Opus refuter; 0 refuted outright.
-  - Inputs: `18-FIX-WORK-4.3.0/plan-answers.md`.
-- **Gate on `b6c1029`:** `npm run verify` — **408 files / 8,644 passed / 35 skipped** (the raw line).
+- **Scoped re-checks:** wave 1 43 / 3 partial → wave 2 47 / 1 → 2R + 2F 34 / 0 / 0 → 2G all CONFIRMED →
+  **2H: 49 CONFIRMED / 1 REFUTED (the builders' "not proven" Z2 paisa item, now proven false) / 0 → 19 findings → wave 2I**
+  (six builders, the 2J micro round, K1, the seam pass `seams-v43-fixF`: 0 seam defects) →
+  **2I/2J/2K: 58 / 0 / 0 → 26 findings (15 product, 11 test) → wave 2L** (seven builders, four orchestrator edits under
+  `components/live/*` + `app/risk/page.tsx`, the seam round: one seam defect → M1, the accrual job never states a funded amount).
+  **2L's own scoped re-check is NOT run.**
+- **Wave 3 is planned, researched and ruled; NOT started; no owner question is owed.** The plan: `18-FIX-WORK-4.3.0/plan-wave3.json`
+  (3a W3-ETF 26 files, 3b W3-TAX 42 files, disjoint; 13 seam contracts; every pin that moves; the AGENTS.md "Bundled ETF list"
+  text; `open_questions: []`). Its preconditions (a fix wave committed with CI 6/6; no probe file in the tree) hold at `8ff4288`;
+  the 2L re-check comes first, and its findings, if any, land before 3a (overlap: commit.ts, the preview route, data-quality.ts,
+  tax-itr.ts).
+- **Gate on `8ff4288`:** `npm run verify` — **422 files / 8,835 passed / 35 skipped** (the raw line).
 - **NOT bumped, NOT tagged.**
-- **Next:** the 2H scoped re-check (`18-FIX-WORK-4.3.0/wave2h-recheck-brief.md`) → wave 3 (3a W3-ETF, then 3b W3-TAX) →
-  row 2 (the bump). Decisions: the `docs/DECISIONS.md` entries dated 2026-09-15 at the END of the file.
+- **Next:** `e2e/z-live-desk.spec.ts` locally (components/live changed in 2L) → the 2L scoped re-check (rebuild the 2I re-check's
+  workflow from `recheck-template-wave2g.js`: units close-readers / identity / ask / ipo / counted-once / strategies / mtf-accrual /
+  seams, probe prefix `zzprobe-rc7-`, pre-wave `cd1ab70`, wave `8ff4288`, inputs `wave2l.json` + `wave2h-reports/wave2l-*.md` +
+  `wave2i-recheck.json`) → the stopping rule → wave 3 (3a then 3b from `plan-wave3.json`; the seam file is `seams-v43-fixG`)
+  → row 2 (the bump). Decisions: the four seventh-session `docs/DECISIONS.md` entries dated 2026-09-15 at the END of the file.
+
+*Superseded one-line state of 2026-09-15 at `b6c1029` (sixth session), kept for the record:* waves 2G `3feb22f` and 2H `b6c1029`
+(CI 6/6 each); 2G's re-check all confirmed, 2H's not run; the wave-3 rulings (ETF tax heads fully fixed, calendar months,
+straddling rows per row + DQ, four pre-existing tax defects, MTF interest out, the STT deduction fixed, buy-side charges a note);
+gate 408 / 8,644 / 35; NOT bumped, NOT tagged.
 
 *Superseded one-line state of 2026-09-15 at `ec89bbd` (fifth session), kept for the record:* the fix work through waves 2R + 2F (`ec89bbd`, CI 34895595282 6/6); the 2R + 2F re-check 34 / 0 / 0 with 17 new findings → wave 2G; owner rulings R90 = the bundled NSE ETF list, all four out-of-list defects into 4.3.0, R13 = the inline official-close notice; gate 397 / 8,416 / 35; NOT bumped, NOT tagged.
 
@@ -57,7 +57,7 @@ left to do*.
 
 | # | Item | Status | Resume from EXACTLY here | Closed when |
 |---|---|---|---|---|
-| 1 | v4.3.0 fix work from the release-level audit (91 confirmed; `LIVE-DESK-RESEARCH/15-RELEASE-AUDIT-4.3.0.md`) under the owner's rulings (06-ANSWERS "v4.3.0 release-level-audit rulings"): the FIFO auto-close switched OFF (restore exactly what 4.2.0 did with a SELL of a held lot); every other 4.3.0-introduced product finding; all 19 pre-existing product findings; test-only medium+ outside auto-close; the 6 docs findings | IN PROGRESS. Built: switch-off `9e0e16f`, wave 1 `e0e6d90`, wave 2 `a7e9288`, 2R + 2F `ec89bbd`, 2G `3feb22f`, 2H `b6c1029` (each CI 6/6; every wave through 2G scoped-re-checked). **2H's re-check NOT run; wave 3 NOT started** (researched + ruled). Gate 408 / 8,644 / 35 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1 → `LIVE-DESK-RESEARCH/18-FIX-WORK-4.3.0/00-README.md`, then `wave2h-recheck-brief.md`; then wave 3 (`plan-answers.md` "W3 amendments" + "W3-TAX inputs"; `plan-wave2.json` "wave3"; the W3-TAX dossier) | every product finding fixed or moved to row 1b by ruling; scoped re-check clean; CI 6/6 → row 2 |
+| 1 | v4.3.0 fix work from the release-level audit (91 confirmed; `LIVE-DESK-RESEARCH/15-RELEASE-AUDIT-4.3.0.md`) under the owner's rulings (06-ANSWERS "v4.3.0 release-level-audit rulings"): the FIFO auto-close switched OFF (restore exactly what 4.2.0 did with a SELL of a held lot); every other 4.3.0-introduced product finding; all 19 pre-existing product findings; test-only medium+ outside auto-close; the 6 docs findings | IN PROGRESS. Built: switch-off `9e0e16f`, wave 1 `e0e6d90`, wave 2 `a7e9288`, 2R + 2F `ec89bbd`, 2G `3feb22f`, 2H `b6c1029`, 2I/2J/2K `cd1ab70`, 2L + M1 `8ff4288` (each CI 6/6; every wave through 2K scoped-re-checked). **2L's re-check NOT run; wave 3 planned (`plan-wave3.json`), NOT started.** Gate 422 / 8,835 / 35 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT items 1–2 → `LIVE-DESK-RESEARCH/18-FIX-WORK-4.3.0/00-README.md`, then the 2L re-check (units in STATE §0 "Next"); then wave 3 from `plan-wave3.json` | every product finding fixed or moved to row 1b by ruling; scoped re-check clean; CI 6/6 → row 2 |
 | 1b | v4.3.1 — the FIFO auto-close rebuilt together with the duplicate-detection defects that share its trade-identity code (F-L1-3's Dhan GTR-name vs API-ticker mismatch, F-L1-7's same-hash second-sale drop, R43 if inseparable) | by ruling, after 4.3.0 | `15-RELEASE-AUDIT-4.3.0.md` (R3, R4, R8, R72, R75, R76, R2, R14, R31, R6, R39, R41, R62, R15; tests R16, R58–R60) + DECISIONS "2026-09-11 — v4.3.0 release-level audit" | a researched design, the owner's "build", its own release-level audit |
 | 2 | Bump 4.3.0 + the 11 release steps | NOT started; waits on row 1 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (the bump recipe; the drafts in `LIVE-DESK-RESEARCH/16-BUMP-4.3.0-DRAFTS/` — drop every auto-close claim first; the install guide says ONE upgrade, 0071 — ruled; the widened rate-card note; the bundle must carry `rate-card-refresh.mjs`) → `08-BUILD-PROMPTS/V400-LIVE-DESK-BUILD-PROMPT.md` §7 → `release` skill → `vyuha-release-steward` | owner says **"tag"**; tag `v4.3.0` pushed; release run 3/3; `release:verify v4.3.0 -- --deep` 3/3; `releases/latest` → 4.3.0; client ZIP built; winget manifest with the CI asset sha; WDSI form handed over unprompted |
 | 3 | Owner laptop smoke test of 4.3.0 | waits on row 2 | the six-item list in `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (last sentence) — signatures in §0.3 V6 | owner confirms all six on a non-build machine with his own keys |
@@ -78,9 +78,9 @@ Migration re-keying rows closed by never-shipped wave-1 code — **none needed**
 
 ### §0.3 Verification procedures for everything BUILT BUT UNVERIFIED — PASS and FAIL signatures
 
-**V1 — CI on the newest CODE sha (at this hand-off `b6c1029`: run 34963173558, SUCCESS 6/6 on 2026-09-15).** `gh run list --limit 5`. **PASS:** conclusion `success`, 6 of 6 jobs. **FAIL-A** — only the Windows job red, on a source-shape/span-cap expectation: a CRLF cap (398 LF vs 408 CRLF); widen the cap by one byte per line it can cross, touch no product code. **FAIL-B** — a job red with a timeout / network / cold-runner signature: re-run that job; never re-tag, never "fix" code for it. **FAIL-C** — the run shows `cancelled`: a later push to main cancelled it (`cancel-in-progress`); judge the run on the NEWEST sha, never call a cancelled run green. **FAIL-D** — HEAD `e0378eb` has no run or a red one: it is docs-only; the code run to judge is `a00ddd0`'s.
+**V1 — CI on the newest CODE sha (at this hand-off `8ff4288`: run 34988232943, SUCCESS 6/6 on 2026-09-15).** `gh run list --limit 5`. **PASS:** conclusion `success`, 6 of 6 jobs. **FAIL-A** — only the Windows job red, on a source-shape/span-cap expectation: a CRLF cap (398 LF vs 408 CRLF); widen the cap by one byte per line it can cross, touch no product code. **FAIL-B** — a job red with a timeout / network / cold-runner signature: re-run that job; never re-tag, never "fix" code for it. **FAIL-C** — the run shows `cancelled`: a later push to main cancelled it (`cancel-in-progress`); judge the run on the NEWEST sha, never call a cancelled run green. **FAIL-D** — HEAD `e0378eb` has no run or a red one: it is docs-only; the code run to judge is `a00ddd0`'s.
 
-**V2 — the gate.** `rtk proxy npm run verify` from the repo root (heavy: coord serialises it machine-wide; a coord **DENIED** means another session holds the lock — wait and retry, it is not a failure). **PASS:** exit 0 and the RAW vitest summary line reads `Test Files ≥ 408 passed`, `Tests ≥ 8,644 passed | 35 skipped` (the hand-off tree on `b6c1029`, 2026-09-15). Read the raw line, never the rtk summary. **FAIL-A** — counts SHRANK: a test file or glob was lost; a shrinking suite passes silently — find the missing file before anything else. **FAIL-B** — rtk summary green, raw line shows failures: the wrapper hid them (it did once, 4 failures); trust the raw line. **FAIL-C** — typecheck/lint/test green, `next build` red: a server-only import reached the client graph (AGENTS.md § Verify); fix the import, not the build config. **FAIL-D** — `tests/client-value-imports.test.ts` red: a server module value-imports from a `"use client"` module; Next throws at request time and nothing else can see it. **FAIL-E** — a doc guard red (`readme-claims`, `help-content`, `privacy-feed-disclosure`, `uninstall-claims`): prose drifted from code; fix the prose, not the expectation (the one deliberate expectation change was the `## 2-hist.` header rename in this pass).
+**V2 — the gate.** `rtk proxy npm run verify` from the repo root (heavy: coord serialises it machine-wide; a coord **DENIED** means another session holds the lock — wait and retry, it is not a failure). **PASS:** exit 0 and the RAW vitest summary line reads `Test Files ≥ 422 passed`, `Tests ≥ 8,835 passed | 35 skipped` (the hand-off tree on `8ff4288`, 2026-09-15). Read the raw line, never the rtk summary. **FAIL-A** — counts SHRANK: a test file or glob was lost; a shrinking suite passes silently — find the missing file before anything else. **FAIL-B** — rtk summary green, raw line shows failures: the wrapper hid them (it did once, 4 failures); trust the raw line. **FAIL-C** — typecheck/lint/test green, `next build` red: a server-only import reached the client graph (AGENTS.md § Verify); fix the import, not the build config. **FAIL-D** — `tests/client-value-imports.test.ts` red: a server module value-imports from a `"use client"` module; Next throws at request time and nothing else can see it. **FAIL-E** — a doc guard red (`readme-claims`, `help-content`, `privacy-feed-disclosure`, `uninstall-claims`): prose drifted from code; fix the prose, not the expectation (the one deliberate expectation change was the `## 2-hist.` header rename in this pass).
 
 **V3 — migration 0071 on a real database. PASS 2026-09-11** (DECISIONS "2026-09-11 — v4.3.0 STATE §0.3 V3/V4/V5 …"). *This procedure REPLACES the original, which could not work: `next dev` never migrates — no instrumentation file, `lib/db/index.ts` runs data fixes only.* Copy `%APPDATA%\in.vyuha.tradejournal\vyuha.sqlite` **and its `-wal`** (app closed; sha256 both first and again at the end) into a FOLDER of its own, `data\smoke-0071\vyuha.sqlite` — `attachments/`, `trash/` and `vault.key` sit beside the DB file, so a loose copy in `data\` shares them with the dev DB. Then EITHER `set VYUHA_DB_PATH=<absolute path>&& npm run db:migrate` twice, OR — the real startup path — stage `scripts/desktop-server.mjs` + `scripts/rate-card-refresh.mjs` + the repo `drizzle/` + `desktop-dist/vyuha.seed.sqlite` in one folder under `data\` and run `node <stage>\desktop-server.mjs` twice with `VYUHA_DATA_DIR` on the copy's folder (it dies on the missing `server.js` after the migration block — expected). **PASS:** `__drizzle_migrations` +1 (created_at 1788800500000) and `strategy_shelf_json` present and NULL; the second run +0; the sidecar prints "migrations applied" + "rate cards: 0 added, 45 refreshed", then "schema current" + "0 added, 0 refreshed"; `/strategies` on a dev server over the migrated copy (`.claude/launch.json` → `vyuha-dev-smoke-0071`, port 3011) draws the 8 default tiles in order (Pro). **FAIL-A** — "duplicate column": 0071 ran outside the journal; check `drizzle/meta/_journal.json`. **FAIL-B** — column present but the shelf empty: `parseShelf` rejected the stored envelope (must be `{v:1,selected}`). **FAIL-C** — backup → restore loses the shelf: `SETTINGS_MACHINE_COLUMNS` (`lib/backup-format.ts`) gained `strategyShelfJson` — NOT `BASELINE_SETTINGS_FIELDS`, which drives My Default Settings only. **FAIL-D** — the sidecar prints "rate-card refresh failed" or `UNIQUE constraint failed … effective_from`: F1 is back (`scripts/rate-card-refresh.mjs`, `tests/rate-card-refresh.test.ts`). **FAIL-E** — `/strategies` throws `no such column: strategy_shelf_json`: a dev server over an UNMIGRATED copy (dev does not migrate).
 
