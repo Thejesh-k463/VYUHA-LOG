@@ -7254,3 +7254,70 @@ the same session (S-IPO for D1–D3 as one identity owner, S-DATE for D4), the d
 
 **Gate on the wave-2M tree:** `npm run verify` EXIT 0 (the first run was red on two counts: the README file-count guard — 426 → 427 files, `tests/staged-leg-dates.test.ts` is new — and `tests/backup-roundtrip.test.ts` "encrypted backups > round-trips" timing out at 5 s under full-suite load; alone it runs in 1,049 ms (scrypt), the same file that timed out on the Windows runner this morning on a docs-only commit — a pre-existing test-timing fragility, recorded, not a 2M defect; the second run was clean); raw line **427 files / 9,323 passed / 35 skipped** (expected fail 0 — the five guard pins are flipped); `next build` compiled; the three lint warnings are the pre-existing ones. README: 426 → 427 files, 9,218 → 9,323 tests (six mentions). **Next:** the 2L scoped re-check over this tree (pre-wave `cd1ab70`, wave `8ff4288`,
 probe prefix `zzprobe-rc7-`), then wave 3 from `plan-wave3.json`.
+
+## 2026-09-16 — v4.3.0 wave 2L (+ M1): the scoped re-check over the post-2M tree → 41 CONFIRMED, 0 REFUTED, 0 UNVERIFIABLE; 28 new findings (19 product, 9 test) → fix wave 2N (NOT designed, NOT built; the parallel pattern is OVER for this release)
+
+**The re-check.** Eight probe-capable Opus reviewers (workflow `18-FIX-WORK-4.3.0/recheck-wave2l.js`, run `wf_5bb7e5bb-d40`), one per
+unit — close-readers (L2 + the four orchestrator edits), identity (L7), ask (L4), ipo (L3), counted-once (L5 + L6, with 2M's
+widening on top), strategies (L1), mtf-accrual (M1), seams (`seams-v43-fixF` F14–F26) — each re-proving every fix red-on-revert
+from probe copies of `cd1ab70`, against the tree at `e23b96c` (wave 2M). Every probe deleted, no tracked file touched. Verdicts and
+every where / reproduce / evidence: `18-FIX-WORK-4.3.0/wave2l-recheck.json` (an ARRAY of eight units; **read it whole before
+designing 2N — the one-line list below is an index, not the finding**).
+
+| unit | verdicts | new findings |
+|---|---|---|
+| close-readers | 9 / 0 / 0 | 6 (5 product, 1 test) |
+| identity | 3 / 0 / 0 | 3 (2 product, 1 test MEDIUM) |
+| ask | 1 / 0 / 0 | 3 (2 product, 1 test) |
+| ipo | 7 / 0 / 0 | 3 (3 product) |
+| counted-once | 3 / 0 / 0 | 4 (3 product, 1 test) |
+| strategies | 2 / 0 / 0 | 1 (a DECISIONS line) |
+| mtf-accrual | 1 / 0 / 0 | 4 (3 product, 1 test) |
+| seams | 15 / 0 / 0 | 4 (all test, 1 MEDIUM) |
+
+**Graded by INTRODUCED regressions (the mechanism's first full measurement).** Wave 2L introduced 1 silent wrong number + 1 medium
++ 4 low + 2 cosmetic product findings and 8 test findings (2 medium); wave 2M introduced 1 silent wrong number + 1 medium + 1
+cosmetic; earlier-4.3.0 1 silent wrong number; pre-existing 1 broken, 1 data-loss, 3 medium, 2 low. **Two consecutive waves (2L,
+2M) each introduced a silent wrong number → by the stopping rule (skill `vyuha-audit` §0.5, owner ruling 2026-09-15 "zero
+repeated errors") the parallel builder pattern STOPS for the rest of v4.3.0: every remaining wave — 2N, 3a, 3b — runs ONE
+builder at a time, design-reviewed first, seam pass to convergence with the four guards, then its own scoped re-check.**
+
+**The 2M-introduced findings (fixed by 2N, before anything else):**
+- **rc7 counted-once#0 — SILENT WRONG NUMBER.** Tier B (`matchesByExit`, `lib/analytics/data-quality.ts:981-989`) carries no
+  scrip clause, so the no-`ipoRefs` restore links an IPO record to a holding of a DIFFERENT scrip whenever the four facts
+  coincide inside one account (allotted, exit price stated, same quantity, same allotment day, same exit day — "Bee Industries
+  Limited" claims a holding of AAAIPO); the counted-once rule then excludes the record because its linked trade was counted, so
+  the record's own, genuinely separate sale disappears from capital, the tax pack, the ITR export and both AIS sides. The design
+  reviewer had asked for exactly this clause set; the orchestrator's narrowing kept the quantity + dates and dropped the scrip
+  resemblance — the wrong half to drop. Direction (the next session decides): tier B needs a scrip fact or is demoted to ASK-only.
+- **rc7 ipo#0 — medium.** `POST /api/ipos` now stores `normalizeDate(raw) ?? raw` for the three typed days, but `syncWouldWrite` /
+  `linkedSyncFor` compare `linkInput(before)` (the RAW stored value) with `linkInput(values)` (the converted one), so a notes-only
+  save of a legacy day-first row is refused as "would write" — L3's no-way-out refusal, re-opened for legacy rows.
+- **rc7 counted-once#3 — cosmetic.** `ipo_record_link` fans out one issue per unlinked IPO holding beside a single exited record.
+
+**The rest, by id (`introduced_by` / severity); text in the JSON:**
+- 2L product: identity#0 SILENT-WRONG-NUMBER (L7's skip leaves a record in ANOTHER account unlinked — the double count 2K exists to
+  prevent); mtf-accrual#0 low (a margin-config edit restates stored charges of never-priced open MTF rows via the accrual);
+  mtf-accrual#1 low (/risk and /equity disagree on an unpriced row; only one discloses it); ask#1 low (the on-key door leaves the
+  user with the wrong remedy); close-readers#2 low (the KPI dialog's three MTF money rows no longer reconcile); close-readers#3
+  cosmetic (the drift card names a table not on the page); strategies#0 cosmetic (the L1 "recorded" line under-enumerates the
+  remaining ISIN folds).
+- 2L test: identity#2 MEDIUM (the skip path's other-account case has no pin — why identity#0 shipped); seams#0 MEDIUM (F18's
+  rate-correction premise is inert; its assertion is a tautology); ask#2 low; counted-once#2 low (the 2L DECISIONS L6 bullet states
+  the opposite of what was built); close-readers#4 low (no Live Desk test; `ownCapitalP` not in the field-rule registry); seams#1
+  low (F14–F26 cannot run in isolation); seams#2 low (F16 tests a hand-built wiring, not app/risk/page.tsx's); mtf-accrual#3
+  cosmetic; seams#3 cosmetic (earlier-4.3.0).
+- earlier-4.3.0 product: ipo#2 SILENT-WRONG-NUMBER (the provenance marker is dropped by EVERY trade-editor save, notes-only included —
+  the sync loses ownership of its charges permanently).
+- pre-existing product: ipo#1 BROKEN (the date the row STORES is never validated — closePosition still throws on a legacy
+  unreadable buy date); identity#1 DATA-LOSS (the same-hash half of the U1-merge class: a source row carrying both legs is dropped
+  whole when the target holds that hash as its OWN); mtf-accrual#2 medium (interest accrued on the whole buy leg of a partly sold
+  row); close-readers#0 medium (an over-sold open MTF row still reaches a negative own capital); close-readers#1 medium (/equity
+  states an own-capital figure /risk refuses for the same unpriced row); ask#0 low (the M1 remedy leaves the pull refused a second
+  time); close-readers#5 low (a sell-to-open MTF row is credited a fabricated own capital).
+
+**Stopping rule applied.** Every product finding (19) and the two MEDIUM test findings reopen work → fix wave 2N. The seven
+low / cosmetic test findings are recorded above and are not a wave of their own (a product fix that carries one takes it).
+**Designs for 2N are NOT decided in this entry** — the eighth session ended at ~400k context after persisting the JSON; the next
+session reads the findings whole in a fresh context, decides every design with its consumer set and sequences, runs
+`vyuha-design-reviewer` FIRST, then builds ONE builder at a time.
