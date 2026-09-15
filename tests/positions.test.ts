@@ -1,5 +1,12 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { deriveOpenPositions } from "../lib/analytics/positions";
+import {
+  deriveOpenPositions,
+  ownCapitalNote,
+  ownCapitalTotal,
+  statesOwnCapital,
+} from "../lib/analytics/positions";
 import type { Trade } from "../lib/db/schema";
 
 const trade = (over: Partial<Trade>): Trade =>
@@ -247,5 +254,167 @@ describe("deriveOpenPositions — a derivative never reads the underlying's cash
       "2026-06-05",
     )[0];
     expect(p.mtmPrice).toBe(2049);
+  });
+});
+
+/**
+ * L2 [0] (v4.3.0 wave 2L, PRE-EXISTING — the wave-2I re-check's own probe walked
+ * past it). An OPEN eq_mtf row that has already sold PART of its leg reported a
+ * NEGATIVE `ownCapital`, and the /equity + Live Desk money totals added that
+ * negative in. `mtfFundedAmount` is the amount stored for the WHOLE buy leg,
+ * while `invested` is only the REMAINING quantity x avg price, so
+ * `invested - funded` drops below zero as soon as more than the own-capital
+ * share has been sold. Probe: 100 @200 funded 15,000 with 40 sold ->
+ * invested 12,000, ownCapital -3,000, and "Own capital in MTF" across a
+ * 5,000-own held row and this one printed 2,000 instead of 5,000 — the trader's
+ * own money reduced by a row that put money IN.
+ *
+ * The fix is the conservative one (invariant 6): the row states NO own capital.
+ * The pro-rata alternative (`funded x remaining / bought`) is REJECTED because
+ * it assumes how the broker releases funding on a partial sale — a figure the
+ * journal never recorded. The KPI excludes such rows and NAMES them, and the
+ * per-row cell and the KPI read ONE exported predicate so they cannot disagree.
+ */
+describe("L2 [0] — a partly sold MTF leg states no own capital, and the total says so", () => {
+  const mtf = (over: Partial<Trade>) =>
+    trade({
+      segment: "eq_mtf",
+      instrumentType: "equity",
+      bucket: "equity",
+      symbol: "X",
+      tradingsymbol: "X",
+      buyQty: 100,
+      avgBuyPrice: 200,
+      buyValue: 20000,
+      buyDate: "2026-08-20",
+      mtfFundedAmount: 15000,
+      ...over,
+    });
+  const MTM = new Map([["X", 210]]);
+
+  it("40 of 100 sold: ownCapital and ROI on capital are BOTH null, never the negative figure", () => {
+    const [p] = deriveOpenPositions([mtf({ sellQty: 40, avgSellPrice: 210 })], MTM, "2026-09-19");
+    expect(p.qty).toBe(60);
+    expect(p.invested).toBe(12000);
+    expect(p.fundedAmount).toBe(15000); // the WHOLE leg's, as stored — never rewritten
+    // THE assertion (on revert: -3000).
+    expect(p.ownCapital).toBeNull();
+    expect(p.roiOnCapitalPct).toBeNull();
+  });
+
+  it("nothing sold: byte-identical to before — invested / funded / own / ROI all unchanged", () => {
+    const [p] = deriveOpenPositions([mtf({})], MTM, "2026-09-19");
+    expect([p.invested, p.fundedAmount, p.ownCapital, p.roiOnCapitalPct]).toEqual([20000, 15000, 5000, 20]);
+  });
+
+  it("a STATED funded 0 that is partly sold is still null — no special case invents a figure", () => {
+    const [p] = deriveOpenPositions([mtf({ sellQty: 40, avgSellPrice: 210, mtfFundedAmount: 0 })], MTM, "2026-09-19");
+    // On revert: 12000 — the remaining leg priced by a rule about how the
+    // broker releases funding that the journal never recorded.
+    expect(p.ownCapital).toBeNull();
+    expect(p.roiOnCapitalPct).toBeNull();
+    expect(p.fundedAmount).toBe(0); // the stated 0 itself is kept (wave 2I, I1)
+  });
+
+  it("a fully held row whose funding was never resolved still reads the estimate", () => {
+    const [p] = deriveOpenPositions([mtf({ mtfFundedAmount: null })], MTM, "2026-09-19");
+    expect([p.fundedAmount, p.ownCapital]).toEqual([15000, 5000]); // 25% own margin default
+  });
+
+  it("a NON-MTF row is untouched: ownCapital stays 0, not null", () => {
+    const [p] = deriveOpenPositions([mtf({ segment: "eq_delivery", sellQty: 40, avgSellPrice: 210 })], MTM, "2026-09-19");
+    expect(p.isMtf).toBe(false);
+    expect(p.ownCapital).toBe(0);
+  });
+
+  it("ownCapitalTotal leaves the partly sold row out, counts it, and the note names it", () => {
+    const ps = deriveOpenPositions(
+      [mtf({ id: 1 }), mtf({ id: 2, sellQty: 40, avgSellPrice: 210 })],
+      MTM,
+      "2026-09-19",
+    );
+    const t = ownCapitalTotal(ps);
+    // On revert: total 2000 (5000 + -3000) and unstated 0 — the KPI the
+    // finding reproduces.
+    expect([t.total, t.unstated]).toEqual([5000, 1]);
+    expect(t.total).not.toBe(2000);
+    // Leverage reads the SAME subset, so the ratio is one book, not two.
+    expect(t.funded).toBe(15000);
+    expect(ownCapitalNote(t.unstated)).toBe("own capital not stated for 1 partly sold MTF row");
+  });
+
+  it("with nothing partly sold the total and the note are exactly what they were", () => {
+    const ps = deriveOpenPositions([mtf({ id: 1 }), mtf({ id: 2 })], MTM, "2026-09-19");
+    const t = ownCapitalTotal(ps);
+    expect([t.total, t.funded, t.unstated]).toEqual([10000, 30000, 0]);
+    expect(ownCapitalNote(t.unstated)).toBeNull();
+    // The old whole-book reduce agreed with it on a fully held book.
+    expect(ps.reduce((s, p) => s + (p.ownCapital ?? 0), 0)).toBe(t.total);
+  });
+
+  it("the plural is right and a non-MTF row never counts as unstated", () => {
+    const ps = deriveOpenPositions(
+      [
+        mtf({ id: 1, sellQty: 40, avgSellPrice: 210 }),
+        mtf({ id: 2, sellQty: 10, avgSellPrice: 210 }),
+        mtf({ id: 3, segment: "eq_delivery", sellQty: 40, avgSellPrice: 210 }),
+      ],
+      MTM,
+      "2026-09-19",
+    );
+    const t = ownCapitalTotal(ps);
+    expect([t.total, t.funded, t.unstated]).toEqual([0, 0, 2]);
+    expect(ownCapitalNote(t.unstated)).toBe("own capital not stated for 2 partly sold MTF rows");
+  });
+
+  it("statesOwnCapital is the ONE predicate, and it agrees with the derived value", () => {
+    const [held, partly] = deriveOpenPositions(
+      [mtf({ id: 1 }), mtf({ id: 2, sellQty: 40, avgSellPrice: 210 })],
+      MTM,
+      "2026-09-19",
+    );
+    expect(statesOwnCapital(held)).toBe(true);
+    expect(statesOwnCapital(partly)).toBe(false);
+    expect(statesOwnCapital({ isMtf: false, ownCapital: 0 })).toBe(false);
+  });
+});
+
+/**
+ * The per-row "Own capital" cell and the bucket KPI must read the SAME rule.
+ * Before this wave the cell refused a non-positive value (`v > 0 ? … : "—"`)
+ * while the two KPI rows summed `p.ownCapital` straight across the book, so the
+ * screen showed "—" on the row and a total quietly reduced by it.
+ */
+describe("L2 [0] — the tracker reads the shared predicate, not its own reduce", () => {
+  const src = fs.readFileSync(
+    path.join(process.cwd(), "components/trackers/tracker-client.tsx"),
+    "utf8",
+  );
+
+  const lines = (re: RegExp) => src.split(/\r?\n/).filter((l) => re.test(l)).length;
+
+  it("no own-capital figure is summed by the component itself", () => {
+    // Deliberately loose: ANY reduce that touches `p.ownCapital` — including
+    // `s + (p.ownCapital ?? 0)`, which the first version of this pin walked
+    // straight past while restoring the whole-book total.
+    expect(src, "the tracker still sums ownCapital itself").not.toMatch(/\.reduce\([\s\S]{0,60}?p\.ownCapital/);
+    expect(src).toContain("ownCapitalTotal(positions)");
+  });
+
+  it("every rendered own-capital figure reads the shared total", () => {
+    // "Own capital in MTF", "Your own capital", and the leverage ratio built
+    // from it — three lines, so a reverted one is a failing count.
+    expect(lines(/ownCap\.total/), "a rendered own-capital figure stopped reading ownCapitalTotal").toBe(3);
+  });
+
+  it("the note travels with the total wherever it is rendered", () => {
+    // The const plus the three rows that render a figure derived from it.
+    expect(lines(/ownCapNote/), "a total is rendered without saying what it left out").toBe(4);
+    expect(src).toContain("ownCapitalNote(ownCap.unstated)");
+  });
+
+  it("the per-row cell reads the same predicate the total does", () => {
+    expect(src).toContain("statesOwnCapital");
+    expect(src).toMatch(/accessorKey: "ownCapital"[\s\S]{0,200}?statesOwnCapital/);
   });
 });

@@ -9,7 +9,7 @@ import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
 import { todayIstIso } from "@/lib/domain/trading-day";
 
 /**
- * v4.3.0 FIX WAVES 2I + 2J — THE SEAMS OF AN ELEVEN-BUILDER PAIR OF WAVES.
+ * v4.3.0 FIX WAVES 2I + 2J + 2K + 2L — THE SEAMS OF DISJOINT-FILE WAVES.
  *
  * Wave 2I (I1 MTF readers + the close preview; I2 trash restore / merge / the
  * unstated-price guard / the DQ reader; I3 the M1 copy; I4 the IPO lifecycle;
@@ -17,6 +17,15 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  * the account-delete ipoRefs; J3 the IPO re-home data fix; J4 the sync's
  * charges; J5 a pin) owned DISJOINT files. This file runs the two real halves
  * of every value that crosses from one builder's files into another's.
+ *
+ * WAVE 2L added seven more disjoint sets (L1 one canonical ISIN; L2 the MTF
+ * readers; L3 the IPO route, the charge provenance and the calendar; L4 the M1
+ * priority; L5 the counted-once rule's one home; L6 the legacy Trash envelope;
+ * L7 the merge's identity and IPO plan) — F14..F26 below. They also cover the
+ * six boundaries the wave-2I re-check found with NO seam case at all
+ * (new_defects[2..7]: the merge-side `ipoRefs`, the legged/staged doors, the
+ * reverse/forward merge refusal and its preview, J1's no-`fact` Clear, the
+ * 3-decimal gross, and F10's over-claiming title, corrected in place).
  *
  * NOTHING HERE IS MOCKED ON EITHER SIDE OF A SEAM. The stubs are framework and
  * transport only: `next/cache`, `next/navigation` and `globalThis.fetch` for
@@ -54,6 +63,42 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  *     |                                         |                                                      |   StrategiesClient groups → StrategyCard                  |   on BOTH sides                  |
  * F13 | an IPO linked to a trade a merge DROPS  | lib/queries/account-delete.ts:783 merge (K1)        | lib/queries/ipos.ts:161 getIpoRealisedNet → capital.ts    | trade id; re-pointed, never      | F13
  *     |   as a duplicate                        |                                                      |   :48, tax-itr.ts:64, /api/ais                            |   nulled                         |
+ *
+ * -- WAVE 2L, AND THE WAVE-2I BOUNDARIES ITS RE-CHECK FOUND UNPINNED --------
+ * (wave2l.json L1..L7; wave2i-recheck.json, unit "seams", new_defects[2..7])
+ *
+ *  #  | crossing value                          | producer (file:line, builder)                        | consumer (file:line, builder)                             | unit / shape                     | test
+ * ----|-----------------------------------------|------------------------------------------------------|-----------------------------------------------------------|----------------------------------|-----
+ * F14 | an IPO record's account, once the       | lib/db/data-fixes.ts:169 `a.archived = 0` (L3)       | lib/queries/ipos.ts:175 ipoIdsCountedThroughTrades (L5)   | account id; the LINK is read     | F14
+ *     |   re-home has DECLINED to move it       |                                                      |   -> capital.ts:48, tax-itr.ts, /api/ais, the ITR export   |   UNSCOPED by account            |
+ * F15 | a stored ISIN carrying a tab, a         | lib/domain/isin.ts canonicalIsin (L1) <-             | app/strategies/page.tsx:119 admittingOf (L1) ->            | 12 chars, every whitespace       | F15
+ *     |   newline or an NBSP                    |   lib/queries/trades.ts:352 the JS pass (L1)         |   StrategiesClient groups -> StrategyCard                  |   removed, upper - ONE function  |
+ * F16 | a PARTLY SOLD MTF leg's own capital,    | lib/analytics/positions.ts:154 (L2) <-               | components/trackers/tracker-client.tsx:108 the cell +      | rupees or NULL; the total says   | F16
+ *     |   and a funded amount never resolved    |   lib/import/commit.ts:2392 updateManualTrade        |   :229 the KPI (L2); lib/risk/mtf-drift.ts:55 ->           |   how many rows it left out      |
+ *     |                                         |                                                      |   components/risk/mtf-drift-card.tsx:49 `unpriced` (L2)    |                                  |
+ * F17 | whether a save would WRITE to a legged  | lib/analytics/ipo-link.ts:299 syncWouldWrite (L3)    | app/api/ipos/route.ts:492 the STAGED refusal (L3);        | boolean; a notes-only save is    | F17
+ *     |   holding                               |                                                      |   app/trades/actions.ts:568 pushTradeToIpoAction (I4)      |   200, never 409                 |
+ * F18 | WHOSE the exit charges on a holding are | lib/analytics/ipo-link.ts:340 IPO_SYNC_CHARGES_NOTE  | app/api/ipos/route.ts:262 syncWroteCharges (L3);          | a marker in import_notes - never | F18
+ *     |                                         |   (L3) <- syncLinkedTrade's own write                |   lib/import/commit.ts:2452 the editor drops it (L3)       |   a re-pricing at live rates     |
+ * F19 | a save that would RE-OPEN a close       | app/api/ipos/route.ts:279 reopensAForeignClose (L3)  | the eight heads it would zero <- the holding's own sale    | 409 CLOSE_IN_TRADES; the two     | F19
+ *     |                                         |                                                      |                                                           |   kept heads are never written   |
+ * F20 | an exit date that is not a CALENDAR day | lib/import/commit.ts:64 isRealDay (L3)               | app/api/positions/close/route.ts:16 -> {ok:false};         | null, never a stored 2026-02-31  | F20
+ *     |                                         |                                                      |   components/trades/close-trade-dialog.tsx:36 (L3)         |   - the dialog previews nothing  |
+ * F21 | WHICH collision an incoming pull row    | lib/import/cross-source.ts:301 the priority (L4)     | app/api/import/broker/route.ts 409 `message` ->            | today's snapshot beats an older  | F21
+ *     |   reports                               |                                                      |   components/import/broker-connect.tsx collisionDialogCopy |   cross-FILE row, not rowid order|
+ * F22 | an envelope with NO `ipoRefs` at all    | lib/queries/delete.ts (4.2.x: the field did not      | lib/trash.ts:781 the fallback (L6) <- lib/analytics/       | {tradeId, ipoId}[]; EMPTY when   | F22
+ *     |                                         |   exist) -> trash.ts writeTrashSnapshot              |   data-quality.ts:930 uniqueIpoRelinks (L6);               |   ambiguous - never a guess      |
+ *     |                                         |                                                      |   lib/queries/data-quality.ts:90 -> the DQ issue (L6)      |                                  |
+ * F23 | a source row the target holds only as   | lib/import/close-open-lots.ts heldIdentityHashes <-  | lib/queries/account-delete.ts:409 the forward refusal      | the SAME `identityClash` string  | F23
+ *     |   an ALIAS, carrying its own other leg  |   the close-stale join                               |   (L7) == :583 previewAccountDelete's warning (L7)         |   on both sides                  |
+ *     |   …and the REVERSE: a source LOT whose  |   the same predicate, read the other way             |   the same two readers, the other half of the sentence     |                                  | F23 b
+ *     |   held alias names a target row (I2)    |                                                      |                                                           |                                  |
+ * F24 | an `ipos` row naming a DROPPED          | lib/queries/account-delete.ts:380 planIpoLinks (L7)  | the same file's `ipoRefs` envelope (J2) -> lib/trash.ts    | one trade takes ONE record; the  | F24
+ *     |   duplicate - in this book and another  |                                                      |   :691 the re-link loop (I2) -> capital.ts:48              |   rest are skipped, not nulled   |
+ * F25 | a Clear body that names NO sentence     | components/import/broker-connect.tsx (an OLDER       | app/api/import/broker/route.ts:633 `named` (J1) ->         | {} - the span's FIRST record of  | F25
+ *     |                                         |   client's body, `fact` absent)                      |   lib/import/dhan-unfetched.ts:250 latestVia (I5)          |   that connection, as before     |
+ * F26 | the gross of a 3-decimal exit over a    | lib/analytics/ipo.ts:367 computeIpo (I4)             | lib/analytics/ipo-link.ts tradePatchFromIpo -> the trade   | rupees at the paisa; ONE         | F26
+ *     |   3-decimal issue price                 |                                                      |   row -> capital / the tax pack / the ITR export           |   arithmetic, value-based        |
  *
  * RED ON REVERT (2026-09-15) — 16 probes. Each side's HEAD (4fd527d, the
  * wave-2H tree) copy was aliased over the working module with `vi.mock` inside
@@ -109,6 +154,67 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  * intact, so its `ipoRefs` are inert; the case is a standing guard on that
  * branch (and on the merge re-point K1 landed in the same file), not a
  * regression pin. Its consumer half (trash.ts' re-link loop) is proven by F9 (a).
+ *
+ *
+ * RED ON REVERT, WAVE 2L (2026-09-15) - 11 more probes, same method, this time
+ * against HEAD = cd1ab70 (the wave 2I+2J+2K tree). Each product module was
+ * aliased onto a `git show HEAD:<path>` copy inside a deleted
+ * tests/zzprobe-fixL-*.test.ts / tests/zzseam-head-*.ts pair; no product file
+ * was touched. Every probe reddened its own seam's `it` and nothing else:
+ *
+ *   lib/db/data-fixes.ts         -> F14 "an archived book is not a destination:
+ *     expected [ 1721, 30 ] to deeply equal [ 1722, 30 ]" - the record was moved INTO
+ *     the archived book, which the account switcher never lists
+ *   lib/queries/trades.ts        -> F15 "the holding is found where it is held:
+ *     expected [ { strikes: '2800', ...(2) } ] to deeply equal [ { strikes: '2800',
+ *     ...(2) } ]" (short-call / Unlimited in the account that HOLDS the shares)
+ *   app/strategies/page.tsx      -> F15, the same assertion: the page's own
+ *     `isin.trim().toUpperCase()` reaches neither end of an Alt+Enter mid-cell
+ *   lib/analytics/positions.ts   -> F16 "a partly sold leg states no own capital and no
+ *     ROI on it: expected [ true, -3000, null ] to deeply equal [ true, null, null ]"
+ *   components/risk/mtf-drift-card.tsx -> F16 "the card names what it is not showing:
+ *     expected ' MTF margin check list as of 2026-09-...' to contain '1 open MTF
+ *     position is not priced'" (HEAD's card has no `unpriced` prop at all)
+ *   app/api/ipos/route.ts        -> F17 (the notes-only save answered 409 with "That
+ *     holding is a staged position built from more than one fill. ... Unlink the
+ *     holding here to edit this IPO."), F18 "the provenance the next edit will ask
+ *     about: expected '' to contain 'Exit charges computed from the linked...'", and
+ *     F19 "expected [ 200, undefined ] to deeply equal [ 409, 'CLOSE_IN_TRADES' ]"
+ *   lib/import/commit.ts         -> F18 "whoever changes the charges owns them: expected
+ *     'Exit charges computed from the linked...' not to contain 'Exit charges computed
+ *     from the linked...'"; and F20 "SqliteError: NOT NULL constraint failed:
+ *     trades.charges_total_paise" - the very throw the fix exists for, unhandled
+ *   lib/import/cross-source.ts   -> F21 "today's snapshot IS the blocker, so it is what
+ *     is reported: expected '1 row in this file (SEAML4) look like...' to contain
+ *     'restates an instrument today's earli...'"
+ *   lib/trash.ts                 -> F22 (a) "re-linked by the holding's own record:
+ *     expected null to be 44"
+ *   lib/queries/data-quality.ts  -> F22 (b) "the pair is named, not guessed: expected
+ *     undefined to be 'IPO record not linked to its holding'"
+ *   lib/queries/account-delete.ts -> F23 "Merged “fixF 1734” into “fixF 1733” - 0 trades
+ *     moved, 1 duplicate skipped (saved to Deleted items).: expected true to be false"
+ *     (the source round trip, with its purchase leg, deleted whole); and F24, whose
+ *     preview read "2 IPO records are linked to those trades" and whose merge put BOTH
+ *     records on the surviving copy
+ *
+ * NOT proven red by a revert, and why:
+ *   F25 - J1's no-`fact` Clear is the COMPATIBILITY branch: it pins the behaviour a
+ *     revert restores, so no revert can redden it. The named path is F7.
+ *   F26 - the one-gross-arithmetic fix is I4's and is already at HEAD; what was missing
+ *     was the case ACROSS the computeIpo <-> trade-row seam at 3+ decimals, which is
+ *     what this is. Red only against the pre-2I build.
+ *   F14's L5 half (`ipoIdsCountedThroughTrades` given one home) could not be probed by a
+ *     whole-module revert: app/api/ais/route.ts now imports that symbol FROM
+ *     lib/queries/ipos.ts, so HEAD's copy of that file is a wiring error rather than a
+ *     number. Its L3 half (the archived guard) is the probe quoted above, and the
+ *     counted-once numbers are asserted in all three views in the same `it`.
+ *   F23 (b) - the REVERSE merge refusal is I2's and is already at HEAD, so the same
+ *     probe that reddens F23 (a) leaves (b) green. It is here because the re-check named
+ *     it a boundary with no seam case (new_defects[4]): what it pins is that
+ *     previewAccountDelete's warning and deleteAccount's refusal state the SAME fact,
+ *     in BOTH directions of `identityClash` - the drift a shared helper exists to stop.
+ *   F10's two added controls (a same-account link, a link naming a trade that is gone)
+ *     are a coverage fix for an over-claiming title - HEAD's SQL skips both already.
  *
  * SEAM DEFECTS found by a pass are reported to the orchestrator, not fixed here.
  *
@@ -180,15 +286,42 @@ const F12_A = 1717; //    F12: a call with no units of its own
 const F12_B = 1718; //    F12: the units, under a lower-case padded ISIN
 const F13_TGT = 1719; //  F13: the merge target, holding the surviving copy
 const F13_SRC = 1720; //  F13: the merge source, its IPO linked to the duplicate
-const ACCOUNTS = [F1_ZERO, F1_UNSET, F2_ACC, F3_ACC, F4_TGT, F4_SRC, F5_ACC, F6_ACC, F7_SA, F7_SB, F7_TGT, F8_ACC, F9_ACC, F9_PURGE, F10_ACC, F11_ACC, F12_A, F12_B, F13_TGT, F13_SRC];
+// ── wave 2L, and the wave-2I boundaries its re-check found unpinned ─────────
+const F14_ARCH = 1721; //  F14: the holding's book, ARCHIVED (the re-home skips it)
+const F14_REC = 1722; //   F14: the book the IPO record is filed in
+const F15_A = 1723; //     F15: a call with no units of its own
+const F15_B = 1724; //     F15: the units, under an ISIN carrying a tab and an NBSP
+const F16_ACC = 1725; //   F16: a partly sold MTF leg beside an unpriced one
+const F17_ACC = 1726; //   F17: an IPO linked to a holding booked on a ladder
+const F18_ACC = 1727; //   F18: the sync's charges, across a rate correction
+const F19_ACC = 1728; //   F19: a close the USER recorded, and one the sync wrote
+const F20_ACC = 1729; //   F20: an exit date that is not a calendar day
+const F21_ACC = 1730; //   F21: an older cross-FILE row before today's snapshot
+const F22_ACC = 1731; //   F22: a pre-4.3.0 Trash envelope (no ipoRefs)
+const F22_TWO = 1732; //   F22: two records that could be the one holding's
+const F23_TGT = 1733; //   F23: the merge target, holding the alias
+const F23_SRC = 1734; //   F23: the merge source, a CLOSED round trip on that hash
+const F24_TGT = 1735; //   F24: the target, whose surviving copy has its own IPO
+const F24_SRC = 1736; //   F24: the merge source, its own IPO on the duplicate
+const F24_OTHER = 1737; // F24: a THIRD book whose IPO names that duplicate
+const F25_SA = 1738; //    F25: merge source A (the span's FIRST record)
+const F25_SB = 1739; //    F25: merge source B
+const F25_TGT = 1740; //   F25: the target carrying both
+const F26_ACC = 1741; //   F26: a 3-decimal exit over a 3-decimal issue price
+const F23R_SRC = 1742; //  F23 (b): the REVERSE direction — the SOURCE holds the alias
+const F23R_TGT = 1743; //  F23 (b): the target storing the row that alias names
+const ACCOUNTS = [F1_ZERO, F1_UNSET, F2_ACC, F3_ACC, F4_TGT, F4_SRC, F5_ACC, F6_ACC, F7_SA, F7_SB, F7_TGT, F8_ACC, F9_ACC, F9_PURGE, F10_ACC, F11_ACC, F12_A, F12_B, F13_TGT, F13_SRC,
+  F14_ARCH, F14_REC, F15_A, F15_B, F16_ACC, F17_ACC, F18_ACC, F19_ACC, F20_ACC, F21_ACC, F22_ACC, F22_TWO, F23_TGT, F23_SRC, F24_TGT, F24_SRC, F24_OTHER, F25_SA, F25_SB, F25_TGT, F26_ACC,
+  F23R_SRC, F23R_TGT];
 
-// ONE temp database for this file. Measured locally 2026-09-15 (three runs,
-// vitest's own per-test times): every `it` 12-107 ms, the whole file 4.3-5.4 s
-// of which ~3.6 s is hooks — this one (migrate + seed + the core modules)
-// 1.1-1.3 s, F7's (the broker route's first GET, a vault sweep) ~1.6 s, the
-// rest 0.2-0.6 s. All inside the local budget of <= 300 ms per `it` and <= 3 s
-// per hook; the raised timeouts are for the Windows runner, measured > 15x
-// slower on SQLite-file work (AGENTS.md Testing).
+// ONE temp database for this file. Re-measured locally 2026-09-15 with F14..F26
+// added (vitest's own per-test times, 29 `it`s): the slowest `it` is 102 ms
+// (F1 a), then 97 (F18), 83 (F14); the 29 sum to ~1.0 s and the file's wall
+// clock is 2.4 s, the rest of it hooks — this one (migrate + seed + the core
+// modules) 1.1-1.3 s, F7's (the broker route's first GET, a vault sweep)
+// ~1.6 s, the rest 0.2-0.6 s. All inside the local budget of <= 300 ms per `it`
+// and <= 3 s per hook; the raised timeouts are for the Windows runner, measured
+// > 15x slower on SQLite-file work (AGENTS.md Testing).
 beforeAll(async () => {
   t = await openTempDb("seams-v43-fixF", { seed: true });
   importer = await import("@/lib/import/commit");
@@ -1027,7 +1160,7 @@ describe("F10 · a legacy IPO row filed in account 1 whose holding is in another
     dataFixes = await import("@/lib/db/data-fixes");
   }, 60_000);
 
-  it("the fix re-homes it to its holding's account and the listing follows; a null link, a same-account link and a deleted trade are left alone", () => {
+  it("the fix re-homes it to its holding's account and the listing follows; a null link, a same-account link and a link naming a trade that is gone are left alone", () => {
     const holding = t.db
       .insert(t.schema.trades)
       .values(tradeRow({ accountId: F10_ACC, broker: "zerodha", symbol: "F10-IPO", tradingsymbol: "F10-IPO", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20", isOpen: true }))
@@ -1043,6 +1176,28 @@ describe("F10 · a legacy IPO row filed in account 1 whose holding is in another
       .insert(t.schema.ipos)
       .values({ accountId: 1, name: "F10-UNLINKED", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, allotmentDate: "2026-02-20" })
       .run();
+    // The other two shapes the fix must leave alone, constructed rather than
+    // asserted from the SQL (the wave-2I re-check's seams[7]: this case's title
+    // claimed all three and its body built only the null link).
+    const sameAccount = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: 1, broker: "zerodha", symbol: "F10-SAME", tradingsymbol: "F10-SAME", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20", isOpen: true }))
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const goneId = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: F10_ACC, broker: "zerodha", symbol: "F10-GONE", tradingsymbol: "F10-GONE", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20", isOpen: true }))
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.ipos)
+      .values([
+        { accountId: 1, name: "F10-SAME", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, allotmentDate: "2026-02-20", tradeId: sameAccount },
+        { accountId: 1, name: "F10-GONE", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, allotmentDate: "2026-02-20", tradeId: goneId },
+      ])
+      .run();
+    // The link is history, not a destination: the trade it names is deleted.
+    t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, goneId)).run();
     const stored = (name: string) => t.db.select().from(t.schema.ipos).all().find((r) => r.name === name)!;
     expect([stored("F10-IPO").accountId, stored("F10-IPO").tradeId]).toEqual([1, holding]);
     // Its own account cannot see it, and account 1 shows it unlinked (the join
@@ -1061,6 +1216,8 @@ describe("F10 · a legacy IPO row filed in account 1 whose holding is in another
     // read as unlinked by the counted-once consumers).
     expect([stored("F10-IPO").accountId, stored("F10-IPO").tradeId], "the holding is the fact the user cannot have got wrong").toEqual([F10_ACC, holding]);
     expect(stored("F10-UNLINKED").accountId, "an ordinary application is left where it is").toBe(1);
+    expect([stored("F10-SAME").accountId, stored("F10-SAME").tradeId], "a link inside its own book is nothing to move").toEqual([1, sameAccount]);
+    expect([stored("F10-GONE").accountId, stored("F10-GONE").tradeId], "a link naming a trade that is gone is history, not a destination").toEqual([1, goneId]);
     expect(row(holding)!.accountId, "trades is never written").toBe(F10_ACC);
     // The listing follows: its holding's own /ipos now shows it, LINKED (the
     // join is account-scoped, so the re-home is what makes the link readable).
@@ -1263,5 +1420,962 @@ describe("F13 · a merge that drops a source trade as a duplicate, its IPO linke
     selectAccount(F13_TGT);
     const cap = capital.getCapitalSummary();
     expect([cap.equityRealised, cap.ipoRealised, cap.totalRealised], "the merged book counts that sale once").toEqual([497.94, 0, 497.94]);
+  });
+});
+
+// ############################################################################
+// #  v4.3.0 FIX WAVE 2L, and the wave-2I boundaries its re-check found with
+// #  no seam case at all (wave2i-recheck.json, unit "seams", new_defects[2..7])
+// ############################################################################
+
+// ============================================================================
+// F14 — an ARCHIVED holding's book (data-fixes.ts, L3) ↔ the cross-account link
+//       it therefore LEAVES ↔ the counted-once rule's ONE home (ipos.ts, L5)
+//       ↔ capital / getTaxBase / the ITR export / both AIS sides
+// ============================================================================
+
+describe("F14 · an IPO record whose holding lives in an ARCHIVED account (runDataFixes → the link that stays → ipoIdsCountedThroughTrades → capital, tax, ITR, AIS)", () => {
+  let capital: typeof import("@/lib/queries/capital");
+  let taxItr: typeof import("@/lib/queries/tax-itr");
+  let aisRoute: typeof import("@/app/api/ais/route");
+  beforeAll(async () => {
+    capital = await import("@/lib/queries/capital");
+    taxItr = await import("@/lib/queries/tax-itr");
+    aisRoute = await import("@/app/api/ais/route");
+    dataFixes = await import("@/lib/db/data-fixes");
+  }, 60_000);
+
+  const TRADE_NET = 470.5;
+  /** Every consumer that must state this ONE sale exactly once, in one view. */
+  async function counted(accountId: number) {
+    selectAccount(accountId);
+    const cap = capital.getCapitalSummary();
+    const base = taxItr.getTaxBase();
+    const res = await aisRoute.POST(json("/api/ais", { text: "nothing to parse" }));
+    const { recon } = (await res.json()) as { recon: { fyTotals: { fy: string; kind: string; journal: number | null }[] } };
+    // Both AIS sides of the one financial year this sale falls in (allotment
+    // 2026-02-20, exit 2026-03-02): the purchase value and the sale consideration.
+    const side = (kind: string) => recon.fyTotals.find((f) => f.fy === "2025-26" && f.kind === kind)?.journal ?? null;
+    return {
+      capital: [cap.equityRealised, cap.ipoRealised, cap.totalRealised],
+      ipoNames: base.exitedIpos.map((r) => r.name),
+      cgNets: base.cgTrades.map((r) => r.netPnl),
+      itrScrips: taxItr.getItrExportRows().map((r) => r.scrip),
+      itrCount: taxItr.countItrRows(),
+      aisSale: side("sale"),
+      aisPurchase: side("purchase"),
+    };
+  }
+
+  it("the re-home leaves it where it is (an archived book cannot be selected), and the link it leaves counts that sale ONCE in this book, the other book and All accounts", async () => {
+    // The All-accounts view carries every other seam's rows too, so that view is
+    // read as a DELTA around this one sale; the two empty books are read whole.
+    const allBefore = await counted(0);
+    t.db.update(t.schema.accounts).set({ archived: true }).where(eq(t.schema.accounts.id, F14_ARCH)).run();
+    const holding = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F14_ARCH, broker: "zerodha", symbol: "F14-IPO", tradingsymbol: "F14-IPO", acquisition: "ipo",
+          buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20", buyOrderCount: 1,
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: 500, chargesTotal: Math.round((500 - TRADE_NET) * 100) / 100, netPnl: TRADE_NET, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    // The pre-2I shape: the record filed in another book, naming that holding.
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F14_REC, name: "F14-IPO", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20", tradeId: holding })
+      .run();
+    const stored = () => t.db.select().from(t.schema.ipos).all().find((r) => r.name === "F14-IPO")!;
+
+    const results = dataFixes.rerunDataFixesAfterRestore(t.sqlite);
+    expect(results.map((r) => r.name), "the startup fix really ran").toContain("ipo-account-rehome-v1");
+    // THE assertion (on revert of lib/db/data-fixes.ts, whose SELECT did not ask
+    // whether the destination is archived: the record MOVES into F14_ARCH, which
+    // the account switcher never lists, so it leaves every selectable view —
+    // [1722, …] → [1721, …]).
+    expect([stored().accountId, stored().tradeId], "an archived book is not a destination").toEqual([F14_REC, holding]);
+
+    // So the cross-account link STANDS, and the counted-once rule must hold in
+    // all three views (L5 — one home, and the LINK read unscoped by account).
+    const ipoNet = ipoPage("F14-IPO", F14_REC).netPnl;
+    expect(ipoNet, "the IPO prices its own sale").toBeGreaterThan(0);
+
+    const recordBook = await counted(F14_REC);
+    expect([recordBook.ipoNames, recordBook.cgNets], "the record's own book counts the IPO: its holding is not in view").toEqual([["F14-IPO"], [ipoNet]]);
+    expect(recordBook.capital, "…once, as /ipos prices it").toEqual([0, ipoNet, ipoNet]);
+    expect([recordBook.itrScrips, recordBook.itrCount], "one ITR row for one sale").toEqual([["F14-IPO (IPO)"], 1]);
+
+    const holdingBook = await counted(F14_ARCH);
+    expect(holdingBook.capital, "the holding's book counts the trade, and the IPO is not in view").toEqual([TRADE_NET, 0, TRADE_NET]);
+    expect([holdingBook.ipoNames, holdingBook.cgNets]).toEqual([[], [TRADE_NET]]);
+    expect([holdingBook.itrScrips, holdingBook.itrCount]).toEqual([["F14-IPO"], 1]);
+
+    // THE assertion (on revert of lib/queries/ipos.ts' getIpoRealisedNet to the
+    // account-scoped LEFT JOIN: All accounts counted the trade AND the IPO — the
+    // IPO's own net added on top of the holding's — while the tax pack, the ITR
+    // export and both AIS sides, reading the raw link, counted it once).
+    const all = await counted(0);
+    expect(all.ipoNames, "All accounts: the holding is counted, so the IPO is left out").not.toContain("F14-IPO");
+    expect(all.cgNets.filter((n) => n === TRADE_NET), "…once, as the trades book states it").toHaveLength(1);
+    expect(all.itrScrips.filter((s) => s === "F14-IPO"), "one ITR row for one sale").toEqual(["F14-IPO"]);
+    expect([
+      Math.round((all.capital[0] - allBefore.capital[0]) * 100) / 100,
+      Math.round((all.capital[1] - allBefore.capital[1]) * 100) / 100,
+      Math.round((all.capital[2] - allBefore.capital[2]) * 100) / 100,
+    ], "one sale, once, in the All-accounts totals").toEqual([TRADE_NET, 0, TRADE_NET]);
+    // BOTH AIS sides, in all three views. Each book states the one allotment
+    // (₹1,000 of purchase value) and the one exit (₹1,500 of sale
+    // consideration) exactly once, and All accounts gains exactly one copy.
+    expect([recordBook.aisPurchase, recordBook.aisSale], "the record's book states it through the IPO").toEqual([1000, 1500]);
+    expect([holdingBook.aisPurchase, holdingBook.aisSale], "the holding's book states it through the trade").toEqual([1000, 1500]);
+    expect([
+      Math.round(((all.aisPurchase ?? 0) - (allBefore.aisPurchase ?? 0)) * 100) / 100,
+      Math.round(((all.aisSale ?? 0) - (allBefore.aisSale ?? 0)) * 100) / 100,
+    ], "All accounts gains ONE copy of each side, not two").toEqual([1000, 1500]);
+  });
+});
+
+// ============================================================================
+// F15 — a stored ISIN carrying NON-SPACE whitespace: ONE canonicalIsin on both
+//       sides (lib/domain/isin.ts, L1) ↔ queries/trades.ts ↔ the page's map
+// ============================================================================
+
+describe("F15 · a holding whose stored ISIN carries a tab and a non-breaking space (canonicalIsin → getOpenUnderlyingPositions → page groups → StrategyCard)", () => {
+  type Group = { key: string; symbol: string } & Record<string, unknown>;
+  function cardsOf(accountId: number) {
+    selectAccount(accountId);
+    const el = findElem(strategiesPage(), (e) => e.type === StrategiesClient);
+    if (!el) throw new Error("the strategies page no longer renders <StrategiesClient>");
+    return (el.props.groups as Group[])
+      .filter((g) => g.symbol === "RELIANCE")
+      .map((g) => {
+        const html = renderToStaticMarkup(React.createElement(StrategyCard, { group: g as never, chart: null }));
+        const text = unescape(html.replace(/<[^>]*>/g, "|").replace(/\|+/g, "|"));
+        const strikes = (g.legs as { kind: string; strike: number }[]).filter((l) => l.kind !== "UL").map((l) => l.strike).sort((a, b) => a - b).join("/");
+        return { strikes, strategy: String(g.strategyId ?? ""), unlimited: text.includes("Unlimited") };
+      })
+      .sort((a, b) => a.strikes.localeCompare(b.strikes));
+  }
+
+  it("its OWN account bounds the call its shares cover, and All accounts is the union — a tab and an NBSP are not a different ISIN", async () => {
+    freezeAt("2026-09-08T09:30:00.000Z");
+    const isin = bundledIsinBySymbol("RELIANCE")!;
+    // An .xlsx cell as the Groww / Angel One / Upstox parsers store it (raw) and
+    // commit.ts writes it (unchanged): a tab, an Alt+Enter mid-cell, an NBSP.
+    const dirty = `\t${isin.slice(0, 6)}\n ${isin.slice(6).toLowerCase()} `;
+    expect([dirty === isin, dirty.trim() === isin.toUpperCase()], "the fixture is not space padding, which F12 already pins").toEqual([false, false]);
+    const { canonicalIsin } = await import("@/lib/domain/isin");
+    expect(canonicalIsin(dirty), "the ONE rule both sides now ask").toBe(isin);
+    t.db
+      .insert(t.schema.trades)
+      .values([
+        tradeRow({
+          accountId: F15_B, broker: "groww", bucket: "active", segment: "stock_option", instrumentType: "option", exchange: "NFO",
+          symbol: "RELIANCE", tradingsymbol: "RELIANCE2800CESEP26", optionType: "CE", strike: 2800, expiry: "2026-09-24", isOpen: true, sellQty: 100, avgSellPrice: 40,
+        }),
+        tradeRow({
+          accountId: F15_B, broker: "groww", symbol: "Reliance Industries Ltd", tradingsymbol: "Reliance Industries Ltd",
+          isin: dirty, isOpen: true, buyQty: 100, avgBuyPrice: 2700, buyDate: "2026-09-01",
+        }),
+        tradeRow({
+          accountId: F15_A, broker: "groww", bucket: "active", segment: "stock_option", instrumentType: "option", exchange: "NFO",
+          symbol: "RELIANCE", tradingsymbol: "RELIANCE3000CESEP26", optionType: "CE", strike: 3000, expiry: "2026-09-24", isOpen: true, sellQty: 100, avgSellPrice: 20,
+        }),
+      ])
+      .run();
+
+    // THE assertion (on revert of EITHER half — lib/queries/trades.ts, whose
+    // `upper(trim(isin))` strips U+0020 and nothing else, or app/strategies/
+    // page.tsx, whose `isin.trim().toUpperCase()` reaches neither end of an
+    // Alt+Enter mid-cell): [{strategy:"short-call", unlimited:true}] in the
+    // account that HOLDS the shares, while All accounts still bounded it.
+    const own = cardsOf(F15_B);
+    expect(own, "the holding is found where it is held").toEqual([{ strikes: "2800", strategy: "covered-call", unlimited: false }]);
+    const other = cardsOf(F15_A);
+    expect(other, "a call with no units of its own stays unbounded").toEqual([{ strikes: "3000", strategy: "short-call", unlimited: true }]);
+    expect(cardsOf(0), "All accounts is each account's own card — never more").toEqual([...own, ...other]);
+  });
+});
+
+// ============================================================================
+// F16 — a PARTLY SOLD MTF leg states no own capital (positions.ts, L2) ↔ the
+//       /equity column predicate and the KPI total ↔ an UNPRICED MTF row
+//       (mtf-drift.ts, L2) ↔ the drift card's count
+// ============================================================================
+
+describe("F16 · a partly sold MTF holding written by closePosition, beside one the journal never priced (deriveOpenPositions → statesOwnCapital / ownCapitalTotal → /equity; mtfDrift → unpricedMtfPositions → MtfDriftCard)", () => {
+  let positionsLib: typeof import("@/lib/analytics/positions");
+  let drift: typeof import("@/lib/risk/mtf-drift");
+  let MtfDriftCard: typeof import("@/components/risk/mtf-drift-card").MtfDriftCard;
+  beforeAll(async () => {
+    positionsLib = await import("@/lib/analytics/positions");
+    drift = await import("@/lib/risk/mtf-drift");
+    MtfDriftCard = (await import("@/components/risk/mtf-drift-card")).MtfDriftCard;
+  }, 60_000);
+
+  it("the row states no own capital, no ROI, and the KPI total leaves it out and says so; the unpriced row is left out of the drift table and named", async () => {
+    freezeAt("2026-09-08T09:30:00.000Z");
+    // A funded MTF buy of 100 @200, ₹15,000 of it the broker's.
+    const partly = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F16_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F16-PART", tradingsymbol: "F16-PART",
+          buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-01", buyOrderCount: 1, mtfFundedAmount: 15000, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    // A row whose funding the journal NEVER resolved (null, not 0).
+    const unpriced = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F16_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F16-UNPRICED", tradingsymbol: "F16-UNPRICED",
+          buyQty: 50, avgBuyPrice: 100, buyValue: 5000, buyDate: "2026-08-01", buyOrderCount: 1, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    expect(row(unpriced)!.mtfFundedAmount, "unstated, not 0").toBeNull();
+
+    // THE PRODUCER for the partly sold state: the real editor render and the
+    // real server action, selling 40 of the 100 (`isOpen = buyQty !== sellQty`,
+    // commit.ts:2392 — never a hand UPDATE).
+    const sold = await actions.updateTradeAction(NO_STATE, editorForm(F16_ACC, partly, { sellQty: "40", avgSellPrice: "260", sellDate: "2026-09-05" }));
+    expect([sold.ok, sold.message]).toEqual([true, "Trade updated."]);
+    const after = row(partly)!;
+    expect([after.isOpen, after.buyQty, after.sellQty, after.mtfFundedAmount], "still open, and the stored funding is still the WHOLE buy leg's").toEqual([true, 100, 40, 15000]);
+
+    // CONSUMER 1 — the drift check and its card, wired as app/risk/page.tsx
+    // wires them (that file is in another builder's hands this wave, so the
+    // contract is asserted here: mtfDrift and unpricedMtfPositions over the
+    // SAME rows, the count handed to the card).
+    //
+    // Read BEFORE /equity: that page runs `accrueMtfInterest`, which fills a
+    // null funded amount with the broker default on the first visit — so an
+    // unpriced row is only unpriced until someone opens the Equity Tracker.
+    selectAccount(F16_ACC);
+    const openMtf = tradeQueries.getTrades()
+      .filter((x) => x.isOpen && x.segment === "eq_mtf")
+      .map((x) => ({ id: x.id, symbol: x.symbol, broker: x.broker, buyValue: x.buyValue, mtfFundedAmount: x.mtfFundedAmount }));
+    expect(openMtf.map((x) => x.mtfFundedAmount), "one row priced, one never priced").toEqual([15000, null]);
+    const rows = drift.mtfDrift(openMtf, () => ({ pct: 40, source: "stock-list" as const, asOf: "2026-09-01", coverage: null, note: null }));
+    const left = drift.unpricedMtfPositions(openMtf);
+    // THE assertion (on revert of lib/risk/mtf-drift.ts: `p.mtfFundedAmount ?? 0`
+    // states the unpriced row at 100% own margin — storedOwnPct 100, deltaPct
+    // −60 — and the card tells the trader the requirement FELL).
+    expect(rows.map((r) => r.symbol), "a row the journal never priced has no entry margin to compare").toEqual(["F16-PART"]);
+    expect(left.map((r) => r.id)).toEqual([unpriced]);
+    const html = renderToStaticMarkup(React.createElement(MtfDriftCard, { drift: rows, unpriced: left.length, bundleAsOf: "2026-09-01", stale: false }));
+    const text = unescape(html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " "));
+    // THE assertion (on revert of components/risk/mtf-drift-card.tsx, which had
+    // no `unpriced` prop at all: the count crosses the seam and is not shown).
+    expect(text, "the card names what it is not showing").toContain("1 open MTF position is not priced");
+    expect(text).not.toContain("F16-UNPRICED");
+
+    // CONSUMER 2 — /equity's own render.
+    const el = findElem(equityPage(), (e) => e.type === TrackerClient);
+    if (!el) throw new Error("the equity page no longer renders <TrackerClient>");
+    const positions = el.props.positions as import("@/lib/analytics/positions").OpenPosition[];
+    const p = positions.find((x) => x.id === partly)!;
+    // THE assertion (on revert of lib/analytics/positions.ts: ownCapital −3,000
+    // — `invested` is the REMAINING 60 × 200 against the whole leg's 15,000 —
+    // subtracted from "Own capital in MTF" on the same screen whose own cell
+    // printed "—").
+    expect([p.isMtf, p.ownCapital, p.roiOnCapitalPct], "a partly sold leg states no own capital and no ROI on it").toEqual([true, null, null]);
+    // The per-row cell predicate and the KPI total, the SAME two functions the
+    // tracker reads (tracker-client.tsx) — they cannot disagree again.
+    expect(positionsLib.statesOwnCapital(p), "the cell refuses it").toBe(false);
+    const other = positions.find((x) => x.id === unpriced)!;
+    expect([other.isMtf, positionsLib.statesOwnCapital(other), (other.ownCapital ?? 0) > 0], "the row beside it still states one").toEqual([true, true, true]);
+    const totals = positionsLib.ownCapitalTotal(positions);
+    // THE assertion: the total is the OTHER row's own capital exactly — the
+    // partly sold leg is left out, not added as its negative (pre-fix:
+    // 1,000 + (60 × 200 − 15,000) = −2,000, with `unstated` 0).
+    expect([totals.total, totals.unstated, totals.funded], "the KPI leaves it out and counts it").toEqual([other.ownCapital, 1, other.fundedAmount]);
+    expect(positionsLib.ownCapitalNote(totals.unstated)).toBe("own capital not stated for 1 partly sold MTF row");
+    expect(Math.round((totals.total + (p.invested - 15000)) * 100) / 100, "the negative it used to subtract is a real one").not.toBe(totals.total);
+  });
+});
+
+// ============================================================================
+// F17 — the LEGGED / STAGED doors (actions.ts pushTradeToIpoAction, I4 ↔ POST
+//       /api/ipos, I4+L3) ↔ syncWouldWrite (ipo-link.ts, L3)
+// ============================================================================
+
+describe("F17 · an IPO linked to a holding that has become a ladder (pushTradeToIpoAction → tradeLegs → POST /api/ipos: a link, a sync AND a notes-only save)", () => {
+  const legged = (name: string) => {
+    const id = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: F17_ACC, broker: "zerodha", symbol: name, tradingsymbol: name, acquisition: "ipo", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20", buyOrderCount: 1, isOpen: true }))
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    return id;
+  };
+  const addLeg = (tradeId: number) =>
+    t.db.insert(t.schema.tradeLegs).values({ tradeId, kind: "entry", seq: 1, tradeDate: "2026-02-20", qty: 10, price: 100 }).run();
+
+  it("the notes-only save is SAVED and the ladder is left alone; an exit edit, a new link and the Trades button are all refused, and no remedy names unlinking", async () => {
+    selectAccount(F17_ACC);
+    const holding = legged("F17-IPO");
+    // Linked while the holding is still plain — exactly how the state is
+    // reached (lib/queries/staged.ts addLeg has no IPO-link guard).
+    const pushed = await actions.pushTradeToIpoAction(NO_STATE, (() => { const fd = new FormData(); fd.set("tradeId", String(holding)); return fd; })());
+    expect(pushed.ok, pushed.message).toBe(true);
+    addLeg(holding);
+    const before = row(holding)!;
+
+    // (a) THE assertion (on revert of app/api/ipos/route.ts to HEAD, whose
+    // STAGED guard sat before the sync decision: 409 for a save that writes
+    // NOTHING to the holding, and the refusal told the user to unlink — which
+    // counts the sale twice, 497.94 → 995.88).
+    const e = ipoPage("F17-IPO", F17_ACC);
+    const notesOnly = await ipoRoute.POST(json("/api/ipos", saveBody(e, formHtml(e), { notes: "applied through the ASBA block" })));
+    const notesBody = (await notesOnly.clone().json()) as { ok: boolean; message: string };
+    expect([notesOnly.status, notesBody.ok], notesBody.message).toEqual([200, true]);
+    expect(notesBody.message, "and it says what it did NOT do").toContain("booked on its own ladder in Trades and was left as it is");
+    expect(notesBody.message, "no remedy that re-creates the double count").not.toContain("Unlink");
+    expect(row(holding), "the ladder's parent is untouched").toEqual(before);
+    expect(t.db.select().from(t.schema.ipos).all().find((r) => r.name === "F17-IPO")!.notes).toBe("applied through the ASBA block");
+
+    // (b) a save that WOULD rewrite the parent from the allotment is refused,
+    // and the sentence names the ladder as the place to record it.
+    const e2 = ipoPage("F17-IPO", F17_ACC);
+    const exitEdit = await ipoRoute.POST(json("/api/ipos", saveBody(e2, formHtml(e2), { exitPrice: "150", exitDate: "2026-03-02" })));
+    const refused = (await exitEdit.json()) as { code?: string; message: string };
+    expect([exitEdit.status, refused.code]).toEqual([409, "STAGED"]);
+    expect(refused.message).toContain("Record this change on that ladder. Nothing was saved.");
+    expect(row(holding), "nothing was saved").toEqual(before);
+
+    // (c) the OTHER door: the Trades button, on a staged holding with no record.
+    const staged = legged("F17-STAGED");
+    t.db.update(t.schema.trades).set({ staged: true }).where(eq(t.schema.trades.id, staged)).run();
+    const fd = new FormData();
+    fd.set("tradeId", String(staged));
+    const pushRefused = (await actions.pushTradeToIpoAction(NO_STATE, fd)) as { ok: boolean; code?: string; message: string };
+    expect([pushRefused.ok, pushRefused.code]).toEqual([false, "STAGED"]);
+    expect(t.db.select().from(t.schema.ipos).all().filter((r) => r.name === "F17-STAGED")).toHaveLength(0);
+
+    // (d) and a link this save MAKES is refused the same way (the create door).
+    const created = await ipoRoute.POST(json("/api/ipos", { ...saveBody(e2, formHtml(e2)), id: undefined, name: "F17-NEW", tradeId: staged }));
+    expect([created.status, ((await created.json()) as { code?: string }).code]).toEqual([409, "STAGED"]);
+    expect(t.db.select().from(t.schema.ipos).all().filter((r) => r.name === "F17-NEW")).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// F18 — whose charges the holding carries, proved by the MARKER (ipo-link.ts
+//       IPO_SYNC_CHARGES_NOTE, L3) ↔ /api/ipos ↔ the REAL charge_config,
+//       edited through the REAL charge editor ↔ updateManualTrade (commit.ts)
+// ============================================================================
+
+describe("F18 · a rate correction between the sync's write and a later exit edit (syncLinkedTrade → import_notes → syncWroteCharges; the trade editor's own save drops it)", () => {
+  it("the charges follow the new exit across a charge_config edit; after the user's own editor save they are the user's and are kept", async () => {
+    const { IPO_SYNC_CHARGES_NOTE } = await import("@/lib/analytics/ipo-link");
+    const settingsRoute = await import("@/app/api/settings/route");
+    const tradeId = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: F18_ACC, broker: "zerodha", symbol: "F18-IPO", tradingsymbol: "F18-IPO", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2019-01-10", buyOrderCount: 1, isOpen: true }))
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F18_ACC, name: "F18-IPO", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, allotmentDate: "2019-01-10", tradeId })
+      .run();
+
+    // The sync writes the close AND says, on the row, that the charges are its own.
+    const first = ipoPage("F18-IPO", F18_ACC);
+    expect((await ipoRoute.POST(json("/api/ipos", saveBody(first, formHtml(first), { exitPrice: "150", exitDate: "2026-03-02" })))).status).toBe(200);
+    const afterFirst = row(tradeId)!;
+    expect(afterFirst.importNotes ?? "", "the provenance the next edit will ask about").toContain(IPO_SYNC_CHARGES_NOTE);
+    expect(afterFirst.chargesTotal).toBeGreaterThan(0);
+
+    // THE RATE CARD MOVES — through the real charge editor's own route, into
+    // the real charge_config (invariant 3: the only rate source).
+    const rate = t.db
+      .select()
+      .from(t.schema.chargeConfig)
+      .all()
+      .find((r) => r.broker === "zerodha" && r.segment === "eq_delivery" && r.exchange === "NSE")!;
+    const saved = await settingsRoute.POST(json("/api/settings", {
+      type: "charge", id: rate.id, brokerageFlat: rate.brokerageFlat, brokeragePct: 0.25, brokerageCap: rate.brokerageCap, brokerageFloor: rate.brokerageFloor,
+      sttPct: rate.sttPct, exchangeTxnPct: rate.exchangeTxnPct, sebiPct: rate.sebiPct, stampPct: rate.stampPct, ipftPct: rate.ipftPct, gstPct: rate.gstPct,
+      dpCharge: rate.dpCharge, mtfInterestAnnual: rate.mtfInterestAnnual,
+    }));
+    expect(saved.status, JSON.stringify(await saved.clone().json())).toBe(200);
+
+    // The exit is re-priced. THE assertion (on revert of app/api/ipos/route.ts
+    // to HEAD, whose `syncWroteCharges` re-priced the STORED exit against the
+    // LIVE rate card: the correction above made that comparison fail, ownership
+    // was lost for good, and the ₹5,000 sale kept the ₹1,500 sale's bill while
+    // price, gross and net moved with the new exit).
+    const second = ipoPage("F18-IPO", F18_ACC);
+    expect((await ipoRoute.POST(json("/api/ipos", saveBody(second, formHtml(second), { exitPrice: "500", exitDate: "2026-03-02" })))).status).toBe(200);
+    const reprice = row(tradeId)!;
+    const shown = ipoPage("F18-IPO", F18_ACC);
+    expect([reprice.avgSellPrice, reprice.grossPnl], "the new exit").toEqual([500, 4000]);
+    expect(reprice.chargesTotal, "priced at the rates now in charge_config, not frozen at the old bill").not.toBe(afterFirst.chargesTotal);
+    expect([reprice.chargesTotal, reprice.netPnl], "/ipos and the Trades row state ONE figure").toEqual([shown.charges, shown.netPnl]);
+    expect(reprice.brokerage, "the corrected rate is the one that was billed").toBe(Math.round(0.25 * 50 * 100) / 100 > (rate.brokerageCap ?? Infinity) ? rate.brokerageCap! : reprice.brokerage);
+
+    // THE USER TAKES THE CHARGES OVER — a save of their own through the real
+    // editor that moves a charge head (the buy leg re-prices stamp duty and
+    // brokerage; the SALE is untouched, so the sync still owns the close).
+    const edited = await actions.updateTradeAction(NO_STATE, editorForm(F18_ACC, tradeId, { avgBuyPrice: "101", buyQty: "10" }));
+    expect([edited.ok, edited.message]).toEqual([true, "Trade updated."]);
+    const userRow = row(tradeId)!;
+    // THE assertion (on revert of lib/import/commit.ts: the marker survives the
+    // user's save, so the next exit edit rewrites the figures they just set).
+    expect(userRow.importNotes ?? "", "whoever changes the charges owns them").not.toContain(IPO_SYNC_CHARGES_NOTE);
+
+    const third = ipoPage("F18-IPO", F18_ACC);
+    expect((await ipoRoute.POST(json("/api/ipos", saveBody(third, formHtml(third), { exitPrice: "520", exitDate: "2026-03-02" })))).status).toBe(200);
+    const kept = row(tradeId)!;
+    expect(kept.avgSellPrice, "the exit still moves").toBe(520);
+    expect([kept.chargesTotal, kept.brokerage, kept.sttCtt], "a figure the user states is never rewritten (owner ruling F1)").toEqual([
+      userRow.chargesTotal, userRow.brokerage, userRow.sttCtt,
+    ]);
+  });
+});
+
+// ============================================================================
+// F19 — clearing an IPO's exit ↔ whose close the holding carries
+//       (reopensAForeignClose, L3) ↔ the eight heads the IPO prices
+// ============================================================================
+
+describe("F19 · the exit cleared on /ipos for a sale recorded in Trades, and for one the sync itself wrote (POST /api/ipos → linkPatch → syncLinkedTrade)", () => {
+  it("a close the user recorded is refused 409 with its charges intact; a close the sync wrote re-opens and its priced heads go", async () => {
+    const { IPO_SYNC_CHARGES_NOTE } = await import("@/lib/analytics/ipo-link");
+    // (a) the user's own sale, charges from their contract note.
+    const userTrade = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F19_ACC, broker: "zerodha", symbol: "F19-USER", tradingsymbol: "F19-USER", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2019-01-10",
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", grossPnl: 500, brokerage: 20, dpCharges: 13.5, chargesTotal: 33.5, netPnl: 466.5, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F19_ACC, name: "F19-USER", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2019-01-10", tradeId: userTrade })
+      .run();
+    const userBefore = row(userTrade)!;
+    const u = ipoPage("F19-USER", F19_ACC);
+    const res = await ipoRoute.POST(json("/api/ipos", { ...saveBody(u, formHtml(u)), exitPrice: "", exitDate: "" }));
+    const body = (await res.json()) as { code?: string; message: string };
+    // THE assertion (on revert of app/api/ipos/route.ts to HEAD, which had no
+    // such guard: 200, the holding re-opened and the contract note's ₹20 of
+    // brokerage and ₹13.50 of DP charge deleted — the very heads the same route
+    // refuses to REWRITE on a re-price).
+    expect([res.status, body.code], body.message).toEqual([409, "CLOSE_IN_TRADES"]);
+    expect(body.message).toContain("Re-open or change that sale in Trades, where it is recorded.");
+    expect(row(userTrade), "nothing was saved").toEqual(userBefore);
+    expect(t.db.select().from(t.schema.ipos).all().find((r) => r.name === "F19-USER")!.exitPrice, "and the IPO keeps its exit").toBe(150);
+
+    // (b) a close the SYNC wrote: clearing it is what the sync is for.
+    const syncTrade = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: F19_ACC, broker: "zerodha", symbol: "F19-SYNC", tradingsymbol: "F19-SYNC", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2019-01-10", buyOrderCount: 1, isOpen: true }))
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F19_ACC, name: "F19-SYNC", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: syncTrade })
+      .run();
+    const s1 = ipoPage("F19-SYNC", F19_ACC);
+    expect((await ipoRoute.POST(json("/api/ipos", saveBody(s1, formHtml(s1), { exitPrice: "150", exitDate: "2026-03-02" })))).status).toBe(200);
+    const closed = row(syncTrade)!;
+    expect([closed.isOpen, (closed.importNotes ?? "").includes(IPO_SYNC_CHARGES_NOTE)]).toEqual([false, true]);
+    // Money the IPO never prices, recorded on the row by hand.
+    t.db.update(t.schema.trades).set({ mtfInterest: 7, pledgeCharges: 2, chargesTotal: Math.round((closed.chargesTotal + 9) * 100) / 100 }).where(eq(t.schema.trades.id, syncTrade)).run();
+
+    const s2 = ipoPage("F19-SYNC", F19_ACC);
+    const cleared = await ipoRoute.POST(json("/api/ipos", { ...saveBody(s2, formHtml(s2)), exitPrice: "", exitDate: "" }));
+    expect(cleared.status, JSON.stringify(await cleared.clone().json())).toBe(200);
+    const reopened = row(syncTrade)!;
+    expect([reopened.isOpen, reopened.sellQty, reopened.brokerage, reopened.sttCtt, reopened.dpCharges], "the eight heads the sync priced go with the exit").toEqual([true, 0, 0, 0, 0]);
+    expect([reopened.mtfInterest, reopened.pledgeCharges, reopened.chargesTotal], "the two it never writes are kept, and are the total").toEqual([7, 2, 9]);
+    expect((reopened.importNotes ?? "").includes(IPO_SYNC_CHARGES_NOTE), "the claim goes with the charges").toBe(false);
+  });
+});
+
+// ============================================================================
+// F20 — an exit date that is not a real calendar day (commit.ts normalizeDate /
+//       closePosition, L3) ↔ the close route ↔ the dialog's resolveExitIso
+// ============================================================================
+
+describe("F20 · '99-99-9999' and '31-02-2026' typed into the close dialog (resolveExitIso ↔ POST /api/positions/close → closePosition)", () => {
+  let closeRoute: typeof import("@/app/api/positions/close/route");
+  beforeAll(async () => {
+    closeRoute = await import("@/app/api/positions/close/route");
+    closeDialog = (await import("@/components/trades/close-trade-dialog")) as typeof closeDialog;
+  }, 60_000);
+
+  it("the save ANSWERS rather than throwing, the row is untouched, and the dialog previews nothing for a date the save would refuse", async () => {
+    const mtf = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F20_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F20-MTF", tradingsymbol: "F20-MTF",
+          buyQty: 100, avgBuyPrice: 160, buyValue: 16000, buyDate: "2026-08-01", buyOrderCount: 1, mtfFundedAmount: 12000, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = row(mtf)!;
+
+    // THE assertion (on revert of lib/import/commit.ts: '99-99-9999' became
+    // '9999-99-99', an Invalid Date, so the MTF day count went NaN and the
+    // UPDATE threw `NOT NULL constraint failed: trades.charges_total_paise` —
+    // the action 500d instead of answering).
+    const res = await closeRoute.POST(json("/api/positions/close", { tradeId: mtf, exitPrice: 200, exitDate: "99-99-9999" }));
+    const body = (await res.json()) as { ok: boolean; code?: string; message: string };
+    expect([res.status, body.ok, body.code], body.message).toEqual([200, false, "BAD_DATE"]);
+    expect(body.message).toContain("is not a real calendar day");
+    expect(row(mtf), "nothing was written").toEqual(before);
+
+    // The impossible day that was SILENTLY STORED before: 31 February.
+    const fd = new FormData();
+    fd.set("tradeId", String(mtf));
+    fd.set("exitPrice", "200");
+    fd.set("exitDate", "31-02-2026");
+    const action = await actions.closeTradeAction(NO_STATE, fd);
+    expect([action.ok, action.message.includes("is not a real calendar day")], action.message).toEqual([false, true]);
+    expect(row(mtf)!.sellDate, "'2026-02-31' is not a day this journal stores").toBeNull();
+
+    // The DIALOG's half of the same rule: it previews nothing for a date the
+    // save refuses, and a blank field is still today (unanswered, not unreadable).
+    expect([closeDialog.resolveExitIso("31-02-2026"), closeDialog.resolveExitIso("99-99-9999")], "the two halves agree").toEqual([null, null]);
+    expect(closeDialog.resolveExitIso(""), "a blank field is today, as it always was").toBe(todayIstIso());
+    expect(closeDialog.resolveExitIso("28-02-2026")).toBe("2026-02-28");
+
+    // And a real day still closes the position, through the same route.
+    const ok = await closeRoute.POST(json("/api/positions/close", { tradeId: mtf, exitPrice: 200, exitDate: "28-02-2026" }));
+    expect([ok.status, ((await ok.json()) as { ok: boolean }).ok]).toEqual([200, true]);
+    expect([row(mtf)!.isOpen, row(mtf)!.sellDate]).toEqual([false, "2026-02-28"]);
+  });
+});
+
+// ============================================================================
+// F21 — an OLDER cross-FILE row met before today's snapshot (cross-source.ts,
+//       L4) ↔ the pull route's 409 ↔ the broker-connect dialog's copy
+// ============================================================================
+
+describe("F21 · one incoming pull row that matches BOTH an older import and today's own snapshot row (planSnapshot → detectCrossSourceDuplicates → route 409 → collisionDialogCopy)", () => {
+  const clientOf = (accountId: number) => `40000${accountId}`;
+  const alive = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
+  const addDhan = (accountId: number) =>
+    t.sqlite
+      .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json, last_pull_at) VALUES (?, 'dhan', ?, ?, NULL, NULL)")
+      .run(accountId, clientOf(accountId), alive());
+  const position = (accountId: number, symbol: string, productType: string, exchangeSegment: string, buyQty: number, buyAvg: number) => ({
+    dhanClientId: clientOf(accountId), tradingSymbol: symbol, positionType: "LONG", exchangeSegment, productType, buyAvg, buyQty, sellAvg: 0, sellQty: 0, netQty: buyQty,
+  });
+  const stub = (positions: unknown[]) =>
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      const body = u.host === "auth.dhan.co" ? { accessToken: alive() } : u.pathname === "/v2/positions" ? positions : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+  const pull = async (accountId: number) => {
+    const res = await brokerRoute.POST(json("/api/import/broker", { action: "pull", broker: "dhan", accountId, mode: "commit" }));
+    return { status: res.status, body: (await res.json()) as { needsForce?: boolean; message: string; collisions?: { symbol: string; kind: string; sameSnapshot?: boolean }[] } };
+  };
+
+  it("the ask reports TODAY'S SNAPSHOT, not the older import met first — so one round of the remedy ends it", async () => {
+    freezeAt("2026-09-08T06:30:00.000Z"); // 12:00 IST
+    addDhan(F21_ACC);
+    // An OLDER import of the same scrip, on the SAME quantity this pull states:
+    // a cross-FILE candidate that is "risky" and sits at a LOWER rowid than
+    // anything today's pull will write, so it is met FIRST.
+    const older = commitFill(F21_ACC, "SEAML4", "BUY", 15, 100, "2026-09-01");
+    // Today's earlier pull: the same instrument, on another product.
+    stub([position(F21_ACC, "SEAML4", "INTRADAY", "NSE_EQ", 10, 100)]);
+    expect((await pull(F21_ACC)).status, "the older row is no ask on its own").toBe(200);
+    const snapshotRow = rowsOf(F21_ACC).find((r) => r.segment === "eq_intraday")!;
+    expect(snapshotRow.id, "the snapshot row is the LATER one, met second").toBeGreaterThan(older.id);
+
+    freezeAt("2026-09-08T10:30:00.000Z"); // 16:00 IST, the same IST day
+    stub([position(F21_ACC, "SEAML4", "MTF", "NSE_EQ", 15, 100.5)]);
+    const blocked = await pull(F21_ACC);
+    expect([blocked.status, blocked.body.needsForce]).toEqual([409, true]);
+    const shown = bc.collisionDialogCopy({ collisions: blocked.body.collisions ?? [], message: blocked.body.message });
+    const msg = shown.serverMessage ?? "";
+
+    // THE assertion (on revert of lib/import/cross-source.ts, which broke on the
+    // FIRST risky candidate in rowid order: the ask read "1 row in this file
+    // (SEAML4) look like trades already recorded from a different file … Delete
+    // the earlier import first", so the user deleted an import that was not the
+    // blocker and met today's snapshot sentence on the next pull).
+    expect(msg, "today's snapshot IS the blocker, so it is what is reported").toContain(
+      "restates an instrument today's earlier pull already recorded under another product, segment or exchange",
+    );
+    expect(msg, "and the older import is not what the user is sent to delete").not.toContain("look like trades already recorded from a different file");
+    expect(msg).toContain("the earlier row can be deleted from Trades and the pull run again");
+    expect(blocked.body.collisions?.map((c) => [c.symbol, c.sameSnapshot ?? false]), "one report per incoming row — the snapshot one").toEqual([["SEAML4", true]]);
+    expect(row(older.id), "and nothing was written").toEqual(older);
+  });
+});
+
+// ============================================================================
+// F22 — a pre-4.3.0 Trash envelope with NO `ipoRefs` (trash.ts, L6) ↔ the ONE
+//       pairing (data-quality.ts uniqueIpoRelinks / ipoOrphanPairs, L6) ↔ the
+//       counted-once consumers ↔ the Data Quality report (queries, L6)
+// ============================================================================
+
+describe("F22 · a holding deleted the 4.2.x way and restored on 4.3.0 (writeTrashSnapshot without ipoRefs → restoreTrashSnapshot → uniqueIpoRelinks → capital / tax / AIS, and getDataQualityReport)", () => {
+  let capital: typeof import("@/lib/queries/capital");
+  let taxItr: typeof import("@/lib/queries/tax-itr");
+  let aisRoute: typeof import("@/app/api/ais/route");
+  beforeAll(async () => {
+    capital = await import("@/lib/queries/capital");
+    taxItr = await import("@/lib/queries/tax-itr");
+    aisRoute = await import("@/app/api/ais/route");
+  }, 60_000);
+
+  async function countedOnce(accountId: number) {
+    selectAccount(accountId);
+    const cap = capital.getCapitalSummary();
+    const base = taxItr.getTaxBase();
+    const res = await aisRoute.POST(json("/api/ais", { text: "nothing to parse" }));
+    const { recon } = (await res.json()) as { recon: { fyTotals: { fy: string; kind: string; journal: number | null }[] } };
+    return {
+      capital: [cap.equityRealised, cap.ipoRealised, cap.totalRealised],
+      tax: [base.exitedIpos.map((r) => r.name), base.cgTrades.map((c) => c.netPnl)],
+      ais: recon.fyTotals.map((f) => `${f.fy}|${f.kind}|${f.journal}`),
+    };
+  }
+
+  /** A sold IPO allotment and the record it came from, linked, in one book. */
+  function allotmentAndRecord(accountId: number, name: string, qty = 10) {
+    const tradeId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId, broker: "zerodha", symbol: name, tradingsymbol: name, acquisition: "ipo",
+          buyQty: qty, avgBuyPrice: 100, buyValue: qty * 100, buyDate: "2026-02-20", buyOrderCount: 1,
+          sellQty: qty, avgSellPrice: 150, sellValue: qty * 150, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: qty * 50, chargesTotal: 2.06, netPnl: qty * 50 - 2.06, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId, name, appliedPrice: 100, lotSize: qty, lotsApplied: 1, allotted: true, allottedQty: qty, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20", tradeId })
+      .run();
+    return tradeId;
+  }
+  const ipoRowsNamed = (name: string) => t.db.select().from(t.schema.ipos).all().filter((r) => r.name === name);
+
+  it("(a) the link is recovered from the book's own records, and the sale is counted once again", async () => {
+    const tradeId = allotmentAndRecord(F22_ACC, "F22-IPO");
+    const before = await countedOnce(F22_ACC);
+    expect(before.capital[1], "the baseline is counted-once, not merely stable").toBe(0);
+
+    // A 4.2.x delete: the envelope carries the row and NOTHING about the link
+    // (`ipoRefs` did not exist), the link is nulled, the row goes.
+    const stored = row(tradeId)! as unknown as Record<string, unknown>;
+    const snapshotId = trash.writeTrashSnapshot({
+      trades: [stored], legs: [], attachments: [], reason: "F22: deleted by 4.2.x", accountId: F22_ACC,
+    });
+    expect(JSON.parse(JSON.stringify(trash.listTrashSnapshots().find((s) => s.id === snapshotId) ?? {})), "the snapshot exists").toBeTruthy();
+    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, ipoRowsNamed("F22-IPO")[0]!.id)).run();
+    t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, tradeId)).run();
+
+    const restored = trash.restoreTrashSnapshot(snapshotId);
+    expect([restored.ok, restored.restored], restored.message).toEqual([true, 1]);
+    // THE assertion (on revert of lib/trash.ts: the holding comes back UNLINKED
+    // and the one sale is counted twice — in capital, the tax pack, the ITR
+    // export and both AIS sides, with nothing on screen saying so).
+    expect(ipoRowsNamed("F22-IPO")[0]!.tradeId, "re-linked by the holding's own record").toBe(tradeId);
+    expect(await countedOnce(F22_ACC), "and counted exactly once again").toEqual(before);
+  });
+
+  it("(b) two records could be the same allotment: the restore writes NOTHING and Data Quality names both", async () => {
+    const tradeId = allotmentAndRecord(F22_TWO, "F22-TWIN");
+    // A SECOND exited record of the same scrip and quantity, unlinked.
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F22_TWO, name: "F22-TWIN", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20" })
+      .run();
+
+    const stored = row(tradeId)! as unknown as Record<string, unknown>;
+    const snapshotId = trash.writeTrashSnapshot({ trades: [stored], legs: [], attachments: [], reason: "F22: the ambiguous one", accountId: F22_TWO });
+    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, ipoRowsNamed("F22-TWIN").find((r) => r.tradeId === tradeId)!.id)).run();
+    t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, tradeId)).run();
+    const restored = trash.restoreTrashSnapshot(snapshotId);
+    expect([restored.ok, restored.restored], restored.message).toEqual([true, 1]);
+
+    // THE assertion: "whichever the loop met first" is not an answer (invariant 6).
+    expect(ipoRowsNamed("F22-TWIN").map((r) => r.tradeId), "neither record is guessed onto the holding").toEqual([null, null]);
+    // …and the question is ASKED, through the real report reader.
+    selectAccount(F22_TWO);
+    const issues = dqQueries.getDataQualityReport().issues;
+    const orphan = issues.find((i) => i.code === `ipo_record_link:${tradeId}`);
+    // THE assertion (on revert of lib/queries/data-quality.ts, which passed no
+    // `unlinkedIpoRecords`: the pair is unlinked, counted twice, and silent).
+    expect(orphan?.title, "the pair is named, not guessed").toBe("IPO record not linked to its holding");
+    const named = ipoRowsNamed("F22-TWIN").map((r) => `#${r.id} F22-TWIN`);
+    expect(orphan?.detail).toContain(`2 exited IPO records`);
+    for (const n of named) expect(orphan?.detail).toContain(n);
+    expect(orphan?.detail).toContain("counted once in IPOs and again as the holding's own sale");
+    expect([orphan?.href, orphan?.ids]).toEqual(["/ipos", [tradeId]]);
+  });
+});
+
+// ============================================================================
+// F23 — the FORWARD alias direction of the merge refusal (account-delete.ts
+//       identityCollisions, L7) ↔ previewAccountDelete's warning (same fact)
+// ============================================================================
+
+describe("F23 · a source CLOSED ROUND TRIP whose hash the target's lot holds as an alias (close-stale join → heldIdentityHashes → identityClash → preview ≡ refusal)", () => {
+  const SYM = "SEAML7";
+  it("the merge REFUSES rather than dropping the row and losing its purchase leg, and the preview warned in the refusal's own words", async () => {
+    for (const acc of [F23_TGT]) {
+      commitFill(acc, SYM, "BUY", 100, 200, "2026-08-20");
+      commitFill(acc, SYM, "SELL", 100, 250, "2026-08-25");
+    }
+    const [lotT, saleT] = rowsOf(F23_TGT);
+    selectAccount(F23_TGT);
+    expect((await closeStaleRoute.POST(json("/api/data-quality/close-stale", { lotId: lotT.id, saleId: saleT.id, exitDate: "2026-08-25" }))).status).toBe(200);
+    expect(rowsOf(F23_TGT).map((r) => r.id), "the target holds one lot, carrying the sale's hash as an alias").toEqual([lotT.id]);
+
+    // The source's row is that same identity — but it is the WHOLE round trip,
+    // so it carries a purchase leg held on no other row.
+    const src = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F23_SRC, broker: "dhan", segment: "eq_delivery", symbol: SYM, tradingsymbol: SYM, dedupHash: saleT.dedupHash,
+          buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-20", sellQty: 100, avgSellPrice: 250, sellValue: 25000, sellDate: "2026-08-25",
+          grossPnl: 5000, chargesTotal: 20, netPnl: 4980, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const srcBefore = row(src)!;
+    const tgtBefore = row(lotT.id)!;
+
+    const preview = accountDelete.previewAccountDelete({ accountId: F23_SRC, mode: "merge", targetId: F23_TGT });
+    const res = accountDelete.deleteAccount({ accountId: F23_SRC, mode: "merge", targetId: F23_TGT, connections: "delete" });
+    // THE assertion (on revert of lib/queries/account-delete.ts: ok true with
+    // "1 duplicate skipped" — the source round trip DELETED whole, its purchase
+    // leg and its ₹4,980 of realised P&L gone from the merged journal).
+    expect(res.ok, res.message).toBe(false);
+    const tail = ". Nothing was merged; both accounts are unchanged.";
+    expect(res.message.endsWith(tail), res.message).toBe(true);
+    const fact = res.message.slice(0, -tail.length);
+    expect(fact, "the fact names both rows and the leg that would be counted twice").toBe(
+      `Trade #${src} (${SYM}) records a sale that “fixF ${F23_TGT}” already holds (trade #${lotT.id}, ${SYM}, which was closed with it) — moving it would count that sale twice`,
+    );
+    // The preview said the SAME thing, before the user pressed anything (one
+    // helper, two readers — they cannot drift).
+    expect((preview.ok ? preview.warnings : undefined) ?? [], "the preview is the refusal, in advance").toContain(
+      `${fact}, and skipping it would drop the other leg it records. The merge will not run until those two rows are resolved.`,
+    );
+    expect([row(src), row(lotT.id)], "both accounts are unchanged").toEqual([srcBefore, tgtBefore]);
+  });
+
+  it("(b) the REVERSE direction — a source LOT whose held alias names a row the target stores — refuses in the other half of the same sentence, and the preview says it first", async () => {
+    const SYM2 = "SEAML7R";
+    commitFill(F23R_SRC, SYM2, "BUY", 50, 300, "2026-08-20");
+    commitFill(F23R_SRC, SYM2, "SELL", 50, 320, "2026-08-25");
+    const [lotS, saleS] = rowsOf(F23R_SRC);
+    selectAccount(F23R_SRC);
+    expect((await closeStaleRoute.POST(json("/api/data-quality/close-stale", { lotId: lotS.id, saleId: saleS.id, exitDate: "2026-08-25" }))).status).toBe(200);
+    expect(rowsOf(F23R_SRC).map((r) => r.id), "the SOURCE holds the alias now").toEqual([lotS.id]);
+    // The target stores the very row that alias names.
+    const tgt = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F23R_TGT, broker: "dhan", segment: "eq_delivery", symbol: SYM2, tradingsymbol: SYM2, dedupHash: saleS.dedupHash,
+          sellQty: 50, avgSellPrice: 320, sellValue: 16000, sellDate: "2026-08-25", isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = [row(lotS.id), row(tgt)];
+
+    const preview = accountDelete.previewAccountDelete({ accountId: F23R_SRC, mode: "merge", targetId: F23R_TGT });
+    const res = accountDelete.deleteAccount({ accountId: F23R_SRC, mode: "merge", targetId: F23R_TGT, connections: "delete" });
+    expect(res.ok, res.message).toBe(false);
+    const tail = ". Nothing was merged; both accounts are unchanged.";
+    const fact = res.message.slice(0, -tail.length);
+    expect(fact, "the OTHER half of identityClash: the source row was closed with it").toBe(
+      `Trade #${lotS.id} (${SYM2}) was closed with a sale that “fixF ${F23R_TGT}” already holds (trade #${tgt}, ${SYM2}) — moving it would count that sale twice`,
+    );
+    expect((preview.ok ? preview.warnings : undefined) ?? [], "one helper, two readers").toContain(
+      `${fact}, and skipping it would drop the other leg it records. The merge will not run until those two rows are resolved.`,
+    );
+    expect([row(lotS.id), row(tgt)], "both accounts are unchanged").toEqual(before);
+  });
+});
+
+// ============================================================================
+// F24 — ONE trade takes ONE IPO record (planIpoLinks, L7) ↔ J2's MERGE-side
+//       `ipoRefs` ↔ trash.ts' re-link loop ↔ the counted-once consumers
+// ============================================================================
+
+describe("F24 · a merge whose surviving copy ALREADY carries an IPO, with a second record in a THIRD book (previewAccountDelete ≡ deleteAccount → ipoRefs → restoreTrashSnapshot → capital)", () => {
+  let capital: typeof import("@/lib/queries/capital");
+  beforeAll(async () => {
+    capital = await import("@/lib/queries/capital");
+  }, 60_000);
+
+  const sold = (accountId: number, name: string) =>
+    t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId, broker: "zerodha", symbol: name, tradingsymbol: name, dedupHash: "f24-shared-identity", acquisition: "ipo",
+          buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2019-01-10", buyOrderCount: 1,
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: 500, chargesTotal: 2.06, netPnl: 497.94, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+  const record = (accountId: number, name: string, tradeId: number | null) =>
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId, name, appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2019-01-10", tradeId })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+  const ipoRow = (id: number) => t.db.select().from(t.schema.ipos).all().find((r) => r.id === id)!;
+  const ipoRealisedAll = () => {
+    selectAccount(0);
+    return capital.getCapitalSummary().ipoRealised;
+  };
+
+  it("exactly one ipos row names the surviving copy; the skipped records ride back — this book's inside the snapshot, the other book's through ipoRefs", () => {
+    const targetTrade = sold(F24_TGT, "F24-IPO");
+    const sourceTrade = sold(F24_SRC, "F24-IPO");
+    const tgtRecord = record(F24_TGT, "F24-IPO", targetTrade); // the survivor's own
+    const srcRecord = record(F24_SRC, "F24-IPO", sourceTrade); // travels with the trade
+    const otherRecord = record(F24_OTHER, "F24-XBOOK", sourceTrade); // a THIRD book's
+    const allBefore = ipoRealisedAll();
+
+    const preview = accountDelete.previewAccountDelete({ accountId: F24_SRC, mode: "merge", targetId: F24_TGT });
+    const warnings = (preview.ok ? preview.warnings : undefined) ?? [];
+    expect(warnings.some((w) => w.includes("1 dropped trade carries 2 IPO records")), JSON.stringify(preview)).toBe(true);
+    expect(warnings.find((w) => w.includes("IPO record")), "the preview states the same split the execution takes").toContain(
+      "2 will be skipped, because one trade takes one IPO record",
+    );
+
+    const res = accountDelete.deleteAccount({ accountId: F24_SRC, mode: "merge", targetId: F24_TGT, connections: "delete" });
+    expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
+    expect(res.message).toContain("2 duplicate IPO records skipped");
+    // THE assertion (on revert of lib/queries/account-delete.ts to HEAD, whose
+    // re-point had no such check: BOTH records land on the surviving copy — two
+    // `ipos` rows naming one trade, the state pushTradeToIpoAction refuses to
+    // create, with getIpoTradeLinks() keeping only the last).
+    expect(t.db.select().from(t.schema.ipos).all().filter((r) => r.tradeId === targetTrade).map((r) => r.id), "one trade, one record").toEqual([tgtRecord]);
+    expect(t.db.select().from(t.schema.ipos).all().some((r) => r.id === srcRecord), "this book's own copy goes to Deleted items with its trade").toBe(false);
+    expect([ipoRow(otherRecord).accountId, ipoRow(otherRecord).tradeId], "the other book's record stays where it is, unlinked").toEqual([F24_OTHER, null]);
+    const afterMerge = ipoRealisedAll();
+    expect(afterMerge, "…and while unlinked it states its own sale beside the target's copy").toBeGreaterThan(allBefore);
+
+    // THE assertion for J2's MERGE-side `ipoRefs` (the boundary F9 (b) could not
+    // reach, since a purge's own rows ride back with `trade_id` intact): the
+    // envelope names the OTHER book's row, so the restore re-links it.
+    const restored = trash.restoreTrashSnapshot(res.snapshotId!);
+    expect(restored.ok, restored.message).toBe(true);
+    expect(ipoRow(otherRecord).tradeId, "the other book's link comes back from ipoRefs").toBe(sourceTrade);
+    expect(ipoRow(srcRecord).tradeId, "and this book's record rides back inside the snapshot, still linked").toBe(sourceTrade);
+    expect(ipoRealisedAll(), "the restored book counts its sale once again").toBe(allBefore);
+  });
+});
+
+// ============================================================================
+// F25 — J1's backward-compatible Clear: a body with NO `fact`
+//       (route → clearUnfetchedLine, I5/J1)
+// ============================================================================
+
+describe("F25 · a Clear posted by an older client, naming no sentence (GET → two carried lines → POST without `fact` → the span's FIRST record)", () => {
+  const alive = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
+  const rangeCapAt = (stamp: string) =>
+    dhanApi.toParsedFile([], dhanApi.catchUpRange(stamp, "2026-09-11"), { pages: 1, truncated: false, oldest: null, newest: null }, stamp).unfetched;
+  const hhmm = (s: { fact: string }) => /after (\d\d:\d\d) IST/.exec(s.fact)?.[1] ?? s.fact;
+  type CardRow = { broker: string; accountId: number; unfetched?: import("@/components/import/broker-connect").UnfetchedSpan[]; unfetchedConnection?: (number | null)[] };
+  async function cardRow(accountId: number): Promise<CardRow> {
+    const body = (await (await brokerRoute.GET()).json()) as { connections?: CardRow[] };
+    const r = (body.connections ?? []).find((c) => c.broker === "dhan" && c.accountId === accountId);
+    if (!r) throw new Error(`GET lists no Dhan connection for account ${accountId}`);
+    return r;
+  }
+
+  it("the span's FIRST record of that connection is taken, as before — a stored notice from an older build still clears", async () => {
+    selectAccount(0);
+    unfetched.keepUnfetched(rangeCapAt("2026-05-13T09:00:00.000Z"), { connId: 95, accountId: F25_SA, source: "import" }); // 14:30 IST
+    unfetched.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 96, accountId: F25_SB, source: "import" }); // 10:30 IST
+    for (const [from, name] of [[F25_SA, "book A"], [F25_SB, "book B"]] as const) {
+      expect(
+        t.db.transaction((tx) => unfetched.carryUnfetchedOnMerge(tx, { fromAccountId: from, toAccountId: F25_TGT, fromName: name, toName: "fixF J1 target", source: "ui" })),
+      ).toBe(1);
+    }
+    t.sqlite
+      .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json, last_pull_at) VALUES (?, 'dhan', ?, ?, NULL, NULL)")
+      .run(F25_TGT, "1000000078", alive());
+
+    const card = await cardRow(F25_TGT);
+    const lines = bc.unfetchedLines(card);
+    expect(lines.map((s) => [s.connection, hhmm(s)]), "two carried records on the IDENTICAL span").toEqual([[null, "14:30"], [null, "10:30"]]);
+
+    // The card's own body for the SECOND line, with the sentence removed — the
+    // shape any older client or other caller posts (the route passes it on
+    // unchanged, so `clearUnfetchedLine` takes onSpan[0]).
+    const named = JSON.parse(JSON.stringify(bc.clearUnfetchedBody(card, lines[1]!))) as Record<string, unknown>;
+    delete named.fact;
+    delete named.remedy;
+    const res = await brokerRoute.POST(json("/api/import/broker", named));
+    expect(res.status, JSON.stringify(await res.clone().json())).toBe(200);
+    // The compatibility branch, stated: the FIRST record of the span goes,
+    // whichever line the body was built from. (Not red on a revert of either
+    // half — it pins the behaviour a revert RESTORES; the named path is F7.)
+    expect(unfetched.outstandingUnfetchedRecords(F25_TGT).map((r) => [r.connection, hhmm(r)]), "the span's first record, as before").toEqual([[null, "10:30"]]);
+  });
+});
+
+// ============================================================================
+// F26 — ONE gross arithmetic at 3+ decimals (computeIpo, I4) ↔ the trade row
+//       the sync writes (tradePatchFromIpo) ↔ capital / the tax pack
+// ============================================================================
+
+describe("F26 · an exit of 150.005 over an issue price of 99.995 on 3 shares (POST /api/ipos → syncLinkedTrade → the Trades row ≡ /ipos)", () => {
+  it("both sides state 150.02 — the per-share form's 150.01 never reaches either", async () => {
+    const tradeId = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: F26_ACC, broker: "zerodha", symbol: "F26-IPO", tradingsymbol: "F26-IPO", buyQty: 3, avgBuyPrice: 100, buyValue: 300, buyDate: "2019-01-10", buyOrderCount: 1, isOpen: true }))
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F26_ACC, name: "F26-IPO", appliedPrice: 99.995, lotSize: 3, lotsApplied: 1, allotted: true, allottedQty: 3, listingPrice: 130, allotmentDate: "2019-01-10", tradeId })
+      .run();
+
+    const e = ipoPage("F26-IPO", F26_ACC);
+    const saved = await ipoRoute.POST(json("/api/ipos", saveBody(e, formHtml(e), { exitPrice: "150.005", exitDate: "2026-03-02" })));
+    expect(saved.status, JSON.stringify(await saved.clone().json())).toBe(200);
+    const stored = row(tradeId)!;
+    const shown = ipoPage("F26-IPO", F26_ACC);
+    // The VALUE-based form on both sides: r2(r2(150.005 × 3)) − 300 = 150.02.
+    // A per-share form over the same fixture answers differently (r2((150.005 −
+    // 99.995) × 3) = 150.03), which is the whole point of the rule — at whole
+    // rupees the two agree and nothing is being tested. A STANDING PIN: I4's
+    // fix is at HEAD, so no revert of this wave reddens it; what was missing is
+    // the case ACROSS the seam (the unit file pins the halves separately).
+    expect([stored.sellQty, stored.avgSellPrice, stored.sellValue, stored.buyValue], "the sale the sync wrote").toEqual([3, 150.005, 450.02, 300]);
+    expect([shown.grossPnl, stored.grossPnl], "/ipos and the Trades row state ONE gross").toEqual([150.02, 150.02]);
+    expect(Math.round((150.005 - 99.995) * 3 * 100) / 100, "the per-share arithmetic they both refuse").toBe(150.03);
+    expect(shown.netPnl, "and one net").toBe(Math.round((stored.grossPnl - stored.chargesTotal) * 100) / 100);
   });
 });

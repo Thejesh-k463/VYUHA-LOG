@@ -138,6 +138,8 @@ beforeAll(async () => {
     [11, "K1 target"], [12, "K1 source"],
     [13, "K1 alias target"], [14, "K1 alias source"],
     [15, "K1 plain target"], [16, "K1 plain source"],
+    [17, "L7 claimed target"], [18, "L7 claimed source"],
+    [19, "L7 two target"], [20, "L7 two source"],
   ] as [number, string][]) {
     t.db.insert(t.schema.accounts).values({ id, name }).run();
   }
@@ -223,6 +225,108 @@ describe("an alias collision's IPO follows the target LOT that holds the dropped
     expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
     expect(linkOf(ipoId)).toEqual([13, lotId]);
     expect(t.db.select().from(t.schema.trades).all().map((r) => r.id)).not.toContain(sourceSale);
+  });
+});
+
+/**
+ * L7 (v4.3.0 wave 2L) — K1's re-point, bounded by the rule the rest of the app
+ * already keeps: ONE trade takes ONE IPO record.
+ *
+ * `pushTradeToIpoAction` refuses to create a second record for a holding that
+ * already has one ("Already linked to an IPO record"). The merge could reach that
+ * state anyway: when the TARGET's surviving copy already carries its own IPO, the
+ * dropped duplicate's record was re-pointed onto the same trade, so /ipos listed
+ * two rows both marked linked to one holding, either of which syncs onto that one
+ * trade row when edited, and `getIpoTradeLinks()` kept only the last (the /trades
+ * badge pointing at the foreign record).
+ *
+ * So a record whose partner is already spoken for is SKIPPED, exactly as its
+ * trade is: this account's own copy is snapshotted and deleted, so the source
+ * book restores whole, and the envelope's `ipoRefs` states the pre-merge link
+ * either way.
+ */
+describe("L7 · a duplicate IPO record is skipped, never re-pointed onto a trade that already has one", () => {
+  const HASH = "l7-merge-ipo-claimed";
+  let targetTrade = 0;
+  let sourceTrade = 0;
+  let targetIpo = 0;
+  let sourceIpo = 0;
+  let snapshotId = "";
+
+  const naming = (tradeId: number) =>
+    t.db.select().from(t.schema.ipos).all().filter((r) => r.tradeId === tradeId).map((r) => r.id);
+
+  it("the merge leaves exactly ONE ipos row naming the surviving copy", () => {
+    targetTrade = closedTrade(17, "L7DBL", { dedupHash: HASH });
+    sourceTrade = closedTrade(18, "L7DBL", { dedupHash: HASH });
+    targetIpo = exitedIpo(17, "L7-DBL-TGT", targetTrade);
+    sourceIpo = exitedIpo(18, "L7-DBL-SRC", sourceTrade);
+
+    select(1);
+    const res = mod.deleteAccount({ accountId: 18, mode: "merge", targetId: 17, connections: "delete" });
+    expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
+    snapshotId = res.snapshotId!;
+    // THE assertion: the target's own record is the one record that names it.
+    expect(naming(targetTrade), "one trade takes one IPO record").toEqual([targetIpo]);
+    expect(t.db.select().from(t.schema.ipos).all().map((r) => r.id)).not.toContain(sourceIpo);
+    // Reported in the same breath as the duplicate trade, and recoverable the
+    // same way — a record that just vanished would be the silent drop the merge
+    // counts exist to prevent.
+    expect(res.message).toBe(
+      "Merged “L7 claimed source” into “L7 claimed target” — 0 trades moved, 1 duplicate skipped (saved to Deleted items), " +
+        "1 duplicate IPO record skipped (“L7 claimed target”'s own copy of that trade already carries one; saved to Deleted items).",
+    );
+    expect(res.message).not.toContain("IPO link re-pointed");
+  });
+
+  it("the merged book still counts that sale once", async () => {
+    expect(realisedIn(17)).toEqual({ equityRealised: NET, ipoRealised: 0, totalRealised: NET });
+    expect(taxIn(17)).toEqual({ ipoNames: [], cgNets: [NET], itrRows: 1 });
+    expect(await aisIn(17)).toEqual({ [`${FY} purchase`]: 1000, [`${FY} sale`]: 1500 });
+  });
+
+  it("the skipped record is in the snapshot and rides back with the source book", () => {
+    expect(ipoRefsOf(snapshotId)).toEqual([{ ipoId: sourceIpo, tradeId: sourceTrade }]);
+    const back = trash.restoreTrashSnapshot(snapshotId, "wave 2L probe");
+    expect([back.ok, back.restored]).toEqual([true, 1]);
+    // The source book is whole again: its duplicate AND the record that named it,
+    // in its own account, still linked.
+    expect(linkOf(sourceIpo)).toEqual([18, sourceTrade]);
+    expect(linkOf(targetIpo)).toEqual([17, targetTrade]);
+  });
+});
+
+describe("L7 · the preview counts dropped TRADES, and a second record on one dropped trade is skipped too", () => {
+  const HASH = "l7-merge-ipo-two";
+
+  it("“1 dropped trade carries 2 IPO records”, and only the first follows the survivor", () => {
+    const targetTrade = closedTrade(19, "L7TWO", { dedupHash: HASH });
+    const sourceTrade = closedTrade(20, "L7TWO", { dedupHash: HASH });
+    const first = exitedIpo(20, "L7-TWO-A", sourceTrade);
+    const second = exitedIpo(20, "L7-TWO-B", sourceTrade);
+
+    select(1);
+    const pv = mod.previewAccountDelete({ accountId: 20, mode: "merge", targetId: 19 });
+    expect(pv.dedupCollisions).toBe(1);
+    // THE assertion: the count that pluralises is the dropped TRADES, not the
+    // records they carry — one dropped trade reading as "2 … are linked to those
+    // trades" described a blast radius twice the size of the real one.
+    expect(pv.warnings?.find((w) => w.includes("IPO record"))).toBe(
+      "1 dropped trade carries 2 IPO records — 1 will be re-pointed to “L7 two target”'s own copy of that trade, " +
+        "never left unlinked (an unlinked exited IPO beside the target's copy counts that sale twice); " +
+        "1 will be skipped, because one trade takes one IPO record (this account's own copy is saved to Deleted items; " +
+        "a record filed in another account is left unlinked).",
+    );
+
+    const res = mod.deleteAccount({ accountId: 20, mode: "merge", targetId: 19, connections: "delete" });
+    expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
+    expect(
+      t.db.select().from(t.schema.ipos).all().filter((r) => r.tradeId === targetTrade).map((r) => r.id),
+      "the survivor takes one record, not both",
+    ).toEqual([first]);
+    expect(t.db.select().from(t.schema.ipos).all().map((r) => r.id)).not.toContain(second);
+    expect(res.message).toContain("1 IPO link re-pointed");
+    expect(res.message).toContain("1 duplicate IPO record skipped");
   });
 });
 

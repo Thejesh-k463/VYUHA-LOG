@@ -20,6 +20,9 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { recordAudit, type AuditInput } from "@/lib/audit";
 import { heldIdentityHashes, readsLong, type RowLegs } from "@/lib/import/close-open-lots";
+// L6 (wave 2L): ONE pairing for a record and the holding it became — the restore
+// acts on it only where it is unambiguous, Data Quality asks about the rest.
+import { uniqueIpoRelinks } from "@/lib/analytics/data-quality";
 import {
   TRASH_VERSION,
   trashSnapshotId,
@@ -745,6 +748,60 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           extraRestored++;
         } catch {
           extraSkipped++;
+        }
+      }
+
+      // L6 (v4.3.0 wave 2L) — an envelope that carries NO `ipoRefs` at all.
+      //
+      // 4.2.x deleted a holding by nulling `ipos.trade_id` and storing nothing
+      // about it, so restoring such a snapshot on 4.3.0 brought the holding back
+      // UNLINKED and the one sale was counted twice — in the capital summary and
+      // through it `available`, in the tax pack, in the ITR export and on both
+      // AIS sides — with nothing on screen saying the link had gone. The field
+      // cannot be invented for an envelope that never had it, so the link is
+      // recovered from the book's OWN records: a restored holding flagged
+      // `acquisition: 'ipo'` (the value `pushTradeToIpoAction` and the /ipos sync
+      // write) is re-pointed by the ONE unlinked record of its account and scrip.
+      //
+      // `uniqueIpoRelinks` is the same pairing Data Quality asks about, so the
+      // two can never disagree, and it is unique in BOTH directions. Anything
+      // ambiguous writes NOTHING and stays a question the user answers on /ipos
+      // (invariant 6) — the `ipo_record_link` issue names the holding and every
+      // candidate. The `isNull` guard below is the ledger/IPO rule of this whole
+      // block: a link someone made by hand since the delete is their decision,
+      // not this restore's to overwrite.
+      //
+      // NOTE, deliberately: the writers omit `ipoRefs` when a delete broke NO
+      // link (`ipoRefRows.length ? ipoRefRows : undefined`), so a 4.3 envelope
+      // for an unlinked holding is byte-identical to a 4.2.x one and takes this
+      // path too. Where that holding has exactly one candidate record it comes
+      // back linked. Writing `ipoRefs: []` from the two delete writers would
+      // confine this to genuinely legacy envelopes with no change here.
+      //
+      // Runs LAST of the writes, so an account-deletion envelope's own restored
+      // `ipos` rows are part of the picture it reads.
+      if (env.ipoRefs == null && landed.size > 0) {
+        const holdings = rows
+          .filter((r) => landed.has(r.id) && r.acquisition === "ipo" && typeof r.accountId === "number")
+          .map((r) => ({
+            id: r.id,
+            accountId: r.accountId as number,
+            symbol: typeof r.symbol === "string" ? r.symbol : "",
+            tradingsymbol: typeof r.tradingsymbol === "string" ? r.tradingsymbol : null,
+            buyQty: typeof r.buyQty === "number" ? r.buyQty : 0,
+          }));
+        if (holdings.length > 0) {
+          const records = tx
+            .select({ id: ipos.id, accountId: ipos.accountId, name: ipos.name, allottedQty: ipos.allottedQty })
+            .from(ipos)
+            .where(isNull(ipos.tradeId))
+            .all();
+          for (const link of uniqueIpoRelinks(holdings, records)) {
+            tx.update(ipos)
+              .set({ tradeId: link.tradeId })
+              .where(and(eq(ipos.id, link.ipoId), isNull(ipos.tradeId)))
+              .run();
+          }
         }
       }
 

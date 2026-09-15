@@ -38,6 +38,7 @@ let t: TempDb;
 let commit: typeof import("@/lib/import/commit");
 let POST: (req: Request) => Promise<Response>;
 let closePreviewBody: typeof import("@/components/trades/close-trade-dialog").closePreviewBody;
+let resolveExitIso: typeof import("@/components/trades/close-trade-dialog").resolveExitIso;
 let toSlimTrade: typeof import("@/lib/domain/slim-trade").toSlimTrade;
 let todayIstIso: typeof import("@/lib/domain/trading-day").todayIstIso;
 
@@ -48,7 +49,7 @@ beforeAll(async () => {
   t = await openTempDb("close-preview-exit-date", { seed: true });
   commit = await import("@/lib/import/commit");
   ({ POST } = await import("@/app/api/charges/preview/route"));
-  ({ closePreviewBody } = await import("@/components/trades/close-trade-dialog"));
+  ({ closePreviewBody, resolveExitIso } = await import("@/components/trades/close-trade-dialog"));
   ({ toSlimTrade } = await import("@/lib/domain/slim-trade"));
   ({ todayIstIso } = await import("@/lib/domain/trading-day"));
 }, 120_000);
@@ -60,7 +61,11 @@ const EXIT_PRICE = 255;
 const row = (id: number) => t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!;
 const wire = (id: number) => JSON.parse(JSON.stringify(toSlimTrade(row(id)))) as ReturnType<typeof toSlimTrade>;
 
-/** `closePosition`'s own exit-date rule (commit.ts `normalizeDate(exitDate) ?? todayIstIso()`). */
+/**
+ * `closePosition`'s own exit-date rule for a date it CAN read, plus its blank
+ * fallback (commit.ts `normalizeDate(exitDate) ?? todayIstIso()`). A non-blank date
+ * it cannot read is refused outright since wave 2L — pinned separately below.
+ */
 function sameExitIso(raw: string): string {
   const s = raw.trim();
   const dmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
@@ -113,8 +118,9 @@ async function preview(body: unknown): Promise<number[]> {
 
 describe("I1 [1] — the close preview bills the same exit date the close stores, however the date field reads", () => {
   it.each([
+    // L3 (wave 2L): the unreadable case moved to its own pin below — the save now
+    // refuses such a date instead of silently closing the position on today.
     ["", "cleared"],
-    ["not-a-date", "unreadable"],
   ])("exit date %j (%s): preview charges / net / days equal the save's", async (raw, tag) => {
     const today = todayIstIso();
     const buyDate = new Date(new Date(`${today}T00:00:00Z`).getTime() - DAYS_HELD * 86_400_000).toISOString().slice(0, 10);
@@ -138,6 +144,32 @@ describe("I1 [1] — the close preview bills the same exit date the close stores
     // this is NaN and the wire carries null.
     expect(Number.isFinite(body.daysHeld), "the preview sends a real holding period").toBe(true);
     expect(body.daysHeld).toBe(DAYS_HELD);
+  });
+
+  /**
+   * L3 (v4.3.0 wave 2L) — the dialog mirrors the save's WHOLE rule, refusal included.
+   *
+   * `closePosition` used to store any well-shaped date it was handed, so '2026-02-31'
+   * became a sell date and '99-99-9999' became '9999-99-99' — an Invalid Date whose
+   * NaN MTF day count made the charge total NaN and the UPDATE fail on `NOT NULL
+   * constraint failed: trades.charges_total_paise`, a 500 where the action promises
+   * {ok:false}. A date that is not a real calendar day is now refused, naming it, and
+   * the dialog's own resolver says so the same way (null = the save would refuse), so
+   * no preview is ever priced for a date that cannot be saved.
+   */
+  it("an exit date the save REFUSES is refused by the dialog's resolver too, and nothing is written", () => {
+    const today = todayIstIso();
+    expect([resolveExitIso(""), resolveExitIso("   ")]).toEqual([today, today]);
+    expect([resolveExitIso("2026-09-19"), resolveExitIso("19-09-2026")]).toEqual(["2026-09-19", "2026-09-19"]);
+    // THE assertions: the two shapes the save refuses resolve to NO date here.
+    expect([resolveExitIso("not-a-date"), resolveExitIso("2026-02-31"), resolveExitIso("99-99-9999")]).toEqual([null, null, null]);
+
+    const id = mtfOpen("MTFXBAD", "2026-08-20");
+    const before = row(id);
+    const res = commit.closePosition(id, EXIT_PRICE, "not-a-date");
+    expect([res.ok, row(id).isOpen, row(id).sellDate]).toEqual([false, true, null]);
+    expect(res.message).toContain("not-a-date");
+    expect(row(id)).toEqual(before);
   });
 
   it("the dialog resolves its exit date ONCE, for the dates and the holding period alike", () => {

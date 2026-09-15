@@ -1067,4 +1067,115 @@ describe("IPO-EXITDATE · an unreadable exit date is refused on the way in and s
     expect([s.sttCtt, s.stampDuty, s.gst]).toEqual([0, 0, 0]);
     expect([s.avgSellPrice, s.grossPnl, s.netPnl]).toEqual([155, 550, r2n(550 - 75.93)]);
   });
+
+  /**
+   * L3 (v4.3.0 wave 2L) — who wrote a close's charges is a FACT about the write,
+   * not a recomputation.
+   *
+   * J4 proved the sync's ownership by RE-PRICING the stored exit against the LIVE
+   * charge_config and comparing head by head. A rate correction in the charge editor
+   * (invariant 3 makes charge_config the only rate source) changes what that
+   * recomputation produces, so ownership was lost the moment the card moved — and
+   * every later exit edit then kept `row.chargesTotal` while price, gross and net
+   * followed the new exit. Measured (re-check probe): after a rate edit the same
+   * stored sale priced 22.63 on /ipos beside 2.06 on the Trades row, and correcting
+   * the exit to 500 left a ₹5,000 sale carrying the ₹1,500 sale's ₹2.06 bill — net
+   * 3,997.94 against /ipos' 3,926.25, ₹71.69 that capital (CAP-IPO-LINK counts the
+   * TRADE), the tax base and the ITR export all read too high.
+   *
+   * Ownership is now proved by the marker the sync writes into the holding's
+   * `import_notes` beside the charges (the repo's provenance pattern — the
+   * dedup-alias and stale-close sentences), which no rate edit can erase. The trade
+   * editor drops it whenever it changes a charge head or the total, so a figure the
+   * user's own save produced is never rewritten from here (owner ruling F1).
+   */
+  it("L3 · a charge_config correction between the sync's write and a later exit edit: the holding's charges still follow the new exit", async () => {
+    const owned = openTrade("L3-RATE");
+    const id = legacy("L3-RATE", "2026-03-02", { exitPrice: null, exitDate: null, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: owned });
+    expect((await post(formPayload(id, "L3-RATE", { exitPrice: "150", exitDate: "2026-03-02" }))).status).toBe(200);
+    const first = tradeRow(owned);
+    expect([first.sellQty, first.avgSellPrice, first.chargesTotal]).toEqual([10, 150, 2.06]);
+
+    // The user corrects the rate card — nothing about this trade or this IPO changed.
+    const rates = t.sqlite
+      .prepare("SELECT id, exchange_txn_pct, sebi_pct, gst_pct FROM charge_config WHERE segment = 'eq_delivery' AND exchange = 'NSE'")
+      .all() as { id: number; exchange_txn_pct: number; sebi_pct: number; gst_pct: number }[];
+    t.sqlite
+      .prepare("UPDATE charge_config SET exchange_txn_pct = 0.01, sebi_pct = 0.001, gst_pct = 0.25 WHERE segment = 'eq_delivery' AND exchange = 'NSE'")
+      .run();
+    try {
+      const at500 = await post(formPayload(id, "L3-RATE", { exitPrice: "500", exitDate: "2026-03-02" }));
+      expect(at500.status).toBe(200);
+      const e = q.getIposComputed().rows.find((r) => r.name === "L3-RATE")!;
+      const r = tradeRow(owned);
+      expect(e.charges).toBeGreaterThan(2.06); // the corrected card prices this sale higher
+      // THE assertions (before: chargesTotal frozen at 2.06 on a ₹5,000 sale, and the
+      // two pages reading different nets for the same sale).
+      expect([r.avgSellPrice, r.sellValue, r.grossPnl]).toEqual([500, 5000, 4000]);
+      expect([r.chargesTotal, r.netPnl]).toEqual([e.charges, e.netPnl]);
+    } finally {
+      const restore = t.sqlite.prepare("UPDATE charge_config SET exchange_txn_pct = ?, sebi_pct = ?, gst_pct = ? WHERE id = ?");
+      for (const row of rates) restore.run(row.exchange_txn_pct, row.sebi_pct, row.gst_pct, row.id);
+    }
+  });
+
+  it("L3 · a charge the TRADE EDITOR wrote is the user's: the marker goes with it and the next exit edit keeps their figure (F1)", async () => {
+    const { IPO_SYNC_CHARGES_NOTE: NOTE } = await import("@/lib/analytics/ipo-link");
+    const commit = await import("@/lib/import/commit");
+    const trade = openTrade("L3-EDITED");
+    const id = legacy("L3-EDITED", "2026-03-02", { exitPrice: null, exitDate: null, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: trade });
+    expect((await post(formPayload(id, "L3-EDITED", { exitPrice: "150", exitDate: "2026-03-02" }))).status).toBe(200);
+    const synced = tradeRow(trade);
+    // The sync says so on the row itself, beside every other note.
+    expect(synced.importNotes ?? "").toContain(NOTE);
+
+    // The user edits the holding in Trades: the charges on it are now their save's.
+    expect(commit.updateManualTrade(trade, { avgBuyPrice: 10 }).ok).toBe(true);
+    const edited = tradeRow(trade);
+    expect(edited.chargesTotal).not.toBe(synced.chargesTotal);
+    // THE assertion: the marker went with the charges it described.
+    expect(edited.importNotes ?? "").not.toContain(NOTE);
+
+    // The exit is then corrected on /ipos: price and gross follow it, the charges do not.
+    expect((await post(formPayload(id, "L3-EDITED", { exitPrice: "500", exitDate: "2026-03-02" }))).status).toBe(200);
+    const after = tradeRow(trade);
+    expect([after.avgSellPrice, after.grossPnl]).toEqual([500, 4000]);
+    expect(after.chargesTotal).toBe(edited.chargesTotal);
+  });
+
+  /**
+   * L3 (wave 2L) — the re-open half of the same question, and the inconsistency the
+   * re-check named: the route refuses to REWRITE a contract note's heads on a
+   * re-price (J4 case (c)) and zeroed all eight of them on a CLEAR. Clearing the
+   * exit now re-opens only a close the sync owns; a sale the user recorded in Trades
+   * with its own charges is theirs to re-open, in Trades.
+   */
+  it("L3 · clearing the exit over a close the USER recorded in Trades is refused 409 naming Trades; the contract note's charges survive", async () => {
+    const stated = openTrade("L3-REOPEN-USER", {
+      isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02",
+      grossPnl: 500, chargesTotal: 75.93, brokerage: 20, dpCharges: 15.93, mtfInterest: 40, netPnl: 424.07,
+    });
+    const id = legacy("L3-REOPEN-USER", "2026-03-02", { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: stated });
+    const before = tradeRow(stated);
+    const ipoBefore = named("L3-REOPEN-USER")[0];
+    const res = await post(formPayload(id, "L3-REOPEN-USER", { exitPrice: "", exitDate: "" }));
+    // THE assertions (before: 200, the holding re-opened and brokerage 20 / DP 15.93 zeroed).
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { message: string }).message).toContain("Trades");
+    expect(tradeRow(stated)).toEqual(before);
+    expect(named("L3-REOPEN-USER")[0]).toEqual(ipoBefore);
+    expect([before.brokerage, before.dpCharges, before.chargesTotal]).toEqual([20, 15.93, 75.93]);
+  });
+
+  it("L3 · clearing an exit the SYNC wrote still re-opens the holding and takes that sale's charges off with it, MTF interest kept", async () => {
+    const owned = openTrade("L3-REOPEN-SYNC", { chargesTotal: 40, mtfInterest: 40, netPnl: -40 });
+    const id = legacy("L3-REOPEN-SYNC", "2026-03-02", { exitPrice: null, exitDate: null, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: owned });
+    expect((await post(formPayload(id, "L3-REOPEN-SYNC", { exitPrice: "150", exitDate: "2026-03-02" }))).status).toBe(200);
+    expect(tradeRow(owned).isOpen).toBe(false);
+    const cleared = await post(formPayload(id, "L3-REOPEN-SYNC", { exitPrice: "", exitDate: "" }));
+    expect(cleared.status).toBe(200);
+    const r = tradeRow(owned);
+    expect([r.isOpen, r.sellQty, r.sellValue, r.grossPnl]).toEqual([true, 0, 0, 0]);
+    expect([r.chargesTotal, r.sttCtt, r.brokerage, r.mtfInterest]).toEqual([40, 0, 0, 40]);
+  });
 });

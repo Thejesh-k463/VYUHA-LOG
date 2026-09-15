@@ -236,6 +236,10 @@ export function detectCrossSourceDuplicates(
 
     let softer: CrossSourceCollision | null = null;
     let risky: CrossSourceCollision | null = null;
+    // W2L: only a row the commit's plan NAMED can be today's snapshot, so an
+    // ordinary import (no ids) keeps the old early break and scans no further
+    // than it ever did — the priority below costs it nothing.
+    const mayMeetSnapshot = (inc.snapshotIds?.length ?? 0) > 0;
     for (const e of candidates) {
       let kind: OverlapKind | null = null;
       let detail = "";
@@ -284,9 +288,23 @@ export function detectCrossSourceDuplicates(
         // One report per incoming row is enough to prompt a decision — but the
         // MOST severe one: a partial overlap met first must not hide a risky
         // one behind it (R43: two products of one contract, in either order).
+        //
+        // W2L: and by PRIORITY, not by order of arrival. `existing` arrives in
+        // rowid order, so an OLDER cross-FILE row (an earlier P&L or tradebook
+        // import) was met before today's snapshot rows and won the pick — the
+        // pull then advised deleting that earlier IMPORT while the row actually
+        // blocking the commit was today's own snapshot row, so one round of the
+        // advice did not end the ask (the user deleted the import, pulled again
+        // and met the snapshot sentence). Today's snapshot IS the blocker, so it
+        // is what is reported; among cross-file candidates the first risky one
+        // still wins, and the collision object is unchanged.
         if (isRisky(c)) {
-          risky = c;
-          break;
+          if (c.sameSnapshot === true || !mayMeetSnapshot) {
+            risky = c;
+            break;
+          }
+          risky ??= c;
+          continue;
         }
         softer ??= c;
       }

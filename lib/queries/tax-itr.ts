@@ -1,11 +1,10 @@
 import "server-only";
 import { cache } from "react";
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { ipos } from "@/lib/db/schema";
 import { getTaxTrades } from "./trades";
-import { getIposComputed } from "./ipos";
-import { getSelectedAccountId } from "./accounts";
+// TAX-IPO-LINK is CAP-IPO-LINK: ONE implementation of the counted-once rule,
+// beside the IPO reads it is about (wave 2L). It used to be defined here as
+// well, and the two copies drifted into reading the link differently.
+import { getIposComputed, ipoIdsCountedThroughTrades } from "./ipos";
 import type { TaxTrade } from "@/lib/analytics/tax";
 import { sectionOn } from "@/lib/analytics/statute";
 import {
@@ -13,26 +12,6 @@ import {
   classifyTerm,
   type CapitalGainsTrade,
 } from "@/lib/analytics/capital-gains";
-
-/**
- * TAX-IPO-LINK (v4.3.0 wave 2H): the ids of the IPOs realised THROUGH a trade the
- * caller has already counted — CAP-IPO-LINK's `countedTradeIds` rule
- * (`getIpoRealisedNet`, lib/queries/ipos.ts), for a consumer that needs the IPO
- * ROWS rather than a net. An IPO whose own trade_id is in `countedTradeIds` is
- * named; an unlinked IPO, or one linking a trade the caller did not count (open,
- * or gone), is not. Scoped exactly as getIposComputed is (invariant 8); every IPO
- * linking a counted trade is named, since trade_id is not unique.
- */
-export function ipoIdsCountedThroughTrades(countedTradeIds: ReadonlySet<number>): Set<number> {
-  const through = new Set<number>();
-  if (countedTradeIds.size === 0) return through;
-  const accountId = getSelectedAccountId();
-  const q = db.select({ id: ipos.id, tradeId: ipos.tradeId }).from(ipos);
-  for (const r of (accountId > 0 ? q.where(eq(ipos.accountId, accountId)) : q).all()) {
-    if (r.tradeId != null && countedTradeIds.has(r.tradeId)) through.add(r.id);
-  }
-  return through;
-}
 
 /**
  * The shared input set for the Tax Summary page AND the on-demand ITR export

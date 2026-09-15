@@ -38,7 +38,12 @@ export interface OpenPosition {
   dte: number | null; // days to expiry (derivatives)
   isMtf: boolean;
   fundedAmount: number;
-  ownCapital: number; // MTF only: invested − fundedAmount (what you actually put in)
+  /** MTF only: invested − fundedAmount (what you actually put in).
+   *  NULL on a PARTLY SOLD leg — see the note at the computation below: the
+   *  stored funded amount covers the whole buy leg while `invested` is only
+   *  the remaining quantity, so there is no honest own-capital figure to
+   *  state (invariant 6). Non-MTF stays 0. */
+  ownCapital: number | null;
   accruedInterest: number;
   riskAmount: number | null;
   rMultiple: number | null; // "Current R" — live: unrealised ÷ riskAmount (was a frozen creation-time value)
@@ -133,7 +138,20 @@ export function deriveOpenPositions(
       const fundedAmount = isMtf
         ? t.mtfFundedAmount ?? defaultMtfFundedAmount(invested, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT)
         : 0;
-      const ownCapital = isMtf ? Math.round((invested - fundedAmount) * 100) / 100 : 0;
+      // A PARTLY SOLD MTF LEG STATES NO OWN CAPITAL (v4.3.0 wave 2L, L2[0]).
+      // `fundedAmount` above is the amount stored for the WHOLE buy leg, while
+      // `invested` is only the REMAINING quantity × avg price — so
+      // `invested − fundedAmount` goes NEGATIVE as soon as more than the
+      // own-capital share has been sold, and the /equity and Live Desk money
+      // totals silently subtracted that (100 @200 funded 15,000 with 40 sold
+      // read −3,000). How a broker releases funding on a partial sale is the
+      // broker's rule, not ours: pro-rating it (`funded × remaining ÷ bought`)
+      // would state a figure the journal never recorded, so the row reports
+      // null and every total says how many rows it left out (invariant 6).
+      // A STATED funded 0 is no exception — one predicate, no special case
+      // that invents a figure for a leg the journal only half describes.
+      const partlySold = isMtf && t.sellQty > 0 && t.sellQty < t.buyQty;
+      const ownCapital = !isMtf ? 0 : partlySold ? null : Math.round((invested - fundedAmount) * 100) / 100;
       const riskAmount = t.riskAmount;
       return {
         id: t.id,
@@ -165,9 +183,61 @@ export function deriveOpenPositions(
         // it was opened.
         rMultiple: riskAmount && riskAmount > 0 ? Math.round((unrealised / riskAmount) * 100) / 100 : null,
         targetRR: plannedRewardRisk(avgPrice, t.slPlanned, t.targetPlanned),
-        roiOnCapitalPct: isMtf && ownCapital > 0 ? Math.round((unrealised / ownCapital) * 10000) / 100 : null,
+        roiOnCapitalPct: isMtf && ownCapital != null && ownCapital > 0 ? Math.round((unrealised / ownCapital) * 10000) / 100 : null,
         interestPctOfProfit: isMtf && unrealised !== 0 ? Math.round((t.mtfInterest / Math.abs(unrealised)) * 10000) / 100 : null,
         breakevenPrice: null,
       };
     });
+}
+
+/**
+ * THE one predicate behind every own-capital figure on screen (v4.3.0 wave 2L,
+ * L2[0]). The per-row "Own capital" cell and the bucket KPI used to hold the
+ * rule separately — the cell refused a non-positive value while the KPI summed
+ * `ownCapital` straight across the book — so a partly sold MTF leg showed "—"
+ * on its own row and quietly REDUCED the total on the same screen. Both read
+ * this now, so they cannot disagree again.
+ */
+export function statesOwnCapital(p: Pick<OpenPosition, "isMtf" | "ownCapital">): boolean {
+  return p.isMtf && p.ownCapital != null;
+}
+
+export interface OwnCapitalTotal {
+  /** ₹ own capital, summed over the MTF rows that state one. */
+  total: number;
+  /** Broker-funded ₹ on those SAME rows, so a leverage ratio built from the
+   *  two describes one book rather than two different sets of positions. */
+  funded: number;
+  /** MTF rows that state none (a partly sold leg). Never folded into `total`
+   *  — it is a count to disclose, not a number to fill in. */
+  unstated: number;
+}
+
+/** The own-capital total as it may honestly be shown, with what it left out. */
+export function ownCapitalTotal(
+  positions: Pick<OpenPosition, "isMtf" | "ownCapital" | "fundedAmount">[],
+): OwnCapitalTotal {
+  let total = 0;
+  let funded = 0;
+  let unstated = 0;
+  for (const p of positions) {
+    if (!p.isMtf) continue;
+    if (!statesOwnCapital(p)) {
+      unstated += 1;
+      continue;
+    }
+    total += p.ownCapital ?? 0;
+    funded += p.fundedAmount;
+  }
+  return { total: Math.round(total * 100) / 100, funded: Math.round(funded * 100) / 100, unstated };
+}
+
+/**
+ * The one sentence every surface shows beside an own-capital total it had to
+ * leave rows out of. Descriptive: it states WHAT is missing, never an estimate
+ * of it (invariant 6). Null when the total is the whole book.
+ */
+export function ownCapitalNote(unstated: number): string | null {
+  if (unstated <= 0) return null;
+  return `own capital not stated for ${unstated} partly sold MTF ${unstated === 1 ? "row" : "rows"}`;
 }

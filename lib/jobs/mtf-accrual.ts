@@ -35,9 +35,9 @@ export function accrueMtfInterest(today = todayIstIso()): {
 
   for (const t of open) {
     if (!t.buyDate) continue;
-    // Broker-financed principal — reuse what was locked in at entry (or a prior
-    // accrual run); only fall back to the margin-based estimate for trades that
-    // predate the mtf_funded_amount_paise column. NEVER the full position value:
+    // Broker-financed principal — reuse what a writer locked in (entry, editor,
+    // close); only fall back to the margin-based estimate for a row nobody has
+    // priced. NEVER the full position value:
     // that assumes 100% broker financing and overstates interest (the bug fixed
     // here — see also closePosition/commitManualTrade in lib/import/commit.ts).
     // Own-margin % is looked up per THIS trade's broker — real leverage varies.
@@ -45,6 +45,17 @@ export function accrueMtfInterest(today = todayIstIso()): {
     // not "never set": it is kept and accrues nothing. Only null is estimated —
     // the rule closePosition/updateManualTrade use (V3), so a close keeps what
     // this job leaves.
+    // M1 (4.3.0 wave 2L) — that estimate is used HERE and never written back.
+    // This job used to persist it (`fundedChanged = t.mtfFundedAmount == null`
+    // forced the UPDATE), and /equity runs on every render, so the first visit
+    // to the Equity Tracker turned a position the journal never priced into a
+    // STATED funded amount at the margin default — after which mtfDrift's
+    // `mtfFundedAmount == null` exclusion and `unpricedMtfPositions` could never
+    // fire for it, and the drift card compared the requirement against a margin
+    // nobody recorded (invariant 6: never state a fabricated figure as the
+    // journal's). Interest stays an estimate the UI labels; the funded column
+    // stays NULL until a writer the user drove (the editor, a close, an import)
+    // states one.
     const ownMarginPct = marginRates.get(marginKey(t.broker, "eq_mtf")) ?? DEFAULT_MTF_OWN_MARGIN_PCT;
     const funded = t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, ownMarginPct);
     // T+1 settlement start through the day before sale proceeds settle = exactly
@@ -73,13 +84,12 @@ export function accrueMtfInterest(today = todayIstIso()): {
       // neighbouring rate would invent a number; leaving it alone is honest.
       continue;
     }
-    const fundedChanged = t.mtfFundedAmount == null;
-    if (interest === t.mtfInterest && !fundedChanged) continue;
+    if (interest === t.mtfInterest) continue;
 
     const newCharges = r2(t.chargesTotal - t.mtfInterest + interest);
     const newNet = r2(t.grossPnl - newCharges);
     db.update(trades)
-      .set({ mtfInterest: interest, mtfFundedAmount: funded, chargesTotal: newCharges, netPnl: newNet })
+      .set({ mtfInterest: interest, chargesTotal: newCharges, netPnl: newNet })
       .where(eq(trades.id, t.id))
       .run();
     updated++;

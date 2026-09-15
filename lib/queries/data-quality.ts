@@ -2,7 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { db, attachmentsDir } from "@/lib/db";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { instruments, ipos, mtmPrices, tradeAttachments, tradeLegs } from "@/lib/db/schema";
 import {
   assessDataQuality,
@@ -11,9 +11,11 @@ import {
   staleJournalNote,
   staleOpenPairs,
   staleSaleRows,
+  type IpoRecordFacts,
   type StaleOpenPair,
   type StaleSaleRow,
 } from "@/lib/analytics/data-quality";
+import { getSelectedAccountId } from "./accounts";
 import { getTrades } from "./trades";
 import { collectIdChunks } from "./delete";
 
@@ -73,6 +75,26 @@ function staleViewsOf(all: ReturnType<typeof getTrades>): StaleOpenView[] {
   });
 }
 
+/**
+ * L6 (v4.3.0 wave 2L) — EXITED IPO records with no holding attached.
+ *
+ * "Exited" is `computeIpo`'s own rule: allotted, with an exit price stated. Only
+ * those are read, because an unlinked exited record is the one that states a
+ * sale of its own beside the holding's — the double count the pairing asks
+ * about. ACCOUNT-SCOPED (invariant 8) through `getSelectedAccountId()`, matching
+ * the `getTrades()` scope the same report is built from: in one book the pairs
+ * are that book's, and in the All-accounts view each pair is still within one
+ * account, because the match itself requires the same `account_id`.
+ */
+export function getUnlinkedExitedIpoRecords(): IpoRecordFacts[] {
+  const accountId = getSelectedAccountId();
+  const where = and(isNull(ipos.tradeId), eq(ipos.allotted, true), isNotNull(ipos.exitPrice));
+  const q = db
+    .select({ id: ipos.id, accountId: ipos.accountId, name: ipos.name, allottedQty: ipos.allottedQty })
+    .from(ipos);
+  return (accountId > 0 ? q.where(and(where, eq(ipos.accountId, accountId))) : q.where(where)).all();
+}
+
 export function getDataQualityReport(now = new Date()) {
   const all = getTrades();
   const marks = db.select().from(mtmPrices).all();
@@ -117,5 +139,5 @@ export function getDataQualityReport(now = new Date()) {
   const knownSymbols = new Set(db.select({ symbol: instruments.symbol }).from(instruments).all().map((x) => x.symbol.toUpperCase()));
   const ipoLinkedTradeIds = new Set(db.select({ tradeId: ipos.tradeId }).from(ipos).all().map((x) => x.tradeId).filter((x): x is number => x != null));
   const missingAttachmentFiles = db.select().from(tradeAttachments).all().filter((a) => !fs.existsSync(path.join(attachmentsDir, path.basename(a.storedName)))).length;
-  return assessDataQuality({ trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles });
+  return assessDataQuality({ trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords() });
 }

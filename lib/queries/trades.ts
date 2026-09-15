@@ -5,6 +5,7 @@ import { trades, importBatches, tradeAttachments } from "@/lib/db/schema";
 import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import type { Trade } from "@/lib/db/schema";
 import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
+import { canonicalIsin } from "@/lib/domain/isin";
 import { SLIM_TRADE_FIELDS, type SlimTrade } from "@/lib/domain/slim-trade";
 import { getSelectedAccountId } from "./accounts";
 
@@ -257,10 +258,32 @@ export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
  * THE JOIN IS READ-TIME ONLY (R105): option symbols are upper-cased at import,
  * an equity row keeps the broker's spelling ("reliance"), and a Groww row is
  * stored under the COMPANY NAME with its ISIN. So a row joins when its symbol
- * matches case-folded, OR its CANONICAL ISIN (upper, trimmed — I6, fix wave 2I,
- * exactly as the page canonicalises its lookup key) is the bundled ISIN of an
+ * matches case-folded, OR its CANONICAL ISIN is the bundled ISIN of an
  * option-side symbol — both inside the same account filter. No stored symbol
  * changes; the page resolves the leg's symbol through `isin`.
+ *
+ * L1 (fix wave 2L): "canonical" is ONE FUNCTION, `canonicalIsin`, and the ISIN
+ * match happens in JS so there is no second spelling of it. I6 (fix wave 2I)
+ * folded the column in SQL (`upper(trim(isin))`) to meet the page's
+ * `isin.trim().toUpperCase()` — but SQLite's `trim()` strips U+0020 and NOTHING
+ * else, so the two were still different canonicalisations and a stored ISIN
+ * carrying a tab, a newline or a non-breaking space stayed invisible to its OWN
+ * account's read while another account's ticker could still carry it in on 0
+ * (the wave-2I re-check's "strategies" finding; the Groww and Angel One /
+ * Upstox parsers store an .xlsx ISIN cell raw). SQL now selects a SUPERSET —
+ * rows that carry an ISIN at all — and JS decides, with the same function the
+ * page asks.
+ *
+ * THE SUPERSET IS NOT THE WHOLE-BOOK READ the paragraph above refuses: it is
+ * bounded by OPEN equity/future rows in the same account. Measured 2026-09-15 on
+ * a 5,000-row book whose OPEN holdings are 1,500 (every one carrying an ISIN)
+ * under 100 option symbols — far past a real options book: 5.4 ms per call for
+ * one account and 8.2 ms on "All accounts", against 2.3 ms for I6's narrow SQL
+ * predicate, which returned 0 of those 1,500 (it is the defect). The SQL half
+ * itself got no slower (1.9 ms for the superset, against 2.3 ms for the
+ * 100-term `upper(trim(…)) IN (…)` scan); the added cost is materialising the
+ * candidates and the JS pass. The 50 ms line this was measured against is the
+ * point where an SQL pre-filter would have to come back.
  *
  * A basis-unknown sale (`acquisition = 'unknown'`, stored open) is RETURNED,
  * with its `acquisition`, and is never a leg of its own (P5). Read as a short
@@ -302,32 +325,32 @@ export const getOpenUnderlyingPositions = cache((): UnderlyingLegRow[] => {
     .where(optionLeg);
   const byCase = inArray(sql`upper(${trades.symbol})`, withAnOptionLeg);
   // The option-side symbols are a handful of distinct tickers, so their ISINs
-  // are resolved here, from the bundled snapshot, under the same scope.
-  // I6 (fix wave 2I): CANONICAL on BOTH sides of the compare. The page looks a
-  // stored ISIN up as `isin.trim().toUpperCase()`, so comparing this column raw
-  // made the two predicates equal in one direction only: a holding stored
-  // lower-case or padded (generic-map trims the cell but does not upper-case it;
-  // the Angel One / Upstox and Groww parsers store it raw) was invisible to its
-  // OWN account's read, while another account's ticker could still carry it in
-  // on 0 through `byCase` — and the page then admitted it under its own account
-  // and bounded a call that reads Unlimited in that account's own view (H6).
-  // `bundledIsinBySymbol` already trims and upper-cases; this is explicit.
-  const optionIsins = [
-    ...new Set(
-      db.selectDistinct({ symbol: trades.symbol }).from(trades).where(optionLeg).all()
-        .map((r) => bundledIsinBySymbol(r.symbol)?.trim().toUpperCase())
-        .filter((isin): isin is string => !!isin),
-    ),
-  ];
+  // are resolved here, from the bundled snapshot, under the same scope. Both
+  // sets are canonicalised by the SAME functions the page's admitting map uses
+  // (L1): `canonicalIsin` for the ISIN, `toUpperCase()` for the symbol.
+  const optionSymbolRows = db.selectDistinct({ symbol: trades.symbol }).from(trades).where(optionLeg).all();
+  const optionSymbols = new Set(optionSymbolRows.map((r) => r.symbol.toUpperCase()));
+  const optionIsins = new Set(
+    optionSymbolRows.map((r) => canonicalIsin(bundledIsinBySymbol(r.symbol))).filter((isin) => isin.length > 0),
+  );
   const isUnderlying = and(
     eq(trades.isOpen, true),
     inArray(trades.instrumentType, ["equity", "future"]),
-    // The column folded the same way (I6): `upper(trim(...))`, never a raw compare.
-    optionIsins.length ? or(byCase, inArray(sql`upper(trim(${trades.isin}))`, optionIsins)) : byCase,
+    // The SUPERSET (L1): every open row that carries an ISIN at all, since no SQL
+    // fold matches `canonicalIsin`. The JS pass below is what decides.
+    optionIsins.size ? or(byCase, isNotNull(trades.isin)) : byCase,
   );
-  return db.select(pickCols(UNDERLYING_LEG_FIELDS)).from(trades)
+  const rows = db.select(pickCols(UNDERLYING_LEG_FIELDS)).from(trades)
     .where(accountId > 0 ? and(isUnderlying, eq(trades.accountId, accountId)) : isUnderlying)
     .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all() as UnderlyingLegRow[];
+  // The ORDER BY is total (`id` breaks every tie), so filtering here returns the
+  // rows in exactly the order the narrower WHERE returned them. The symbol half
+  // repeats `byCase` in JS: SQLite's `upper()` folds ASCII only, so two strings
+  // equal under it are equal under `toUpperCase()` too — this never drops a row
+  // SQL admitted, and it matches the page, which folds the symbol in JS as well.
+  return optionIsins.size
+    ? rows.filter((r) => optionSymbols.has(r.symbol.toUpperCase()) || optionIsins.has(canonicalIsin(r.isin)))
+    : rows;
 });
 
 const ARJUN_FIELDS = [

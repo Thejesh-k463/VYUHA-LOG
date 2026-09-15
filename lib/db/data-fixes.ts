@@ -143,11 +143,14 @@ function applyPaytmDedupIsin(sqlite: Database.Database): DataFixResult {
  *
  * Left exactly as stored, deliberately: a null link (an ordinary application),
  * a trade already in the same account, a `trade_id` naming a trade that no
- * longer exists (deleted — the link is history, not a destination), and a trade
- * whose `accounts` row is gone, which would move the record into a book that
- * cannot be selected and hide it from every single-account view. Account 0 is a
- * view and is never written (invariant 9); `t.account_id > 0` refuses it even
- * if a trade somehow carries it.
+ * longer exists (deleted — the link is history, not a destination), a trade
+ * whose `accounts` row is gone, and (L3, wave 2L) a trade in an ARCHIVED
+ * account — both of which would move the record into a book that cannot be
+ * SELECTED and hide it from every single-account view
+ * (components/system/account-switcher.tsx offers `accounts.filter(a =>
+ * !a.archived)`, so "the row exists" was never the test this guard meant).
+ * Account 0 is a view and is never written (invariant 9); `t.account_id > 0`
+ * refuses it even if a trade somehow carries it.
  *
  * Naturally idempotent — after the move the two account ids are equal, so a
  * re-run (a restore forgets the markers) selects nothing.
@@ -163,6 +166,7 @@ function applyIpoAccountRehome(sqlite: Database.Database): DataFixResult {
         WHERE i.trade_id IS NOT NULL
           AND t.account_id > 0
           AND t.account_id <> i.account_id
+          AND a.archived = 0
         ORDER BY i.id`,
     )
     .all() as { id: number; account_id: number }[];

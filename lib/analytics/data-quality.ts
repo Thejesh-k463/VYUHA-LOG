@@ -208,6 +208,14 @@ export interface QualityInputs {
    */
   duplicateConnections?: DuplicateConnectionGroup[];
   duplicateTradeGroups?: DuplicateTradeGroup[];
+  /**
+   * L6 (v4.3.0 wave 2L) — EXITED IPO records with no holding attached, resolved
+   * by the DB reader. Optional in the same way: a caller that has not read them
+   * gets exactly the report it got before. Only exited records are carried,
+   * because an unlinked exited record is the one that states a sale of its own
+   * beside the holding's.
+   */
+  unlinkedIpoRecords?: IpoRecordFacts[];
 }
 
 export interface QualityReport {
@@ -840,6 +848,131 @@ export function staleAmbiguousNote(p: Pick<StaleOpenPair, "side" | "tradingsymbo
   return `A position in ${p.tradingsymbol} entered on or before this ${what} is already closed (trade ${ids}), so the recorded ${what} may already be counted in that close. The two rows are listed here for review and are not joined in one step.`;
 }
 
+// ───────────── L6 (v4.3.0 wave 2L) — an IPO record with no holding ──────────
+//
+// An exited IPO record and the holding it became are ONE sale. The link column
+// (`ipos.trade_id`) is what every consumer keys on to count it once — capital,
+// the tax pack, the ITR export and both AIS sides. A Trash envelope written
+// before the link was snapshotted (4.2.x) restores the holding with the link
+// gone, and so does any hand-unlink: the record states the exit, the holding
+// states the same sale, and both are counted.
+//
+// The pairing below is the ONE definition of "these two could be the same
+// allotment", shared by the Trash restore (which acts on it only where it is
+// unambiguous) and this report (which asks about every pair). It is a
+// QUESTION, never a conclusion: a record named after the company rather than
+// the scrip is never matched, and a holding with more than one candidate is
+// never linked for the user (invariant 6).
+
+/** Where the orphan-pair issue sends the user: the section that can link them. */
+export const IPO_LINK_HREF = "/ipos";
+
+/** Trimmed, upper-cased scrip label — the only form the two sides are compared in. */
+const scripKey = (s: string | null | undefined): string => (typeof s === "string" ? s.trim().toUpperCase() : "");
+
+/** An IPO record with no holding attached, as the pairing reads it. */
+export interface IpoRecordFacts {
+  id: number;
+  accountId: number;
+  /** The record's own name, as /ipos shows it. `pushTradeToIpoAction` writes the SYMBOL here. */
+  name: string;
+  /** Shares allotted; 0 states nothing to compare. */
+  allottedQty: number;
+}
+
+/** A holding flagged as an IPO allotment with no record pointing at it. */
+export interface IpoHoldingFacts {
+  id: number;
+  accountId?: number;
+  symbol?: string;
+  tradingsymbol?: string | null;
+  buyQty?: number;
+}
+
+/**
+ * Could this record be this holding's own allotment?
+ *
+ * Deliberately narrow, and every clause is a FACT both sides state:
+ *   - the same account (0 is a view, never a book — invariant 9, so an absent
+ *     account id never matches);
+ *   - the record's name IS the scrip (the form `pushTradeToIpoAction` writes);
+ *   - the same allotted quantity, compared only where BOTH state one — an
+ *     unstated quantity is not evidence either way, so it does not exclude.
+ */
+export function ipoRecordMatchesHolding(record: IpoRecordFacts, trade: IpoHoldingFacts): boolean {
+  if (typeof trade.accountId !== "number" || trade.accountId !== record.accountId) return false;
+  const name = scripKey(record.name);
+  if (!name) return false;
+  if (name !== scripKey(trade.symbol) && name !== scripKey(trade.tradingsymbol)) return false;
+  const rq = Number(record.allottedQty) || 0;
+  const tq = Number(trade.buyQty) || 0;
+  if (rq > 0 && tq > 0 && Math.abs(rq - tq) > 1e-9) return false;
+  return true;
+}
+
+/** One holding that no IPO record points at, and every record that could be its own. */
+export interface IpoOrphanPair {
+  tradeId: number;
+  /** The holding's scrip, as it is stored. */
+  symbol: string;
+  recordIds: number[];
+  recordNames: string[];
+}
+
+/** Every unlinked holding with at least one candidate record, candidates kept whole. */
+export function ipoOrphanPairs(
+  trades: readonly IpoHoldingFacts[],
+  records: readonly IpoRecordFacts[],
+): IpoOrphanPair[] {
+  const out: IpoOrphanPair[] = [];
+  for (const t of trades) {
+    const cands = records.filter((r) => ipoRecordMatchesHolding(r, t));
+    if (cands.length === 0) continue;
+    out.push({
+      tradeId: t.id,
+      symbol: t.tradingsymbol || t.symbol || "—",
+      recordIds: cands.map((r) => r.id),
+      recordNames: cands.map((r) => r.name),
+    });
+  }
+  return out;
+}
+
+/**
+ * The pairs that can only be read one way — what a restore may write.
+ *
+ * Unique in BOTH directions: one candidate record for the holding, and one
+ * holding claiming that record. Two holdings of the same scrip and quantity
+ * reaching for one record is as ambiguous as one holding reaching for two, and
+ * "whichever the loop met first" is not an answer.
+ */
+export function uniqueIpoRelinks(
+  trades: readonly IpoHoldingFacts[],
+  records: readonly IpoRecordFacts[],
+): { tradeId: number; ipoId: number }[] {
+  const pairs = ipoOrphanPairs(trades, records);
+  const claims = new Map<number, number>();
+  for (const p of pairs) for (const id of p.recordIds) claims.set(id, (claims.get(id) ?? 0) + 1);
+  return pairs
+    .filter((p) => p.recordIds.length === 1 && claims.get(p.recordIds[0]) === 1)
+    .map((p) => ({ tradeId: p.tradeId, ipoId: p.recordIds[0] }));
+}
+
+/** What an orphan pair SAYS. Descriptive only: the facts, the consequence, where to settle it. */
+export function ipoOrphanNote(p: IpoOrphanPair): string {
+  const named = p.recordIds.map((id, k) => `#${id} ${p.recordNames[k]}`);
+  const shown = named.slice(0, 5).join(", ") + (named.length > 5 ? ` and ${named.length - 5} more` : "");
+  const many = p.recordIds.length > 1;
+  return (
+    `Trade #${p.tradeId} (${p.symbol}) is recorded as an IPO allotment and no IPO record points at it, while ` +
+    `${many ? `${p.recordIds.length} exited IPO records` : "an exited IPO record"} in the same account ` +
+    `${many ? "name" : "names"} that scrip with no holding attached (${shown}). ` +
+    `Until one of them names the other, that exit is counted once in IPOs and again as the holding's own sale — ` +
+    `in the capital summary, the tax pack, the ITR export and both AIS sides. ` +
+    `Open IPOs and set the holding on the record that is its own.`
+  );
+}
+
 const ISSUE_WEIGHT = { critical: 12, warning: 6, info: 2 } as const;
 
 /** The completeness score for a set of issues. Capped per issue so one gap
@@ -908,6 +1041,16 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
 
   const ipo = i.trades.filter((t) => t.acquisition === "ipo" && !i.ipoLinkedTradeIds.has(t.id));
   add({ code: "ipo_link", severity: "warning", title: "IPO holdings not linked to an IPO record", detail: "Linking makes allotment basis, listing mark and exit flow from one source of truth.", count: ipo.length, href: "/ipos" }, ipo.map((t) => t.id));
+
+  // L6 — one issue per unlinked holding that an exited record could belong to,
+  // because the pair is the unit the user can settle (the cross-account issues
+  // above are grouped the same way). It is raised whatever produced the pair —
+  // a pre-4.3.0 Trash envelope restored with its link gone, a hand-unlink, or a
+  // record and a holding that were simply never linked. `ipo_link` above still
+  // counts the holding as unlinked; this one names the records it could be.
+  for (const p of ipoOrphanPairs(ipo, i.unlinkedIpoRecords ?? [])) {
+    add({ code: `ipo_record_link:${p.tradeId}`, severity: "warning", title: "IPO record not linked to its holding", detail: ipoOrphanNote(p), count: 1, href: IPO_LINK_HREF }, [p.tradeId]);
+  }
 
   add({ code: "stale_mtm", severity: "info", title: "Stale MTM marks", detail: "Refresh or confirm prices before relying on unrealised P&L and breach alerts.", count: i.staleMtmCount, href: "/risk" });
   add({ code: "missing_attachment", severity: "warning", title: "Attachment records with missing files", detail: "The journal points to images that are no longer present on disk.", count: i.missingAttachmentFiles, href: "/backup" });

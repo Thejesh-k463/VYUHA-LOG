@@ -4,7 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 // Pure — no DB in either graph, so static imports are safe before openTempDb().
 import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
-import { STRATEGY_COPY, underlyingExpiryNote } from "@/components/strategies/strategy-copy";
+// L1 (fix wave 2L): the ONE canonicalisation both halves of the ISIN compare ask.
+import { canonicalIsin } from "@/lib/domain/isin";
+import { STRATEGY_COPY, underlyingExpiryNote, withholdForFree } from "@/components/strategies/strategy-copy";
 import type { StrategyGroup } from "@/lib/analytics/strategies";
 
 /**
@@ -109,7 +111,35 @@ const RA_SHARES = 12;
  */
 const CASE_A = 13;
 const CASE_B = 14;
-const EVERY_ACCOUNT = [PRIMARY, SWING, BASIS, NET_A, NET_B, NAMES, NAMES_BOTH, ADMIT_A, ADMIT_B, ALONE_NAME, RB_CALL, RA_SHARES, CASE_A, CASE_B];
+/**
+ * L1 (fix wave 2L): the SAME stored-ISIN trap, one notch past I6. SQLite's
+ * `trim()` strips U+0020 and nothing else, so I6's `upper(trim(isin))` and the
+ * page's `isin.trim().toUpperCase()` were still two DIFFERENT canonicalisations
+ * for any NON-SPACE whitespace. WS_HOLD holds three securities under their
+ * company names, each stored ISIN carrying a tab, a newline or a non-breaking
+ * space (and the wrong case) - how an .xlsx cell reaches the column, since the
+ * Groww and Angel One / Upstox parsers store it raw and commit.ts writes it
+ * unchanged. WS_OTHER holds one of those calls and no units at all.
+ */
+const WS_HOLD = 15;
+const WS_OTHER = 16;
+/**
+ * L1: the three stored forms. Each is the security's own bundled ISIN with the
+ * case wrong AND one whitespace character JS `.trim()` strips but SQLite's
+ * `trim()` does not - a tab, a newline, a non-breaking space.
+ */
+const WS_STORED: Record<string, string> = {
+  CIPLA: "\tine059a01026",
+  TITAN: "ine280a01028\n",
+  DIVISLAB: " ine361b01024 ",
+};
+/**
+ * L1, the PAGE half's own case: an Alt+Enter MID-CELL. JS `.trim()` strips a
+ * newline only at the ends, so the page's old key left this one unmatched too -
+ * the fix is one function on both sides, not a wider trim on one of them.
+ */
+const WS_ALT_ENTER = "INE016A01\n026";
+const EVERY_ACCOUNT = [PRIMARY, SWING, BASIS, NET_A, NET_B, NAMES, NAMES_BOTH, ADMIT_A, ADMIT_B, ALONE_NAME, RB_CALL, RA_SHARES, CASE_A, CASE_B, WS_HOLD, WS_OTHER];
 
 let t: TempDb;
 let trades: typeof import("@/lib/queries/trades");
@@ -190,6 +220,8 @@ beforeAll(async () => {
       { id: RA_SHARES, name: "RA", isDefault: false },
       { id: CASE_A, name: "Case A", isDefault: false },
       { id: CASE_B, name: "Case B", isDefault: false },
+      { id: WS_HOLD, name: "WS hold", isDefault: false },
+      { id: WS_OTHER, name: "WS other", isDefault: false },
     ])
     .run();
   t.db
@@ -281,6 +313,67 @@ beforeAll(async () => {
         avgBuyPrice: 280,
       }),
       shortCall(CASE_A, "NIFTYBEES", 320, 100, 4),
+      // L1 (fix wave 2L) - WS_HOLD: three company-name holdings, each under its OWN short call,
+      // each stored ISIN carrying a NON-SPACE whitespace character and the wrong case.
+      // WS_OTHER: a second CIPLA call and no units at all, in both views.
+      shortCall(WS_HOLD, "CIPLA", 1500, 100, 6),
+      tradeRow({
+        accountId: WS_HOLD,
+        symbol: "Cipla Ltd",
+        tradingsymbol: "Cipla Ltd",
+        isin: WS_STORED.CIPLA,
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 1400,
+      }),
+      shortCall(WS_HOLD, "TITAN", 3500, 100, 10),
+      tradeRow({
+        accountId: WS_HOLD,
+        symbol: "Titan Company Ltd",
+        tradingsymbol: "Titan Company Ltd",
+        isin: WS_STORED.TITAN,
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 3400,
+      }),
+      shortCall(WS_HOLD, "DIVISLAB", 6000, 100, 20),
+      tradeRow({
+        accountId: WS_HOLD,
+        symbol: "Divis Laboratories Ltd",
+        tradingsymbol: "Divis Laboratories Ltd",
+        isin: WS_STORED.DIVISLAB,
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 5800,
+      }),
+      // L1 - the Alt+Enter case: the newline sits INSIDE the code, where no trim reaches it.
+      shortCall(WS_HOLD, "DABUR", 700, 100, 9),
+      tradeRow({
+        accountId: WS_HOLD,
+        symbol: "Dabur India Ltd",
+        tradingsymbol: "Dabur India Ltd",
+        isin: WS_ALT_ENTER,
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 650,
+      }),
+      shortCall(WS_OTHER, "CIPLA", 1600, 100, 4),
+      // L1 - the re-check's own reproduce: WS_HOLD's holding is stored under the OTHER
+      // ticker of its ISIN (TATAMOTORS, listed as TMPV) with a trailing newline, so on 0
+      // WS_OTHER's TATAMOTORS call carries it in through byCase and WS_HOLD's map then
+      // admits it - a card that reads Unlimited in the account that holds the shares.
+      // Strikes 400/410 keep these cards clear of P13's and N17's TATAMOTORS 1000 calls.
+      shortCall(WS_HOLD, "TMPV", 400, 100, 8),
+      tradeRow({
+        accountId: WS_HOLD,
+        symbol: "TATAMOTORS",
+        tradingsymbol: "TATAMOTORS",
+        isin: "ine155a01022\n",
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 380,
+      }),
+      shortCall(WS_OTHER, "TATAMOTORS", 410, 100, 7),
       // D3 (W2-FIXB) — one delivery holding of 100 under 100 short calls per symbol, and a sale beside it.
       // ITC: a v4.2.0 Angel One / Upstox sale, acquisition NULL, no price — basis NOT recorded: nets.
       shortCall(BASIS, "ITC", 450, 100, 5),
@@ -873,6 +966,185 @@ describe("I6 — the query's ISIN branch compares the canonical form, exactly as
     // 0 is a view (invariant 9), and H6's headline: each account's card, exactly as
     // that account's own view shows it. CB's 300 sorts before CA's 320.
     expect(cardsIn(ALL), "a NIFTYBEES card changed between a single account and All accounts").toEqual([...cb, ...ca]);
+  });
+});
+
+/**
+ * L1 (v4.3.0 fix wave 2L; the wave-2I re-check's "strategies" finding). I6 made
+ * the two predicates compare "the canonical form" — but wrote that form twice,
+ * once in SQL and once in JS, and the two spellings are NOT the same function.
+ * SQLite's `trim()` strips U+0020 and nothing else; JS `.trim()` strips \t \n \r
+ * \f \v, U+00A0 and U+FEFF too. So a stored ISIN carrying any NON-SPACE
+ * whitespace reproduced H6's finding unchanged: invisible to its OWN account's
+ * query, yet carried into "All accounts" by another account's ticker and then
+ * admitted there by its own account's map — a call that reads "Unlimited" in the
+ * account that holds the shares, bounded on 0.
+ *
+ * ONE function now (`canonicalIsin`, lib/domain/isin.ts) on both sides, and the
+ * query does the ISIN match in JS so there is no second spelling to drift.
+ */
+describe("L1 — one canonical-ISIN rule on both sides: every whitespace character, not only a space", () => {
+  const SYMS = ["CIPLA", "TITAN", "DIVISLAB", "DABUR"];
+  const BUNDLED: Record<string, string> = {
+    CIPLA: "INE059A01026",
+    TITAN: "INE280A01028",
+    DIVISLAB: "INE361B01024",
+    DABUR: "INE016A01026",
+  };
+  /** The three boundary-whitespace fixtures; DABUR's newline is mid-cell (WS_ALT_ENTER). */
+  const EDGES = ["CIPLA", "TITAN", "DIVISLAB"];
+  /** Symbol then strike: WS_HOLD's 1500 CIPLA call sorts before WS_OTHER's 1600. */
+  const byKey = (a: unknown[], b: unknown[]) => `${a[0]}|${a[1]}`.localeCompare(`${b[0]}|${b[1]}`);
+
+  /** Every card for the three symbols in the view given, as the page just built it. */
+  const cardsIn = (id: number) => {
+    select(id);
+    // The markup is not needed here: the page's own buildStrategies output is
+    // recorded when the page function runs (see L5's note on the cost).
+    runPage();
+    const out = seen.groups
+      .filter((g) => SYMS.includes(g.symbol))
+      .map((g) => [
+        g.symbol,
+        // The OPTION strikes: a UL leg carries a 0 placeholder, never a level.
+        g.legs.filter((l) => l.kind !== "UL").map((l) => l.strike).sort((a, b) => a - b).join("/"),
+        g.strategyId,
+        g.capLabel.maxLoss,
+        g.ulLegs.map((l) => [l.side, l.qty, l.premium]),
+      ])
+      .sort(byKey);
+    select(PRIMARY);
+    return out;
+  };
+
+  it("the fixture is the trap: SQLite's trim() strips a SPACE and nothing else, while the page's key strips them all", () => {
+    for (const s of SYMS) expect(bundledIsinBySymbol(s), `the bundled snapshot must know ${s}`).toBe(BUNDLED[s]);
+    // The primitive, against this test's own connection: I6's SQL fold handles
+    // the space case it was written for …
+    const sqlFold = (v: string) => (t.sqlite.prepare("select upper(trim(?)) as v").get(v) as { v: string }).v;
+    expect(sqlFold(" ine059a01026 ")).toBe(BUNDLED.CIPLA);
+    // … and leaves every OTHER whitespace character exactly where it was.
+    expect([sqlFold(WS_STORED.CIPLA), sqlFold(WS_STORED.TITAN), sqlFold(WS_STORED.DIVISLAB)]).toEqual([
+      "\tINE059A01026",
+      "INE280A01028\n",
+      " INE361B01024 ",
+    ]);
+    // The page's own key, meanwhile, strips all three — which IS the asymmetry.
+    for (const s of EDGES) expect(WS_STORED[s].trim().toUpperCase()).toBe(BUNDLED[s]);
+    // …and it reaches neither END of an Alt+Enter mid-cell, so the PAGE's key was
+    // no canonicalisation either: a trim on one side could never have been the fix.
+    expect(WS_ALT_ENTER.trim().toUpperCase()).not.toBe(BUNDLED.DABUR);
+    // ONE rule now: every whitespace character, wherever it sits, and a BOM.
+    for (const s of EDGES) expect(canonicalIsin(WS_STORED[s])).toBe(BUNDLED[s]);
+    expect(canonicalIsin(WS_ALT_ENTER)).toBe(BUNDLED.DABUR);
+    expect(canonicalIsin("﻿INE280A01\n028")).toBe(BUNDLED.TITAN);
+    expect([canonicalIsin(null), canonicalIsin(undefined), canonicalIsin("")]).toEqual(["", "", ""]);
+  });
+
+  it("WS's own single-account read returns all three holdings: the query folds the column the way the page folds its key", () => {
+    select(WS_HOLD);
+    const rows = trades
+      .getOpenUnderlyingPositions()
+      .map((r) => [r.symbol, r.isin, r.buyQty])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    select(PRIMARY);
+    // Measured before (I6's `upper(trim(isin))`): [] — every one of the three was
+    // invisible to the only account that holds them.
+    expect(rows).toEqual([
+      ["Cipla Ltd", WS_STORED.CIPLA, 100],
+      ["Dabur India Ltd", WS_ALT_ENTER, 100],
+      ["Divis Laboratories Ltd", WS_STORED.DIVISLAB, 100],
+      // The reproduce's own row, stored under the OTHER ticker of its ISIN.
+      ["TATAMOTORS", "ine155a01022\n", 100],
+      ["Titan Company Ltd", WS_STORED.TITAN, 100],
+    ]);
+  });
+
+  it("each call is bounded in the account that holds the shares and reads the IDENTICAL card on 0; the other account's call stays Unlimited in both", () => {
+    const hold = cardsIn(WS_HOLD);
+    const other = cardsIn(WS_OTHER);
+    // Measured before: all three read [sym, strike, "short-call", "Unlimited", []]
+    // in WS_HOLD's own view — the units it holds never reached the card.
+    expect(hold).toEqual([
+      ["CIPLA", "1500", "covered-call", "Computed at underlying = 0", [["long", 100, 1400]]],
+      // The Alt+Enter row: red with EITHER half of the fix reverted — the query's
+      // fold never saw it, and the page's `.trim()` key never matched it.
+      ["DABUR", "700", "covered-call", "Computed at underlying = 0", [["long", 100, 650]]],
+      ["DIVISLAB", "6000", "covered-call", "Computed at underlying = 0", [["long", 100, 5800]]],
+      ["TITAN", "3500", "covered-call", "Computed at underlying = 0", [["long", 100, 3400]]],
+    ]);
+    expect(other, "another account's holding must never bound this call").toEqual([
+      ["CIPLA", "1600", "short-call", "Unlimited", []],
+    ]);
+    // 0 is a view (invariant 9), and H6's headline: each account's card, exactly
+    // as that account's own view shows it. Measured before: CIPLA 1500 read
+    // covered-call on 0 while reading Unlimited in WS_HOLD's own view.
+    expect(cardsIn(ALL), "a card changed between a single account and All accounts").toEqual([...hold, ...other].sort(byKey));
+  });
+
+  it("the re-check's own reproduce: a holding stored under the OTHER ticker of its ISIN reads the same card alone and on 0", () => {
+    // Only these two cards: TMPV 400 (WS_HOLD's) and TATAMOTORS 410 (WS_OTHER's).
+    // P13's and N17's TATAMOTORS 1000 cards live in PRIMARY and NAMES, and BASIS
+    // holds a BEL 400 call — so the filter is symbol AND strike.
+    const pairIn = (id: number) => {
+      select(id);
+      runPage();
+      const out = seen.groups
+        .filter((g) => ["TMPV", "TATAMOTORS"].includes(g.symbol))
+        .filter((g) => g.legs.some((l) => l.kind !== "UL" && (l.strike === 400 || l.strike === 410)))
+        .map((g) => [g.symbol, g.strategyId, g.capLabel.maxLoss, g.ulLegs.map((l) => [l.side, l.qty, l.premium])])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+      select(PRIMARY);
+      return out;
+    };
+    const hold = pairIn(WS_HOLD);
+    const other = pairIn(WS_OTHER);
+    // Measured before: [["TMPV", "short-call", "Unlimited", []]] — the shares WS_HOLD
+    // holds were invisible to the only account that holds them.
+    expect(hold).toEqual([["TMPV", "covered-call", "Computed at underlying = 0", [["long", 100, 380]]]]);
+    expect(other).toEqual([["TATAMOTORS", "short-call", "Unlimited", []]]);
+    // Measured before, on 0: TMPV read "covered-call" while reading "short-call ·
+    // Unlimited" in WS_HOLD's own view — WS_OTHER's ticker carried the row in.
+    expect(pairIn(ALL), "a card changed between a single account and All accounts").toEqual(
+      [...hold, ...other].sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    );
+  });
+
+  it("the payload names the option-side TICKER, never the stored company name, and carries no account id", () => {
+    select(ALL);
+    const tree = runPage();
+    select(PRIMARY);
+    const find = (node: unknown): Record<string, unknown> | null => {
+      if (!node || typeof node !== "object") return null;
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          const hit = find(child);
+          if (hit) return hit;
+        }
+        return null;
+      }
+      const props = (node as { props?: Record<string, unknown> }).props;
+      if (!props) return null;
+      if (Array.isArray(props.groups) && props.charts) return props;
+      return find(props.children);
+    };
+    const props = find(tree);
+    expect(props, "the page no longer hands the client a groups prop").not.toBeNull();
+    const groups = (props as { groups: Array<StrategyGroup & { key: string }> }).groups;
+    const mine = groups.filter((g) => SYMS.includes(g.symbol));
+    expect(mine, "WS_HOLD's four cards plus WS_OTHER's naked call").toHaveLength(5);
+    // The company name the row is STORED under never becomes a card, a leg or a name.
+    const names = ["CIPLA LTD", "TITAN COMPANY LTD", "DIVIS LABORATORIES LTD", "DABUR INDIA LTD"];
+    // The whole wire shape, not just the group symbol: a leg, a note or a name
+    // would carry it just as far.
+    const wire = JSON.stringify(groups).toUpperCase();
+    for (const n of names) expect(wire, `the stored company name reached the payload: ${n}`).not.toContain(n);
+    // …and the free build's fold introduces none either (a covered call is legacyFree,
+    // so the withholding is a no-op on these cards — the claim is about the NAME).
+    const free = withholdForFree(mine, false);
+    for (const n of names) expect(free.map((g) => g.displayName.toUpperCase())).not.toContain(n);
+    // N16's invariant-9 half: the account the netting is keyed by never crosses the wire.
+    expect(groups.filter((g) => "accountId" in g || g.legs.some((l) => "accountId" in l) || g.ulLegs.some((l) => "accountId" in l))).toEqual([]);
   });
 });
 

@@ -148,33 +148,57 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
 }
 
 /**
+ * CAP-IPO-LINK / TAX-IPO-LINK (v4.3.0 wave 2H, given ONE home in wave 2L): the
+ * ids of the IPOs realised THROUGH a trade the caller has ALREADY counted.
+ * `countedTradeIds` is the set of trade ids the consumer counted IN THE CURRENT
+ * VIEW; an IPO whose own trade_id is one of them is realised through that trade
+ * (the exit saved on /ipos closed it), so the consumer leaves it out and the
+ * sale is counted once, from the trades book. An unlinked IPO, or one linking a
+ * trade the caller did NOT count (in another account, still open, or gone), is
+ * not named and counts its own figure once.
+ *
+ * Two scopes, deliberately different (wave 2L — they had drifted apart, and the
+ * capital summary then stated one sale twice in the All-accounts view while the
+ * tax pack, the ITR export and AIS stated it once):
+ *   - the IPO ROWS read are account-scoped (invariant 8), matching the rows the
+ *     consumers themselves see through `getIposComputed`;
+ *   - the LINK is read raw (`ipos.trade_id`), UNSCOPED by account. The IPO's own
+ *     account has no bearing on whether its trade was counted, and
+ *     `countedTradeIds` already carries the caller's scope. So for an IPO in
+ *     account 1 linked to a holding in account 2 — a shape a Trash restore or an
+ *     account merge can re-create — account 1 counts the IPO (its holding is not
+ *     in view), account 2 counts the holding (the IPO is not in view), and All
+ *     accounts counts the holding and leaves the IPO out: once, in every view.
+ * Every IPO linking a counted trade is named, since trade_id is not unique.
+ *
+ * NOT the same question as `getIposComputed`'s link facts, which stay
+ * account-scoped (U3/wave 2I): whose sale DATE and price a form may pre-fill is
+ * about one book; whether a sale was already counted is about the view.
+ */
+export function ipoIdsCountedThroughTrades(countedTradeIds: ReadonlySet<number>): Set<number> {
+  const through = new Set<number>();
+  if (countedTradeIds.size === 0) return through;
+  const accountId = getSelectedAccountId();
+  const q = db.select({ id: ipos.id, tradeId: ipos.tradeId }).from(ipos);
+  for (const r of (accountId > 0 ? q.where(eq(ipos.accountId, accountId)) : q).all()) {
+    if (r.tradeId != null && countedTradeIds.has(r.tradeId)) through.add(r.id);
+  }
+  return through;
+}
+
+/**
  * Realised (exited) IPO net P&L — feeds the capital-compounding view.
  *
- * CAP-IPO-LINK (v4.3.0 wave 2H): `countedTradeIds` names the trades the caller
- * has ALREADY counted. An IPO whose own trade_id is one of them is realised
- * THROUGH that trade (the exit saved on /ipos closed it), so it is skipped here
- * and its sale is counted once, from the trades book. With no argument every
- * exited IPO is summed — the IPO book on its own, as /ipos reads it. The
- * trade_id read is scoped exactly as getIposComputed is (invariant 8); every
- * IPO linking a counted trade is skipped, since trade_id is not unique.
+ * `countedTradeIds` names the trades the caller has ALREADY counted, and the
+ * one `ipoIdsCountedThroughTrades` above decides which IPOs that leaves out —
+ * the same rule, read the same way, as the tax pack, the ITR export and AIS.
+ * With no argument every exited IPO is summed — the IPO book on its own, as
+ * /ipos reads it.
  */
 export function getIpoRealisedNet(opts: { countedTradeIds?: ReadonlySet<number> } = {}): number {
   const counted = opts.countedTradeIds;
-  const throughTrade = new Set<number>();
-  if (counted && counted.size > 0) {
-    const accountId = getSelectedAccountId();
-    // The link is read through the same account-scoped join `getIposComputed`
-    // uses (wave 2I): a trade_id naming another account's row is NOT a link, so
-    // it can neither suppress this IPO's net nor claim that book's sale.
-    const q = db
-      .select({ id: ipos.id, tradeId: trades.id })
-      .from(ipos)
-      .leftJoin(trades, and(eq(trades.id, ipos.tradeId), eq(trades.accountId, ipos.accountId)));
-    for (const r of (accountId > 0 ? q.where(eq(ipos.accountId, accountId)) : q).all()) {
-      if (r.tradeId != null && counted.has(r.tradeId)) throughTrade.add(r.id);
-    }
-  }
-  return getIposComputed().rows.filter((r) => r.realised && !throughTrade.has(r.id)).reduce((s, r) => s + r.netPnl, 0);
+  const throughTrade = counted ? ipoIdsCountedThroughTrades(counted) : null;
+  return getIposComputed().rows.filter((r) => r.realised && !throughTrade?.has(r.id)).reduce((s, r) => s + r.netPnl, 0);
 }
 
 /** trade id → ipo id, for holdings already pushed to the IPO section. */

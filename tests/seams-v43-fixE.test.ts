@@ -1126,7 +1126,7 @@ describe("E-c · a partly closed position closed from the Trades dialog and from
     return [r.mtfFundedAmount, r.mtfInterest, r.grossPnl, r.chargesTotal, r.netPnl];
   };
 
-  it("X2 · an open Zerodha MTF position 100 @100 (1 Aug) given own capital 10,000 in the editor (funded 0), the daily accrual job run on 20 Aug, closed @110 from the Trades dialog on 1 Sep: the job leaves the row, and the dialog's preview is the close — [0, 0, 1000, 86.32, 913.68]; a twin never stated (funded null) is estimated by the job, and the dialog previews the amount the close keeps", async () => {
+  it("X2 · an open Zerodha MTF position 100 @100 (1 Aug) given own capital 10,000 in the editor (funded 0), the daily accrual job run on 20 Aug, closed @110 from the Trades dialog on 1 Sep: the job leaves the row, and the dialog's preview is the close — [0, 0, 1000, 86.32, 913.68]; a twin never stated (funded null) accrues on the estimate without being stated, and the dialog previews the amount the close then stores", async () => {
     const open = mtfRow2("SEAMMTFJ", { buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", sellOrderCount: 0, isOpen: true });
     const stated = await actions.updateTradeAction(NO_STATE, editorForm(C_MTF2, open, { ownCapitalUsed: "10000" }));
     expect([stated.ok, stated.message]).toEqual([true, "Trade updated."]);
@@ -1148,10 +1148,14 @@ describe("E-c · a partly closed position closed from the Trades dialog and from
     expect(funding2(open)).toEqual([0, 0, 1000, 86.32, 913.68]);
     expect(shown, "the close dialog's preview is the close").toEqual(funding2(open).slice(2));
 
-    // Never stated: the job estimates it (Zerodha's bundled own margin), and the close keeps it.
+    // Never stated: the job accrues interest ON the estimate but never writes it
+    // (RE-PINNED by M1, wave 2L — this line asserted `[8000, …]`, the job
+    // persisting its own estimate, which is the defect M1 fixes; interest and
+    // net are unchanged). The CLOSE is the writer that states a funded amount,
+    // and it states the same one, which the assertion after it still pins.
     const unset = mtfRow2("SEAMMTFN", { buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", sellOrderCount: 0, isOpen: true });
     accrueMtfInterest("2026-08-20");
-    expect([row(unset)!.mtfFundedAmount, row(unset)!.mtfInterest, row(unset)!.netPnl]).toEqual([8000, 60.8, -60.8]);
+    expect([row(unset)!.mtfFundedAmount, row(unset)!.mtfInterest, row(unset)!.netPnl]).toEqual([null, 60.8, -60.8]);
     const { fd: fdUnset } = closeDialogForm(C_MTF2, unset, "110");
     const shownUnset = await dialogPreview(wireTrade(C_MTF2, unset), 110, "2026-09-01");
     const closedUnset = await actions.closeTradeAction(NO_STATE, fdUnset);

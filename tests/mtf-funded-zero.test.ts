@@ -236,12 +236,22 @@ describe("X2 (i) — the daily accrual job keeps a stated funded 0 and accrues n
     expect(stored(id).slice(1), "the close preview is the close").toEqual(shown);
   });
 
-  it("a never-set (null) funded amount is still estimated by the job, with interest to the date", () => {
+  /**
+   * RE-PINNED by M1 (wave 2L): this `it` used to assert `[8000, 60.8]` — the job
+   * PERSISTING its estimate — and that persisted write is the defect M1 fixes
+   * (see tests/mtf-accrual-unpriced.test.ts). The interest half is unchanged:
+   * a null-funded row still accrues on the estimate. The funded column now stays
+   * NULL so every reader (mtfDrift, unpricedMtfPositions, the drift card) keeps
+   * treating the row as one the journal never priced.
+   */
+  it("a never-set (null) funded amount still accrues interest on the estimate, and stays unpriced — the job never states one", () => {
     const id = mtfRow("ACCNULL", { buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", isOpen: true, sellOrderCount: 0, mtfFundedAmount: null });
     accrueMtfInterest("2026-08-20");
     const r = row(id);
-    // Zerodha's bundled own-margin share of 10,000, 19 days (the probe's 60.80).
-    expect([r.mtfFundedAmount, r.mtfInterest]).toEqual([8000, 60.8]);
+    // Interest: Zerodha's bundled own-margin share of 10,000, 19 days (the
+    // probe's 60.80) — the same figure as before M1. Funded: still null (on
+    // revert of M1, 8000 written onto a row nobody priced).
+    expect([r.mtfFundedAmount, r.mtfInterest]).toEqual([null, 60.8]);
   });
 });
 

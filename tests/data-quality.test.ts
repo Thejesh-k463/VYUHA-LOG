@@ -4,7 +4,9 @@ import path from "node:path";
 import {
   assessDataQuality,
   crossAccountIssues,
+  ipoOrphanPairs,
   isPlainDuplicateCopy,
+  uniqueIpoRelinks,
   NO_PLAIN_COPY_NOTE,
   type DuplicateConnectionGroup,
   type DuplicateTradeGroup,
@@ -169,12 +171,65 @@ describe("data quality — warnings", () => {
     expect(find(assessDataQuality(inputs({ trades: [trade({ id: 3, acquisition: "ipo", acquisitionPrice: 100 })], ipoLinkedTradeIds: new Set([3]) })), "ipo_link")).toBeUndefined();
   });
 
+  it("also names the exited records that unlinked holding could be — one issue per pair", () => {
+    // L6 (wave 2L): `ipo_link` says the holding is unlinked; this says WHICH
+    // records could be its own, because the pair is what the user can settle.
+    const held = trade({ id: 3, acquisition: "ipo", acquisitionPrice: 100, accountId: 7, symbol: "ASKAUTO", tradingsymbol: "ASKAUTO", buyQty: 10 });
+    const r = assessDataQuality(inputs({ trades: [held], unlinkedIpoRecords: [{ id: 12, accountId: 7, name: "ASKAUTO", allottedQty: 10 }] }));
+    const issue = find(r, "ipo_record_link:3")!;
+    expect([issue.severity, issue.title, issue.count, issue.ids]).toEqual(["warning", "IPO record not linked to its holding", 1, [3]]);
+    expect(issue.detail).toContain("#12 ASKAUTO");
+    expect(issue.detail).toContain("counted once in IPOs and again as the holding's own sale");
+    // A caller that has not read the records gets exactly the report it got before.
+    expect(find(assessDataQuality(inputs({ trades: [held] })), "ipo_record_link:3")).toBeUndefined();
+  });
+
+  it("asks about a holding no record can be matched to, and never guesses one", () => {
+    const held = trade({ id: 3, acquisition: "ipo", acquisitionPrice: 100, accountId: 7, symbol: "ASKAUTO", tradingsymbol: "ASKAUTO", buyQty: 10 });
+    const record = { id: 12, accountId: 7, name: "ASKAUTO", allottedQty: 10 };
+    const cases: [string, QualityInputs][] = [
+      ["another account's record", inputs({ trades: [held], unlinkedIpoRecords: [{ ...record, accountId: 8 }] })],
+      ["a record named after the company, not the scrip", inputs({ trades: [held], unlinkedIpoRecords: [{ ...record, name: "ASK Automotive Ltd" }] })],
+      ["a different allotted quantity, both stated", inputs({ trades: [held], unlinkedIpoRecords: [{ ...record, allottedQty: 25 }] })],
+      ["a holding that states no account", inputs({ trades: [{ ...held, accountId: undefined }], unlinkedIpoRecords: [record] })],
+      ["a holding already linked to a record", inputs({ trades: [held], ipoLinkedTradeIds: new Set([3]), unlinkedIpoRecords: [record] })],
+    ];
+    for (const [why, i] of cases) expect(find(assessDataQuality(i), "ipo_record_link:3"), why).toBeUndefined();
+    // An unstated quantity on EITHER side is not evidence against the pair.
+    expect(find(assessDataQuality(inputs({ trades: [{ ...held, buyQty: 0 }], unlinkedIpoRecords: [record] })), "ipo_record_link:3")).toBeDefined();
+  });
+
   it("passes through externally-counted gaps", () => {
     const r = assessDataQuality(inputs({ staleMtmCount: 4, missingAttachmentFiles: 2 }));
     expect(find(r, "stale_mtm")?.count).toBe(4);
     expect(find(r, "stale_mtm")?.severity).toBe("info");
     expect(find(r, "missing_attachment")?.count).toBe(2);
     expect(find(r, "missing_attachment")?.severity).toBe("warning");
+  });
+});
+
+describe("uniqueIpoRelinks — what a Trash restore may write, and what stays a question", () => {
+  const held = (id: number, over: Partial<QualityTrade> = {}) =>
+    trade({ id, acquisition: "ipo", acquisitionPrice: 100, accountId: 7, symbol: "ASKAUTO", tradingsymbol: "ASKAUTO", buyQty: 10, ...over });
+  const rec = (id: number, over: Partial<{ accountId: number; name: string; allottedQty: number }> = {}) =>
+    ({ id, accountId: 7, name: "ASKAUTO", allottedQty: 10, ...over });
+
+  it("links the one record that can only be this holding's", () => {
+    expect(uniqueIpoRelinks([held(3)], [rec(12), rec(13, { name: "OTHER" }), rec(14, { accountId: 8 })])).toEqual([{ tradeId: 3, ipoId: 12 }]);
+  });
+
+  it("writes nothing when one holding has two candidates", () => {
+    expect(uniqueIpoRelinks([held(3)], [rec(12), rec(13)])).toEqual([]);
+    expect(ipoOrphanPairs([held(3)], [rec(12), rec(13)])[0].recordIds, "both are still named").toEqual([12, 13]);
+  });
+
+  it("writes nothing when two holdings reach for the same record — 'whichever came first' is not an answer", () => {
+    expect(uniqueIpoRelinks([held(3), held(4)], [rec(12)])).toEqual([]);
+  });
+
+  it("writes nothing when there is no candidate at all", () => {
+    expect(uniqueIpoRelinks([held(3)], [])).toEqual([]);
+    expect(ipoOrphanPairs([held(3)], [])).toEqual([]);
   });
 });
 

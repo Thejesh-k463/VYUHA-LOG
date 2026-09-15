@@ -296,6 +296,74 @@ export function syncOwnsClose(args: { stored: IpoLinkInput | null; trade: Linked
 }
 
 /**
+ * L3 (v4.3.0 wave 2L): does this save change anything the sync would WRITE onto the
+ * linked holding?
+ *
+ * The same comparison `linkedSyncFor` makes for a holding with a sale recorded in
+ * Trades, asked of a holding that is booked elsewhere for another reason — a ladder
+ * of `trade_legs` (invariant 5). A save that changes no value the patch carries
+ * touches that holding not at all, so it is saved and the holding is left as it is;
+ * any other save would rewrite the parent from the allotment and is refused. A create
+ * or a save that links a different holding has no stored IPO to compare against, so
+ * every value it carries is a new write.
+ *
+ * Y2 (wave 2H) carries over: a stored exit date that was never readable equals any
+ * date, so a form sending it back does not read as a change.
+ */
+export function syncWouldWrite(args: { stored: IpoLinkInput | null; next: IpoLinkInput }): boolean {
+  const { stored, next } = args;
+  if (!stored) return true;
+  return !samePatch(tradePatchFromIpo(stored), tradePatchFromIpo(next), unreadableExitDate(stored.exitDate));
+}
+
+/**
+ * L3 (v4.3.0 wave 2L) — the sentence the IPO sync writes into a linked holding's
+ * `import_notes` beside the exit charges it computes for it.
+ *
+ * WHY a marker and not a recomputation: wave 2J proved "these charges are the sync's
+ * own" by re-pricing the IPO's stored exit against the LIVE `charge_config` and
+ * comparing head by head. That check agrees with itself only while the rate card
+ * stands still — a rate correction between the sync's write and a later exit edit
+ * changed what it produced, ownership was lost for good, and the holding's charges
+ * then froze at the old bill while its price, gross and net followed the new exit
+ * (measured: a ₹5,000 sale carrying a ₹1,500 sale's ₹2.06, ₹71.69 of net that capital,
+ * the tax base and the ITR export all read too high). Provenance is a fact about who
+ * wrote the row, which is exactly what the repo's other identity notes record
+ * (`dedup-alias:`, the Data Quality stale-close sentence), and no rate edit can erase
+ * it.
+ *
+ * It is dropped by whoever takes the charges over: the trade editor when its save
+ * changes a head or the total (owner ruling F1 — a figure the user states is never
+ * rewritten), and the sync itself when it re-opens the holding and the charges go.
+ */
+export const IPO_SYNC_CHARGES_NOTE =
+  "Exit charges computed from the linked IPO record's exit price and date; not stated by a broker.";
+
+const notePartsOf = (importNotes: string | null | undefined): string[] =>
+  (importNotes ?? "")
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+/** Does this holding carry the sync's charge marker? */
+export function hasSyncChargesNote(importNotes: string | null | undefined): boolean {
+  return notePartsOf(importNotes).includes(IPO_SYNC_CHARGES_NOTE);
+}
+
+/** `import_notes` with the marker, once, after every note already there. Idempotent. */
+export function withSyncChargesNote(importNotes: string | null): string {
+  const parts = notePartsOf(importNotes);
+  if (!parts.includes(IPO_SYNC_CHARGES_NOTE)) parts.push(IPO_SYNC_CHARGES_NOTE);
+  return parts.join(" | ");
+}
+
+/** `import_notes` without the marker, every other note kept in order; null when none is left. */
+export function withoutSyncChargesNote(importNotes: string | null): string | null {
+  const parts = notePartsOf(importNotes).filter((s) => s !== IPO_SYNC_CHARGES_NOTE);
+  return parts.length > 0 ? parts.join(" | ") : null;
+}
+
+/**
  * Seed an IPO record FROM an existing holding, for the "this came from an IPO"
  * action on the Trades page.
  *

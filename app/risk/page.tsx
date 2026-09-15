@@ -48,7 +48,7 @@ import { VarPanel } from "@/components/risk/var-panel";
 import { estimateMargin, type MarginPositionInput } from "@/lib/risk/margin";
 import { makeMtfResolver } from "@/lib/queries/mtf-margins";
 import { mtfBundleIsStale, MTF_BUNDLE_AS_OF } from "@/lib/risk/mtf-margins";
-import { mtfDrift } from "@/lib/risk/mtf-drift";
+import { mtfDrift, unpricedMtfPositions } from "@/lib/risk/mtf-drift";
 import { MtfDriftCard } from "@/components/risk/mtf-drift-card";
 import { getMarginConfig, getMarginRates } from "@/lib/queries/margin";
 import { MarginPanel } from "@/components/risk/margin-panel";
@@ -279,12 +279,11 @@ export default function RiskPage() {
   // is the bundled margin snapshot stale, and have any open MTF positions'
   // CURRENT requirements drifted from what they were entered at?
   const mtfStale = mtfBundleIsStale(today);
-  const mtfDriftRows = mtfDrift(
-    trades
-      .filter((t) => t.isOpen && t.segment === "eq_mtf")
-      .map((t) => ({ id: t.id, symbol: t.symbol, broker: t.broker, buyValue: t.buyValue, mtfFundedAmount: t.mtfFundedAmount })),
-    mtfResolve,
-  );
+  const openMtfRows = trades
+    .filter((t) => t.isOpen && t.segment === "eq_mtf")
+    .map((t) => ({ id: t.id, symbol: t.symbol, broker: t.broker, buyValue: t.buyValue, mtfFundedAmount: t.mtfFundedAmount }));
+  const mtfDriftRows = mtfDrift(openMtfRows, mtfResolve);
+  const unpricedMtf = unpricedMtfPositions(openMtfRows).length;
   const marginRates = getMarginConfig().map((r) => ({ broker: r.broker, segment: r.segment, marginPct: r.marginPct }));
 
   // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
@@ -411,7 +410,7 @@ export default function RiskPage() {
             below and reset its open row (AGENTS.md, R7). */}
         <ExpiryObligations summary={settlement} spotRefs={spotRefs} spotCloseDismissed={spotCloseDismissed} />
         <MarginPanel summary={marginSummary} rates={marginRates} />
-        <MtfDriftCard drift={mtfDriftRows} bundleAsOf={MTF_BUNDLE_AS_OF} stale={mtfStale} />
+        <MtfDriftCard drift={mtfDriftRows} unpriced={unpricedMtf} bundleAsOf={MTF_BUNDLE_AS_OF} stale={mtfStale} />
         {exposures.length > 0 && (
           <VarPanel varResult={varResult} betaExp={betaExp} stress={stress} niftyDays={niftyReturns.length} />
         )}

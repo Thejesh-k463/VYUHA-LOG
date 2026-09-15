@@ -162,6 +162,67 @@ describe("Y2 — the reverse direction is refused before any write", () => {
   });
 });
 
+describe("U1-MERGE (wave 2L) — a dropped duplicate may not carry a leg of its own", () => {
+  const A = 8207;
+  const B = 8208;
+  const SYM = "MRGW";
+
+  /**
+   * The forward branch's blind spot. Y2 taught it to SEE a source row whose own
+   * hash a target lot holds as an alias, and to drop it exactly like a same-hash
+   * duplicate — right for a plain sell-only row, whose whole content is the sale
+   * the lot already records. It tested only the hash, so it dropped a CLOSED
+   * ROUND TRIP on the same hash too: its purchase leg exists on no other row, and
+   * it left the merged journal with its realised P&L, reported as "1 duplicate
+   * skipped". That is U1's rule on the restore side ("no refusal advises deleting
+   * a row that carries a leg of its own"), and the reverse branch's own reason to
+   * refuse rather than drop — applied to the forward branch.
+   */
+  it("a source CLOSED round trip on a hash the target holds as an alias refuses the merge, in the preview and in the execution, in the same words", async () => {
+    account(A, "carry-target");
+    account(B, "carry-source");
+    expect(commit.commitParsedFile(buy(SYM, 100, 200, "2026-08-20"), "mw-b", null, A).added).toBe(1);
+    expect(commit.commitParsedFile(sell(SYM, 100, 250, "2026-08-25"), "mw-s", null, A).added).toBe(1);
+    const [lotA, saleA] = rowsOf(A);
+    select(A);
+    expect((await join(lotA.id, saleA.id)).status).toBe(200);
+    expect(rowsOf(A)[0].importNotes ?? "").toContain(`dedup-alias:${saleA.dedupHash}`);
+
+    // The same sale record in the source book — then given its own buy leg in
+    // the trade editor, so the row now records a purchase held on no other row.
+    expect(commit.commitParsedFile(sell(SYM, 100, 250, "2026-08-25"), "mw-s-b", null, B).added).toBe(1);
+    const [saleB] = rowsOf(B);
+    expect(saleB.dedupHash).toBe(saleA.dedupHash);
+    t.db
+      .update(t.schema.trades)
+      .set({ buyQty: 100, avgBuyPrice: 190, buyValue: 19000, buyDate: "2026-08-19", isOpen: false, grossPnl: 6000, netPnl: 5750.5 })
+      .where(eq(t.schema.trades.id, saleB.id))
+      .run();
+
+    const beforeA = rowsOf(A);
+    const beforeB = rowsOf(B);
+    const fact =
+      `Trade #${saleB.id} (${SYM}) records a sale that “carry-target” already holds ` +
+      `(trade #${lotA.id}, ${SYM}, which was closed with it) — moving it would count that sale twice`;
+
+    // THE assertion: the merge refuses before any write, rather than dropping
+    // 19,000 of cost basis and 5,750.50 of realised P&L as "1 duplicate skipped".
+    const res = acct.deleteAccount({ accountId: B, mode: "merge", targetId: A, connections: "delete" });
+    expect([res.ok, res.snapshotId, res.skippedTrades], res.message).toEqual([false, null, 0]);
+    expect(res.message).toBe(`${fact}. Nothing was merged; both accounts are unchanged.`);
+    expect(rowsOf(A)).toEqual(beforeA);
+    expect(rowsOf(B)).toEqual(beforeB);
+
+    // The preview warns EXACTLY when the execution refuses, off the same fact —
+    // no dedup count, no "will be skipped" promise the merge will not keep.
+    const preview = acct.previewAccountDelete({ accountId: B, mode: "merge", targetId: A });
+    expect(preview.dedupCollisions).toBe(0);
+    expect(preview.warnings).toContain(
+      `${fact}, and skipping it would drop the other leg it records. The merge will not run until those two rows are resolved.`,
+    );
+  });
+});
+
 describe("Y2 — a plain same-hash collision is unchanged", () => {
   const A = 8205;
   const B = 8206;

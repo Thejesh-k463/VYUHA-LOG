@@ -360,3 +360,55 @@ describe("the round trip: holding → IPO → holding", () => {
     expect(patch.acquisitionPrice).toBeGreaterThan(0);
   });
 });
+
+/**
+ * L3 (v4.3.0 wave 2L) — WHO wrote the charges on a linked holding, proved by a
+ * provenance marker rather than by re-pricing.
+ *
+ * Wave 2J proved the sync's ownership of a close's charges by RE-PRICING the stored
+ * exit against the live `charge_config` and comparing head by head. That is a check
+ * that agrees with itself only while the rate card stands still: a rate correction in
+ * the charge editor between the sync's write and a later exit edit changed what the
+ * recomputation produced, ownership was lost forever, and the holding's charges froze
+ * at the old bill while its price, gross and net kept moving with the exit (measured:
+ * a ₹5,000 sale carrying a ₹1,500 sale's ₹2.06 bill, ₹71.69 of net the tax base and
+ * capital read too high).
+ *
+ * The marker is the repo's own provenance pattern (`dedup-alias:`, the Data Quality
+ * stale-close sentence): one sentence in `import_notes`, written beside the charges by
+ * whoever wrote them, kept in order beside every other note, and dropped by the trade
+ * editor when it changes a charge head (owner ruling F1 — a figure the user states is
+ * never rewritten). It is a FACT about the write, so no later rate edit can erase it.
+ */
+describe("L3 · the IPO sync's charge provenance marker", () => {
+  const NOTE = ipoLink.IPO_SYNC_CHARGES_NOTE;
+
+  it("is one sentence, carries no '|' (the separator that joins notes) and names the IPO record", () => {
+    expect(typeof NOTE).toBe("string");
+    expect(NOTE).not.toContain("|");
+    expect(NOTE.toLowerCase()).toContain("ipo");
+  });
+
+  it("reads present only when the sentence is actually there", () => {
+    expect(ipoLink.hasSyncChargesNote(NOTE)).toBe(true);
+    expect(ipoLink.hasSyncChargesNote(`dedup-alias:abc | ${NOTE}`)).toBe(true);
+    expect([
+      ipoLink.hasSyncChargesNote(null),
+      ipoLink.hasSyncChargesNote(""),
+      ipoLink.hasSyncChargesNote("dedup-alias:abc"),
+      ipoLink.hasSyncChargesNote(NOTE.slice(0, 20)),
+    ]).toEqual([false, false, false, false]);
+  });
+
+  it("adds itself once, keeping every other note in order; dropping it keeps them too", () => {
+    expect(ipoLink.withSyncChargesNote(null)).toBe(NOTE);
+    expect(ipoLink.withSyncChargesNote(NOTE)).toBe(NOTE); // idempotent
+    const withAlias = ipoLink.withSyncChargesNote("dedup-alias:abc | Closed automatically.");
+    expect(withAlias).toBe(`dedup-alias:abc | Closed automatically. | ${NOTE}`);
+    expect(ipoLink.withoutSyncChargesNote(withAlias)).toBe("dedup-alias:abc | Closed automatically.");
+    // The only note: dropping it leaves null, not an empty string.
+    expect(ipoLink.withoutSyncChargesNote(NOTE)).toBeNull();
+    expect(ipoLink.withoutSyncChargesNote(null)).toBeNull();
+    expect(ipoLink.withoutSyncChargesNote("dedup-alias:abc")).toBe("dedup-alias:abc");
+  });
+});

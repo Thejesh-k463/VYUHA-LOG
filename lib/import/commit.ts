@@ -35,6 +35,7 @@ import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
 import { heldIdentityHashes, isLotIdentityFrozen, STALE_CLOSE_NOTE, withStaleCloseNote } from "./close-open-lots";
+import { withoutSyncChargesNote } from "@/lib/analytics/ipo-link";
 import { saleJournalFields, staleAmbiguousNote, staleFillsNote, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
 
 /** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
@@ -43,16 +44,52 @@ function mtfOwnMarginPct(broker: string): number {
   return getMarginPct(broker, "eq_mtf");
 }
 
+/**
+ * L3 (v4.3.0 wave 2L) — the shape matched, and then the CALENDAR.
+ *
+ * The two branches below matched on digit count alone, so '31-02-2026' was reordered
+ * into '2026-02-31' and '99-99-9999' into '9999-99-99', and both were stored as if
+ * they were days. `new Date('9999-99-99')` is an Invalid Date: on an eq_mtf close the
+ * holding period went NaN, the charge total with it, and the UPDATE failed with
+ * `NOT NULL constraint failed: trades.charges_total_paise` — the server action 500d
+ * instead of answering {ok:false}. On every other row the impossible day was simply
+ * stored, and the readers that date a trade (the tax pack's financial year, the MTF
+ * day count) then read a day that does not exist.
+ *
+ * A date that is not a real calendar day now reads as NO date — the same answer this
+ * function already gave to text it could not parse at all, and the same rule
+ * `isPriceableExitDate` applies to an IPO exit. Callers that write a date a user
+ * TYPED refuse the whole write rather than store or silently clear it (see
+ * `closePosition` and `updateManualTrade`); an importer keeps its own rule of
+ * refusing a row it cannot read (AGENTS.md: never coerce a bad cell).
+ */
+function isRealDay(y: string, mo: string, d: string): string | null {
+  const [yy, mm, dd] = [Number(y), Number(mo), Number(d)];
+  const t = new Date(Date.UTC(yy, mm - 1, dd));
+  return t.getUTCFullYear() === yy && t.getUTCMonth() === mm - 1 && t.getUTCDate() === dd ? `${y}-${mo}-${d}` : null;
+}
+
 function normalizeDate(s: string | null): string | null {
   if (!s) return null;
   const t = s.trim();
   // DD-MM-YYYY or DD/MM/YYYY
   const m = t.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  if (m) return isRealDay(m[3], m[2], m[1]);
   // YYYY-MM-DD (optionally with time)
   const m2 = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
+  if (m2) return isRealDay(m2[1], m2[2], m2[3]);
   return null;
+}
+
+/**
+ * L3 (wave 2L) — the refusal a writer returns for a date a user typed and this
+ * module cannot read. Null when the value is blank (the caller's own fallback
+ * applies) or readable.
+ */
+function unreadableDate(label: string, value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (raw === "" || normalizeDate(raw) != null) return null;
+  return `The ${label} “${raw}” is not a real calendar day — enter it as a day that exists, for example 2026-06-15. Nothing was changed.`;
 }
 
 interface Override {
@@ -1858,10 +1895,18 @@ export function closePosition(
   tradeId: number,
   exitPrice: number,
   exitDate: string | null,
-): { ok: boolean; message: string; code?: "STAGED" } {
+): { ok: boolean; message: string; code?: "STAGED" | "BAD_DATE" } {
   const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
   if (!t) return { ok: false, message: "Trade not found" };
   if (!t.isOpen) return { ok: false, message: "Position is already closed" };
+
+  // L3 (v4.3.0 wave 2L) — an exit date that is not a real calendar day is refused
+  // BEFORE anything is computed or written. It used to be stored as typed ('2026-02-31'),
+  // and on an eq_mtf row it threw an unhandled SqliteError through the NaN day count.
+  // A BLANK date still falls back to today below: that is an unanswered field, not an
+  // unreadable one.
+  const badDate = unreadableDate("exit date", exitDate);
+  if (badDate) return { ok: false, code: "BAD_DATE", message: badDate };
 
   // R2-DQ N11 — a STAGED position (or any row holding trade_legs) is never
   // closed here. This writes the parent row only: no exit leg lands in
@@ -2316,6 +2361,16 @@ export function updateManualTrade(
   const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
   if (!t) return { ok: false, message: "Trade not found" };
 
+  // L3 (v4.3.0 wave 2L) — a date the editor cannot read is refused, not stored and not
+  // silently cleared. Before the calendar check in `normalizeDate` this save stored
+  // '2026-02-31' as a sell date; after it, passing the same value through would blank
+  // the date on a closed row instead. Blank still means "clear this", as every other
+  // field in this form does.
+  for (const [label, value] of [["buy date", fields.buyDate], ["sell date", fields.sellDate]] as const) {
+    const bad = value === undefined ? null : unreadableDate(label, value);
+    if (bad) return { ok: false, message: bad };
+  }
+
   const { rates, defaults } = loadRatesContext();
 
   const buyQty = fields.buyQty ?? t.buyQty;
@@ -2388,6 +2443,20 @@ export function updateManualTrade(
   const buyLegChanged = buyQty !== t.buyQty || avgBuyPrice !== t.avgBuyPrice || buyDate !== t.buyDate;
   const exitLegChanged = isOpen !== t.isOpen || sellLegChanged || (!readsLong && buyLegChanged);
 
+  // L3 (v4.3.0 wave 2L) — a save that changes a charge head or the total makes the
+  // charges this row states THIS save's, so the IPO sync's provenance marker goes with
+  // them (it claims the eight heads it priced) and the next exit edit on /ipos keeps
+  // what is here (owner ruling F1). Every other note is kept in order, the way the Data
+  // Quality join sentence is dropped on an exit-leg change just above. `closePosition`
+  // and `applyOverride` do not touch it.
+  const chargesChanged =
+    charges.total !== t.chargesTotal ||
+    (["brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty", "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges"] as const).some(
+      (k) => charges[k] !== t[k],
+    );
+  const keptNotes = chargesChanged ? withoutSyncChargesNote(t.importNotes) : t.importNotes;
+  const nextNotes = exitLegChanged ? withoutStaleCloseNote(keptNotes) : keptNotes;
+
   db.update(tradesTable)
     .set({
       buyQty,
@@ -2414,7 +2483,7 @@ export function updateManualTrade(
       setupTag: fields.setupTag !== undefined ? fields.setupTag : t.setupTag,
       exitTrigger: fields.exitTrigger !== undefined ? fields.exitTrigger : t.exitTrigger,
       notes: fields.notes !== undefined ? fields.notes : t.notes,
-      ...(exitLegChanged ? { importNotes: withoutStaleCloseNote(t.importNotes) } : {}),
+      ...(nextNotes !== t.importNotes ? { importNotes: nextNotes } : {}),
       brokerage: charges.brokerage,
       sttCtt: charges.sttCtt,
       exchangeTxn: charges.exchangeTxn,

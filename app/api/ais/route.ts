@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTrades } from "@/lib/queries/trades";
-import { getIposComputed } from "@/lib/queries/ipos";
-import { ipoIdsCountedThroughTrades } from "@/lib/queries/tax-itr";
+// The counted-once rule has ONE home, beside the IPO reads it is about (wave 2L).
+import { getIposComputed, ipoIdsCountedThroughTrades } from "@/lib/queries/ipos";
 import { isPriceableExitDate } from "@/lib/analytics/ipo";
 import { getLedgerEntries } from "@/lib/queries/ledger";
 import { getSettings } from "@/lib/queries/settings";

@@ -216,3 +216,83 @@ describe("a holding that carries trade_legs is refused for an IPO link (invarian
     expect(named("SCOPESTG")).toHaveLength(0);
   });
 });
+
+/**
+ * L3 (v4.3.0 wave 2L) — the staged refusal fires only where a save would actually
+ * WRITE to the ladder.
+ *
+ * Wave 2I put the guard BEFORE the sync decision, so it refused every save of an IPO
+ * linked to a holding carrying `trade_legs` — a notes-only save included — and the
+ * remedy the refusal named ("unlink the holding here") re-creates the double count
+ * wave 2H's counted-once rule exists to prevent: measured on one 10-share allotment,
+ * total realised went 497.94 → 995.88 and cgTrades 1 → 2 the moment the user followed
+ * the app's own instruction. The form sends no `tradeId` at all, so unlinking is not
+ * even reachable from it (the escape hatch existed only in the route).
+ *
+ * The rule now mirrors X1's rule for a holding with a sale recorded in Trades: the
+ * ladder is where that holding is booked (invariant 5), so a save that changes NOTHING
+ * the sync would write is saved and the holding is left exactly as it is, and any save
+ * that would rewrite the parent from the allotment is refused — naming the ladder, and
+ * never naming unlinking as the way out.
+ */
+describe("L3 · an IPO linked to a laddered holding: a save that writes nothing to it is saved", () => {
+  /** The pre-2I shape: the row written with a link the route would refuse to make today. */
+  const linkedIpo = (name: string, tradeId: number, over: Record<string, unknown> = {}) =>
+    t.db.insert(t.schema.ipos).values({
+      accountId: A1, name, appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true,
+      allottedQty: 10, allotmentDate: "2026-02-20", listingPrice: 130, tradeId, ...over,
+    }).returning({ id: t.schema.ipos.id }).get()!.id;
+
+  const legs = (tradeId: number) =>
+    t.db.insert(t.schema.tradeLegs).values([
+      { tradeId, kind: "entry", seq: 1, tradeDate: "2026-02-20", qty: 10, price: 100 },
+      { tradeId, kind: "entry", seq: 2, tradeDate: "2026-02-21", qty: 20, price: 115 },
+    ]).run();
+
+  it("a notes-only save of an IPO whose holding GAINED a ladder after the link: 200, the note stored, the parent untouched", async () => {
+    selectAccount(A1);
+    const trade = holding(A1, "SCOPELATE", { buyQty: 30, avgBuyPrice: 110, buyValue: 3300 });
+    legs(trade);
+    const id = linkedIpo("SCOPE-LATE", trade);
+    const before = tradeOf(trade);
+    const res = await post(payload({ id, name: "SCOPE-LATE", notes: "a note the user typed" }));
+    // THE assertions (before: 409 STAGED, the note lost, and the message told the
+    // user to unlink — which counts the sale twice).
+    expect(res.status).toBe(200);
+    expect(named("SCOPE-LATE").map((r) => [r.notes, r.tradeId])).toEqual([["a note the user typed", trade]]);
+    expect(tradeOf(trade)).toEqual(before);
+    expect([before.buyQty, before.buyValue]).toEqual([30, 3300]);
+  });
+
+  it("the same for a STAGED holding already closed on the IPO's own exit: 200 and not one column written", async () => {
+    selectAccount(A1);
+    const trade = holding(A1, "SCOPESTGX", {
+      staged: true, isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500,
+      sellDate: "2026-03-02", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, grossPnl: 500, netPnl: 497.94, chargesTotal: 2.06,
+    });
+    const id = linkedIpo("SCOPE-STGX", trade, { exitPrice: 150, exitDate: "2026-03-02" });
+    const before = tradeOf(trade);
+    const res = await post(payload({ id, name: "SCOPE-STGX", exitPrice: "150", exitDate: "2026-03-02", notes: "staged, noted" }));
+    expect(res.status).toBe(200);
+    expect(named("SCOPE-STGX").map((r) => r.notes)).toEqual(["staged, noted"]);
+    expect(tradeOf(trade)).toEqual(before);
+  });
+
+  it("a save that WOULD rewrite the parent from the allotment is refused 409, naming Trades and never naming unlinking", async () => {
+    selectAccount(A1);
+    const trade = holding(A1, "SCOPELEG3", { buyQty: 30, avgBuyPrice: 110, buyValue: 3300 });
+    legs(trade);
+    const id = linkedIpo("SCOPE-LEG3", trade);
+    const before = tradeOf(trade);
+    const ipoBefore = named("SCOPE-LEG3")[0];
+    const res = await post(payload({ id, name: "SCOPE-LEG3", exitPrice: "160", exitDate: "2026-03-02", notes: "sold?" }));
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { code: string; message: string };
+    expect(json.code).toBe("STAGED");
+    expect(json.message).toContain("Trades");
+    // THE assertion: the remedy that doubles the sale is not what the app suggests.
+    expect(json.message.toLowerCase()).not.toContain("unlink");
+    expect(named("SCOPE-LEG3")[0]).toEqual(ipoBefore);
+    expect(tradeOf(trade)).toEqual(before);
+  });
+});

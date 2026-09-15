@@ -31,7 +31,7 @@ export type DeskBar = Bar;
 /** MTF drag, present ONLY on rows whose product is MTF (owner ruling Q41). */
 export interface MtfBlock {
   fundedP: number;
-  ownCapitalP: number;
+  ownCapitalP: number | null; // null on a partly sold MTF leg: the stored funded amount covers the whole buy leg, so no own-capital figure is stated (wave 2L L2, invariant 6)
   accruedInterestP: number;
 }
 

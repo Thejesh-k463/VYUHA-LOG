@@ -42,7 +42,19 @@ export function mtfDrift(
   const out: MtfDriftRow[] = [];
   for (const p of positions) {
     if (!(p.buyValue > 0)) continue;
-    const funded = p.mtfFundedAmount ?? 0;
+    // A ROW THE JOURNAL NEVER PRICED HAS NO ENTRY MARGIN (v4.3.0 wave 2L,
+    // L2[1]). `?? 0` read a null funded amount as "the broker funded nothing",
+    // so a position whose funding was never resolved was STATED at 100% own
+    // margin: `storedOwnPct` 100, a large NEGATIVE delta, and a card telling
+    // the trader the requirement had FALLEN and no top-up was owed. The Trades
+    // table's own cell already refuses a percentage for exactly this row
+    // ("MTF · funding not yet resolved", `investedSummary`), so the two
+    // surfaces disagreed about the same trade. It is EXCLUDED and counted
+    // instead (invariant 6) — `unpricedMtfPositions` below names it on the
+    // card. A STATED 0 really is 100% own capital and keeps its row, the same
+    // null-vs-0 rule every other reader follows.
+    if (p.mtfFundedAmount == null) continue;
+    const funded = p.mtfFundedAmount;
     const own = p.buyValue - funded;
     if (own <= 0) continue; // malformed row — nothing honest to compare
     const storedOwnPct = r2((own / p.buyValue) * 100);
@@ -61,4 +73,14 @@ export function mtfDrift(
     });
   }
   return out.sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
+}
+
+/**
+ * The open MTF rows the drift check had to leave out: the journal never
+ * resolved what the broker funded, so there is no entry margin to compare
+ * today's requirement against. Counted rather than priced, so the card can say
+ * what it is not showing instead of printing a number for it (invariant 6).
+ */
+export function unpricedMtfPositions(positions: OpenMtfPosition[]): OpenMtfPosition[] {
+  return positions.filter((p) => p.buyValue > 0 && p.mtfFundedAmount == null);
 }

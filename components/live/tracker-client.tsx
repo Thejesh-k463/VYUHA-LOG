@@ -1309,7 +1309,7 @@ function DetailPane({
       {row.mtf && (
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <Block title="MTF funded" value={fmt.money(row.mtf.fundedP)} />
-          <Block title="Your own capital" value={fmt.money(row.mtf.ownCapitalP)} />
+          <Block title="Your own capital" value={fmt.money(row.mtf.ownCapitalP)} note={row.mtf.ownCapitalP === null ? "Partly sold — own capital not stated for this leg." : undefined} />
           <Block title="Interest accrued" value={fmt.money(row.mtf.accruedInterestP)} />
         </div>
       )}

@@ -171,15 +171,24 @@ describe("merge: the snapshot records the pre-merge links the merge re-points", 
       { ipoId: ownIpo, tradeId: sourceTrade },
       { ipoId: legacyIpo, tradeId: sourceTrade },
     ].sort((a, b) => a.ipoId - b.ipoId));
-    // CHANGED by ACCDEL-IPO-RELINK (wave 2K), deliberately: both rows survive
-    // the merge — the source's moved to the target — and both now name the
-    // TARGET's surviving copy of that trade instead of being left unlinked.
-    // Unlinked was a silent double count: the target's own copy stayed, so the
-    // merged book counted the sale once through the trade and once through the
-    // IPO (wave 2H's counted-once rule keys on `ipos.trade_id`). See
+    // CHANGED by ACCDEL-IPO-RELINK (wave 2K), deliberately: the source's own
+    // record survives the merge, moves to the target and names the TARGET's
+    // surviving copy of that trade instead of being left unlinked. Unlinked was
+    // a silent double count: the target's own copy stayed, so the merged book
+    // counted the sale once through the trade and once through the IPO (wave
+    // 2H's counted-once rule keys on `ipos.trade_id`). See
     // tests/account-merge-ipo-relink.test.ts for the figures.
     expect([ipoAccountId(ownIpo), ipoTradeId(ownIpo)]).toEqual([4, targetTrade]);
-    expect(ipoTradeId(legacyIpo)).toBe(targetTrade);
+    // MOVED by L7 (wave 2L), deliberately: ONE trade takes ONE IPO record —
+    // `pushTradeToIpoAction` refuses to create a second, and two rows both
+    // marked linked to one holding each sync onto it when edited while
+    // `getIpoTradeLinks()` keeps only the last. `ownIpo` (the book being merged,
+    // and the record that travels with the trade) takes the survivor; account
+    // 1's legacy row is SKIPPED — left where it stands, unlinked, which is
+    // numerically neutral in its own book because the trade it named was never
+    // in it. The envelope states the pre-merge link (asserted above) and the
+    // restore below puts it back.
+    expect([ipoAccountId(legacyIpo), ipoTradeId(legacyIpo)]).toEqual([1, null]);
   });
 
   it("restored: the duplicate comes back and the merge's re-point is left alone", () => {
@@ -191,10 +200,12 @@ describe("merge: the snapshot records the pre-merge links the merge re-points", 
     // `trade_id` is still NULL — "a link someone re-linked by hand since the
     // delete is their decision, not this restore's to overwrite" (lib/trash.ts)
     // — and the merge itself set this one, so it stays on the target's copy,
-    // which is the row the IPO now sits beside. What this branch still proves is
-    // that the envelope RECORDS the pre-merge link (asserted above); the purge
-    // describe above proves the loop READS it.
+    // which is the row the IPO now sits beside.
     expect(ipoTradeId(ownIpo)).toBe(targetTrade);
-    expect(ipoTradeId(legacyIpo)).toBe(targetTrade);
+    // L7 (wave 2L): the row the merge SKIPPED is still null, so the envelope's
+    // `ipoRefs` re-links it to the duplicate that just came back — the MERGE
+    // branch's `ipoRefs` doing the work the purge branch's cannot (there the
+    // rows ride back inside `accountRows.ipos` with `trade_id` intact).
+    expect(ipoTradeId(legacyIpo)).toBe(sourceTrade);
   });
 });

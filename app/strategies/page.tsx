@@ -7,6 +7,7 @@ import { StrategiesClient } from "@/components/strategies/strategies-client";
 import { STRATEGY_COPY, withholdForFree, type PickerRow } from "@/components/strategies/strategy-copy";
 import { getOpenOptionPositions, getOpenUnderlyingPositions } from "@/lib/queries/trades";
 import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
+import { canonicalIsin } from "@/lib/domain/isin";
 import { getSpotMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { getEntitlement } from "@/lib/queries/license";
@@ -105,20 +106,26 @@ export default function StrategiesPage() {
   // card, and FA's shares covered account FB's naked call only on 0. This
   // lookup and the query's predicate admit the SAME rows in a single-account
   // view, in BOTH directions (I6, fix wave 2I): the symbol is case-folded on
-  // both sides, and the ISIN is canonicalised on both — here by
-  // `trim().toUpperCase()`, there by `upper(trim(trades.isin))` against the same
-  // trimmed, upper-cased `bundledIsinBySymbol` candidates. So a single account
-  // drops nothing, and a holding stored with a lower-case or padded ISIN is
-  // found by its OWN account's read, not only on 0.
+  // both sides, and the ISIN is canonicalised on both. So a single account drops
+  // nothing, and a holding stored with a lower-case or padded ISIN is found by
+  // its OWN account's read, not only on 0.
+  // L1 (fix wave 2L): "canonicalised on both" is now literally ONE FUNCTION —
+  // `canonicalIsin` — asked here and in the query, which does its ISIN match in
+  // JS for that reason. I6 wrote the rule twice, `trim().toUpperCase()` here and
+  // `upper(trim(…))` there, and SQLite's `trim()` strips U+0020 and nothing else:
+  // a stored ISIN carrying a tab, a newline or a non-breaking space (an .xlsx
+  // cell, stored raw by the Groww and Angel One / Upstox parsers) was still
+  // invisible to its own account's read and still arrived on 0 through another
+  // account's ticker, where this map admitted it.
   const admittingOf = (symbols: Iterable<string>) => {
     const own = new Set([...symbols].map((s) => s.toUpperCase()));
     const byIsin = new Map<string, string>();
     for (const s of [...own].sort()) {
-      const isin = bundledIsinBySymbol(s);
+      const isin = canonicalIsin(bundledIsinBySymbol(s));
       if (isin && (!byIsin.has(isin) || bundledSymbolByIsin(isin) === s)) byIsin.set(isin, s);
     }
     return (upper: string, isin: string | null): string | null =>
-      own.has(upper) ? upper : (isin && byIsin.get(isin.trim().toUpperCase())) || null;
+      own.has(upper) ? upper : byIsin.get(canonicalIsin(isin)) ?? null;
   };
   const symbolsByAccount = new Map<number, string[]>();
   for (const r of optionRows) {

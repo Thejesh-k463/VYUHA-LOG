@@ -34,6 +34,8 @@ let q: typeof import("@/lib/queries/ipos");
 const A1 = 1;
 const A2 = 2;
 const A3 = 3;
+/** Archived (wave 2L): a real book the account switcher never lists. */
+const A4 = 4;
 /** No `accounts` row carries this id — a trade orphaned from its book. */
 const GONE = 77;
 
@@ -94,8 +96,8 @@ async function openThroughLibDb(): Promise<void> {
   }
 }
 
-let legacy = 0, back = 0, same = 0, nolink = 0, ghost = 0, noacct = 0;
-let a1Trade = 0, a2Trade = 0, goneTrade = 0, deadTrade = 0;
+let legacy = 0, back = 0, same = 0, nolink = 0, ghost = 0, noacct = 0, archived = 0;
+let a1Trade = 0, a2Trade = 0, goneTrade = 0, deadTrade = 0, archTrade = 0;
 let tradesBefore: unknown[] = [];
 
 beforeAll(async () => {
@@ -107,6 +109,7 @@ beforeAll(async () => {
     .values([
       { id: A2, name: "second book", isDefault: false },
       { id: A3, name: "third book", isDefault: false },
+      { id: A4, name: "closed book", isDefault: false, archived: true },
     ])
     .run();
 
@@ -114,6 +117,7 @@ beforeAll(async () => {
   a2Trade = holding(A2, "REHOMEA2");
   holding(A3, "REHOMEA3");
   goneTrade = holding(GONE, "REHOMEGONE");
+  archTrade = holding(A4, "REHOMEARCH");
   deadTrade = holding(A2, "REHOMEDEAD");
   t.sqlite.prepare("DELETE FROM trades WHERE id = ?").run(deadTrade);
 
@@ -124,6 +128,7 @@ beforeAll(async () => {
   nolink = ipoRow("REHOME-NOLINK", A1, null);
   ghost = ipoRow("REHOME-GHOST", A1, deadTrade);
   noacct = ipoRow("REHOME-NOACCT", A1, goneTrade);
+  archived = ipoRow("REHOME-ARCHIVED", A1, archTrade);
   tradesBefore = tradesAll();
 
   // A journal that pre-dates the fix: openTempDb already ran the fixes on an
@@ -152,7 +157,8 @@ describe("opening the journal re-homes a legacy cross-account IPO row", () => {
       named("REHOME-NOLINK").account_id,
       named("REHOME-GHOST").account_id,
       named("REHOME-NOACCT").account_id,
-    ]).toEqual([A1, A1, A1, A1]);
+      named("REHOME-ARCHIVED").account_id,
+    ]).toEqual([A1, A1, A1, A1, A1]);
     // The links themselves are untouched — this fix moves the row, not the link.
     expect([named("REHOME-GHOST").trade_id, named("REHOME-NOLINK").trade_id]).toEqual([deadTrade, null]);
     expect(iposAll().filter((r) => r.account_id === 0)).toEqual([]);
@@ -160,7 +166,8 @@ describe("opening the journal re-homes a legacy cross-account IPO row", () => {
 
   it("touches no trade", () => {
     expect(tradesAll()).toEqual(tradesBefore);
-    expect(tradesBefore).toHaveLength(4);
+    // Five fixtures: A1, A2, A3, the orphaned book and the archived one (wave 2L).
+    expect(tradesBefore).toHaveLength(5);
   });
 });
 
@@ -190,6 +197,30 @@ describe("the re-homed row reads on its holding's /ipos, and only there", () => 
     expect([rows.find((r) => r.id === ghost)!.linked, rows.find((r) => r.id === nolink)!.linked]).toEqual([false, false]);
     expect(rows.find((r) => r.id === noacct)!.linked).toBe(false);
     expect(rows.find((r) => r.id === same)!.linked).toBe(true);
+  });
+});
+
+/**
+ * L3 (v4.3.0 wave 2L) — an ARCHIVED account is as unselectable as a missing one.
+ *
+ * The fix's own comment already excluded "a book that cannot be selected", but the
+ * JOIN tested only that the `accounts` row EXISTS: an archived book is a real row,
+ * so a record was moved into it and left every selectable single-account view
+ * (components/system/account-switcher.tsx lists `accounts.filter(a => !a.archived)`,
+ * and lib/queries/accounts.ts resolves a stored selection over live accounts only).
+ * Left where it is, the record stays visible and editable in a book the user can
+ * still open; the link itself reads inert under wave 2I's scoped join, exactly as a
+ * link to a deleted trade does — the fix moves a row, it never invents a link.
+ */
+describe("a holding in an ARCHIVED account is not a destination", () => {
+  it("the IPO stays in the account it was filed in, and still reads there", () => {
+    expect(named("REHOME-ARCHIVED").account_id).toBe(A1);
+    selectAccount(A1);
+    const rows = q.getIposComputed().rows;
+    expect(rows.map((r) => r.name)).toContain("REHOME-ARCHIVED");
+    // The cross-account link is inert (wave 2I), never re-pointed and never followed.
+    expect(rows.find((r) => r.id === archived)!.linked).toBe(false);
+    expect(named("REHOME-ARCHIVED").trade_id).toBe(archTrade);
   });
 });
 

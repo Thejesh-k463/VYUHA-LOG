@@ -29,14 +29,33 @@ interface PreviewResp {
  * it as null, and the route billed 0 days of MTF interest against a save that
  * charged the real holding period (a preview of ₹168.71 charges beside a stored
  * ₹405.42 on a 30-day ₹16,000-funded MTF row).
+ *
+ * L3 (wave 2L): NULL when the field holds something that is not a real calendar
+ * day — the save refuses such a date now ('2026-02-31' used to be stored as a
+ * sell date; '99-99-9999' threw on an MTF row), so there is no date to preview
+ * at either. A BLANK field is still today: unanswered, not unreadable.
  */
-export function resolveExitIso(exitDate: string): string {
+export function resolveExitIso(exitDate: string): string | null {
   const s = (exitDate ?? "").trim();
+  if (s === "") return todayIstIso();
   const dmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
-  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  if (dmy) return realDay(dmy[3], dmy[2], dmy[1]);
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  return todayIstIso();
+  if (iso) return realDay(iso[1], iso[2], iso[3]);
+  return null;
+}
+
+/** T+1-through-settlement day count, as `closePosition` bills it; 0 without both dates. */
+function daysBetween(buyDate: string | null, exitIso: string | null): number {
+  if (!buyDate || !exitIso) return 0;
+  return Math.max(0, Math.floor((new Date(exitIso).getTime() - new Date(buyDate).getTime()) / 86400000));
+}
+
+/** `${y}-${mo}-${d}` when that day exists, else null (commit.ts `isRealDay`). */
+function realDay(y: string, mo: string, d: string): string | null {
+  const [yy, mm, dd] = [Number(y), Number(mo), Number(d)];
+  const t = new Date(Date.UTC(yy, mm - 1, dd));
+  return t.getUTCFullYear() === yy && t.getUTCMonth() === mm - 1 && t.getUTCDate() === dd ? `${y}-${mo}-${d}` : null;
 }
 
 /**
@@ -78,8 +97,9 @@ export function closePreviewBody(
     grossPnl: Math.round((sellValue - buyValue) * 100) / 100,
     ownCapitalUsed: trade.mtfFundedAmount != null ? Math.max(0, buyValue - trade.mtfFundedAmount) : null,
     // The RESOLVED exit date, the same one `dates` carries and `closePosition`
-    // stores — never the raw field (I1 [1]).
-    daysHeld: trade.buyDate ? Math.max(0, Math.floor((new Date(resolveExitIso(exitDate)).getTime() - new Date(trade.buyDate).getTime()) / 86400000)) : 0,
+    // stores — never the raw field (I1 [1]). A date the save would refuse (L3)
+    // bills no holding period; the dialog shows no preview for it at all.
+    daysHeld: daysBetween(trade.buyDate, resolveExitIso(exitDate)),
     isOpen: false,
     buyDate: dates.buyDate,
     sellDate: dates.sellDate,
@@ -107,14 +127,15 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
 
   useEffect(() => {
     const price = Number(exitPrice) || 0;
+    const exitIso = resolveExitIso(exitDate);
     // Deliberate: clears the stale preview synchronously when the price goes
-    // invalid, before the debounced fetch.
+    // invalid — or the date goes unreadable, which the save refuses (L3) — before
+    // the debounced fetch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (price <= 0) { setPreview(null); return; }
+    if (price <= 0 || exitIso == null) { setPreview(null); return; }
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
       try {
-        const exitIso = resolveExitIso(exitDate);
         const res = await fetch("/api/charges/preview", {
           method: "POST",
           headers: { "content-type": "application/json" },

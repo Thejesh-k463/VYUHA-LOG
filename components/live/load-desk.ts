@@ -425,7 +425,7 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
       mtf: p.isMtf
         ? {
             fundedP: toPaise(p.fundedAmount),
-            ownCapitalP: toPaise(p.ownCapital),
+            ownCapitalP: toPaiseOrNull(p.ownCapital),
             accruedInterestP: toPaise(p.accruedInterest),
           }
         : null,

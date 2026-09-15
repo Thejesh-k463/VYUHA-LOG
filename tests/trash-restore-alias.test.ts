@@ -504,9 +504,13 @@ describe("Y1 — a self-consistent snapshot restores whole", () => {
     expect(rowsOf(ACC9)).toEqual([]);
 
     const res = trash.restoreTrashSnapshot(del.snapshotId!);
-    // On revert: {ok:false, restored:0} and "Trade #<L> (TRASHJ) was closed with a
-    // sale this snapshot also holds (trade #<S>, TRASHJ) — restoring both would
-    // count that sale twice. Nothing was changed."
+    // On revert (the three Y1 hunks put back, measured 2026-09-15):
+    // {ok:true, restored:1, skipped:[{id:<S>, reason:"an identical trade is already
+    // in the journal (recorded in the position it closed)"}]} — the LOT lands first
+    // in rowid order and the pre-fix code then added its aliases to the stored
+    // picture, so the sale beside it was silently SKIPPED, not refused. The
+    // snapshot-level refusal ("… was closed with a sale this snapshot also holds …")
+    // fired only where the sale PRECEDED the lot in the snapshot's own order.
     expect([res.ok, res.restored, res.skipped], res.message).toEqual([true, 2, []]);
     expect(rowsOf(ACC9), "the book is the one the snapshot was taken from").toEqual(before);
     expect(row(L.id)!.importNotes ?? "").toContain(`dedup-alias:${S.dedupHash}`);
@@ -522,8 +526,11 @@ describe("Y1 — a self-consistent snapshot restores whole", () => {
     expect(rowsOf(ACC9)).toEqual([]);
 
     const res = trash.restoreTrashSnapshot(del.snapshotId!);
-    // On revert: {ok:false, restored:0} — the whole account lost, the unrelated
-    // OTHERJ trade with it, and the refusal names nothing to delete.
+    // On revert (measured 2026-09-15): {ok:true, restored:2, skipped:[]} — the
+    // account itself and the unrelated OTHERJ row DO come back. What the pre-fix
+    // code loses is the SALE: it was skipped in (a) above, so it is not in the
+    // book this snapshot was taken from, and the restored account is one row
+    // short of it. The refusal never fires on this path.
     expect([res.ok, res.restored, res.skipped], res.message).toEqual([true, 3, []]);
     expect(rowsOf(ACC9)).toEqual(before);
     expect(t.db.select().from(t.schema.accounts).where(eq(t.schema.accounts.id, ACC9)).get()?.name).toBe("trash-alias-y1");

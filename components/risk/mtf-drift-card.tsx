@@ -15,12 +15,18 @@ export function MtfDriftCard({
   drift,
   bundleAsOf,
   stale,
+  unpriced = 0,
 }: {
   drift: MtfDriftRow[];
   bundleAsOf: string;
   stale: boolean;
+  /** Open MTF positions the check could not compare because the journal never
+   *  resolved what the broker funded (`unpricedMtfPositions`). Named here
+   *  rather than priced at 100% own margin — see L2[1] in lib/risk/mtf-drift.ts.
+   *  Optional so an older call site keeps compiling. */
+  unpriced?: number;
 }) {
-  if (drift.length === 0 && !stale) return null;
+  if (drift.length === 0 && unpriced === 0 && !stale) return null;
 
   return (
     <Card>
@@ -37,6 +43,14 @@ export function MtfDriftCard({
             The bundled broker margin lists are more than 60 days old. Margins move with exchange VAR
             revisions — refresh from your broker&apos;s current list (Margin estimate → MTF stock lists)
             before trusting per-stock numbers.
+          </p>
+        )}
+        {unpriced > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {unpriced} open MTF {unpriced === 1 ? "position is" : "positions are"} not priced — this journal holds no
+            broker-funded amount for {unpriced === 1 ? "it" : "them"}, so there is no entry margin to compare
+            today&apos;s requirement against and {unpriced === 1 ? "it is" : "they are"} left out of the table below.
+            Record what you put in on the trade (Edit → Own capital used) to include {unpriced === 1 ? "it" : "them"}.
           </p>
         )}
         {drift.length > 0 && (

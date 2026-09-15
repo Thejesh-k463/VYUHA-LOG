@@ -9,7 +9,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { Select } from "@/components/ui/select";
 import { ExportButtons } from "@/components/ui/export-button";
 import { MtmForm } from "./mtm-form";
-import type { OpenPosition } from "@/lib/analytics/positions";
+import { ownCapitalNote, ownCapitalTotal, statesOwnCapital, type OpenPosition } from "@/lib/analytics/positions";
 import { inr, inrCompact, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 
@@ -53,6 +53,13 @@ export function TrackerClient({
   const unrealised = positions.reduce((s, p) => s + p.unrealised, 0);
   const mtfFunded = positions.reduce((s, p) => s + p.fundedAmount, 0);
   const mtfInterest = positions.reduce((s, p) => s + p.accruedInterest, 0);
+  // L2[0]: the own-capital total is not a plain reduce. A partly sold MTF leg
+  // states no own capital (the stored funded amount is the whole buy leg's),
+  // and summing it straight across the book SUBTRACTED that row from the
+  // trader's own money. `ownCapitalTotal` leaves those rows out and counts
+  // them; `ownCapitalNote` is the sentence shown wherever the total is.
+  const ownCap = ownCapitalTotal(positions);
+  const ownCapNote = ownCapitalNote(ownCap.unstated);
 
   // Drill-down inputs for the KPI popups (click any card).
   const sortedByInvested = [...positions].sort((a, b) => b.invested - a.invested);
@@ -97,7 +104,10 @@ export function TrackerClient({
     if (variant === "equity") {
       base.push(
         { accessorKey: "daysHeld", header: "Days", meta: { align: "right" }, cell: ({ getValue }) => (getValue() as number | null) ?? "—" },
-        { accessorKey: "ownCapital", header: "Own capital", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
+        // Reads the SAME predicate the KPI total does (L2[0]) — the cell and
+        // the total held the rule separately, so the row showed "—" while the
+        // total was quietly reduced by it.
+        { accessorKey: "ownCapital", header: "Own capital", meta: { align: "right" }, cell: ({ row }) => { const p = row.original; return statesOwnCapital(p) && (p.ownCapital ?? 0) > 0 ? num(p.ownCapital as number, 0) : "—"; } },
         { accessorKey: "fundedAmount", header: "MTF funded", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
         { accessorKey: "accruedInterest", header: "MTF int.", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
         {
@@ -215,7 +225,7 @@ export function TrackerClient({
               { label: "Deployed", value: inr(deployed, { decimals: 0 }), hint: capitalKnown ? `${((deployed / bucketCapital) * 100).toFixed(1)}% utilised` : undefined },
               ...(capitalKnown ? [{ label: "Available", value: inr(available, { decimals: 0 }), tone: (available >= 0 ? "profit" : "loss") as "profit" | "loss" }] : []),
               { label: "Current value", value: inr(deployed + unrealised, { decimals: 0 }) },
-              ...(variant === "equity" ? [{ label: "Own capital in MTF", value: inr(positions.reduce((s, p) => s + p.ownCapital, 0), { decimals: 0 }), hint: "your money; the rest is broker-funded" }] : []),
+              ...(variant === "equity" ? [{ label: "Own capital in MTF", value: inr(ownCap.total, { decimals: 0 }), hint: ownCapNote ? `your money; the rest is broker-funded · ${ownCapNote}` : "your money; the rest is broker-funded" }] : []),
             ],
             note: "Capital is editable in Settings — every risk %, target and allocation recomputes from it.",
           }}
@@ -250,8 +260,11 @@ export function TrackerClient({
               summary: "Interest accrues only on the broker-funded portion, never on your own capital.",
               rows: [
                 { label: "Broker-funded", value: inr(mtfFunded, { decimals: 0 }), tone: "loss" },
-                { label: "Your own capital", value: inr(positions.reduce((s, p) => s + p.ownCapital, 0), { decimals: 0 }) },
-                { label: "Effective leverage", value: (() => { const own = positions.reduce((s, p) => s + p.ownCapital, 0); return own > 0 ? `${((own + mtfFunded) / own).toFixed(2)}×` : "—"; })() },
+                { label: "Your own capital", value: inr(ownCap.total, { decimals: 0 }), hint: ownCapNote ?? undefined },
+                // Own AND funded come from the SAME rows, so the ratio
+                // describes one book — mixing a subset's own capital with the
+                // whole book's financing would invent the leverage (invariant 6).
+                { label: "Effective leverage", value: ownCap.total > 0 ? `${((ownCap.total + ownCap.funded) / ownCap.total).toFixed(2)}×` : "—", hint: ownCapNote ?? undefined },
                 { label: "Interest accrued so far", value: `−${inr(mtfInterest, { decimals: 0 })}`, tone: "loss" },
                 { label: "Interest vs unrealised gain", value: unrealised > 0 ? `${((mtfInterest / unrealised) * 100).toFixed(1)}%` : "—", hint: mtfInterest > 0 && unrealised > 0 && mtfInterest >= unrealised ? "interest has eaten the entire paper gain" : "share of your paper gain already spent on financing" },
               ],

@@ -432,6 +432,86 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     );
   });
 
+  /**
+   * W2L (v4.3.0 fix wave 2L, the wave-2I re-check's `ask` finding).
+   *
+   * One report is made per incoming row, and the pick used to be the FIRST
+   * risky candidate in `existing` order — which is rowid order, so an OLDER
+   * cross-FILE row (an earlier P&L or tradebook import) met before today's
+   * snapshot rows won it. The pull then read "…already recorded from a
+   * different file … Delete the earlier import first", while the row actually
+   * blocking the commit was today's own off-key snapshot row: the user deleted
+   * an earlier IMPORT, pulled again and was refused again — this time with the
+   * M1 sentence. The pick is by candidate PRIORITY now: today's snapshot is the
+   * blocker whatever order the rows arrive in, so it is the one reported. Among
+   * cross-file candidates the first risky one still wins, and the collision
+   * object still carries its 6 keys.
+   */
+  const olderFile = (id: number, file: string, over: Partial<ExistingRow> = {}) =>
+    stored2(id, { sourceFile: file, buyQty: 20, buyValue: 2010, buyDate: null, dedupHash: `p-${id}`, ...over });
+  const M1_ONE =
+    "1 row in this pull (TWOEX) restates an instrument today's earlier pull already recorded under another product, segment or exchange, and is not written over that row. " +
+    "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, " +
+    "which records the position as the broker now states it; committing anyway adds this pull's row beside the earlier one. " +
+    "That row may carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.";
+
+  it("W2L: an older cross-file row met FIRST no longer suppresses the M1 sentence, and both rowid orders read the same", () => {
+    const incoming = [conv2({ snapshotIds: [1] })];
+    const old = olderFile(5, "dhan-pnl.csv");
+    const before = detectCrossSourceDuplicates(incoming, [old, stored2(1)], FILE);
+    // THE assertions (on revert: existing.id 5, no sameSnapshot, 5 keys, and the cross-file sentence).
+    expect(before.collisions.map((c) => [c.symbol, c.existing.id, c.sameSnapshot, Object.keys(c).length])).toEqual([
+      ["TWOEX", 1, true, 6],
+    ]);
+    expect(before.message).toBe(M1_ONE);
+    expect(before.message).not.toContain("different file");
+    expect(before.message).not.toContain("Delete the earlier import");
+    expect(before.risky).toBe(true);
+    // The snapshot row first: the same report, byte for byte.
+    expect(detectCrossSourceDuplicates(incoming, [stored2(1), old], FILE)).toEqual(before);
+  });
+
+  it("W2L: the remedy still counts every stored row the plan named, with an older file in the way", () => {
+    const r = detectCrossSourceDuplicates(
+      [conv2({ snapshotIds: [1, 2] })],
+      [olderFile(5, "dhan-pnl.csv"), stored2(1), stored2(2, { buyQty: 5, buyValue: 495 })],
+      FILE,
+    );
+    // THE assertion (on revert: the cross-file sentence, which names no stored count).
+    expect(r.message).toContain("the 2 earlier rows can be deleted from Trades and the pull run again");
+    expect(r.collisions.map((c) => [c.existing.id, c.sameSnapshot])).toEqual([[1, true]]);
+  });
+
+  it("W2L: an ask ON the key behind an older cross-file row reads its own sentence too — the blocker is today's pull either way", () => {
+    const r = detectCrossSourceDuplicates(
+      [conv2({ snapshotIds: [1], snapshotOffKey: false })],
+      [olderFile(5, "dhan-pnl.csv"), stored2(1)],
+      FILE,
+    );
+    // THE assertions (on revert: "…from a different file … Delete the earlier import first…").
+    expect(r.message).toBe(
+      "1 row in this pull (TWOEX) restates a position today's earlier pull already recorded, and is not written over it: " +
+        "the recorded row carries detail a replacement would lose (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. " +
+        "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.",
+    );
+    expect(r.collisions.map((c) => [c.existing.id, c.sameSnapshot])).toEqual([[1, true]]);
+  });
+
+  it("W2L: with no snapshot among the candidates nothing moves — the first risky cross-file row still wins, byte for byte", () => {
+    const two = [olderFile(5, "a.csv"), olderFile(6, "b.csv")];
+    const CROSS_FILE =
+      "1 row in this file (TWOEX) look like trades already recorded from a different file. " +
+      "The two file kinds state different facts — a transaction report has dates and both legs, a P&L export has neither — so the duplicate check cannot match them and importing both would record the same trade twice. " +
+      "Nothing is merged automatically: merging means choosing whose numbers to keep, and getting that wrong silently corrupts cost basis and holding period. Delete the earlier import first if these are the same trades.";
+    const plain = detectCrossSourceDuplicates([conv2({ snapshotIds: undefined, snapshotOffKey: false })], two, FILE);
+    expect(plain.collisions.map((c) => [c.existing.id, c.existing.sourceFile, c.kind])).toEqual([[5, "a.csv", "same-quantity"]]);
+    expect(plain.message).toBe(CROSS_FILE);
+    // An ask naming a row that is NOT among the candidates scans them all and still picks the first.
+    const named = detectCrossSourceDuplicates([conv2({ snapshotIds: [99] })], two, FILE);
+    expect(named.collisions.map((c) => [c.existing.id, c.sameSnapshot])).toEqual([[5, undefined]]);
+    expect(named.message).toBe(CROSS_FILE);
+  });
+
   it("the most severe overlap is reported: a partial candidate met first does not hide a same-quantity one", () => {
     const partialFirst = ex({ id: 1, buyQty: 500, buyValue: 267500, sourceFile: "a.csv" });
     const exact = ex({ id: 2, buyQty: 1000, buyValue: 900000, sourceFile: "b.csv" });

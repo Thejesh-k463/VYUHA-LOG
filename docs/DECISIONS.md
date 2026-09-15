@@ -6846,9 +6846,9 @@ settled by an invariant or a standing ruling, cited):
 - **The close dialog preview loses the MTF interest when the exit-date field is cleared — medium, pre-existing.** daysHeld
   was computed from the raw field (`new Date("")` → NaN → null → 0 days) while the save falls back to today. → daysHeld uses
   the same resolved date the body uses; pinned through the real route against the real closePosition on an MTF row.
-- **A Deleted-items snapshot holding BOTH a Data Quality-joined lot and the sale its alias names is refused WHOLE — DATA
+- **A Deleted-items snapshot holding BOTH a Data Quality-joined lot and the sale its alias names is refused or partly skipped — DATA
   LOSS, wave 2H.** T1's `planned` branch (`lib/trash.ts:527-532`) treated a row landing earlier in the same restore as a
-  collision; an account-deletion snapshot then restores nothing. → A snapshot is restored to the state it was captured
+  collision; with the sale before the lot the whole snapshot was refused, and in rowid order (lot first, the order deletes produce) the sale was silently skipped. → A snapshot is restored to the state it was captured
   from: the refusal applies only against a row ALREADY STORED; two rows planned in the same restore are the pair the book
   held and both come back.
 - **An account MERGE moves a sale the target's joined lot already records — medium, earlier 4.3.0.** `dedupCollisionIds`
@@ -6918,8 +6918,8 @@ The seam pass found **no seam defect**. Reports: `18-FIX-WORK-4.3.0/wave2i.json`
   every other ask byte-identical (pinned).
 - **I4 — the IPO lifecycle.** `deleteTradesByIds` writes `ipoRefs` (the removeBrokerRows shape) before nulling the link, so a
   /trades delete + restore keeps the IPO counted once. `pushTradeToIpoAction` inserts the ipos row in the HOLDING's account;
-  every trades read / UPDATE in `/api/ipos` and the ipos join are scoped to `ipos.account_id` (so the rule holds in the
-  All-accounts view); a cross-account link is refused; a legged / staged holding is refused for a link and a sync (the
+  every trades read / UPDATE in `/api/ipos` and the ipos LISTING join are scoped to `ipos.account_id` (the counted-once RULE
+  reads the link UNSCOPED by account — corrected by L5, wave 2L, after I4 had scoped it and split the two halves); a cross-account link is refused; a legged / staged holding is refused for a link and a sync (the
   STAGED-shaped refusal). recordAudit's before/after carry the same keys, which is what let the action be driven by a test.
   The sync writes charges only when it writes the close or the holding states none; mtfInterest / pledgeCharges never
   written by the sync. Accepted, recorded: an OPEN holding carrying purchase-side charges gets the exit's heads written over
@@ -6929,7 +6929,7 @@ The seam pass found **no seam defect**. Reports: `18-FIX-WORK-4.3.0/wave2i.json`
 - **I5 — merge carry.** A carried record's identity is (null connection, span, fact); identical carries write once. Beyond the
   design: `clearUnfetchedLine` took the FIRST (connId, span) match, so it gained optional fact / remedy.
 - **I6 — /strategies ISIN.** The query compares the canonical form on both sides (SQL upper(trim) vs canonicalised
-  candidates); a lowercase-padded stored ISIN is found by its own account's view and All accounts equals the singles.
+  candidates); a lowercase-padded stored ISIN is found by its own account's view and All accounts equals the singles. **Corrected by L1 (wave 2L):** SQLite trim() strips U+0020 only, so this held for SPACE padding; one pure `canonicalIsin` (`lib/domain/isin.ts`, every whitespace stripped) is now asked by BOTH halves and the ISIN match finishes in JS (5.4 / 8.2 ms per call on a 5,000-row book).
 
 **The micro round (2J):** J1 — the card's Clear body for a carried line carries fact + remedy and the route forwards them; a
 body without fact behaves as before. J2 — account purge / merge write `ipoRefs` for every ipos row they unlink (the delete.ts
@@ -6955,3 +6955,116 @@ its sale once. Flagged, not built: `ledger_entries.refTradeId` of a dropped dupl
 **Gate on the wave tree:** `npm run verify` EXIT 0; raw line **417 files / 8,729 passed / 35 skipped**; `next build` compiled.
 README's file count (408 → 417) and its six test figures (8,644 → 8,729) moved with it. **Next:** commit, push, CI, then the
 SCOPED re-check of 2I / 2J / 2K with probe-capable reviewers against `b6c1029`, then wave 3 (`18-FIX-WORK-4.3.0/plan-wave3.json`).
+
+## 2026-09-15 — v4.3.0 waves 2I + 2J + 2K: the scoped re-check → 58 CONFIRMED, 0 REFUTED, 0 UNVERIFIABLE; 26 new findings (15 product, 11 test) → fix wave 2L (decided, seventh session)
+
+**The re-check.** Eight probe-capable Opus reviewers, one per unit (close-readers, identity, ask, pull, ipo, counted-once,
+strategies, seams), each re-proving every 2I / 2J / 2K fix red-on-revert from probe copies of `4fd527d`, against `cd1ab70`
+(CI 34976760609 SUCCESS 6/6). No probe left, no tracked file touched. Verdicts and every where / reproduce / evidence:
+`18-FIX-WORK-4.3.0/wave2i-recheck.json`. The 2H entry's "refused WHOLE" wording for the joined-lot snapshot was corrected
+above at its source: in rowid order (lot before sale, the order deletes produce) the pre-2I code SKIPPED the sale; it refused
+whole only when the sale preceded the lot — both are the same loss.
+
+**Product findings that reopen work, with the decided designs** (settled by an invariant or a standing ruling; no owner
+question):
+- **The two halves of the counted-once rule read the link differently — SILENT WRONG NUMBER, wave 2I.** I4 gave
+  `getIpoRealisedNet` an account-scoped link join; `ipoIdsCountedThroughTrades` (tax pack, ITR export, AIS) stayed unscoped, so
+  a cross-account link (reachable through an un-merge restore, or before the startup re-home runs) counts twice in the capital
+  summary on All accounts and once everywhere else. → The 2H rule restated: an IPO is left out where THAT consumer counted its
+  trade, the link read UNSCOPED by account; ONE implementation beside `getIpoRealisedNet` (the owed 2H tidy-up), imported by
+  capital, tax-itr and AIS. The /ipos LISTING join stays scoped — that is the page, not the rule.
+- **The sync loses ownership of its charges after any rate edit — SILENT WRONG NUMBER, wave 2I.** `syncWroteCharges` proved
+  ownership by re-pricing against the live charge_config. → Ownership by PROVENANCE, the repo's import_notes pattern: the sync
+  writes a marker when it writes charges; the trade editor drops it when a charge changes; no re-pricing.
+- **The STAGED guard refused every save of an IPO linked to a legged holding, notes-only included — medium, wave 2I** (no way
+  out from the form). → The guard applies only where a sync would WRITE; a 'leave' answers 200.
+- **A re-open zeroed the user's own contract-note charges — low, pre-existing.** → Re-open only a sync-owned close; a user's
+  close answers 409 naming Trades.
+- **The re-home moved a record into an ARCHIVED account — low, wave 2I.** → Archived accounts excluded; the case pinned.
+- **A pre-4.3.0 Trash envelope carries no ipoRefs — medium, pre-existing** (every holding deleted on 4.2.x and restored on
+  4.3.0 counts twice). → The restore re-links a trade whose acquisition is 'ipo' to the UNIQUE unlinked IPO record of the same
+  account and symbol; ambiguity writes nothing and Data Quality names the pair ("IPO record not linked to its holding").
+- **A partly sold open MTF row got a NEGATIVE own capital, added into the KPI total — medium, pre-existing.** → Invariant 6:
+  own capital and ROI are null for a partly sold row, the total excludes it with a note, one predicate shared with the per-row
+  column. Rejected: pro-rating the funded amount to the units still held (assumes how the broker releases funding).
+- **mtf-drift stated 100% own margin for an unpriced position — low, pre-existing** (worse than the "understates drift"
+  recorded). → A null funded amount excludes the row with a "not priced" line.
+- **closePosition threw on an out-of-range dd-mm-yyyy exit date — low, pre-existing.** → normalizeDate validates the
+  calendar; a non-empty unreadable exit date is refused with a message; an empty field still falls back to today.
+- **An older cross-file overlap suppressed the M1 sentence — low, pre-existing** (first risky candidate in rowid order). → The
+  M1 case wins when today's snapshot holds the same tradingsymbol; the cross-file sentence otherwise.
+- **The merge dropped a source row that carries its own leg — low, wave 2I** (a closed round trip whose hash the target holds
+  as an alias lost its purchase and its P&L). → U1's rule: only a plain sell-only row is dropped; a row with its own leg refuses
+  the merge before any write, the preview warning in the same words.
+- **K1's re-point could leave two IPO records on one trade — low, wave 2I.** → When the partner already carries an IPO, the
+  duplicate record is skipped like its trade, counted in ipoRefs.
+- **The merge preview's IPO warning counted records, not dropped trades — cosmetic, wave 2I.** → Counts trades.
+- **SQLite trim() vs JS trim() — low, pre-existing** (I6 closed the ISIN door for spaces only). → One pure canonicalIsin (every
+  whitespace stripped, uppercased) on both sides; the match finishes in JS.
+
+**Test findings, all low or cosmetic — recorded, not built unless a product fix carries them:** the funded-0 scan is
+line-based (three shapes of the same defect would pass it); the route's `remedy` half of a named Clear is unpinned; the two
+"On revert:" comments in `tests/trash-restore-alias.test.ts` state the wrong pre-fix failure (corrected by L6); no seam case
+for the merge-side ipoRefs, the legged / staged doors, the reverse merge refusal and its preview, J1's no-fact body, the
+3-decimal gross across the computeIpo ↔ trade-row seam; F10's title overclaims; K1's restore deviation deliberately
+uncovered (accepted). The seam tester's next round takes the missing cases.
+
+**Fix wave 2L:** seven Opus builders on disjoint files (L1 canonical ISIN; L2 MTF readers; L3 the IPO route + commit dates +
+ownership + re-home; L4 the M1 priority; L5 one home for counted-once; L6 the legacy envelope; L7 the merge), red-first, then
+the seam tester, then the gate. Reports: `18-FIX-WORK-4.3.0/wave2l.json`, `wave2h-reports/wave2l-*.md`.
+
+## 2026-09-15 — v4.3.0 fix wave 2L built (seventh session): seven builders, four orchestrator edits, then the seam round
+
+**How.** Seven Opus builders L1–L7 on disjoint files, red-first; the orchestrator made the four cross-file edits L2 needed
+(`components/live/desk-types.ts` ownCapitalP `number | null`, `load-desk.ts` `toPaiseOrNull`, the tracker's own-capital note,
+`app/risk/page.tsx` passing the unpriced count to the drift card); then the seam tester extended `tests/seams-v43-fixF.test.ts`.
+Reports: `18-FIX-WORK-4.3.0/wave2l.json`, `wave2h-reports/wave2l-*.md`. Every fix is red on revert with the quote in its report.
+
+**As built:**
+- **L1** — one pure `canonicalIsin` (`lib/domain/isin.ts`: every whitespace incl. NBSP / BOM stripped, uppercased) on both sides
+  of /strategies; the query selects a superset (`byCase OR isin IS NOT NULL`, unchanged scope and order) and finishes the ISIN
+  match in JS — 5.4 ms / 8.2 ms per call on a 5,000-row book, so no SQL pre-filter. Recorded, not built: the other ISIN folds
+  in commit.ts / dedup.ts / isin-symbol.ts / the Paytm parsers still spell `.trim().toUpperCase()` (a separate assignment).
+- **L2** — a partly sold open MTF row states NO own capital and no ROI (null; the KPI total excludes it with a note; ONE
+  predicate shared with the per-row column); a stated funded 0 that is partly sold is null too (no special case). A null
+  funded amount is excluded from mtf-drift with an "n open MTF positions are not priced" line on the card.
+- **L3** — the legged / staged guard fires only when the save changes a value the sync writes (a notes-only save answers 200;
+  measured against linkedSyncFor, "would write" = changes a value, since a holding with no sale always syncs). Charge ownership
+  by PROVENANCE: the sync writes an import_notes marker (`IPO_SYNC_CHARGES_NOTE`, `lib/analytics/ipo-link.ts`) when it writes
+  charges; `updateManualTrade` drops it when any charge head changes; no re-pricing. A re-open only of a sync-owned close; a
+  user's close answers 409 naming Trades. The re-home excludes archived accounts (pinned). `normalizeDate` validates the
+  calendar; closePosition and updateManualTrade refuse a non-empty unreadable buy / sell date ({ok:false, code BAD_DATE}) — the
+  positions close route still maps only STAGED to 409, so BAD_DATE arrives as 200 with ok:false (recorded). Owed, recorded: the
+  IPO form has no "unlink" control, so an IPO linked to a ladder that disagrees with the allotment cannot be edited from the
+  form (refused 409, correctly).
+- **L4** — the collision pick is by candidate PRIORITY: today's pull snapshot (`sameSnapshot`) beats an older cross-file row —
+  keyed on sameSnapshot rather than the off-key flag alone, because an on-key ask behind an older cross-file row has the same
+  wrong remedy (pinned both).
+- **L5** — ONE home for the counted-once rule: `ipoIdsCountedThroughTrades` lives beside `getIpoRealisedNet` in
+  `lib/queries/ipos.ts`, the link read UNSCOPED by account, imported by capital, tax-itr and the AIS route; I4's scoped join in
+  getIpoRealisedNet deleted; the /ipos LISTING join stays scoped. capital.ts and the two existing test files needed no edit.
+- **L6** — an envelope with no `ipoRefs` re-links a restored trade whose acquisition is 'ipo' to the UNIQUE unlinked IPO record
+  of its account and symbol; ambiguity writes nothing and Data Quality raises "IPO record not linked to its holding" (one issue
+  per pair, the cross-account-duplicate precedent), also for any such orphan without a restore. Note: both delete writers omit
+  `ipoRefs` when a delete broke no link, so absence is not proof of a legacy envelope — the fallback then finds no candidate and
+  writes nothing; the optional narrowing (always write the array) is recorded, not built, because `tests/trash-roundtrip`
+  pins the envelope shape.
+- **L7** — the merge REFUSES (before any write, the preview in the same words) a source row that carries BOTH legs and whose hash
+  the target holds only as an alias; a plain sell-only row still drops; a 0-qty row drops. A dropped duplicate's IPO is NOT
+  re-pointed when the survivor already carries one: a record in the source account is skipped into the snapshot (ipoRefs), a
+  record in another account is left where it is. The preview warning counts dropped trades and states the split.
+
+**The seam round over 2L** (`tests/seams-v43-fixF.test.ts` 15 → 30 cases, F14–F26; 11 probes from HEAD copies, nine seams
+proven red on at least one side; F25 / F26 / F23b declared as pins; F10's title corrected and its body extended). One seam
+DEFECT, pre-existing: `lib/jobs/mtf-accrual.ts:49` accrued a null-funded row on the margin-config estimate AND PERSISTED that
+estimate as the row's funded amount (`fundedChanged` forced the UPDATE), and `app/equity/page.tsx:27` runs the job on every
+render — so the first Equity Tracker visit turned an unpriced MTF row into a STATED one (null → 4,000 on a ₹5,000 buy) and
+L2's "unpriced" exclusion could never fire for it. → **M1:** the accrual job never writes `mtf_funded_amount`; interest for a
+null-funded row is still accrued on the estimate (already labelled as one); a stated amount, 0 included, is read as today.
+Also pinned as current contract: `app/api/positions/close/route.ts` maps only STAGED to 409, so BAD_DATE answers 200 with
+`{ok:false}` (F20).
+
+**Gate on the wave-2L tree (with M1):** `npm run verify` EXIT 0; raw line **422 files / 8,835 passed / 35 skipped**; `next build`
+compiled; the three lint warnings are pre-existing and in files no wave touched. README: 417 → 422 files, 8,729 → 8,835 tests.
+**Next:** commit, push, CI; then the SCOPED re-check of wave 2L (+ M1) with probe-capable reviewers against `cd1ab70` — run
+`e2e/z-live-desk.spec.ts` locally first, because `components/live/*` changed (desk-types, load-desk, tracker-client); then wave 3.
