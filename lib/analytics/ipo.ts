@@ -17,7 +17,7 @@ import { classifyTerm, capitalGainsRatesFor, type GainTerm } from "@/lib/analyti
 import { computeChargesPaise } from "@/lib/engine/charges";
 import { seedRatesMap, statutoryRatesFor, type RatesMap } from "@/lib/engine/rates";
 import type { ChargeBreakdown, ChargeRates } from "@/lib/engine/types";
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { normalizeDate, todayIstIso } from "@/lib/domain/trading-day";
 import { toPaise, toRupees } from "@/lib/money";
 
 export type IpoBoard = "mainboard" | "sme";
@@ -258,10 +258,14 @@ export const ISSUER_BEARS_ISSUE_STAMP_FROM = "2020-07-01";
  * date (the tax estimate's chain), then the exit date, then today IST.
  */
 export function ipoAllotmentStampBase(i: IpoInput, investedAllotted: number): number {
+  // Each candidate is read through the calendar first (2M, seam D5): a LEGACY
+  // day-first allotment day ("20-02-2019", stored raw until 2M) failed the ISO
+  // shape test and the chain skipped to the exit date — an allottee's stamp base
+  // silently became 0.
   const day =
-    [i.allotmentDate, i.listingDate, i.appliedDate, i.exitDate].find(
-      (d): d is string => typeof d === "string" && isPriceableExitDate(d),
-    ) ?? todayIstIso();
+    [i.allotmentDate, i.listingDate, i.appliedDate, i.exitDate]
+      .map((d) => (typeof d === "string" ? normalizeDate(d) : null))
+      .find((d): d is string => d != null && isPriceableExitDate(d)) ?? todayIstIso();
   return day < ISSUER_BEARS_ISSUE_STAMP_FROM ? investedAllotted : 0;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeIpo, summariseIpos, ipoSellCharges, ipoTaxEstimate, type IpoInput } from "@/lib/analytics/ipo";
+import { computeIpo, summariseIpos, ipoSellCharges, ipoTaxEstimate, ipoAllotmentStampBase, type IpoInput } from "@/lib/analytics/ipo";
 import { computeCharges } from "@/lib/engine/charges";
 import { seedRatesMap, statutoryRatesFor } from "@/lib/engine/rates";
 import type { ChargeRates } from "@/lib/engine/types";
@@ -233,5 +233,18 @@ describe("summariseIpos", () => {
     // No unpriced exit: every exit is priced.
     const clean = summariseIpos([priced, holding]);
     expect([clean.exitedCount, clean.pricedExitCount, clean.unpricedExitCount]).toEqual([1, 1, 0]);
+  });
+});
+
+describe("ipoAllotmentStampBase — the allotment day is read through the calendar (2M, seam D5)", () => {
+  // A LEGACY day-first allotment day (stored raw until 2M) failed the ISO shape
+  // test, the chain skipped to the exit date and an allottee's stamp base
+  // silently became 0 (the seam tester measured stampDuty 0 vs 2).
+  it("a day-first allotment day before 1 Jul 2020 still bears the duty", () => {
+    const legacy = ipo({ allotted: true, allottedQty: 100, allotmentDate: "20-02-2019", exitDate: "2026-03-02", exitPrice: 150 });
+    const iso = ipo({ allotted: true, allottedQty: 100, allotmentDate: "2019-02-20", exitDate: "2026-03-02", exitPrice: 150 });
+    expect(ipoAllotmentStampBase(iso, 10000)).toBe(10000);
+    expect(ipoAllotmentStampBase(legacy, 10000)).toBe(10000);
+    expect(ipoAllotmentStampBase(ipo({ allotmentDate: "2019-02-31", exitDate: "2026-03-02" }), 10000)).toBe(0); // not a day → the exit date
   });
 });

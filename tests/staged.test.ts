@@ -379,6 +379,48 @@ describe("validateLegs", () => {
     expect(s.openQty).toBe(0);
     expect(s.fills[0].qty).toBe(100); // clamped to what was actually open
   });
+
+  /**
+   * G-G3-1 (v4.3.0 fix wave 2M) — a fill's DATE is part of "bookable".
+   *
+   * The ladder bills MTF interest from each entry's own date, and nothing
+   * validated it: '2026-02-31' rolled forward to 3 March and stored 1,449.86 of
+   * interest where the honest figure was 192.33, while 'not-a-date' made the day
+   * count NaN, the charge total NaN, and the leg INSERT throw `NOT NULL
+   * constraint failed: trade_legs.charges_total_paise` — with the leg row already
+   * written, leaving a ladder the parent row did not describe (invariant 5).
+   *
+   * `validateLegs` is the gate every writer passes first (`addLeg`, `updateLeg`,
+   * `rebuildStagedTrade`, `convertToStaged`), so refusing here refuses all four
+   * BEFORE any write — the same rule, and the same sentence, L3 gave
+   * `closePosition` and `updateManualTrade`.
+   */
+  describe("G-G3-1 · a date the calendar does not have", () => {
+    it.each([
+      ["2026-02-31", "February has no 31st"],
+      ["31-02-2026", "the same day written day-first"],
+      ["not-a-date", "text that is no date"],
+      ["", "a fill with no date at all (a legacy imported execution)"],
+    ])("refuses a leg dated %j (%s), naming what was given", (bad) => {
+      const p = validateLegs(ladder(entry(100, 100, { tradeDate: bad })));
+      expect(p).toHaveLength(1);
+      expect(p[0].message).toBe(
+        `The entry date “${bad}” is not a real calendar day — enter it as a day that exists, for example 2026-06-15. Nothing was changed.`,
+      );
+    });
+
+    it("names the EXIT leg when the exit is the one that cannot be read", () => {
+      const p = validateLegs(ladder(entry(100, 100), exit(100, 120, { tradeDate: "2026-06-31" })));
+      expect(p.map((x) => x.message)).toEqual([
+        "The exit date “2026-06-31” is not a real calendar day — enter it as a day that exists, for example 2026-06-15. Nothing was changed.",
+      ]);
+    });
+
+    it("accepts a day-first date the calendar DOES have (the writers store its ISO form)", () => {
+      expect(validateLegs(ladder(entry(100, 100, { tradeDate: "31-08-2026" })))).toEqual([]);
+      expect(validateLegs(ladder(entry(100, 100, { tradeDate: "2028-02-29" })))).toEqual([]);
+    });
+  });
 });
 
 describe("legChargeShapes", () => {

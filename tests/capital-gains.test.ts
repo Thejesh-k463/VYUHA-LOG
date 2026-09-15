@@ -34,6 +34,31 @@ describe("classifyTerm", () => {
     expect(classifyTerm(null, "2025-01-01")).toBe("ST");
     expect(classifyTerm("2024-01-01", null)).toBe("ST");
   });
+
+  /**
+   * v4.3.0 fix wave 2M (seam round, found by S-IPO): a LEGACY day-first date —
+   * `ipos.allotment_date` was stored raw until 2M, and `setAcquisitionAction`
+   * wrote a typed date into buy_date unvalidated — reached `new Date("20-02-2026T00:00:00")`,
+   * an Invalid Date, so the day count was NaN and `NaN >= 365` labelled every
+   * such lot SHORT-term; `capitalGainsRatesFor` compared the same string
+   * character by character and picked the PRE-cutover schedule for a 2026 sale.
+   * Both now read the calendar through `normalizeDate`; a date that does not
+   * resolve keeps the module's own conservative answer for a missing one (ST).
+   */
+  it("reads a legacy day-first date as the day it names (2M)", () => {
+    expect(classifyTerm("20-02-2024", "2025-03-02")).toBe("LT"); // 376 days
+    expect(classifyTerm("2024-02-20", "02-03-2025")).toBe("LT");
+    expect(classifyTerm("20-02-2026", "02-03-2026")).toBe("ST"); // 10 days
+    expect(classifyTerm("2026-02-31", "2026-03-02")).toBe("ST"); // not a day → the missing-date answer
+    expect(capitalGainsRatesFor("23-07-2026")).toEqual(capitalGainsRatesFor("2026-07-23"));
+    expect(capitalGainsRatesFor("23-07-2026").stcgPct).toBe(0.2);
+    expect(isGrandfatherEligible("20-02-2019")).toBe(false); // text compare said "-" < "8" → eligible
+    expect(isGrandfatherEligible("20-02-2017")).toBe(true);
+    expect(isGrandfatherEligible("2017-02-31")).toBe(false);
+    // fyOf (module-private) through the aggregate: a day-first sell date used to land in "NaN-aN".
+    const rows = aggregateTradesByFy([{ segment: "eq_delivery", buyDate: "2024-02-20", sellDate: "02-03-2026", buyValue: 1000, sellValue: 1500, netPnl: 500 }], 4, "2027-28");
+    expect(rows.map((r) => r.fy)).toEqual(["2025-26"]);
+  });
 });
 
 describe("grandfathering", () => {

@@ -123,7 +123,8 @@ describe("V4 — one order-count default for a side that gains its first quantit
   it("the route: a SENT count wins over the setting; an omitted one is the setting", async () => {
     setDefaults(1, 2);
     const id = optionRow(LONG_OPEN);
-    const body = editPreviewBody(wire(id), { ...LONG_EXIT, ownCapitalUsed: null });
+    // `editPreviewBody` answers null only for a non-empty unreadable date (2M); these dates are ISO.
+    const body = editPreviewBody(wire(id), { ...LONG_EXIT, ownCapitalUsed: null })!;
     expect(body.sellOrders).toBeUndefined();
     expect(await route({ ...body, sellOrders: 1 })).toEqual([300, 72.34, 227.66]);
     expect(await route(body)).toEqual([300, 95.94, 204.06]);

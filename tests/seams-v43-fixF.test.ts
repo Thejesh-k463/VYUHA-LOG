@@ -6,7 +6,7 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
 import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso, unreadableDateMessage } from "@/lib/domain/trading-day";
 
 /**
  * v4.3.0 FIX WAVES 2I + 2J + 2K + 2L — THE SEAMS OF DISJOINT-FILE WAVES.
@@ -99,6 +99,44 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  *     |                                         |   client's body, `fact` absent)                      |   lib/import/dhan-unfetched.ts:250 latestVia (I5)          |   that connection, as before     |
  * F26 | the gross of a 3-decimal exit over a    | lib/analytics/ipo.ts:367 computeIpo (I4)             | lib/analytics/ipo-link.ts tradePatchFromIpo -> the trade   | rupees at the paisa; ONE         | F26
  *     |   3-decimal issue price                 |                                                      |   row -> capital / the tax pack / the ITR export           |   arithmetic, value-based        |
+ *
+ * -- WAVE 2M: B-IPO (G-G2-1, the IPO pairing) x B-DATE (G-G3-1/2, one calendar) -
+ * The two builders owned disjoint files and never ran together. B-IPO's tier B
+ * compares four DATES as ISO day strings; B-DATE is the wave that decided what
+ * those columns hold. Each crossing value below is built where its producer
+ * builds it and asserted at the consumer's OUTPUT.
+ *
+ *  #  | crossing value                          | producer (file:line, builder)                        | consumer (file:line, builder)                             | unit / shape                     | test
+ * ----|-----------------------------------------|------------------------------------------------------|-----------------------------------------------------------|----------------------------------|-----
+ * F27 | the holding's three days + the record's | lib/trash.ts:800-802 the ENVELOPE row (B-IPO) AND     | lib/analytics/data-quality.ts:956 matchesByExit (B-IPO)    | ISO day strings; `isoDay` (:446) | F27
+ *     |   four tier-B columns, from TWO         |   lib/queries/data-quality.ts:103-106 the LIVE row    |   -> uniqueIpoRelinks -> the ipos.trade_id UPDATE, and     |   is a SHAPE test, not the       |
+ *     |   producers into ONE pairing            |   (B-IPO) - one book, read two ways                   |   -> the `ipo_record_link` note                            |   calendar                       |
+ * F28 | WHICH unlinked records the pairing is   | lib/trash.ts:817 isNull(tradeId) - EVERY one - vs     | the same uniqueIpoRelinks / ipoAskPairs (B-IPO): two       | a SET, not a value. DEFECT - the | F28
+ *     |   handed                                |   lib/queries/data-quality.ts:91 allotted AND exited  |   candidates vs one -> "ambiguous" vs "it matches"         |   two halves disagree            |  (it.fails)
+ * F29 | ipos.allotment_date, as the user typed  | app/api/ipos/route.ts:431 strOrNull - no calendar,    | lib/analytics/data-quality.ts:960 isoDay(allotmentDate)    | ISO day. DEFECT - the one typed- | F29
+ *     |   it                                    |   beside an exitDate that IS refused at :408          |   (B-IPO); lib/analytics/ipo.ts:378 the ST/LT split        |   date writer B-DATE's rule left |  (it.fails)
+ * F30 | the editor's daysHeld and both dates on | components/trades/edit-trade-dialog.tsx:79-105        | app/api/charges/preview/route.ts:68 pricingDate ==         | integer days, never NaN->null;   | F30
+ *     |   the wire, typed DAY-FIRST             |   editPreviewBody (B-DATE)                            |   lib/import/commit.ts:2386 updateManualTrade              |   the same rupees on both sides  |
+ * F31 | a staged ladder's STORED leg day        | lib/queries/staged.ts:494 addLeg / :553 updateLeg     | lib/domain/staged.ts:684 parentAggregate -> trades         | one convention in the column;    | F31
+ *     |                                         |   normalise before the write (B-DATE)                 |   .sell_date -> matchesByExit (B-IPO) -> the DQ note       |   the PARENT is what is read     |
+ * F32 | a BLANK date field, at 19:00 UTC        | components/trades/close-trade-dialog.tsx:40           | closeTradeAction -> commit.ts closePosition; and           | IST day vs null - two rules on   | F32
+ *     |                                         |   resolveExitIso (today) vs edit-trade-dialog.tsx:99  |   updateTradeAction -> updateManualTrade                   |   purpose, each == its OWN save  |
+ *     |                                         |   (blank CLEARS, 0 days) - both B-DATE                |                                                           |                                  |
+ * F33 | NO preview body at all                  | components/trades/edit-trade-dialog.tsx:69 null       | the dialog's own render (:300-304) and lib/import/commit   | null, never a body; ONE          | F33
+ *     |                                         |   (B-DATE) <- a legacy stored '2026-02-31'            |   .ts:64 unreadableDate == trading-day.ts:194              |   sentence, character for char   |
+ *
+ * -- WAVE 2M, THE SEAM ROUND (D1..D4 fixed; these are the cases they needed) ----
+ * The three boundaries round 1 named with NO case at all. F28 and F29 are the
+ * same two seams, their `it.fails` pins flipped and their companions re-pinned.
+ *
+ *  #  | crossing value                          | producer (file:line, builder)                        | consumer (file:line, builder)                             | unit / shape                     | test
+ * ----|-----------------------------------------|------------------------------------------------------|-----------------------------------------------------------|----------------------------------|-----
+ * F34 | the acquisition day typed on /trades     | app/trades/actions.ts:505-509 setAcquisitionAction    | trades.acquisition_date AND trades.buy_date ->             | ISO day, or a refusal before ANY | F34
+ *     |                                         |   (S-IPO, D3) <- acquisition-panel.tsx:102 type=date  |   matchesByExit's `acquisitionDate ?? buyDate` (:985)      |   write; one convention          |
+ * F35 | a LEGACY parent date copied onto a leg   | lib/queries/staged.ts:690-729 convertToStaged         | trade_legs.trade_date -> priceLegs (:182) -> the parent    | ISO day or a refusal; NULL still | F35
+ *     |                                         |   (S-DATE, D4)                                       |   row's charges (invariant 5)                              |   seeds today                    |
+ * F36 | ipos.allotment_date as a LEGACY 4.2.x    | a raw pre-2M /ipos save (the route refuses it now)    | lib/analytics/ipo.ts:378 ipoTaxEstimate -> capital-gains   | the ST/LT term and its rate      | F36
+ *     |   row still holds it                     |                                                      |   .ts:64 classifyTerm (orchestrator) -> /ipos              |   (20% vs 12.5%)                 |
  *
  * RED ON REVERT (2026-09-15) — 16 probes. Each side's HEAD (4fd527d, the
  * wave-2H tree) copy was aliased over the working module with `vi.mock` inside
@@ -216,6 +254,85 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  *   F10's two added controls (a same-account link, a link naming a trade that is gone)
  *     are a coverage fix for an over-claiming title - HEAD's SQL skips both already.
  *
+ *
+ * RED ON REVERT, WAVE 2M (2026-09-16) - 5 probes, same method, HEAD = b6e2353
+ * (the tree the two builders started from). Each product module was aliased onto
+ * a `git show HEAD:<path>` copy inside a deleted tests/zzprobe-SEAM-red.test.ts
+ * / tests/zzseam-head-*.ts pair; no product file was touched. Verbatim:
+ *
+ *   lib/trash.ts                 -> F27 "re-linked from facts both rows already
+ *     state: expected null to be 1" - HEAD hands the pairing no dates at all, so the
+ *     ISSUE-named record matches nothing and the holding comes back UNLINKED
+ *   lib/analytics/data-quality.ts -> F27, the same null (no tier B exists); and F31
+ *     "the day the ladder stored is the day the pairing reads: the given combination
+ *     of arguments (undefined and string) is invalid" - HEAD raises no issue for that
+ *     holding at all, because ipoOrphanPairs finds no MATCH to ask about
+ *   lib/queries/data-quality.ts  -> F27 "the live rows reach the same verdict the
+ *     envelope's did: expected 'Trade #1 (P27TECH) is recorded as an ...' to contain
+ *     '#1 P27 Technologies Limited (matches ...'"; and F31 the same, for P31LOG -
+ *     HEAD selects none of the four tier-B columns, so the note has no verdict in it
+ *   lib/queries/staged.ts        -> F31 "expected '02-03-2026' to be '2026-03-02'" -
+ *     the day-first exit leg is stored as typed, the PARENT's sell date becomes
+ *     '02-03-2026', and `isoDay` answers null for it
+ *   components/trades/edit-trade-dialog.tsx -> F30 "the day-first preview is the
+ *     save: expected [ 5500, 168.71, 5331.29 ] to deeply equal [ 5500, 405.42,
+ *     5094.58 ]" (the raw date is an Invalid Date, daysHeld NaN, JSON null, the
+ *     route's `?? 0` bills ZERO of the real 30 days); and F33 "no figure, and
+ *     nothing sent: expected { broker: 'zerodha', ...(15) } to be null"
+ *
+ * NOT proven red by a revert, and why:
+ *   F32 - a STANDING PIN on a boundary the wave created, not a regression pin. Both
+ *     blank rules are unchanged BEHAVIOUR (HEAD's close dialog restates the same
+ *     calendar in a private `realDay`; the editor's blank has always billed 0 days),
+ *     so no revert of either half moves a figure. What had no case at all is that the
+ *     two dialogs answer a blank field DIFFERENTLY, deliberately, and that each
+ *     answer equals its OWN save across the IST day boundary.
+ *
+ * RED ON REVERT, THE SEAM ROUND (2026-09-16) - 8 more probes, same method. For
+ * app/trades/actions.ts, app/api/ipos/route.ts and lib/analytics/capital-gains.ts
+ * a `git show HEAD:<path>` copy IS the pre-fix state (B-IPO/B-DATE never touched
+ * them). For the four files wave 2M had already changed, the probe hand-reverted
+ * ONLY the seam-round hunk on a COPY, so the pre-state is "wave 2M as the two
+ * builders left it"; where a HEAD copy was used instead it is named.
+ *
+ *   app/trades/actions.ts (HEAD = pre-D3) -> F34 "refused in the same words:
+ *     expected [ true, …(1) ] to deeply equal [ false, …(1) ]  -   'The acquisition
+ *     date “0002-06-15” is not a real calendar day - …'  +   'Cost basis set - this
+ *     trade now counts toward your edge.'" - the half-typed year was SAVED, into
+ *     acquisition_date and buy_date both
+ *   app/api/ipos/route.ts (HEAD = pre-D2) -> F29 "the day it states, not the
+ *     keystrokes: expected '20-02-2026' to be '2026-02-20'"
+ *   lib/analytics/capital-gains.ts (HEAD = pre-fix) -> F36 "the day it names, and
+ *     the rate that day earns: expected [ 'ST', 20 ] to deeply equal [ 'LT', 12.5 ]"
+ *     - 741 days read as SHORT term through a NaN comparison, at 20% not 12.5%
+ *   lib/analytics/data-quality.ts (hand-reverted to wave 2M: `ipoDay` back to the
+ *     shape test, the `allotted === false` guard and `ipoAskPairs`' filter removed)
+ *     -> F28 "the application row claims nothing: expected true to be false", and
+ *     F29 "20-02-2026 is 2026-02-20: expected false to be true"
+ *   lib/trash.ts AND lib/analytics/data-quality.ts, BOTH hand-reverted -> F28
+ *     "re-linked by the record the report names: expected null to be 1" - the money
+ *     failure of round 1's D1, reproduced through the real delete -> legacy envelope
+ *     -> restore
+ *   lib/queries/staged.ts (hand-reverted to wave 2M: `normalizeDate(...) ?? today`,
+ *     guards removed) -> F35 (a) "the column the leg would have copied is what is
+ *     named: expected [ true, 'Staged mode enabled.' ] to deeply equal [ false,
+ *     …(1) ]" - the silent re-dating of round 1's D4
+ *   lib/queries/staged.ts (HEAD copy, pre-2M entirely) -> F35 (a) the same `it`,
+ *     "-  'The buy date “2026-02-31” is not …'  +  'The entry date “2026-02-31” is
+ *     not …'" (the leg is INSERTED first and the REBUILD refuses - the orphan leg
+ *     invariant 5 forbids); and F35 (b) "SqliteError: NOT NULL constraint failed:
+ *     trade_legs.charges_total_paise" - the day-first row could not be written at all
+ *
+ * ONE HALF EACH, measured and stated rather than hidden: reverting ONLY
+ * lib/trash.ts:827's WHERE, or ONLY lib/queries/data-quality.ts:104's, leaves all
+ * 7 probe cases GREEN. D1's rule is stated three times (both SQL reads and the
+ * pure matcher), so each half alone is redundant by design - S-IPO's own report
+ * says so. The RULE is red on the pure statement, and the WRITE is red on both
+ * halves together (quoted above).
+ *
+ * F28, F29 - round 1's SEAM DEFECTS, now FIXED: the two `it.fails` are plain `it`s
+ * and their companion cases carry the measured before/after in a one-line comment.
+ *
  * SEAM DEFECTS found by a pass are reported to the orchestrator, not fixed here.
  *
  * ONE temp database for this file (AGENTS.md Testing). Each seam owns its accounts.
@@ -254,6 +371,9 @@ let crossSource: typeof import("@/lib/import/cross-source");
 let bc: Record<string, unknown> & typeof import("@/components/import/broker-connect");
 let ipoUi: Record<string, unknown> & typeof import("@/components/ipo/ipo-client");
 let closeDialog: Record<string, unknown> & typeof import("@/components/trades/close-trade-dialog");
+/** Wave 2M: the trade editor, read the same way — `editPreviewBody` may be absent on a revert. */
+let editDialog: Record<string, unknown> & typeof import("@/components/trades/edit-trade-dialog");
+let dq: typeof import("@/lib/analytics/data-quality");
 let Dialog: typeof import("@/components/ui/dialog").Dialog;
 let EditTradeDialog: typeof import("@/components/trades/edit-trade-dialog").EditTradeDialog;
 let CloseTradeDialog: typeof import("@/components/trades/close-trade-dialog").CloseTradeDialog;
@@ -310,9 +430,21 @@ const F25_TGT = 1740; //   F25: the target carrying both
 const F26_ACC = 1741; //   F26: a 3-decimal exit over a 3-decimal issue price
 const F23R_SRC = 1742; //  F23 (b): the REVERSE direction — the SOURCE holds the alias
 const F23R_TGT = 1743; //  F23 (b): the target storing the row that alias names
+// ── wave 2M (G-G2-1 the IPO pairing; G-G3-1 / G-G3-2 the one calendar) ────────
+const F27_ACC = 1744; //   F27: an ISSUE-named record and its holding, one book
+const F28_ACC = 1745; //   F28: the same, plus the application row the report never sees
+const F29_ACC = 1746; //   F29: an allotment date the route stores day-first
+const F30_ACC = 1747; //   F30: the editor's day-first buy date on an MTF row
+const F31_ACC = 1748; //   F31: a staged IPO holding whose exit leg is posted day-first
+const F32_ACC = 1749; //   F32: the two dialogs' blank dates across the IST boundary
+const F33_ACC = 1750; //   F33: a legacy row whose stored sell date is not a day
+// ── wave 2M, the SEAM ROUND (D1..D4 fixed; F34..F36 are the cases they needed) ─
+const F34_ACC = 1751; //   F34: a sale whose basis is typed on the acquisition panel
+const F35_ACC = 1752; //   F35: legacy rows converted to a ladder
+const F36_ACC = 1753; //   F36: an IPO record whose stored allotment day is legacy
 const ACCOUNTS = [F1_ZERO, F1_UNSET, F2_ACC, F3_ACC, F4_TGT, F4_SRC, F5_ACC, F6_ACC, F7_SA, F7_SB, F7_TGT, F8_ACC, F9_ACC, F9_PURGE, F10_ACC, F11_ACC, F12_A, F12_B, F13_TGT, F13_SRC,
   F14_ARCH, F14_REC, F15_A, F15_B, F16_ACC, F17_ACC, F18_ACC, F19_ACC, F20_ACC, F21_ACC, F22_ACC, F22_TWO, F23_TGT, F23_SRC, F24_TGT, F24_SRC, F24_OTHER, F25_SA, F25_SB, F25_TGT, F26_ACC,
-  F23R_SRC, F23R_TGT];
+  F23R_SRC, F23R_TGT, F27_ACC, F28_ACC, F29_ACC, F30_ACC, F31_ACC, F32_ACC, F33_ACC, F34_ACC, F35_ACC, F36_ACC];
 
 // ONE temp database for this file. Re-measured locally 2026-09-15 with F14..F26
 // added (vitest's own per-test times, 29 `it`s): the slowest `it` is 102 ms
@@ -2377,5 +2509,721 @@ describe("F26 · an exit of 150.005 over an issue price of 99.995 on 3 shares (P
     expect([shown.grossPnl, stored.grossPnl], "/ipos and the Trades row state ONE gross").toEqual([150.02, 150.02]);
     expect(Math.round((150.005 - 99.995) * 3 * 100) / 100, "the per-share arithmetic they both refuse").toBe(150.03);
     expect(shown.netPnl, "and one net").toBe(Math.round((stored.grossPnl - stored.chargesTotal) * 100) / 100);
+  });
+});
+
+// ============================================================================
+// WAVE 2M — B-IPO (the IPO pairing, G-G2-1) ↔ B-DATE (the one calendar,
+//           G-G3-1 / G-G3-2). F27..F33.
+//
+// Each 2M describe loads the modules it reads itself, so a single case can be
+// run under `-t` on its own during a red-on-revert probe.
+async function wave2mModules() {
+  trash = await import("@/lib/trash");
+  dqQueries = await import("@/lib/queries/data-quality");
+  ipoRoute = await import("@/app/api/ipos/route");
+  actions = await import("@/app/trades/actions");
+  tradeQueries = await import("@/lib/queries/trades");
+  slim = await import("@/lib/domain/slim-trade");
+  dq = await import("@/lib/analytics/data-quality");
+}
+
+// The two builders never ran together: B-IPO's tier B compares `allotmentDate`,
+// `exitDate`, `acquisitionDate ?? buyDate` and `sellDate` AS ISO DAY STRINGS,
+// and B-DATE is the wave that decided what those columns hold. Every case below
+// builds the value where its producer builds it and asserts the consumer's
+// OUTPUT — the link a restore writes, the sentence the report states, the money
+// a save stores.
+// ============================================================================
+
+describe("F27 · an ISSUE-named IPO record and its holding, deleted the 4.2.x way (the ENVELOPE's dates ↔ the LIVE query's columns → ipoRecordMatchesHolding)", () => {
+  let capital2: typeof import("@/lib/queries/capital");
+  let taxItr2: typeof import("@/lib/queries/tax-itr");
+  let ais2: typeof import("@/app/api/ais/route");
+  beforeAll(async () => {
+    capital2 = await import("@/lib/queries/capital");
+    taxItr2 = await import("@/lib/queries/tax-itr");
+    ais2 = await import("@/app/api/ais/route");
+    await wave2mModules();
+  }, 60_000);
+
+  async function countedOnce(accountId: number) {
+    selectAccount(accountId);
+    const cap = capital2.getCapitalSummary();
+    const base = taxItr2.getTaxBase();
+    const res = await ais2.POST(json("/api/ais", { text: "nothing to parse" }));
+    const { recon } = (await res.json()) as { recon: { fyTotals: { fy: string; kind: string; journal: number | null }[] } };
+    return {
+      capital: [cap.equityRealised, cap.ipoRealised, cap.totalRealised],
+      tax: [base.exitedIpos.map((r) => r.name), base.cgTrades.map((c) => c.netPnl)],
+      ais: recon.fyTotals.map((f) => `${f.fy}|${f.kind}|${f.journal}`),
+    };
+  }
+
+  const ISSUE = "F27 Technologies Limited"; // what /ipos is typed with…
+  const SCRIP = "F27TECH"; //                  …beside this holding
+
+  it("the envelope's own days re-link it, and the LIVE query states the SAME verdict about the same book", async () => {
+    const tradeId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F27_ACC, broker: "zerodha", symbol: SCRIP, tradingsymbol: SCRIP, acquisition: "ipo",
+          buyQty: 12, avgBuyPrice: 100, buyValue: 1200, buyDate: "2026-02-20", acquisitionDate: "2026-02-20", buyOrderCount: 1,
+          sellQty: 12, avgSellPrice: 150, sellValue: 1800, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: 600, chargesTotal: 2.06, netPnl: 597.94, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const ipoId = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F27_ACC, name: ISSUE, appliedPrice: 100, lotSize: 12, lotsApplied: 1, allotted: true, allottedQty: 12, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20", tradeId })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    const before = await countedOnce(F27_ACC);
+    expect(before.capital[1], "the baseline is counted-once, not merely stable").toBe(0);
+
+    // A 4.2.x delete: the envelope carries the trades ROW as stored (its three
+    // days included) and nothing about the link, which is nulled.
+    const stored = row(tradeId)! as unknown as Record<string, unknown>;
+    const snapshotId = trash.writeTrashSnapshot({ trades: [stored], legs: [], attachments: [], reason: "F27: deleted by 4.2.x", accountId: F27_ACC });
+    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, ipoId)).run();
+    t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, tradeId)).run();
+
+    const restored = trash.restoreTrashSnapshot(snapshotId);
+    expect([restored.ok, restored.restored], restored.message).toEqual([true, 1]);
+    // THE assertion (on revert of lib/trash.ts, which hands the pairing no dates
+    // at all, or of lib/analytics/data-quality.ts, which has no tier B: the
+    // record is named after the ISSUE, tier A sees nothing, the holding comes
+    // back UNLINKED and its one sale is counted twice).
+    const linkOf = () => t.db.select().from(t.schema.ipos).where(eq(t.schema.ipos.id, ipoId)).get()!.tradeId;
+    expect(linkOf(), "re-linked from facts both rows already state").toBe(tradeId);
+    expect(await countedOnce(F27_ACC), "and counted exactly once again").toEqual(before);
+
+    // THE SEAM: the OTHER producer of the same facts. Unlink by hand (what a
+    // user does on /ipos) and read the real report: the live query's columns
+    // must state the same verdict the envelope's did, or the restore writes a
+    // pairing the report will not name.
+    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, ipoId)).run();
+    selectAccount(F27_ACC);
+    const fromQuery = dqQueries.getUnlinkedExitedIpoRecords().filter((r) => r.id === ipoId);
+    expect(fromQuery.map((r) => [r.allotted, r.exitPrice, r.exitDate, r.allotmentDate]), "the query states tier B's four facts").toEqual([[true, 150, "2026-03-02", "2026-02-20"]]);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`);
+    // THE assertion (on revert of lib/queries/data-quality.ts, which selects
+    // none of the four columns: the same record is listed as a candidate with
+    // no verdict at all, so the note cannot say which one is the user's).
+    expect(issue?.detail, "the live rows reach the same verdict the envelope's did").toContain(`#${ipoId} ${ISSUE} (matches this holding)`);
+    t.db.update(t.schema.ipos).set({ tradeId }).where(eq(t.schema.ipos.id, ipoId)).run();
+  });
+});
+
+// ============================================================================
+// F28 — SEAM DEFECT. The two producers' CANDIDATE SETS are not the same set.
+// ============================================================================
+
+describe("F28 · the application row /ipos keeps beside the allotment (lib/trash.ts:817 every unlinked record ↔ lib/queries/data-quality.ts:91 allotted AND exited)", () => {
+  const ISSUE = "F28 Industries Limited";
+  const SCRIP = "F28IND";
+  let tradeId = 0;
+  let allotmentIpoId = 0;
+  let applicationIpoId = 0;
+  let snapshotId = "";
+
+  beforeAll(async () => {
+    await wave2mModules();
+    tradeId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F28_ACC, broker: "zerodha", symbol: SCRIP, tradingsymbol: SCRIP, acquisition: "ipo",
+          buyQty: 12, avgBuyPrice: 100, buyValue: 1200, buyDate: "2026-02-20", acquisitionDate: "2026-02-20", buyOrderCount: 1,
+          sellQty: 12, avgSellPrice: 150, sellValue: 1800, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: 600, chargesTotal: 2.06, netPnl: 597.94, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    // The allotment, typed on /ipos under the ISSUE's name — the G-G2-1 row.
+    allotmentIpoId = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F28_ACC, name: ISSUE, appliedPrice: 100, lotSize: 12, lotsApplied: 1, allotted: true, allottedQty: 12, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20", tradeId })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    // The APPLICATION the same user recorded when they applied, under the
+    // ticker, never allotted and never edited away. It states no exit, so it
+    // can never double-count anything — but it is unlinked, and its NAME is the
+    // scrip, which is tier A's whole rule.
+    applicationIpoId = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F28_ACC, name: SCRIP, appliedPrice: 100, lotSize: 12, lotsApplied: 1, allotted: false, allottedQty: 0 })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+
+    const stored = row(tradeId)! as unknown as Record<string, unknown>;
+    snapshotId = trash.writeTrashSnapshot({ trades: [stored], legs: [], attachments: [], reason: "F28: deleted by 4.2.x", accountId: F28_ACC });
+    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, allotmentIpoId)).run();
+    t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, tradeId)).run();
+    const restored = trash.restoreTrashSnapshot(snapshotId);
+    expect([restored.ok, restored.restored], restored.message).toEqual([true, 1]);
+  });
+
+  const linkOf = (id: number) => t.db.select().from(t.schema.ipos).where(eq(t.schema.ipos.id, id)).get()!.tradeId;
+
+  /** The two rows as the pairing reads them, from what is actually STORED. */
+  const factsOf = (ipoId: number) => {
+    const r = t.db.select().from(t.schema.ipos).where(eq(t.schema.ipos.id, ipoId)).get()!;
+    return { id: r.id, accountId: r.accountId, name: r.name, allottedQty: r.allottedQty, allotted: r.allotted, exitPrice: r.exitPrice, exitDate: r.exitDate, allotmentDate: r.allotmentDate };
+  };
+  const holdingFacts = () => {
+    const r = row(tradeId)!;
+    return { id: r.id, accountId: r.accountId, symbol: r.symbol, tradingsymbol: r.tradingsymbol, buyQty: r.buyQty, acquisitionDate: r.acquisitionDate, buyDate: r.buyDate, sellDate: r.sellDate };
+  };
+
+  // RE-PINNED (seam round). Measured BEFORE D1: `[24]` — the report's set held
+  // only the exited record, so it named it a match while the restore, which read
+  // the application row too, called the holding ambiguous and wrote nothing.
+  // AFTER: `[]` — the restore linked the record, so nothing is unlinked and there
+  // is no question left to ask.
+  it("the application row is a candidate NOWHERE, and after the restore there is nothing left to ask", () => {
+    selectAccount(F28_ACC);
+    expect(dqQueries.getUnlinkedExitedIpoRecords().map((r) => r.id), "the link is written, so the report's set is empty").toEqual([]);
+    expect(dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`), "and no question is raised").toBeUndefined();
+    // The rule itself, over the WIDER set the restore reads (every unlinked row
+    // of the book): a record that states no allotment is no allotment's record,
+    // so the pairing answers the same whichever set it is handed.
+    expect(dq.ipoRecordMatchesHolding(factsOf(applicationIpoId), holdingFacts()), "the application row claims nothing").toBe(false);
+    expect(dq.ipoRecordMatchesHolding(factsOf(allotmentIpoId), holdingFacts()), "the allotment does").toBe(true);
+    expect(dq.uniqueIpoRelinks([holdingFacts()], [factsOf(allotmentIpoId), factsOf(applicationIpoId)]), "one candidate, both sets").toEqual([{ tradeId, ipoId: allotmentIpoId }]);
+  });
+
+  // FIXED (v4.3.0 fix wave 2M, seam round — D1): this was an `it.fails`.
+  // lib/trash.ts:827 and lib/queries/data-quality.ts:104 now read ONE set (the
+  // book's unlinked rows that state an ALLOTMENT), and the rule is stated in
+  // `ipoRecordMatchesHolding` (lib/analytics/data-quality.ts:1012) as well, so a
+  // caller handing the pairing a wider set cannot get a wider answer. Measured
+  // before: `expected null to be <tradeId>` — the restore wrote nothing and the
+  // one sale stayed counted twice in capital, the tax pack, the ITR export and
+  // both AIS sides, after a restore whose own report called the pair unambiguous.
+  it("the restore writes the link its own report says is unambiguous", () => {
+    expect(linkOf(allotmentIpoId), "re-linked by the record the report names").toBe(tradeId);
+  });
+
+  it("the report's own verdict, with the link taken away again: the allotment matches and the application is never named", () => {
+    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, allotmentIpoId)).run();
+    selectAccount(F28_ACC);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`);
+    expect(issue?.detail, "one record, and the two rows' own facts agree about it").toContain(`#${allotmentIpoId} ${ISSUE} (matches this holding)`);
+    expect(issue?.detail, "the report never mentions the application row").not.toContain(`#${applicationIpoId}`);
+    expect(issue?.detail).toContain("an exited IPO record");
+    t.db.update(t.schema.ipos).set({ tradeId }).where(eq(t.schema.ipos.id, allotmentIpoId)).run();
+  });
+
+  it("nothing is written onto the application row either way (what IS still true)", () => {
+    expect(linkOf(applicationIpoId), "a record that states no allotment is never given a holding").toBeNull();
+  });
+});
+
+// ============================================================================
+// F29 — SEAM DEFECT. `ipos.allotment_date` is the one date on the 2M pairing
+//       that NO writer normalises and NO writer refuses.
+// ============================================================================
+
+describe("F29 · a day-first allotment date accepted by POST /api/ipos (app/api/ipos/route.ts:431 strOrNull) ↔ isoDay in the pairing (lib/analytics/data-quality.ts:960)", () => {
+  const ISSUE = "F29 Chemicals Limited";
+  const SCRIP = "F29CHEM";
+  let tradeId = 0;
+  let ipoId = 0;
+
+  beforeAll(async () => {
+    tradeId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F29_ACC, broker: "zerodha", symbol: SCRIP, tradingsymbol: SCRIP, acquisition: "ipo",
+          buyQty: 12, avgBuyPrice: 100, buyValue: 1200, buyDate: "2026-02-20", acquisitionDate: "2026-02-20", buyOrderCount: 1,
+          sellQty: 12, avgSellPrice: 150, sellValue: 1800, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: 600, chargesTotal: 2.06, netPnl: 597.94, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    await wave2mModules();
+    selectAccount(F29_ACC);
+    const body = {
+      name: ISSUE, exchange: "NSE", appliedPrice: 100, lotSize: 12, lotsApplied: 1,
+      allotted: true, allottedQty: 12, listingPrice: 130, exitPrice: 150,
+      exitDate: "2026-03-02", allotmentDate: "20-02-2026", // the user's own keyboard, day first
+    };
+    const res = await ipoRoute.POST(json("/api/ipos", body));
+    expect(res.status, JSON.stringify(await res.clone().json())).toBe(200);
+    ipoId = ((await res.json()) as { id: number }).id;
+  }, 60_000);
+
+  const recordOf = () => t.db.select().from(t.schema.ipos).where(eq(t.schema.ipos.id, ipoId)).get()!;
+
+  // RE-PINNED (seam round). Measured BEFORE D2: the allotment date was stored
+  // '20-02-2026' — exactly as typed, beside an exit date three lines away that
+  // WAS refused. AFTER: '2026-02-20', and a value that states no day is refused
+  // in the exit date's own words, naming the field.
+  it("the route stores the allotment date as the ISO day it states, and refuses one that states none", async () => {
+    selectAccount(F29_ACC);
+    // The exit date's guard, unchanged (IPO-EXITDATE, wave 2G/L3).
+    const badExit = await ipoRoute.POST(json("/api/ipos", { name: "F29 refused", appliedPrice: 100, lotSize: 1, lotsApplied: 1, allotted: true, allottedQty: 1, exitPrice: 150, exitDate: "20-02-2026" }));
+    expect([badExit.status, ((await badExit.json()) as { message: string }).message.includes("real calendar day")], "the exit date is refused").toEqual([400, true]);
+    // THE assertion (on a revert of app/api/ipos/route.ts to HEAD: '20-02-2026',
+    // stored as typed, which no reader in the tree writes).
+    expect(recordOf().allotmentDate, "the day it states, not the keystrokes").toBe("2026-02-20");
+    // …and the allotment date now has the exit date's own guard, in its own name.
+    const badAllot = await ipoRoute.POST(json("/api/ipos", { name: "F29 refused too", appliedPrice: 100, lotSize: 1, lotsApplied: 1, allotted: true, allottedQty: 1, allotmentDate: "2026-02-31" }));
+    const msg = ((await badAllot.json()) as { message: string }).message;
+    expect([badAllot.status, msg], "a day that does not exist is refused, and nothing is saved").toEqual([400, "The allotment date must be a real calendar day written year-month-day, such as 2026-06-15. Nothing was saved."]);
+    expect(t.db.select().from(t.schema.ipos).all().some((r) => r.name === "F29 refused too"), "nothing was saved").toBe(false);
+  });
+
+  // FIXED (v4.3.0 fix wave 2M, seam round — D2): this was an `it.fails`.
+  // The writer (app/api/ipos/route.ts:433-462) now stores the ISO day, and the
+  // consumer reads its four dates through `normalizeDate` rather than the old
+  // shape test `isoDay` (lib/analytics/data-quality.ts:942, 981) — so a LEGACY
+  // day-first value stored before this wave is recognised as the day it names
+  // too. Measured before: `20-02-2026 is 2026-02-20: expected false to be true`,
+  // and with it no re-link on a 4.2.x restore and no verdict in the note.
+  it("a day-first allotment date is still the same allotment day", () => {
+    const holding = { id: tradeId, accountId: F29_ACC, symbol: SCRIP, tradingsymbol: SCRIP, buyQty: 12, acquisitionDate: "2026-02-20", buyDate: "2026-02-20", sellDate: "2026-03-02" };
+    // The row as it is STORED (ISO, since D2), and the LEGACY form of the same
+    // day, which only the consumer's calendar can rescue.
+    expect(dq.ipoRecordMatchesHolding({ ...recordOf(), name: ISSUE } as never, holding), "the stored ISO day").toBe(true);
+    expect(dq.ipoRecordMatchesHolding({ ...recordOf(), name: ISSUE, allotmentDate: "20-02-2026" } as never, holding), "20-02-2026 is 2026-02-20").toBe(true);
+    // …and a day that does not exist is still a day neither side states, however
+    // both of them spell it (before D2 the shape test compared these EQUAL).
+    expect(dq.ipoRecordMatchesHolding({ ...recordOf(), name: ISSUE, allotmentDate: "2026-02-31" } as never, { ...holding, acquisitionDate: "2026-02-31", buyDate: "2026-02-31" }), "an impossible day is not a match").toBe(false);
+  });
+
+  // RE-PINNED (seam round). Measured BEFORE D2: the note listed the record with
+  // no verdict at all, because the days did not compare. AFTER: it is marked.
+  it("and the report says which record is this holding's own", () => {
+    selectAccount(F29_ACC);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`);
+    expect(issue?.title, "the question is raised whatever the dates say (G-G2-1)").toBe("IPO record not linked to its holding");
+    expect(issue?.detail, "…and now with a verdict the user can act on").toContain(`#${ipoId} ${ISSUE} (matches this holding)`);
+  });
+});
+
+// ============================================================================
+// F30 — the trade editor's preview body (B-DATE) ↔ /api/charges/preview ≡
+//       updateManualTrade, with a DAY-FIRST buy date on the wire
+// ============================================================================
+
+describe("F30 · a day-first buy date typed into the trade editor on an MTF row (edit-trade-dialog.tsx:79-105 → POST /api/charges/preview ≡ updateTradeAction → commit.ts updateManualTrade)", () => {
+  beforeAll(async () => {
+    editDialog = (await import("@/components/trades/edit-trade-dialog")) as typeof editDialog;
+    chargesPreview = await import("@/app/api/charges/preview/route");
+    Dialog = (await import("@/components/ui/dialog")).Dialog;
+    EditTradeDialog = editDialog.EditTradeDialog;
+    await wave2mModules();
+  }, 60_000);
+
+  /** The dialog's own effect: the body it builds, over the real route, as [gross, charges, net]. */
+  async function editorPreview(w: WireTrade, f: Record<string, unknown>): Promise<number[] | null> {
+    const build = exported(editDialog, "editPreviewBody") as ((t: WireTrade, f: unknown) => unknown) | undefined;
+    const body = typeof build === "function" ? build(w, f) : null;
+    if (body == null) return null;
+    const res = await chargesPreview.POST(json("/api/charges/preview", JSON.parse(JSON.stringify(body))));
+    const p = (await res.json()) as { grossPnl: number; netPnl: number; breakdown: { total: number } };
+    expect(res.status, JSON.stringify(p)).toBe(200);
+    return [p.grossPnl, p.breakdown.total, p.netPnl];
+  }
+
+  it("the preview bills the 30 days the resolved dates really are, and it is the bill the save stores — long MTF and a short alike", async () => {
+    const mtf = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F30_ACC, broker: "angelone", bucket: "equity", segment: "eq_mtf", symbol: "F30-MTF", tradingsymbol: "F30-MTF",
+          buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-07-15", buyOrderCount: 1, mtfFundedAmount: 16000, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+
+    const typed = { buyDate: "15-07-2026", sellQty: "100", avgSellPrice: "255", sellDate: "2026-08-14" };
+    const w = wireTrade(F30_ACC, mtf);
+    const shown = await editorPreview(w, {
+      buyQty: 100, avgBuyPrice: 200, sellQty: 100, avgSellPrice: 255, ownCapitalUsed: 4000,
+      buyDate: typed.buyDate, sellDate: typed.sellDate,
+    });
+    const saved = await actions.updateTradeAction(NO_STATE, editorForm(F30_ACC, mtf, typed));
+    expect(saved.ok, saved.message).toBe(true);
+
+    const r = row(mtf)!;
+    expect([r.isOpen, r.buyDate, r.sellDate], "the save stores the RESOLVED days").toEqual([false, "2026-07-15", "2026-08-14"]);
+    expect(r.mtfInterest, "30 days of interest on ₹16,000 — not 0, and not seven months").toBeGreaterThan(0);
+    // THE assertion (on revert of components/trades/edit-trade-dialog.tsx: the
+    // raw '15-07-2026' is an Invalid Date, daysHeld is NaN, JSON sends null and
+    // the route's `?? 0` bills ZERO days against a save that charges the real 30).
+    expect(shown, "the day-first preview is the save").toEqual([r.grossPnl, r.chargesTotal, r.netPnl]);
+
+    // The other sign, through the same two halves: a SHORT intraday round trip
+    // whose entry day is typed day-first (no MTF interest here — what is tested
+    // is that one wire carries both legs' resolved days to the same bill).
+    const shortId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F30_ACC, broker: "angelone", bucket: "equity", segment: "eq_intraday", symbol: "F30-SHORT", tradingsymbol: "F30-SHORT",
+          sellQty: 100, avgSellPrice: 255, sellValue: 25500, sellDate: "2026-07-15", sellOrderCount: 1, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const sTyped = { sellDate: "15-07-2026", buyQty: "100", avgBuyPrice: "250", buyDate: "15-07-2026" };
+    const sShown = await editorPreview(wireTrade(F30_ACC, shortId), {
+      buyQty: 100, avgBuyPrice: 250, sellQty: 100, avgSellPrice: 255, ownCapitalUsed: null,
+      buyDate: sTyped.buyDate, sellDate: sTyped.sellDate,
+    });
+    const sSaved = await actions.updateTradeAction(NO_STATE, editorForm(F30_ACC, shortId, sTyped));
+    expect(sSaved.ok, sSaved.message).toBe(true);
+    const sr = row(shortId)!;
+    expect([sr.buyDate, sr.sellDate], "both ends resolved on a short too").toEqual(["2026-07-15", "2026-07-15"]);
+    expect(sShown, "the short's preview is its save").toEqual([sr.grossPnl, sr.chargesTotal, sr.netPnl]);
+  });
+});
+
+// ============================================================================
+// F31 — the staged ladder's stored leg day (B-DATE) ↔ the parent's sell date
+//       ↔ the IPO pairing's tier B (B-IPO). One value, two builders.
+// ============================================================================
+
+describe("F31 · a staged IPO holding closed by a leg posted DAY-FIRST (queries/staged.ts:553 the stored day → parentAggregate → the parent's sellDate → matchesByExit)", () => {
+  let stagedQ: typeof import("@/lib/queries/staged");
+  beforeAll(async () => {
+    stagedQ = await import("@/lib/queries/staged");
+    await wave2mModules();
+  }, 60_000);
+
+  const ISSUE = "F31 Logistics Limited";
+  const SCRIP = "F31LOG";
+
+  it("the ladder stores the ISO day, the parent states it, and the ISSUE-named record is recognised as this holding's own", () => {
+    const tradeId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F31_ACC, broker: "angelone", bucket: "equity", segment: "eq_mtf", instrumentType: "equity", exchange: "NSE",
+          symbol: SCRIP, tradingsymbol: SCRIP, acquisition: "ipo", acquisitionDate: "2026-02-20",
+          buyQty: 12, avgBuyPrice: 100, buyValue: 1200, buyDate: "2026-02-20", buyOrderCount: 1, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    selectAccount(F31_ACC);
+    expect(stagedQ.convertToStaged(tradeId).ok, "the allotment becomes a ladder").toBe(true);
+
+    // The user books the exit from the staged panel, typing the day FIRST.
+    const booked = stagedQ.addLeg({ tradeId, kind: "exit", tradeDate: "02-03-2026", qty: 12, price: 150, direction: "long" });
+    expect([booked.ok, booked.message]).toEqual([true, "Exit booked."]);
+    const legs = t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, tradeId)).all().sort((a, b) => a.seq - b.seq);
+    expect(legs.map((l) => l.tradeDate), "one convention in the column").toEqual(["2026-02-20", "2026-03-02"]);
+    const parent = row(tradeId)!;
+    expect([parent.isOpen, parent.sellDate], "the parent holds the aggregate (invariant 5)").toEqual([false, "2026-03-02"]);
+
+    // …and the record typed under the ISSUE's name, which no name tier can see.
+    const ipoId = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F31_ACC, name: ISSUE, appliedPrice: 100, lotSize: 12, lotsApplied: 1, allotted: true, allottedQty: 12, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20" })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+
+    selectAccount(F31_ACC);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`);
+    // THE assertion. On revert of lib/queries/staged.ts the exit leg is stored
+    // as '02-03-2026', the parent's sellDate becomes '02-03-2026', `isoDay`
+    // answers null for it and tier B refuses — the pairing never sees its own
+    // holding. On revert of lib/analytics/data-quality.ts there is no tier B at
+    // all and the ISSUE-named record matches nothing.
+    expect(issue?.detail, "the day the ladder stored is the day the pairing reads").toContain(`#${ipoId} ${ISSUE} (matches this holding)`);
+    expect(dqQueries.getUnlinkedExitedIpoRecords().map((r) => r.id)).toContain(ipoId);
+  });
+});
+
+// ============================================================================
+// F32 — the two dialogs' BLANK date, across the IST day boundary. Two rules on
+//       purpose; each must equal its OWN save.
+// ============================================================================
+
+describe("F32 · a blank date at 19:00 UTC — the close dialog's blank is today (close-trade-dialog.tsx:40) and the editor's is 'cleared' (edit-trade-dialog.tsx:99)", () => {
+  beforeAll(async () => {
+    editDialog = (await import("@/components/trades/edit-trade-dialog")) as typeof editDialog;
+    closeDialog = (await import("@/components/trades/close-trade-dialog")) as typeof closeDialog;
+    chargesPreview = await import("@/app/api/charges/preview/route");
+    Dialog = (await import("@/components/ui/dialog")).Dialog;
+    EditTradeDialog = editDialog.EditTradeDialog;
+    await wave2mModules();
+  }, 60_000);
+
+  it("the editor's blank sell date bills 0 days and clears the date, while the close dialog's blank is the IST day — and each is its own save", async () => {
+    // 18:30–24:00 UTC: India is already on the NEXT day.
+    freezeAt("2026-08-31T19:00:00.000Z");
+    expect(todayIstIso(), "the IST day has turned").toBe("2026-09-01");
+
+    const seed = (sym: string) =>
+      t.db
+        .insert(t.schema.trades)
+        .values(
+          tradeRow({
+            accountId: F32_ACC, broker: "angelone", bucket: "equity", segment: "eq_mtf", symbol: sym, tradingsymbol: sym,
+            buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-01", buyOrderCount: 1, mtfFundedAmount: 16000, isOpen: true,
+          }),
+        )
+        .returning({ id: t.schema.trades.id })
+        .get()!.id;
+
+    // (i) THE EDITOR. A blank sell date means "clear this", as every other field
+    // in that form does, so the row stays open and bills no holding period here.
+    const edited = seed("F32-EDIT");
+    const build = exported(editDialog, "editPreviewBody") as ((t: WireTrade, f: unknown) => unknown) | undefined;
+    const body = typeof build === "function"
+      ? build(wireTrade(F32_ACC, edited), { buyQty: 100, avgBuyPrice: 200, sellQty: 0, avgSellPrice: 0, ownCapitalUsed: 4000, buyDate: "2026-08-01", sellDate: null })
+      : null;
+    expect((body as { daysHeld: number; sellDate: string | null }).daysHeld, "blank clears; it never becomes today").toBe(0);
+    expect((body as { sellDate: string | null }).sellDate, "and nothing is invented on the wire").toBeNull();
+    const pres = await chargesPreview.POST(json("/api/charges/preview", JSON.parse(JSON.stringify(body))));
+    const shown = (await pres.json()) as { grossPnl: number; netPnl: number; breakdown: { total: number } };
+    const savedEdit = await actions.updateTradeAction(NO_STATE, editorForm(F32_ACC, edited, { sellDate: "", sellQty: "0", avgSellPrice: "0" }));
+    expect(savedEdit.ok, savedEdit.message).toBe(true);
+    const er = row(edited)!;
+    expect([er.isOpen, er.sellDate], "the save's own semantics: blank CLEARS").toEqual([true, null]);
+    expect([shown.grossPnl, shown.breakdown.total, shown.netPnl], "the editor's blank preview is the editor's save").toEqual([er.grossPnl, er.chargesTotal, er.netPnl]);
+
+    // (ii) THE CLOSE DIALOG, the same blank field, the deliberately other rule.
+    const closed = seed("F32-CLOSE");
+    const resolveFn = exported(closeDialog, "resolveExitIso") as ((d: string) => string | null) | undefined;
+    expect(typeof resolveFn === "function" ? resolveFn("") : null, "unanswered, not unreadable").toBe("2026-09-01");
+    const fd = new FormData();
+    fd.set("tradeId", String(closed));
+    fd.set("exitPrice", "255");
+    fd.set("exitDate", "");
+    const savedClose = await actions.closeTradeAction(NO_STATE, fd);
+    expect(savedClose.ok, savedClose.message).toBe(true);
+    const cr = row(closed)!;
+    expect([cr.isOpen, cr.sellDate], "the close's own rule: blank is the IST day").toEqual([false, "2026-09-01"]);
+    expect(cr.mtfInterest, "31 days of interest, billed across the boundary").toBeGreaterThan(0);
+    // THE assertion the seam is about: the two dialogs answer a blank field
+    // DIFFERENTLY on purpose, and neither answer leaks into the other's save.
+    expect([er.sellDate, cr.sellDate], "one calendar, two deliberate rules").toEqual([null, "2026-09-01"]);
+  });
+});
+
+// ============================================================================
+// F33 — the editor's NULL preview body (B-DATE) ↔ the dialog's own render ↔
+//       updateManualTrade's refusal. ONE sentence.
+// ============================================================================
+
+describe("F33 · a legacy row whose stored sell date is not a calendar day, opened in the trade editor (editDateProblem → null body → the render ≡ the save's refusal)", () => {
+  beforeAll(async () => {
+    editDialog = (await import("@/components/trades/edit-trade-dialog")) as typeof editDialog;
+    Dialog = (await import("@/components/ui/dialog")).Dialog;
+    EditTradeDialog = editDialog.EditTradeDialog;
+    await wave2mModules();
+  }, 60_000);
+
+  it("the dialog states the refusal where the figure would be, builds no request, and the save refuses the same value in the same words", async () => {
+    // Stored before L3 refused it: '2026-02-31' is a day the calendar does not have.
+    const legacy = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F33_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F33-LEG", tradingsymbol: "F33-LEG",
+          buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-02-01", buyOrderCount: 1,
+          sellQty: 100, avgSellPrice: 255, sellValue: 25500, sellDate: "2026-02-31", sellOrderCount: 1,
+          grossPnl: 5500, chargesTotal: 20, netPnl: 5480, mtfFundedAmount: 16000, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = row(legacy)!;
+    const w = wireTrade(F33_ACC, legacy);
+
+    // 1. The body. NULL — there is no figure to preview for a value the save refuses.
+    const build = exported(editDialog, "editPreviewBody") as ((t: WireTrade, f: unknown) => unknown) | undefined;
+    const body = typeof build === "function"
+      ? build(w, { buyQty: 100, avgBuyPrice: 200, sellQty: 100, avgSellPrice: 255, ownCapitalUsed: 4000, buyDate: "2026-02-01", sellDate: "2026-02-31" })
+      : undefined;
+    // THE assertion (on revert of components/trades/edit-trade-dialog.tsx: a
+    // body IS built, `new Date('2026-02-31')` rolls to 3 March, and the dialog
+    // shows a bill for a trade the Save button will not store).
+    expect(body, "no figure, and nothing sent").toBeNull();
+
+    // 2. The dialog's own server render: the sentence stands where the preview
+    //    block would be, and no charge figure is printed beside it.
+    const html = renderToStaticMarkup(React.createElement(Dialog, null, React.createElement(EditTradeDialog, { trade: w, onDone: () => {} })));
+    const sentence = unescape(html).includes("is not a real calendar day");
+    expect(sentence, "the refusal is rendered, derived — no state, no effect").toBe(true);
+    expect(unescape(html)).toContain("The sell date “2026-02-31” is not a real calendar day");
+    expect(unescape(html), "…and no live figure beside it").not.toContain("Brokerage");
+
+    // 3. The SAVE, through the real action, on the same value the form holds.
+    const saved = await actions.updateTradeAction(NO_STATE, editorForm(F33_ACC, legacy, {}));
+    expect(saved.ok, "the save refuses it too").toBe(false);
+    // ONE sentence: commit.ts's own refusal and the sentence the client module
+    // renders are the same string, character for character (they live in two
+    // modules — lib/import/commit.ts:64 and lib/domain/trading-day.ts:194).
+    expect(saved.message).toBe(unreadableDateMessage("sell date", "2026-02-31"));
+    expect(row(legacy), "and nothing was changed").toEqual(before);
+  });
+});
+
+// ============================================================================
+// WAVE 2M, THE SEAM ROUND — the three boundaries round 1 named with NO case
+// (report §0 items 1 and 2, and the tax reader S-IPO left as `blocked[]`).
+// D1..D4 are fixed; these are the cases their seams still had none of.
+// ============================================================================
+
+describe("F34 · a basis typed on the /trades acquisition panel (app/trades/actions.ts:505-509 setAcquisitionAction → trades.acquisition_date + buy_date → matchesByExit's `acquisitionDate ?? buyDate`)", () => {
+  const ISSUE = "F34 Speciality Limited";
+  const SCRIP = "F34SPEC";
+
+  beforeAll(async () => {
+    await wave2mModules();
+  }, 60_000);
+
+  it("a day-first acquisition day lands as the ISO day on BOTH columns and the ISSUE-named record is recognised; a half-typed year is refused and nothing is written", async () => {
+    // A sale whose basis the journal never had — the row the panel exists for.
+    const saleId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F34_ACC, broker: "zerodha", symbol: SCRIP, tradingsymbol: SCRIP,
+          buyQty: 0, avgBuyPrice: 0, buyValue: 0, buyDate: null, buyOrderCount: 0,
+          sellQty: 12, avgSellPrice: 150, sellValue: 1800, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: 0, chargesTotal: 2.06, netPnl: -2.06, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const untouched = row(saleId)!;
+
+    const post = async (acquisitionDate: string) => {
+      const fd = new FormData();
+      fd.set("tradeId", String(saleId));
+      fd.set("acquisition", "ipo");
+      fd.set("acquisitionPrice", "100");
+      fd.set("acquisitionDate", acquisitionDate);
+      return actions.setAcquisitionAction(NO_STATE, fd);
+    };
+
+    // 1. The half-typed year a real `<input type="date">` reaches
+    //    (components/trades/acquisition-panel.tsx:102). THE assertion (on a
+    //    revert of app/trades/actions.ts to HEAD: ok true, and '0002-06-15' sits
+    //    in acquisition_date AND buy_date, dating the tax pack's financial year
+    //    and every holding period from it).
+    const refused = await post("0002-06-15");
+    expect([refused.ok, refused.message], "refused in the same words every other typed-date writer uses").toEqual([false, unreadableDateMessage("acquisition date", "0002-06-15")]);
+    expect(row(saleId), "and nothing was written — not even the acquisition kind").toEqual(untouched);
+
+    // 2. The day-first form of a real day.
+    const saved = await post("20-02-2026");
+    expect(saved.ok, saved.message).toBe(true);
+    const r = row(saleId)!;
+    // THE assertion (on the same revert: ['20-02-2026', '20-02-2026']).
+    expect([r.acquisitionDate, r.buyDate], "one convention in both columns").toEqual(["2026-02-20", "2026-02-20"]);
+    expect([r.acquisition, r.buyQty, r.buyValue], "the basis itself still lands").toEqual(["ipo", 12, 1200]);
+
+    // 3. The consumer: the ISSUE-named record the panel's own day now matches.
+    const ipoId = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F34_ACC, name: ISSUE, appliedPrice: 100, lotSize: 12, lotsApplied: 1, allotted: true, allottedQty: 12, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20" })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    selectAccount(F34_ACC);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${saleId}`);
+    expect(issue?.detail, "the day the panel stored is the day the pairing reads").toContain(`#${ipoId} ${ISSUE} (matches this holding)`);
+  });
+});
+
+describe("F35 · a LEGACY row converted to a ladder (lib/queries/staged.ts:690-729 convertToStaged → trade_legs.trade_date → priceLegs ≡ the parent row)", () => {
+  let stagedQ2: typeof import("@/lib/queries/staged");
+  beforeAll(async () => {
+    stagedQ2 = await import("@/lib/queries/staged");
+    await wave2mModules();
+  }, 60_000);
+
+  const legsOf = (id: number) => t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, id)).all().sort((a, b) => a.seq - b.seq);
+  let n = 0;
+  const legacyMtf = (buyDate: string | null) =>
+    t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F35_ACC, broker: "angelone", bucket: "equity", segment: "eq_mtf", instrumentType: "equity", exchange: "NSE",
+          symbol: `F35L${++n}`, tradingsymbol: `F35L${n}`,
+          buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate, buyOrderCount: 1, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+
+  it("a stored '2026-02-31' is refused BY THE COLUMN'S NAME, the parent is byte-identical and no leg is left behind", () => {
+    const id = legacyMtf("2026-02-31");
+    selectAccount(F35_ACC);
+    const before = row(id)!;
+    const res = stagedQ2.convertToStaged(id);
+    // THE assertion (D4). Against the wave-2M tree: {ok:true, "Staged mode
+    // enabled."} with the leg AND the parent's buy_date silently moved to today
+    // — the tax pack's financial year, the MTF day count, the holding period and
+    // tier B's `acquisitionDate ?? buyDate` all moving with it. Against HEAD's
+    // own form: the message names the LEG ("The entry date …") and the leg row is
+    // already INSERTED when the rebuild refuses (invariant 5).
+    expect([res.ok, res.message], "the column the leg would have copied is what is named").toEqual([false, unreadableDateMessage("buy date", "2026-02-31")]);
+    expect(legsOf(id), "nothing inserted — the refusal is before the first write").toEqual([]);
+    expect(row(id), "and the parent is exactly as it was, staged still off").toEqual(before);
+  });
+
+  it("a stored day-first day converts, lands its first leg as the ISO day, and is priced off the day it resolves to — to the paisa", () => {
+    const iso = legacyMtf("2026-08-31");
+    const dmy = legacyMtf("31-08-2026");
+    selectAccount(F35_ACC);
+    expect([stagedQ2.convertToStaged(iso).ok, stagedQ2.convertToStaged(dmy).ok], "both convert").toEqual([true, true]);
+    expect(legsOf(dmy).map((l) => l.tradeDate), "one convention in the column").toEqual(["2026-08-31"]);
+    // THE assertion: the SAME money. `priceLegs` resolves the leg day, and the
+    // parent carries what it billed (invariant 5). Against a pre-2M staged.ts
+    // the day-first row could not be written at all (`new Date('31-08-2026')` is
+    // an Invalid Date, so the charges went NaN into a NOT NULL column).
+    const figures = (id: number) => [row(id)!.chargesTotal, row(id)!.mtfInterest, row(id)!.netPnl];
+    expect(figures(dmy), "the same ladder, the same bill").toEqual(figures(iso));
+    expect(row(dmy)!.mtfInterest, "and it really does bill interest (not a vacuous 0 = 0)").toBeGreaterThan(0);
+  });
+
+  it("an UNDATED row still seeds today — the behaviour the refusal must not have taken away", () => {
+    const id = legacyMtf(null);
+    selectAccount(F35_ACC);
+    expect(stagedQ2.convertToStaged(id).ok, "a row that states no day is not a row that states a bad one").toBe(true);
+    expect(legsOf(id).map((l) => l.tradeDate)).toEqual([todayIstIso()]);
+  });
+});
+
+describe("F36 · an IPO record whose stored allotment day is a LEGACY day-first value (ipos.allotment_date → lib/analytics/ipo.ts:378 ipoTaxEstimate → capital-gains.ts:64 classifyTerm → /ipos)", () => {
+  let ipoQ: typeof import("@/lib/queries/ipos");
+  beforeAll(async () => {
+    ipoQ = await import("@/lib/queries/ipos");
+    await wave2mModules();
+  }, 60_000);
+
+  it("the term is the real holding period, not the ST a NaN comparison produced", () => {
+    // Written by a 4.2.x /ipos save, before the route normalised the field —
+    // INSERTED RAW here because the route now refuses to write it.
+    const legacy = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F36_ACC, name: "F36 Cements Limited", exchange: "NSE", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "20-02-2024" })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    selectAccount(F36_ACC);
+    const shown = ipoQ.getIposComputed().rows.find((r) => r.id === legacy)!;
+    // 2024-02-20 → 2026-03-02 is 741 days. THE assertion (on a revert of
+    // lib/analytics/capital-gains.ts to HEAD: `new Date('20-02-2024T00:00:00')`
+    // is an Invalid Date, the day count is NaN, `NaN >= 365` is false and every
+    // such lot was labelled SHORT term — at 20% rather than 12.5%).
+    expect([shown.tax?.term, shown.tax?.ratePct], "the day it names, and the rate that day earns").toEqual(["LT", 12.5]);
+    expect(shown.realised, "and it really is a realised, priced exit").toBe(true);
   });
 });

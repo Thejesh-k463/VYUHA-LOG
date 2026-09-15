@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
+import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { toast } from "@/components/ui/toaster";
@@ -41,12 +42,42 @@ export interface EditPreviewFields {
 }
 
 /**
+ * The refusal `updateManualTrade` answers for a date it was given and cannot read
+ * (L3), or null when the field is blank (blank means "clear this", as every other
+ * field in this form does) or readable. The SAME sentence, from the same module the
+ * save's rule now lives in — not a restatement of it.
+ */
+export function editDateProblem(buyDate: string | null, sellDate: string | null): string | null {
+  for (const [label, value] of [["buy date", buyDate], ["sell date", sellDate]] as const) {
+    const raw = (value ?? "").trim();
+    if (raw !== "" && normalizeDate(raw) == null) return unreadableDateMessage(label, raw);
+  }
+  return null;
+}
+
+/**
  * The /api/charges/preview body for `trade` as the editor holds it — the request
  * the dialog's live preview sends, and what `updateManualTrade` (lib/import/commit.ts)
  * re-prices on Save.
+ *
+ * NULL when a non-empty date is not a real calendar day (G-G3-2): the save refuses
+ * such a value outright (L3), so there is no figure to preview and nothing is sent —
+ * the dialog states the refusal where the figure would be, rather than pricing a
+ * trade the Save button will not store (invariant 6).
  */
 export function editPreviewBody(trade: Trade, f: EditPreviewFields) {
+  if (editDateProblem(f.buyDate, f.sellDate)) return null;
   const isOpen = f.buyQty !== f.sellQty;
+  // G-G3-2 — BOTH dates resolved ONCE, through the calendar the save reads
+  // (`normalizeDate`, lib/domain/trading-day), and the resolved days are what goes
+  // on the wire: the raw `new Date("14-08-2026")` was an Invalid Date, so daysHeld
+  // was NaN, JSON sent it as null and the route's `v.daysHeld ?? 0` billed ZERO days
+  // against a save that charged the real 30 (₹205.15 of MTF interest, angelone
+  // eq_mtf 100 @200 → @255 funded 16,000). A BLANK date resolves to null and bills
+  // no days — `updateManualTrade`'s own semantics, where blank CLEARS the field;
+  // the close dialog's blank-is-today belongs to the close, not here.
+  const buyIso = normalizeDate(f.buyDate);
+  const sellIso = normalizeDate(f.sellDate);
   return {
     broker: trade.broker,
     tradingsymbol: trade.tradingsymbol,
@@ -65,10 +96,13 @@ export function editPreviewBody(trade: Trade, f: EditPreviewFields) {
     sellOrders: f.sellQty > 0 ? trade.sellOrderCount || undefined : 0,
     grossPnl: !isOpen ? f.sellQty * f.avgSellPrice - f.buyQty * f.avgBuyPrice : 0,
     ownCapitalUsed: f.ownCapitalUsed,
-    daysHeld: !isOpen && f.buyDate && f.sellDate ? Math.max(0, Math.floor((new Date(f.sellDate).getTime() - new Date(f.buyDate).getTime()) / 86400000)) : 0,
+    daysHeld: !isOpen && buyIso && sellIso ? Math.max(0, Math.floor((new Date(sellIso).getTime() - new Date(buyIso).getTime()) / 86400000)) : 0,
     isOpen,
-    buyDate: f.buyDate,
-    sellDate: f.sellDate,
+    // The dates the save will STORE (`normalizeDate` at both ends), so the route
+    // prices at the same epoch it does — `pricingDate` reads the sell date, else
+    // the buy date (R56).
+    buyDate: buyIso,
+    sellDate: sellIso,
   };
 }
 
@@ -138,6 +172,12 @@ export function EditTradeDialog({
   const currentFundedGuess = trade.mtfFundedAmount ?? (positionValue > 0 ? defaultMtfFundedAmount(positionValue, brokerMtfPct) : 0);
   const currentOwnCapitalGuess = Math.max(0, Math.round((positionValue - currentFundedGuess) * 100) / 100);
 
+  // DERIVED at render time, never stored in state (AGENTS.md: derive instead of
+  // syncing state in an effect): the sentence the Save would answer for a date
+  // this dialog cannot read. While it stands there is no figure to show, because
+  // there is no save to preview.
+  const dateProblem = editDateProblem(buyDate || null, sellDate || null);
+
   // Unrealized P&L at the entered current price — informational only, never
   // merged into the entry-cost figure below. This was the reported bug: a
   // position up in price still showed a "loss" because the preview only ever
@@ -176,10 +216,12 @@ export function EditTradeDialog({
   useEffect(() => {
     const bq = Number(buyQty) || 0, bp = Number(avgBuyPrice) || 0;
     const sq = Number(sellQty) || 0, sp = Number(avgSellPrice) || 0;
-    // Deliberate: clears the stale preview synchronously when inputs go invalid,
-    // before the debounced fetch.
+    // Deliberate: clears the stale preview synchronously when inputs go invalid —
+    // or a date goes unreadable, which the save refuses (L3) and `editPreviewBody`
+    // answers null for — before the debounced fetch. The SAME condition, so the
+    // request below is never built from a body the dialog would not send.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (bq <= 0 && sq <= 0) { setPreview(null); return; }
+    if ((bq <= 0 && sq <= 0) || editDateProblem(buyDate || null, sellDate || null)) { setPreview(null); return; }
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
       try {
@@ -255,7 +297,11 @@ export function EditTradeDialog({
 
       <TradeAttachments tradeId={trade.id} />
 
-      {preview && (
+      {dateProblem && (
+        <p className="rounded-md border border-border bg-card-hover/30 p-3 text-xs text-muted-foreground">{dateProblem}</p>
+      )}
+
+      {!dateProblem && preview && (
         <div className="rounded-md border border-border bg-card-hover/30 p-3 text-xs">
           <div className="grid grid-cols-3 gap-x-4 gap-y-1 sm:grid-cols-4">
             <span className="text-muted-foreground">Brokerage <span className="tabular-nums text-foreground">{inr(preview.breakdown.brokerage)}</span></span>

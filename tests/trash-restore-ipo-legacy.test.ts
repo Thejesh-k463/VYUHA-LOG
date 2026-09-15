@@ -20,6 +20,13 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
  *   - an envelope WITHOUT `ipoRefs` re-links a restored `acquisition: 'ipo'`
  *     holding to the ONE unlinked IPO record of the same account and scrip
  *     (and, where both state it, the same allotted quantity);
+ *   - G-G2-1 (wave 2M): or to the ONE unlinked record of that account whose
+ *     ALLOTMENT is the holding's own — allotted, exited, the same quantity, the
+ *     same allotment and exit days — which is how a record entered on /ipos
+ *     under the ISSUE's name ("Tata Technologies Limited" beside TATATECH) is
+ *     recognised without resolving a name to a symbol through any list;
+ *   - and the question is raised for every unlinked IPO holding that shares a
+ *     book with an unlinked exited record, matched or not;
  *   - with more than one candidate NOTHING is written and Data Quality raises
  *     the `ipo_record_link` warning naming the holding and the candidates
  *     (invariant 6 — a question, never an invented link);
@@ -42,6 +49,10 @@ let trashDir = "";
 const ACC_ONE = 941; // one candidate record — the re-link
 const ACC_TWO = 942; // two candidate records — no link, a question instead
 const ACC_REF = 943; // envelopes that DO carry ipoRefs
+const ACC_ISSUE = 944; // G-G2-1: the record is named after the ISSUE, not the scrip
+const ACC_LOOK = 945; //  G-G2-1: two issue-named records stating the same allotment
+const ACC_APPLY = 946; // D1: the APPLICATION row the user kept beside the allotment
+const ACC_OPEN = 947; //  D1: an allotted record with no exit stated, beside an exited one
 
 const TRADE_NET = 490.25; // 10 × (150 − 100) − 9.75 of charges, as the row states them
 
@@ -80,7 +91,13 @@ function holding(accountId: number, symbol: string) {
 }
 
 /** The IPO record that holding became: allotted 10 @100, exited at 150. */
-function ipoRecord(accountId: number, name: string, tradeId: number | null, allottedQty = 10) {
+function ipoRecord(
+  accountId: number,
+  name: string,
+  tradeId: number | null,
+  allottedQty = 10,
+  over: Partial<{ allotmentDate: string | null; exitDate: string | null; exitPrice: number | null; allotted: boolean; listingPrice: number | null }> = {},
+) {
   return t.db
     .insert(t.schema.ipos)
     .values({
@@ -100,6 +117,7 @@ function ipoRecord(accountId: number, name: string, tradeId: number | null, allo
       listingDate: "2025-06-14",
       exitDate: "2025-09-20",
       tradeId,
+      ...over,
     })
     .returning({ id: t.schema.ipos.id })
     .get()!.id;
@@ -155,6 +173,10 @@ beforeAll(async () => {
       { id: ACC_ONE, name: "legacy-ipo one", isDefault: false },
       { id: ACC_TWO, name: "legacy-ipo two", isDefault: false },
       { id: ACC_REF, name: "legacy-ipo refs", isDefault: false },
+      { id: ACC_ISSUE, name: "legacy-ipo issue name", isDefault: false },
+      { id: ACC_LOOK, name: "legacy-ipo look-alikes", isDefault: false },
+      { id: ACC_APPLY, name: "legacy-ipo application row", isDefault: false },
+      { id: ACC_OPEN, name: "legacy-ipo unexited record", isDefault: false },
     ])
     .run();
 }, 120_000);
@@ -259,11 +281,149 @@ describe("an envelope that DOES carry ipoRefs is untouched by the fallback", () 
   it("writes nothing, and throws nothing, when no record could be the restored holding's", () => {
     selectAccount(ACC_REF);
     const tradeId = holding(ACC_REF, "NOIPO");
-    const other = ipoRecord(ACC_REF, "SOMETHINGELSE", null);
+    // Another scrip's record: a different name AND a different allotment — so
+    // neither tier can see it. (G-G2-1, wave 2M: identical dates and quantity
+    // ARE now a match whatever the name, which is the whole point of tier B, so
+    // a record meant to be unmatchable has to differ in its facts too.)
+    const other = ipoRecord(ACC_REF, "SOMETHINGELSE", null, 25, { allotmentDate: "2025-07-01", exitDate: "2025-08-04" });
     const d = del.deleteTradesByIds([tradeId], "L6: nothing to pair", "test");
     expect(d.ok, d.message).toBe(true);
     expect(trash.restoreTrashSnapshot(d.snapshotId!).restored).toBe(1);
     expect(linkOf(other), "a record for another scrip is never claimed").toBeNull();
-    expect(issueOf(`ipo_record_link:${tradeId}`), "and no pair is invented to ask about").toBeUndefined();
+    // …and it is still ASKED about (G-G2-1): the record's exit and the holding's
+    // sale are two statements of a sale in one book until the user settles it.
+    const issue = issueOf(`ipo_record_link:${tradeId}`);
+    expect(issue?.title, "the pair is named, never guessed").toBe("IPO record not linked to its holding");
+    expect(issue!.detail).toContain(`#${other} SOMETHINGELSE`);
+    expect(issue!.detail, "and nothing claims the facts agree").not.toContain("matches this holding");
+  });
+});
+
+/**
+ * G-G2-1 (wave 2M) — the shape the harness found: a record entered on /ipos
+ * under the ISSUE's name, whose holding is restored from a pre-4.3.0 envelope.
+ *
+ * Before this wave the name clause matched nothing, so no link was written AND
+ * no question was raised: the holding came back closed, the record went on
+ * realising its own exit, and the one sale was counted twice in the capital
+ * summary, the tax pack, the ITR export and both AIS sides.
+ */
+describe("a record named after the ISSUE, not the scrip", () => {
+  it("comes back linked when its allotment can only be this holding's, and the sale is counted once again", async () => {
+    selectAccount(ACC_ISSUE);
+    const tradeId = holding(ACC_ISSUE, "TATATECH");
+    const ipoId = ipoRecord(ACC_ISSUE, "Tata Technologies Limited", tradeId);
+    const before = { capital: capitalOf(), itr: taxItr.countItrRows(), ais: await aisOf() };
+    expect([before.capital.totalRealised, before.capital.ipoRealised, before.itr], "the linked book counts one sale").toEqual([TRADE_NET, 0, 1]);
+
+    const d = del.deleteTradesByIds([tradeId], "G-G2-1: deleted the way 4.2.x deleted", "test");
+    expect(d.ok, d.message).toBe(true);
+    makeLegacy(d.snapshotId!);
+    expect([tradeExists(tradeId), linkOf(ipoId)]).toEqual([false, null]);
+
+    expect(trash.restoreTrashSnapshot(d.snapshotId!).restored).toBe(1);
+    // On revert: the link stays null, the record realises its own exit beside
+    // the restored holding's sale, and every consumer states the one sale twice.
+    expect(linkOf(ipoId), "the allotment's own record points at it again").toBe(tradeId);
+    expect({ capital: capitalOf(), itr: taxItr.countItrRows(), ais: await aisOf() }).toEqual(before);
+    expect(issueOf(`ipo_record_link:${tradeId}`), "nothing left to ask about").toBeUndefined();
+  });
+
+  it("writes nothing when two issue-named records state the same allotment, and the question names both", () => {
+    selectAccount(ACC_LOOK);
+    const tradeId = holding(ACC_LOOK, "GOLOOK");
+    const mine = ipoRecord(ACC_LOOK, "Go Look Industries Limited", tradeId);
+    const twin = ipoRecord(ACC_LOOK, "Go Look Industries Ltd", null);
+
+    const d = del.deleteTradesByIds([tradeId], "G-G2-1: two look-alike records", "test");
+    expect(d.ok, d.message).toBe(true);
+    makeLegacy(d.snapshotId!);
+    expect(trash.restoreTrashSnapshot(d.snapshotId!).restored).toBe(1);
+
+    expect([linkOf(mine), linkOf(twin)], "neither is guessed onto the holding (invariant 6)").toEqual([null, null]);
+    const issue = issueOf(`ipo_record_link:${tradeId}`);
+    expect([issue?.severity, issue?.title]).toEqual(["warning", "IPO record not linked to its holding"]);
+    expect(issue!.detail).toContain("2 exited IPO records");
+    expect(issue!.detail).toContain(`#${mine} Go Look Industries Limited (matches this holding)`);
+    expect(issue!.detail).toContain(`#${twin} Go Look Industries Ltd (matches this holding)`);
+    expect(issue!.detail).toContain("counted once in IPOs and again as the holding's own sale");
+  });
+});
+
+/**
+ * D1 (v4.3.0 wave 2M, seam finding F28) — the restore and the report read ONE
+ * candidate set: the account's unlinked records that state an ALLOTMENT.
+ *
+ * `lib/trash.ts` read every unlinked record; the report read only the allotted,
+ * exited ones. The row that split them is the one a user records when they
+ * APPLY — under the TICKER, never allotted, never exited. It matched the name
+ * tier (an unstated quantity is not evidence either way), so the restore saw
+ * two candidates and wrote nothing, while the report saw one and said it
+ * matched this holding: a pairing its own report called unambiguous, with the
+ * one sale still counted twice in capital, the tax pack, the ITR export and
+ * both AIS sides.
+ */
+describe("the application row a user keeps beside the allotment", () => {
+  it("is no candidate at all, so the allotment re-links and the sale is counted once again", async () => {
+    selectAccount(ACC_APPLY);
+    const tradeId = holding(ACC_APPLY, "F28IND");
+    const allotment = ipoRecord(ACC_APPLY, "F28 Industries Limited", tradeId);
+    // Recorded when they applied: the ticker's name, no allotment, no exit.
+    const application = t.db
+      .insert(t.schema.ipos)
+      .values({
+        accountId: ACC_APPLY, name: "F28IND", broker: "zerodha", exchange: "NSE",
+        appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: false, allottedQty: 0,
+        listingPrice: null, exitPrice: null, appliedDate: "2025-06-01", allotmentDate: null,
+        listingDate: null, exitDate: null, tradeId: null,
+      })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    const before = { capital: capitalOf(), itr: taxItr.countItrRows(), ais: await aisOf() };
+    expect([before.capital.totalRealised, before.capital.ipoRealised, before.itr], "the linked book counts one sale").toEqual([TRADE_NET, 0, 1]);
+
+    const d = del.deleteTradesByIds([tradeId], "D1: deleted the way 4.2.x deleted", "test");
+    expect(d.ok, d.message).toBe(true);
+    makeLegacy(d.snapshotId!);
+    expect([tradeExists(tradeId), linkOf(allotment)]).toEqual([false, null]);
+
+    expect(trash.restoreTrashSnapshot(d.snapshotId!).restored).toBe(1);
+    // On revert of either half of the candidate rule: the application row is a
+    // second candidate, the pair reads ambiguous, NOTHING is written, and the
+    // restored holding's sale is counted beside the record's own exit.
+    expect(linkOf(allotment), "the allotment's own record points at it again").toBe(tradeId);
+    expect(linkOf(application), "and nothing is ever written onto an application row").toBeNull();
+    expect({ capital: capitalOf(), itr: taxItr.countItrRows(), ais: await aisOf() }).toEqual(before);
+    expect(issueOf(`ipo_record_link:${tradeId}`), "nothing left to ask about").toBeUndefined();
+  });
+});
+
+/**
+ * D1, the other direction: an allotted record with NO exit stated. The restore
+ * has always been able to link it on its name, and the report could not see it
+ * at all — so an ambiguous restore (two candidates, nothing written) was
+ * reported as one candidate that matched. The two now read the same set, and
+ * the note says which of them states an exit.
+ */
+describe("an allotted record with no exit stated, beside an exited one", () => {
+  it("makes the pairing ambiguous, and the question names both", () => {
+    selectAccount(ACC_OPEN);
+    const tradeId = holding(ACC_OPEN, "GOMIX");
+    const exited = ipoRecord(ACC_OPEN, "Go Mix Industries Limited", tradeId);
+    const openRecord = ipoRecord(ACC_OPEN, "GOMIX", null, 10, { exitPrice: null, exitDate: null, listingPrice: null });
+
+    const d = del.deleteTradesByIds([tradeId], "D1: an un-exited allotted record in the book", "test");
+    expect(d.ok, d.message).toBe(true);
+    makeLegacy(d.snapshotId!);
+    expect(trash.restoreTrashSnapshot(d.snapshotId!).restored).toBe(1);
+
+    expect([linkOf(exited), linkOf(openRecord)], "two candidates — neither is guessed (invariant 6)").toEqual([null, null]);
+    const issue = issueOf(`ipo_record_link:${tradeId}`);
+    expect([issue?.severity, issue?.title]).toEqual(["warning", "IPO record not linked to its holding"]);
+    // On revert of the query's candidate set: the un-exited record is invisible
+    // to the report, which then names one candidate and calls it a match — the
+    // restore having written nothing.
+    expect(issue!.detail).toContain(`an exited IPO record in the same account states an exit with no holding attached (#${exited} Go Mix Industries Limited (matches this holding))`);
+    expect(issue!.detail).toContain(`The same account also holds an allotted IPO record with no holding attached and no exit stated (#${openRecord} GOMIX (matches this holding)), which a restore reads as a candidate for this holding too.`);
   });
 });

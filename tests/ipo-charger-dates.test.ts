@@ -1179,3 +1179,90 @@ describe("IPO-EXITDATE · an unreadable exit date is refused on the way in and s
     expect([r.chargesTotal, r.sttCtt, r.brokerage, r.mtfInterest]).toEqual([40, 0, 0, 40]);
   });
 });
+
+/**
+ * IPO-DAYS (v4.3.0 wave 2M, seam finding D2/F29) — the three OTHER days /ipos
+ * takes from a keyboard.
+ *
+ * `appliedDate`, `allotmentDate` and `listingDate` were stored exactly as
+ * typed, three lines from an exit date that is refused unless it is a real ISO
+ * day. A day-first allotment date (`20-02-2026`) therefore went in verbatim and
+ * then read as NO day at all: the IPO↔holding pairing could not recognise the
+ * record as its holding's own (so a pre-4.3.0 Trash restore wrote no link and
+ * the one sale stayed counted twice), and the ST/LT split that dates the
+ * holding period (`lib/analytics/ipo.ts`, through `classifyTerm`) read the same
+ * nothing and fell back to SHORT TERM.
+ *
+ * Each is now stored as the ISO day it states, and a non-empty value that
+ * states no day is refused in the exit date's own words, naming the field. The
+ * edit rule is L3's: refused on a create, or on an edit that CHANGES the value;
+ * a value stored unreadable before this wave passes through, and clearing is
+ * always allowed.
+ */
+describe("IPO-DAYS · the applied, allotment and listing days are stored as days, or refused", () => {
+  let ipoRoute: typeof import("@/app/api/ipos/route");
+  beforeAll(async () => {
+    ipoRoute = await import("@/app/api/ipos/route");
+    t.db.update(t.schema.settings).set({ selectedAccountId: 1 }).run();
+  });
+  const post = (body: unknown) =>
+    ipoRoute.POST(new Request("http://local/api/ipos", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+  const app = (over: Record<string, unknown> = {}) => ({
+    name: "IPO-DAYS", exchange: "NSE", appliedPrice: 100, lotSize: 10, lotsApplied: 1,
+    allotted: true, allottedQty: 10, listingPrice: 130, ...over,
+  });
+  const named = (name: string) => t.db.select().from(t.schema.ipos).all().filter((r) => r.name === name);
+  const days = (name: string) => named(name).map((r) => [r.appliedDate, r.allotmentDate, r.listingDate]);
+
+  it("stores a day-first date as the ISO day it states", async () => {
+    // Measured before: stored verbatim — "20-02-2026" and "01/02/2026".
+    const res = await post(app({ appliedDate: "01/02/2026", allotmentDate: "20-02-2026", listingDate: "2026-02-24" }));
+    expect(res.status, JSON.stringify(await res.clone().json())).toBe(200);
+    expect(days("IPO-DAYS")).toEqual([["2026-02-01", "2026-02-20", "2026-02-24"]]);
+  });
+
+  it("refuses a value that states no day, naming the field, and saves nothing", async () => {
+    const cases: [string, string, string][] = [
+      ["allotmentDate", "2026-02-31", "allotment date"],
+      ["allotmentDate", "0002-06-15", "allotment date"],
+      ["appliedDate", "31-11-2026", "applied date"],
+      ["listingDate", "not a date", "listing date"],
+    ];
+    for (const [field, value, label] of cases) {
+      const res = await post(app({ name: "IPO-DAYS-BAD", [field]: value }));
+      expect(res.status, `${field}=${value}`).toBe(400);
+      expect(((await res.json()) as { message: string }).message).toBe(
+        `The ${label} must be a real calendar day written year-month-day, such as 2026-06-15. Nothing was saved.`,
+      );
+    }
+    expect(named("IPO-DAYS-BAD")).toHaveLength(0);
+  });
+
+  it("accepts a blank day as none", async () => {
+    const res = await post(app({ name: "IPO-DAYS-BLANK", appliedDate: "", allotmentDate: "", listingDate: "" }));
+    expect(res.status).toBe(200);
+    expect(days("IPO-DAYS-BLANK")).toEqual([[null, null, null]]);
+  });
+
+  it("L3 · an edit that does not touch a legacy raw value is saved, the stored value passing through", async () => {
+    // Written before this wave, by a restore or any path but the route.
+    const id = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: 1, name: "IPO-DAYS-LEGACY", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, allotmentDate: "2026-02-31" })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    const res = await post(app({ id, name: "IPO-DAYS-LEGACY", allotmentDate: "2026-02-31", notes: "only a note changed" }));
+    expect(res.status).toBe(200);
+    expect(named("IPO-DAYS-LEGACY").map((r) => [r.notes, r.allotmentDate])).toEqual([["only a note changed", "2026-02-31"]]);
+
+    // Changing it to another value it cannot read is still refused…
+    const bad = await post(app({ id, name: "IPO-DAYS-LEGACY", allotmentDate: "0002-06-15", notes: "tried a new day" }));
+    expect(bad.status).toBe(400);
+    expect(named("IPO-DAYS-LEGACY").map((r) => [r.notes, r.allotmentDate])).toEqual([["only a note changed", "2026-02-31"]]);
+
+    // …and fixing it day-first stores the day it states.
+    const fixed = await post(app({ id, name: "IPO-DAYS-LEGACY", allotmentDate: "20-02-2026", notes: "fixed the day" }));
+    expect(fixed.status).toBe(200);
+    expect(named("IPO-DAYS-LEGACY").map((r) => [r.notes, r.allotmentDate])).toEqual([["fixed the day", "2026-02-20"]]);
+  });
+});

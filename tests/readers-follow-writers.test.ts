@@ -3,6 +3,9 @@ import path from "node:path";
 import fs from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { REGISTRY, RULE, format, listSourceFiles, scanSource, scanTree, type RuleId, type ScanReport, type Violation } from "./helpers/field-rules";
+// Pure (no DB, no React), so the WRITE half of the raw-date rule is asserted by
+// behaviour here and not only by the shape of the source text.
+import { validateLegs } from "@/lib/domain/staged";
 
 /**
  * G3 (v4.3.0) — READERS FOLLOW WRITERS, checked by PARSING the code.
@@ -286,11 +289,10 @@ describe("G3 — HEAD under every rule", () => {
   });
 
   /**
-   * FINDING G-G3-1 (product, low→medium): lib/queries/staged.ts:178 prices a
-   * staged MTF ladder off a leg date that nothing validates.
+   * FINDING G-G3-1 (product, low→medium) — FIXED in v4.3.0 fix wave 2M, so this
+   * is a plain `it` again: lib/queries/staged.ts:178 priced a staged MTF ladder
+   * off a leg date that nothing validated.
    *
-   * This `it` is RED ON HEAD and is marked `it.fails` — the pin holds the rule,
-   * not the defect, so whoever fixes staged.ts must flip it back to `it`.
    * Measured 2026-09-15 (probe, deleted) on a seeded temp DB, angelone eq_mtf,
    * entry 100 @200 on 2026-08-20, priced as of 2026-09-15:
    *
@@ -309,22 +311,43 @@ describe("G3 — HEAD under every rule", () => {
    *
    * Same class as L3 (wave 2L), which taught `closePosition` and
    * `updateManualTrade` to refuse a date that is not a real calendar day; the
-   * staged ladder was not taught it. `app/trades/actions.ts` checks only that
-   * the field is non-empty (`if (!tradeDate) return …`), so nothing between the
-   * form and `new Date(leg.tradeDate)` reads the calendar. Reachability through
-   * the shipped UI is nil — both leg forms use `<Input type="date" required>` —
-   * so this needs a request posted straight at the server action.
+   * staged ladder was not taught it. Wave 2M moved `normalizeDate` / `isRealDay`
+   * out of the server-only lib/import/commit.ts into the pure
+   * lib/domain/trading-day.ts, so the ladder, the pure staged module and both
+   * dialogs read ONE calendar.
    */
-  it.fails("raw-date: no day count is taken from an unresolved, unguarded date field [RED ON HEAD — FINDING G-G3-1]", () => {
+  it("raw-date: no day count is taken from an unresolved, unguarded date field", () => {
     expect(hits("raw-date"), RULE["raw-date"].forbidden).toEqual([]);
   });
 
-  it("FINDING G-G3-1, stated positively: staged.ts is the ONE raw-date violation at HEAD, and its writer never reads the calendar", () => {
-    expect(hits("raw-date")).toEqual(["lib/queries/staged.ts:178 new Date(leg.tradeDate)"]);
-    // The reachability half: the only validation between the form and that read.
+  it("FINDING G-G3-1, fixed: the ladder prices through the shared calendar, and its writers refuse a day that does not exist", () => {
+    // The scan's own answer, stated as the list it prints (empty, and it is the
+    // FIX that empties it: the same rule reported this file at HEAD 8ff4288).
+    expect(hits("raw-date")).toEqual([]);
+
+    // The READ half — lib/queries/staged.ts resolves both ends of every tranche.
+    // CODE only: the comment there still quotes the old expression, which is the
+    // false positive the AST scan was built to avoid, so this text pin drops
+    // comment lines rather than re-introducing it.
+    const q = fs.readFileSync("lib/queries/staged.ts", "utf8");
+    const code = q.replace(/^\s*(?:\/\/|\*|\/\*).*$/gm, "");
+    expect(/const legDay = normalizeDate\(leg\.tradeDate\)/.test(code), "the leg date is resolved once").toBe(true);
+    expect(/const endDay = normalizeDate\(end\)/.test(code), "the consuming end is resolved too").toBe(true);
+    expect(/new Date\(leg\.tradeDate\)/.test(code), "the raw read is gone").toBe(false);
+    expect(/from "@\/lib\/domain\/trading-day"/.test(code), "from the one calendar").toBe(true);
+
+    // The WRITE half — the pure module refuses it, so all four writers do
+    // (addLeg / updateLeg / rebuildStagedTrade / convertToStaged call it first),
+    // and the leg actions already surface `problems[0].message` to the user.
+    const bad = validateLegs([{ id: 1, kind: "entry", seq: 1, tradeDate: "2026-02-31", qty: 10, price: 100 }]);
+    expect(bad.map((p) => p.message)).toEqual([
+      "The entry date “2026-02-31” is not a real calendar day — enter it as a day that exists, for example 2026-06-15. Nothing was changed.",
+    ]);
+    expect(validateLegs([{ id: 1, kind: "entry", seq: 1, tradeDate: "31-08-2026", qty: 10, price: 100 }])).toEqual([]);
+
     const action = fs.readFileSync("app/trades/actions.ts", "utf8");
     expect(action).toContain('if (!tradeDate) return { ok: false, message: "Pick the date of this entry." };');
-    expect(/tradeDate[^\n]*normalizeDate|unreadableDate\("(?:entry|exit|leg) date"/.test(action), "a calendar check on the leg date").toBe(false);
+    expect(action).toContain("return { ok: res.ok, message: res.message };");
   });
 
   it("the walk is inside its budget and reaches the files that matter", () => {

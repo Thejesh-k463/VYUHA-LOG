@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { trades as tradesTable, tradeLegs } from "@/lib/db/schema";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, type RatesMap } from "@/lib/engine/rates";
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeRates } from "@/lib/engine/types";
 import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
@@ -173,10 +173,17 @@ export function priceLegs(
     for (const leg of ordered) {
       if (leg.kind !== "entry") continue;
       const end = consumedOn.get(leg.id) ?? asOf;
-      const days = Math.max(
-        0,
-        Math.floor((new Date(end).getTime() - new Date(leg.tradeDate).getTime()) / 86400000),
-      );
+      // G-G3-1 — BOTH ends resolved through the one calendar (lib/domain/trading-day)
+      // before any day is counted. A raw `new Date(leg.tradeDate)` rolled '2026-02-31'
+      // forward to 3 March and billed seven months of interest, and made 'not-a-date'
+      // NaN all the way into the INSERT. `validateLegs` now refuses either before a
+      // write, so an unresolvable leg date is unreachable through the writers; it
+      // counts ZERO days here rather than inventing one (invariant 6).
+      const legDay = normalizeDate(leg.tradeDate);
+      const endDay = normalizeDate(end) ?? asOf;
+      const days = legDay
+        ? Math.max(0, Math.floor((new Date(endDay).getTime() - new Date(legDay).getTime()) / 86400000))
+        : 0;
       mtfDaysByLeg.set(leg.id, days);
       mtfFundedByLeg.set(leg.id, defaultMtfFundedAmount(r2(leg.qty * leg.price), ownPct));
     }
@@ -480,12 +487,18 @@ export function addLeg(input: AddLegInput): LegMutationResult {
     return { ok: false, message: problems[0].message, problems };
   }
 
+  // The NORMALISED day is what is stored (G-G3-1): `validateLegs` above has
+  // already proved this date readable, and storing '31-08-2026' as typed would
+  // leave `sortLegs`'s string ordering and every leg-date reader with two
+  // conventions in one column. Same rule as `updateManualTrade`'s buy/sell date.
+  const tradeDate = normalizeDate(input.tradeDate)!;
+
   db.insert(tradeLegs)
     .values({
       tradeId: input.tradeId,
       kind: input.kind,
       seq,
-      tradeDate: input.tradeDate,
+      tradeDate,
       tradeTime: input.tradeTime ?? null,
       qty: input.qty,
       price: input.price,
@@ -504,7 +517,7 @@ export function addLeg(input: AddLegInput): LegMutationResult {
     entityId: input.tradeId,
     action: input.kind === "entry" ? "leg_add_entry" : "leg_add_exit",
     summary: `${t.symbol} ${input.kind} ${input.qty} @ ${input.price}`,
-    after: { kind: input.kind, qty: input.qty, price: input.price, date: input.tradeDate },
+    after: { kind: input.kind, qty: input.qty, price: input.price, date: tradeDate },
   });
 
   return { ok: true, message: input.kind === "entry" ? "Entry added." : "Exit booked." };
@@ -536,21 +549,37 @@ export function updateLeg(
   const problems = validateLegs(prospective);
   if (problems.length > 0) return { ok: false, message: problems[0].message, problems };
 
+  // The stored day is the normalised one, as in `addLeg` — validated above.
+  const written = {
+    ...patch,
+    ...(patch.tradeDate !== undefined ? { tradeDate: normalizeDate(patch.tradeDate)! } : {}),
+  };
+
   db.update(tradeLegs)
-    .set({ ...patch, updatedAt: sql`(datetime('now'))` })
+    .set({ ...written, updatedAt: sql`(datetime('now'))` })
     .where(eq(tradeLegs.id, legId))
     .run();
 
   const res = rebuildStagedTrade(row.tradeId, direction);
   if (!res.ok) return { ok: false, message: res.problems[0]?.message ?? "Could not rebuild position." };
 
+  // ONE key list, BOTH snapshots projected from the row read before the write
+  // (lib/audit.ts, the single-binding convention). `after: patch` described a
+  // different set of columns from `before`: a date-only edit — the very edit this
+  // wave validates — threw `AuditShapeError` outside production (the action 500d
+  // AFTER the write had landed), and inside it recorded "note: … → —" for changes
+  // that never happened.
+  const AUDIT_KEYS = ["qty", "price", "tradeDate", "slPlanned", "trailingSl", "targetPlanned", "note"] as const;
+  const stated = Object.fromEntries(Object.entries(written).filter(([, v]) => v !== undefined));
+  const project = (r: Record<string, unknown>) => Object.fromEntries(AUDIT_KEYS.map((k) => [k, r[k] ?? null]));
+
   recordAudit({
     entity: "trade",
     entityId: row.tradeId,
     action: "leg_edit",
     summary: `leg #${legId} edited`,
-    before: { qty: row.qty, price: row.price, slPlanned: row.slPlanned, trailingSl: row.trailingSl },
-    after: patch as Record<string, unknown>,
+    before: project(row as unknown as Record<string, unknown>),
+    after: project({ ...(row as unknown as Record<string, unknown>), ...stated }),
   });
 
   return { ok: true, message: "Leg updated." };
@@ -658,8 +687,21 @@ export function convertToStaged(tradeId: number): LegMutationResult {
 
   const entryQty = isShort ? t.sellQty : t.buyQty;
   const exitQty = isShort ? t.buyQty : t.sellQty;
-  const entryDate = (isShort ? t.sellDate : t.buyDate) ?? today;
-  const exitDate = (isShort ? t.buyDate : t.sellDate) ?? today;
+  // Through the same calendar the ladder prices with (G-G3-1), and REFUSING a
+  // stored date it cannot read rather than seeding today in its place (D4, the
+  // wave-2M seam round): this copies the PARENT's own date onto the leg, so
+  // `?? today` silently MOVED a legacy trade's entry day — with {ok:true} and
+  // "Staged mode enabled." — and with it the tax pack's financial year, the MTF
+  // day count and the holding period. Refusing costs nothing here (unlike
+  // `addLeg`, whose leg is already written): both dates resolve before the first
+  // INSERT, so no half-applied ladder is possible (invariant 5). An undated row
+  // is still seeded at today, which is what it has always done. Only a date this
+  // conversion really WRITES is judged: an open row seeds no exit leg, so its exit
+  // date resolves to the unused `today` and is never inspected.
+  const entryRaw = isShort ? t.sellDate : t.buyDate;
+  const exitRaw = isShort ? t.buyDate : t.sellDate;
+  const entryDate = entryRaw == null ? today : normalizeDate(entryRaw);
+  const exitDate = exitQty > 0 && exitRaw != null ? normalizeDate(exitRaw) : today;
 
   // Rebuild the fill price from VALUE ÷ QTY rather than the stored average.
   // avg_buy_price is rounded to 2dp for display; on a 1,500-lot option that
@@ -677,6 +719,14 @@ export function convertToStaged(tradeId: number): LegMutationResult {
     : px(t.sellValue, exitQty, t.avgSellPrice);
 
   if (!(entryQty > 0)) return { ok: false, message: "This trade has no entry quantity to stage." };
+
+  // The refusals, in the sentence `validateLegs` and the trade editor already
+  // state, named by the COLUMN the leg would have copied. (`?? ""` is for the
+  // type checker only — a null raw date resolved to today above.)
+  if (entryDate === null)
+    return { ok: false, message: unreadableDateMessage(isShort ? "sell date" : "buy date", entryRaw ?? "") };
+  if (exitDate === null)
+    return { ok: false, message: unreadableDateMessage(isShort ? "buy date" : "sell date", exitRaw ?? "") };
 
   let seq = 1;
   db.insert(tradeLegs)

@@ -16,7 +16,7 @@ import { eq, and, ne, or, sql, isNull, inArray, notInArray } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate } from "@/lib/domain/trading-day";
 import { closingAggregate } from "@/lib/domain/close-aggregate";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
@@ -47,39 +47,14 @@ function mtfOwnMarginPct(broker: string): number {
 /**
  * L3 (v4.3.0 wave 2L) — the shape matched, and then the CALENDAR.
  *
- * The two branches below matched on digit count alone, so '31-02-2026' was reordered
- * into '2026-02-31' and '99-99-9999' into '9999-99-99', and both were stored as if
- * they were days. `new Date('9999-99-99')` is an Invalid Date: on an eq_mtf close the
- * holding period went NaN, the charge total with it, and the UPDATE failed with
- * `NOT NULL constraint failed: trades.charges_total_paise` — the server action 500d
- * instead of answering {ok:false}. On every other row the impossible day was simply
- * stored, and the readers that date a trade (the tax pack's financial year, the MTF
- * day count) then read a day that does not exist.
- *
- * A date that is not a real calendar day now reads as NO date — the same answer this
- * function already gave to text it could not parse at all, and the same rule
- * `isPriceableExitDate` applies to an IPO exit. Callers that write a date a user
- * TYPED refuse the whole write rather than store or silently clear it (see
- * `closePosition` and `updateManualTrade`); an importer keeps its own rule of
- * refusing a row it cannot read (AGENTS.md: never coerce a bad cell).
+ * `isRealDay` / `normalizeDate` were private to this server-only module, so the close
+ * dialog restated the rule and the staged ladder went without it (finding G-G3-1:
+ * `new Date(leg.tradeDate)` billed 1,449.86 of MTF interest for a real 192.33 on
+ * '2026-02-31'). Wave 2M moved them VERBATIM into the pure `lib/domain/trading-day.ts`,
+ * which both graphs can reach — ONE calendar implementation. Behaviour here is
+ * unchanged: every caller below, `unreadableDate`, and the `normalizeDate` this module
+ * re-exports all read the same function they always did.
  */
-function isRealDay(y: string, mo: string, d: string): string | null {
-  const [yy, mm, dd] = [Number(y), Number(mo), Number(d)];
-  const t = new Date(Date.UTC(yy, mm - 1, dd));
-  return t.getUTCFullYear() === yy && t.getUTCMonth() === mm - 1 && t.getUTCDate() === dd ? `${y}-${mo}-${d}` : null;
-}
-
-function normalizeDate(s: string | null): string | null {
-  if (!s) return null;
-  const t = s.trim();
-  // DD-MM-YYYY or DD/MM/YYYY
-  const m = t.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
-  if (m) return isRealDay(m[3], m[2], m[1]);
-  // YYYY-MM-DD (optionally with time)
-  const m2 = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m2) return isRealDay(m2[1], m2[2], m2[3]);
-  return null;
-}
 
 /**
  * L3 (wave 2L) — the refusal a writer returns for a date a user typed and this

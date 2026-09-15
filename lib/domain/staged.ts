@@ -37,6 +37,8 @@
  *    R comparable between a single-shot trade and a pyramided one.
  */
 
+import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
+
 export type LegKind = "entry" | "exit";
 export type Direction = "long" | "short";
 
@@ -220,6 +222,22 @@ export interface LegProblem {
 /**
  * Replays the ladder and reports anything that makes it unbookable. An empty
  * array means the ladder is internally consistent.
+ *
+ * THE DATE IS PART OF "BOOKABLE" (G-G3-1, wave 2M). A fill's date is what the
+ * ladder bills MTF interest from, so a date the calendar does not have is not a
+ * fill that can be priced: '2026-02-31' rolled forward to 3 March and billed
+ * 1,449.86 where the honest figure was 192.33, and 'not-a-date' made the day
+ * count NaN, the charge total NaN, and the INSERT throw `NOT NULL constraint
+ * failed: trade_legs.charges_total_paise` — after the leg row had already
+ * landed, leaving a ladder the parent row did not describe (invariant 5).
+ * Refusing here refuses it in `addLeg`, `updateLeg`, `rebuildStagedTrade` and
+ * `convertToStaged` alike, BEFORE any write — the same rule, and the same
+ * sentence, L3 gave `closePosition` and `updateManualTrade`.
+ *
+ * The accepted cost: a LEGACY ladder whose stored date is blank (an imported
+ * execution with no date of its own — `lib/import/commit.ts` writes "") or
+ * unreadable is refused by name until the date is corrected, rather than
+ * silently repriced off a day nobody typed.
  */
 export function validateLegs(legs: Leg[]): LegProblem[] {
   const problems: LegProblem[] = [];
@@ -231,6 +249,15 @@ export function validateLegs(legs: Leg[]): LegProblem[] {
 
   let open = 0;
   for (const leg of ordered) {
+    // The date first: it is the only field whose bad value is priced silently.
+    // `normalizeDate` answers null for a blank field too, so both cases state
+    // the same sentence, naming what was given.
+    if (normalizeDate(leg.tradeDate) == null) {
+      problems.push({
+        legId: leg.id,
+        message: unreadableDateMessage(leg.kind === "entry" ? "entry date" : "exit date", (leg.tradeDate ?? "").trim()),
+      });
+    }
     if (!Number.isFinite(leg.qty) || leg.qty <= 0) {
       problems.push({ legId: leg.id, message: "Quantity must be greater than zero." });
       continue;

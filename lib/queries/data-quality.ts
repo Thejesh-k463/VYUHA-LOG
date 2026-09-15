@@ -2,7 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { db, attachmentsDir } from "@/lib/db";
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { instruments, ipos, mtmPrices, tradeAttachments, tradeLegs } from "@/lib/db/schema";
 import {
   assessDataQuality,
@@ -76,21 +76,48 @@ function staleViewsOf(all: ReturnType<typeof getTrades>): StaleOpenView[] {
 }
 
 /**
- * L6 (v4.3.0 wave 2L) — EXITED IPO records with no holding attached.
+ * L6 (v4.3.0 wave 2L) — the unlinked IPO records a holding could be, as read
+ * for the report. D1 (wave 2M): THE SAME SET the Trash restore reads.
  *
- * "Exited" is `computeIpo`'s own rule: allotted, with an exit price stated. Only
- * those are read, because an unlinked exited record is the one that states a
- * sale of its own beside the holding's — the double count the pairing asks
- * about. ACCOUNT-SCOPED (invariant 8) through `getSelectedAccountId()`, matching
- * the `getTrades()` scope the same report is built from: in one book the pairs
- * are that book's, and in the All-accounts view each pair is still within one
+ * Every unlinked record of the account that states an ALLOTMENT, exited or not.
+ * It was `allotted AND exit_price IS NOT NULL` while `lib/trash.ts` read EVERY
+ * unlinked record, and the disagreement was the seam defect: a never-allotted
+ * application row (the same user's own record of applying, under the TICKER)
+ * was a candidate for the restore and invisible to the report, so the restore
+ * called the holding ambiguous and wrote nothing while the report said the one
+ * record it could see matched. The set is now one rule on both sides, stated
+ * here and in `ipoRecordMatchesHolding`: an application that was never allotted
+ * is no allotment's record, and an allotted record with no exit yet is still a
+ * candidate a restore may link (tier A, on the scrip's name).
+ *
+ * Whether a record STATES AN EXIT — `computeIpo`'s rule, allotted with an exit
+ * price — travels as `exitPrice` for the pure layer to read: that is what makes
+ * a sale countable twice, so `ipoAskPairs` raises the question only beside one.
+ *
+ * ACCOUNT-SCOPED (invariant 8) through `getSelectedAccountId()`, matching the
+ * `getTrades()` scope the same report is built from: in one book the pairs are
+ * that book's, and in the All-accounts view each pair is still within one
  * account, because the match itself requires the same `account_id`.
  */
 export function getUnlinkedExitedIpoRecords(): IpoRecordFacts[] {
   const accountId = getSelectedAccountId();
-  const where = and(isNull(ipos.tradeId), eq(ipos.allotted, true), isNotNull(ipos.exitPrice));
+  const where = and(isNull(ipos.tradeId), eq(ipos.allotted, true));
   const q = db
-    .select({ id: ipos.id, accountId: ipos.accountId, name: ipos.name, allottedQty: ipos.allottedQty })
+    .select({
+      id: ipos.id,
+      accountId: ipos.accountId,
+      name: ipos.name,
+      allottedQty: ipos.allottedQty,
+      // G-G2-1 (wave 2M) — tier B's facts. A record entered on /ipos carries the
+      // ISSUE's name, so the name tier cannot see it; what the two rows DO state
+      // identically is the allotment: allotted, exited, the same quantity and the
+      // same two days. Read here rather than derived, so the report and the Trash
+      // restore compare the same stored facts.
+      allotted: ipos.allotted,
+      exitPrice: ipos.exitPrice,
+      exitDate: ipos.exitDate,
+      allotmentDate: ipos.allotmentDate,
+    })
     .from(ipos);
   return (accountId > 0 ? q.where(and(where, eq(ipos.accountId, accountId))) : q.where(where)).all();
 }

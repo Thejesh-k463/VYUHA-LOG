@@ -21,6 +21,8 @@
 //     (up to 8 years), the inter-head flexibility is gone — future years only
 //     against business income (speculative or non-speculative).
 
+import { normalizeDate } from "@/lib/domain/trading-day";
+
 export type GainTerm = "ST" | "LT";
 export type LossBucket = "speculative" | "nonSpeculative" | "stcl" | "ltcl";
 
@@ -45,13 +47,25 @@ const POST_CUTOVER: CapitalGainsRates = { stcgPct: 0.20, ltcgPct: 0.125, ltcgExe
 
 /** The rate schedule in force on a given sell date. */
 export function capitalGainsRatesFor(sellDate: string): CapitalGainsRates {
-  return sellDate >= RATE_CUTOVER_DATE ? POST_CUTOVER : PRE_CUTOVER;
+  // Read the calendar first (2M): a legacy day-first value compared character by
+  // character picked the PRE-cutover schedule for a 2026 sale.
+  return (normalizeDate(sellDate) ?? sellDate) >= RATE_CUTOVER_DATE ? POST_CUTOVER : PRE_CUTOVER;
 }
 
-/** Long-term = held >= 365 days (the standard 12-month approximation used elsewhere in this app). */
+/**
+ * Long-term = held >= 365 days (the standard 12-month approximation used elsewhere in this app).
+ *
+ * Both dates are resolved through `normalizeDate` (2M): a legacy day-first value —
+ * `ipos.allotment_date` was stored raw until 2M, `setAcquisitionAction` wrote a typed
+ * date into buy_date unvalidated — made `new Date(...)` an Invalid Date, the day count
+ * NaN, and `NaN >= 365` labelled every such lot SHORT-term. A date that does not
+ * resolve keeps this function's own conservative answer for a missing one.
+ */
 export function classifyTerm(buyDate: string | null, sellDate: string | null): GainTerm {
-  if (!buyDate || !sellDate) return "ST";
-  const days = (new Date(sellDate + "T00:00:00").getTime() - new Date(buyDate + "T00:00:00").getTime()) / 86400000;
+  const buyIso = normalizeDate(buyDate);
+  const sellIso = normalizeDate(sellDate);
+  if (!buyIso || !sellIso) return "ST";
+  const days = (new Date(sellIso + "T00:00:00").getTime() - new Date(buyIso + "T00:00:00").getTime()) / 86400000;
   return days >= 365 ? "LT" : "ST";
 }
 
@@ -69,7 +83,8 @@ export function grandfatheredCost(actualCost: number, fmv31Jan2018: number | nul
 
 /** Is this buy date eligible for grandfathering consideration at all? */
 export function isGrandfatherEligible(buyDate: string | null): boolean {
-  return !!buyDate && buyDate < GRANDFATHER_DATE;
+  const iso = normalizeDate(buyDate); // 2M: a day-first "20-02-2019" compared below "2018-01-31" as text
+  return !!iso && iso < GRANDFATHER_DATE;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,8 +171,9 @@ export function aggregateTradesByFy(
 }
 
 function fyOf(dateStr: string | null, fyStartMonth: number, fallback: string): string {
-  if (!dateStr) return fallback;
-  const d = new Date(dateStr + "T00:00:00");
+  const iso = normalizeDate(dateStr); // 2M: a day-first value made `new Date` invalid → "NaN-aN"
+  if (!iso) return fallback;
+  const d = new Date(iso + "T00:00:00");
   const y = d.getFullYear();
   const m = d.getMonth() + 1;
   const start = m >= fyStartMonth ? y : y - 1;

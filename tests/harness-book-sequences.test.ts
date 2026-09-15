@@ -5,6 +5,8 @@ import {
   QTY,
   SYM,
   IPO_NAME,
+  LOOKALIKE_IPO_NAME,
+  VARIANTS,
   checkInvariants,
   describeViolations,
   freshCtx,
@@ -52,10 +54,13 @@ import {
  *                           stated
  *
  * WHAT IT RUNS: 17 operations; every ordered pair of them — 289 less the 14 the
- * table marks incompatible = 275 — plus each op alone (17), 13 curated
- * sequences of three to five taken from this release's findings, 2 pinned
- * findings and 6 tests that PLANT each invariant's own violation so a green
- * sweep is known to be able to go red. 315 `it`s.
+ * table marks incompatible = 275 — plus each op alone (17), 16 curated
+ * sequences of three to five taken from this release's findings (three of them
+ * G-G2-1's, fixed in wave 2M) and 6 tests that PLANT each invariant's own
+ * violation so a green sweep is known to be able to go red. 316 `it`s.
+ *
+ * `VARIANTS` (book-ops.ts) holds fixture shapes a named scenario needs but the
+ * pair sweep does not compose — today just the second look-alike IPO record.
  *
  * ONE temp database for this FILE (AGENTS.md Testing); one migrate, one seed,
  * one fixture build, and a template FILE ATTACHed to the live connection so
@@ -83,6 +88,7 @@ let m: BookMods;
 let ids: SeedIds;
 let tpl: Template;
 
+// Re-measured 2026-09-16 with the wave-2M case added: 316 `it`s, 23.9 s wall.
 // Measured locally 2026-09-15 (vitest's own per-test times, 315 `it`s): this one
 // hook — migrate + seed + sixteen product modules + the fixture, which itself
 // runs two real imports and the Data Quality one-click — is ~1.8 s (32.4 s wall
@@ -120,7 +126,7 @@ async function runSequence(names: string[]): Promise<{ ctx: BookCtx; violations:
   let step = -1;
   for (const name of names) {
     step += 1;
-    const op = OPS.find((o) => o.name === name);
+    const op = OPS.find((o) => o.name === name) ?? VARIANTS.find((o) => o.name === name);
     if (!op) throw new Error(`no such op: ${name}`);
     await op.run(t.db, ctx);
     // A PAIR's first step is exactly one of the single-op cases, asserted clean in its own it above, so the
@@ -137,6 +143,19 @@ async function runSequence(names: string[]): Promise<{ ctx: BookCtx; violations:
     }
   }
   return { ctx, violations };
+}
+
+/**
+ * What the ambiguous G-G2-1 case leaves behind: the link column of every stored
+ * record, and the question the holding's own book raises about it. Read in that
+ * book (invariant 8 — the report is account-scoped, like every read it is
+ * built from).
+ */
+function ipoAskState(ctx: BookCtx) {
+  t.db.update(t.schema.settings).set({ selectedAccountId: ctx.ids.acctB }).run();
+  const links = t.db.select().from(t.schema.ipos).all().map((r) => r.tradeId ?? null);
+  const issue = m.dq.getDataQualityReport().issues.find((x) => x.code === `ipo_record_link:${ctx.ids.ipoTrade}`);
+  return { links, issue };
 }
 
 const expectClean = async (names: string[]) => {
@@ -338,41 +357,71 @@ describe("the sequences the v4.3.0 re-checks were written about", () => {
   });
 
   /**
-   * FINDING G-G2-1: an IPO record named after the ISSUE (not the scrip), whose
-   * holding is restored from a pre-4.3.0 Trash envelope, comes back UNLINKED and
-   * the one sale is counted twice — in the capital summary, the tax pack, the
-   * ITR export and both AIS sides — with no question raised about it.
+   * G-G2-1 FIXED (v4.3.0 fix wave 2M): these two were `it.fails`.
    *
-   * L6 (wave 2L) taught `lib/trash.ts` to re-link a restored `acquisition:'ipo'`
-   * holding when an envelope carries no `ipoRefs`, and taught Data Quality to ASK
-   * when more than one record could be its own. Both halves go through
-   * `ipoRecordMatchesHolding` (lib/analytics/data-quality.ts:902), whose second
-   * clause is `scripKey(record.name)` === the holding's symbol — true only for a
-   * record `pushTradeToIpoAction` created FROM a holding (it writes the symbol
-   * into `name`). A record entered on /ipos, where the field is literally
-   * labelled the IPO's name, carries the ISSUE's name, matches nothing, and so
-   * gets neither the re-link nor the question: `ipoOrphanPairs` returns none, so
-   * no `ipo_record_link:<id>` issue is raised at all.
+   * THE FINDING. An IPO record named after the ISSUE (not the scrip), whose
+   * holding is restored from a pre-4.3.0 Trash envelope, came back UNLINKED and
+   * the one sale was counted twice — in the capital summary, the tax pack, the
+   * ITR export and both AIS sides — with no question raised about it. L6 (wave
+   * 2L) taught `lib/trash.ts` to re-link a restored `acquisition:'ipo'` holding
+   * when an envelope carries no `ipoRefs`, and taught Data Quality to ASK when
+   * more than one record could be its own; both halves went through
+   * `ipoRecordMatchesHolding`, whose only clause was
+   * `scripKey(record.name)` === the holding's symbol — true just for a record
+   * `pushTradeToIpoAction` created FROM a holding. The fixture's record is named
+   * `G2-SEQ-IPO` beside a holding symbol of `GIPO`, exactly as a record typed on
+   * /ipos is, so it matched nothing: no link, and no `ipo_record_link:<id>`
+   * issue either. Measured on HEAD (9f671dd) by this very sequence:
+   * `ipos.trade_id` stayed null and the book's report held only
+   * `["instrument_master", "ipo_link"]`.
    *
-   * Measured on HEAD (9f671dd) by this very sequence: `ipos.trade_id` stays null,
-   * the holding is back with `acquisition:'ipo'`, and the Data Quality report for
-   * that book holds `["instrument_master", "ipo_link"]` — the generic "IPO
-   * holdings not linked to an IPO record" warning, whose detail says linking
-   * "makes allotment basis, listing mark and exit flow from one source of truth"
-   * and never says the exit is now counted twice.
+   * THE FIX. `ipoRecordMatchesHolding` gained a second tier built only from
+   * facts both rows already state — an exited allotment, the same quantity, the
+   * same allotment day as the holding's acquisition and the same exit day as its
+   * sale — so the fixture's record is now recognised and the restore re-links it
+   * (unique in both directions, or nothing is written). `ipoAskPairs` raises the
+   * question for every unlinked IPO holding that shares a book with an unlinked
+   * exited record, matched or not.
    *
-   * Reproduce: `npx vitest run tests/harness-book-sequences.test.ts -t "FINDING G-G2-1"`
-   * — it.fails means this PASSES while the defect stands. The day the match is
-   * widened (or the question is raised whenever an unlinked exited record sits in
-   * the same book as an unlinked IPO holding), this pin goes red and must be
-   * flipped back to `it`.
+   * Reproduce: `npx vitest run tests/harness-book-sequences.test.ts -t "G-G2-1"`.
    */
-  it.fails("FINDING G-G2-1 · delete the IPO holding → a 4.2.x envelope → restore: the allotment is counted twice", async () => {
+  it("G-G2-1 · delete the IPO holding → a 4.2.x envelope → restore: the allotment is counted once", async () => {
     await expectClean(["deleteIpoHolding", "legacifyLatestEnvelope", "restoreLatestSnapshot"]);
   });
 
-  /** The same defect, still standing after the book has been merged and un-merged. */
-  it.fails("FINDING G-G2-1 · … and it survives merge → un-merge", async () => {
+  /** The same, through a merge and an un-merge of the book it lives in. */
+  it("G-G2-1 · … and it survives merge → un-merge", async () => {
     await expectClean(["deleteIpoHolding", "legacifyLatestEnvelope", "restoreLatestSnapshot", "mergeAccountBIntoA", "restoreSourceAccount"]);
+  });
+
+  /**
+   * G-G2-1, the ambiguous half — a RECORDED limitation, pinned as what the app
+   * actually does rather than as a clean book.
+   *
+   * With a SECOND unlinked exited record stating the same allotment (the same
+   * quantity and the same two days), nothing can tell the two apart, so the
+   * restore writes NO link (invariant 6 — "whichever the loop met first" is not
+   * an answer). The holding is then back and closed while its record still
+   * realises its own exit, and I2 reports exactly that: the sale IS stated
+   * twice, and no code can settle it without inventing a link. What the fix owes
+   * this case is therefore the QUESTION, not a clean I2 — Data Quality names the
+   * holding and BOTH candidates, and the moment the user links one on /ipos the
+   * book is counted once again (pinned in `tests/trash-restore-ipo-legacy.test.ts`,
+   * "stops asking once the user links one of them").
+   */
+  it("G-G2-1 · two look-alike records: nothing is written, the question names both, and the double count is stated", async () => {
+    const { ctx, violations } = await runSequence(["addLookalikeIpoRecord", "deleteIpoHolding", "legacifyLatestEnvelope", "restoreLatestSnapshot"]);
+    const { links, issue } = ipoAskState(ctx);
+    expect(links, "neither record is guessed onto the holding").toEqual([null, null]);
+    expect(issue?.title, "the pair is named").toBe("IPO record not linked to its holding");
+    expect(issue!.detail).toContain("2 exited IPO records");
+    expect(issue!.detail).toContain(`${IPO_NAME} (matches this holding)`);
+    expect(issue!.detail).toContain(`${LOOKALIKE_IPO_NAME} (matches this holding)`);
+    // The honest state, not a loosened assertion: one sale, stated twice, until
+    // the user answers the question above.
+    expect(violations).toEqual([
+      `after addLookalikeIpoRecord[applied] → deleteIpoHolding[applied] → legacifyLatestEnvelope[applied] → restoreLatestSnapshot[applied]: ` +
+        `I2 the allotment is stated twice: holding #${ctx.ids.ipoTrade} is closed in the book and IPO #${ctx.ids.ipoId} realises its own exit`,
+    ]);
   });
 });

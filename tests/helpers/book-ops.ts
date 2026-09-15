@@ -788,6 +788,57 @@ export const OPS: BookOp[] = [
   },
 ];
 
+/** The look-alike's name — an ISSUE's name, as /ipos' own field is labelled. */
+export const LOOKALIKE_IPO_NAME = "Second G2 Sequence Issue Limited";
+
+/**
+ * FIXTURE VARIANTS (G-G2-1, wave 2M) — a shape a named scenario needs, which is
+ * NOT an operation on the book.
+ *
+ * `runSequence` finds these by name exactly like an op, but the pair sweep
+ * composes `OPS` only: a variation of the FIXTURE crossed with all seventeen
+ * operations is thirty-four more scenarios asking nothing the single case does
+ * not already ask, on a runner measured >15x slower than this machine. A
+ * variant that turned out to compose interestingly belongs in `OPS` instead.
+ */
+export const VARIANTS: BookOp[] = [
+  {
+    name: "addLookalikeIpoRecord",
+    needs: "the fixture's own IPO record is still stored",
+    drives: "a SECOND /ipos application in the same book, stating the same allotment — the raw row the fixture itself writes",
+    run: async (_db, ctx) => {
+      const stored = ctx.t.db.select().from(ctx.t.schema.ipos).all().find((r) => r.id === ctx.ids.ipoId);
+      if (!stored) return record(ctx, "addLookalikeIpoRecord", "skipped", "the fixture's IPO record is gone");
+      // Every fact the pairing reads is the fixture record's own, and the name
+      // is a different ISSUE name: nothing in either row can tell the two
+      // apart, which is precisely when a link must not be invented.
+      const id = ctx.t.db
+        .insert(ctx.t.schema.ipos)
+        .values({
+          accountId: stored.accountId,
+          name: LOOKALIKE_IPO_NAME,
+          broker: stored.broker,
+          exchange: stored.exchange,
+          appliedPrice: stored.appliedPrice,
+          lotSize: stored.lotSize,
+          lotsApplied: stored.lotsApplied,
+          allotted: true,
+          allottedQty: stored.allottedQty,
+          listingPrice: stored.listingPrice,
+          exitPrice: stored.exitPrice,
+          appliedDate: stored.appliedDate,
+          allotmentDate: stored.allotmentDate,
+          listingDate: stored.listingDate,
+          exitDate: stored.exitDate,
+          tradeId: null,
+        })
+        .returning({ id: ctx.t.schema.ipos.id })
+        .get()!.id;
+      record(ctx, "addLookalikeIpoRecord", "applied", `a second unlinked exited record #${id} stating the same allotment`);
+    },
+  },
+];
+
 /** The stored IPO, edited through its own route with one field changed. */
 async function postIpo(ctx: BookCtx, opName: string, change: Record<string, unknown>): Promise<void> {
   const stored = ctx.t.db.select().from(ctx.t.schema.ipos).all().find((r) => r.id === ctx.ids.ipoId);

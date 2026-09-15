@@ -761,10 +761,15 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
       // cannot be invented for an envelope that never had it, so the link is
       // recovered from the book's OWN records: a restored holding flagged
       // `acquisition: 'ipo'` (the value `pushTradeToIpoAction` and the /ipos sync
-      // write) is re-pointed by the ONE unlinked record of its account and scrip.
+      // write) is re-pointed by the ONE unlinked record of its account that can
+      // be its own — named after the scrip, or (G-G2-1, wave 2M) an exited
+      // allotment stating the same quantity and the same allotment and exit days,
+      // which is how a record entered under the ISSUE's name is recognised.
       //
-      // `uniqueIpoRelinks` is the same pairing Data Quality asks about, so the
-      // two can never disagree, and it is unique in BOTH directions. Anything
+      // `uniqueIpoRelinks` is the same pairing Data Quality asks about, over
+      // the same SET since D1 (wave 2M) — the account's unlinked records that
+      // state an allotment — so the two can never disagree about a candidate
+      // either. It is unique in BOTH directions. Anything
       // ambiguous writes NOTHING and stays a question the user answers on /ipos
       // (invariant 6) — the `ipo_record_link` issue names the holding and every
       // candidate. The `isNull` guard below is the ledger/IPO rule of this whole
@@ -781,6 +786,7 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
       // Runs LAST of the writes, so an account-deletion envelope's own restored
       // `ipos` rows are part of the picture it reads.
       if (env.ipoRefs == null && landed.size > 0) {
+        const day = (v: unknown) => (typeof v === "string" ? v : null);
         const holdings = rows
           .filter((r) => landed.has(r.id) && r.acquisition === "ipo" && typeof r.accountId === "number")
           .map((r) => ({
@@ -789,12 +795,36 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
             symbol: typeof r.symbol === "string" ? r.symbol : "",
             tradingsymbol: typeof r.tradingsymbol === "string" ? r.tradingsymbol : null,
             buyQty: typeof r.buyQty === "number" ? r.buyQty : 0,
+            // G-G2-1 (wave 2M) — tier B's side of the holding: the envelope
+            // already carries the allotment's own days, so a record named after
+            // the ISSUE rather than the scrip can still be recognised without
+            // resolving a name to a symbol through any list.
+            acquisitionDate: day(r.acquisitionDate),
+            buyDate: day(r.buyDate),
+            sellDate: day(r.sellDate),
           }));
         if (holdings.length > 0) {
           const records = tx
-            .select({ id: ipos.id, accountId: ipos.accountId, name: ipos.name, allottedQty: ipos.allottedQty })
+            .select({
+              id: ipos.id,
+              accountId: ipos.accountId,
+              name: ipos.name,
+              allottedQty: ipos.allottedQty,
+              allotted: ipos.allotted,
+              exitPrice: ipos.exitPrice,
+              exitDate: ipos.exitDate,
+              allotmentDate: ipos.allotmentDate,
+            })
             .from(ipos)
-            .where(isNull(ipos.tradeId))
+            // D1 (wave 2M) — the SAME candidate set the report reads
+            // (`getUnlinkedExitedIpoRecords`): the unlinked records that state
+            // an ALLOTMENT. This read was every unlinked record, so the
+            // application row a user keeps beside the allotment — the ticker's
+            // name, never allotted — was a second candidate here and invisible
+            // to the report: the restore called the holding ambiguous and wrote
+            // nothing while its own report said the pairing was unambiguous,
+            // and the one sale stayed counted twice.
+            .where(and(isNull(ipos.tradeId), eq(ipos.allotted, true)))
             .all();
           for (const link of uniqueIpoRelinks(holdings, records)) {
             tx.update(ipos)

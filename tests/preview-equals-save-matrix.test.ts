@@ -205,8 +205,14 @@ async function closeSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft:
   return out;
 }
 
-/** The same slice through the EDITOR: its preview body against updateManualTrade. */
-async function editSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft: FundedTag): Promise<CellResult[]> {
+/**
+ * The same slice through the EDITOR: its preview body against updateManualTrade.
+ *
+ * `buyRaw` is the BUY date as the field holds it — ISO or dd-mm-yyyy (wave 2M).
+ * The editor reads BOTH ends of the holding period, so a dd-mm-yyyy buy date is
+ * the same class of divergence as a dd-mm-yyyy exit date and is swept the same way.
+ */
+async function editSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft: FundedTag, buyRaw: string = BUY_ISO): Promise<CellResult[]> {
   const out: CellResult[] = [];
   for (const { broker, plan } of BROKER_PLANS) {
     for (const counts of ["sent", "omitted"] as const) {
@@ -223,13 +229,14 @@ async function editSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft: 
         avgBuyPrice: seg.entry,
         sellQty: seg.qty,
         avgSellPrice: seg.exit,
-        buyDate: BUY_ISO,
+        buyDate: buyRaw,
         sellDate: exitRaw === "" ? null : exitRaw,
         ownCapitalUsed: seg.segment === "eq_mtf" ? Math.max(0, Math.round((positionValue - fundedGuess) * 100) / 100) : null,
       };
-      const shown = await preview(editPreviewBody(w, fields));
+      const body = editPreviewBody(w, fields);
+      const shown = body == null ? null : await preview(body);
       const res = commit.updateManualTrade(id, fields);
-      out.push(compare(`edit ${broker}/${plan} ${seg.segment} funded=${ft} exit=${exitTag} counts=${counts}`, shown, res.ok ? saved(id) : null));
+      out.push(compare(`edit ${broker}/${plan} ${seg.segment} funded=${ft} exit=${exitTag} buy=${buyRaw} counts=${counts}`, shown, res.ok ? saved(id) : null));
     }
   }
   return out;
@@ -278,61 +285,105 @@ describe("G3 — the close dialog's preview equals what closePosition stores", (
 
 describe("G3 — the editor's preview equals what updateManualTrade stores", () => {
   /**
-   * FINDING G-G3-2 (product, low): `editPreviewBody` still takes its holding
-   * period off the RAW date fields — `new Date(f.sellDate)` — which is the
-   * defect wave 2I fixed in the CLOSE dialog (I1[1], `resolveExitIso`) and
-   * never carried across to the editor.
+   * FINDING G-G3-2 (product, low) — FIXED in v4.3.0 fix wave 2M, so the
+   * dd-mm-yyyy MTF slices are back in the ONE green list below, and the BUY date
+   * is now a dimension of it too.
    *
-   * `new Date("14-08-2026")` is an Invalid Date, so `daysHeld` is NaN, JSON
-   * sends it as null, and the route's `v.daysHeld ?? 0` bills ZERO days of MTF
-   * interest — while `updateManualTrade` normalises the same field
-   * (`normalizeDate` → 2026-08-14) and charges the real 30 days. Measured
+   * `editPreviewBody` took its holding period off the RAW date fields
+   * (`new Date(f.sellDate)`) — the defect wave 2I fixed in the CLOSE dialog
+   * (I1[1], `resolveExitIso`) and never carried across to the editor.
+   * `new Date("14-08-2026")` is an Invalid Date, so `daysHeld` was NaN, JSON sent
+   * it as null, and the route's `v.daysHeld ?? 0` billed ZERO days of MTF
+   * interest — while `updateManualTrade` normalised the same field
+   * (`normalizeDate` → 2026-08-14) and charged the real 30 days. Measured
    * 2026-09-15 on this matrix, angelone eq_mtf 100 @200 → @255, funded 16,000:
    * preview [5500, 192.31, 5307.69, 0] against a stored [5500, 397.46, 5102.54,
    * 205.15] — the same ₹205.15 the close dialog used to hide.
    *
-   * Only eq_mtf is affected (`daysHeld` is read for no other segment), and only
-   * for a date the browser's `<Input type="date">` cannot produce — so the reach
-   * is a request posted straight at the dialog's own exported body, exactly the
-   * reach the I1[1] finding had before someone cleared the field. The pin holds
-   * the RULE: whoever teaches the editor `resolveExitIso` must flip this back
-   * from `it.fails` to `it`.
-   *
-   * The ISO and cleared slices below are GREEN and stay `it` — the divergence is
-   * the dd-mm-yyyy MTF slice alone.
+   * Both ends are resolved now, through the same `normalizeDate` the save reads
+   * (lib/domain/trading-day, pure since wave 2M). A BLANK sell date still bills 0
+   * days on both sides — that is `updateManualTrade`'s own semantics, where blank
+   * CLEARS the field; the close dialog's blank-is-today belongs to the close.
    */
-  const mtfDdmm = (s: (typeof slices)[number]) => s[3].segment === "eq_mtf" && s[1] === "dd-mm-yyyy" && s[2] !== "stated-0";
+  const BUYS: [tag: string, raw: string][] = [
+    ["ISO", BUY_ISO],
+    ["dd-mm-yyyy", "15-07-2026"],
+  ];
+  /** segment × exit date × funded × BUY-date shape — 36 `it`s of 18 cells each. */
+  const editSlices = slices.flatMap(([segName, tag, ft, seg, raw]) =>
+    BUYS.map(([btag, braw]) => [`${segName} (buy ${btag})`, tag, ft, seg, raw, braw] as const),
+  );
 
-  it.each(slices.filter((s) => !mtfDdmm(s)))("%s, exit %s, funded %s: every rate card × order-count cell agrees to the paisa", async (_s, tag, ft, seg, raw) => {
-    const cells = await editSlice(seg, raw, tag, ft);
+  it.each(editSlices)("%s, exit %s, funded %s: every rate card × order-count cell agrees to the paisa", async (_s, tag, ft, seg, raw, buyRaw) => {
+    const cells = await editSlice(seg, raw, tag, ft, buyRaw);
     notVacuous(cells, seg, ft, raw !== "");
     expect(divergent(cells), "editor preview ≠ editor save").toEqual([]);
   });
 
-  it.fails.each(slices.filter(mtfDdmm))("%s, exit %s, funded %s: every cell agrees to the paisa [RED ON HEAD — FINDING G-G3-2]", async (_s, tag, ft, seg, raw) => {
-    const cells = await editSlice(seg, raw, tag, ft);
-    notVacuous(cells, seg, ft, raw !== "");
-    expect(divergent(cells), "editor preview ≠ editor save").toEqual([]);
-  });
-
-  it("FINDING G-G3-2, stated positively: the editor reads the raw field where the close dialog resolves it", async () => {
+  it("FINDING G-G3-2, fixed: the dd-mm-yyyy MTF cells agree BECAUSE both halves now bill the same 30 days", async () => {
     const seg = SEGMENTS.find((s) => s.segment === "eq_mtf")!;
     const cells = await editSlice(seg, "14-08-2026", "dd-mm-yyyy", "16000");
-    const bad = cells.filter((c) => !c.ok);
-    // Every card that quotes an MTF rate diverges, by exactly its interest.
-    expect(bad.length).toBeGreaterThan(5);
-    expect(bad.every((c) => c.shown![3] === 0 && c.stored![3] > 0), "the preview bills 0 days, the save bills 30").toBe(true);
-    expect(bad.every((c) => Math.abs(c.shown![1] + c.stored![3] - c.stored![1]) < 0.011), "the whole difference IS the interest").toBe(true);
-    // …and the cards that quote NO MTF rate agree, which is why this is the
-    // date reading and not something else about the slice.
-    expect(cells.filter((c) => c.ok).every((c) => c.stored![3] === 0), "the agreeing cells are the ones billing no interest").toBe(true);
+    // THE assertion, on the very cells that were red on HEAD 8ff4288.
+    expect(divergent(cells), "editor preview ≠ editor save").toEqual([]);
+    // …and not because both sides now bill NOTHING: the cards that quote an MTF
+    // rate really do charge the ₹205.15-shaped interest, on BOTH sides.
+    const billed = cells.filter((c) => c.stored![3] > 0);
+    expect(billed.length).toBeGreaterThan(5);
+    expect(billed.every((c) => c.shown![3] === c.stored![3]), "the preview bills the interest the save stores").toBe(true);
+    // The same day, written ISO, prices identically — so it is the DATE READING
+    // that changed and nothing else about the slice. One card, two rows: the
+    // whole-slice comparison costs another 18 cells and says no more than this.
+    const fieldsFor = (sellDate: string) => ({
+      buyQty: seg.qty, avgBuyPrice: seg.entry, sellQty: seg.qty, avgSellPrice: seg.exit,
+      buyDate: BUY_ISO, sellDate, ownCapitalUsed: 4000,
+    });
+    const twin = (sellDate: string) => {
+      const id = openRow(seg, "angelone", 16000, 0);
+      expect(commit.updateManualTrade(id, fieldsFor(sellDate)).ok).toBe(true);
+      return saved(id);
+    };
+    expect(twin("14-08-2026")).toEqual(twin("2026-08-14"));
 
-    // The source half: the close dialog resolves once (I1 [1]); the editor does not.
+    // The source half: BOTH dialogs read the calendar through the shared helper.
     const editSrc = fs.readFileSync(path.join(process.cwd(), "components/trades/edit-trade-dialog.tsx"), "utf8");
     const closeSrc = fs.readFileSync(path.join(process.cwd(), "components/trades/close-trade-dialog.tsx"), "utf8");
-    expect(/daysHeld:[^\n]*new Date\(f\.sellDate\)/.test(editSrc), "the editor's raw read").toBe(true);
+    expect(/daysHeld:[^\n]*new Date\(f\.sellDate\)/.test(editSrc), "the editor's raw read is gone").toBe(false);
+    expect(/normalizeDate/.test(editSrc) && /from "@\/lib\/domain\/trading-day"/.test(editSrc), "the editor's resolved read").toBe(true);
     expect(/resolveExitIso\(exitDate\)/.test(closeSrc), "the close dialog's resolved read").toBe(true);
+    expect(/from "@\/lib\/domain\/trading-day"/.test(closeSrc), "…from the same module").toBe(true);
   });
+
+  /**
+   * L3's other half, on the editor: a NON-EMPTY date that is not a real calendar
+   * day. The save REFUSES it, so there is no figure to preview — both halves
+   * refuse, and nothing is priced or sent (invariant 6).
+   */
+  it.each([["sell date", "2026-02-31"], ["buy date", "99-99-9999"]] as const)(
+    "a %s of %j: the save refuses it and the preview is not built at all",
+    async (label, badDate) => {
+      const seg = SEGMENTS.find((s) => s.segment === "eq_mtf")!;
+      const id = openRow(seg, "angelone", 16000, 0);
+      const before = row(id);
+      const fields = {
+        buyQty: seg.qty,
+        avgBuyPrice: seg.entry,
+        sellQty: seg.qty,
+        avgSellPrice: seg.exit,
+        buyDate: label === "buy date" ? badDate : BUY_ISO,
+        sellDate: label === "sell date" ? badDate : "2026-08-14",
+        ownCapitalUsed: 4000,
+      };
+      // No body, so no request: the dialog states the refusal where the figure
+      // would be (`editDateProblem`), and sends nothing.
+      expect(editPreviewBody(wire(id), fields)).toBeNull();
+
+      const res = commit.updateManualTrade(id, fields);
+      expect(res.ok).toBe(false);
+      expect(res.message).toContain(badDate);
+      expect(res.message).toContain(label);
+      expect(row(id)).toEqual(before);
+    },
+  );
 });
 
 describe("G3 — the dimensions of the matrix are the real ones", () => {

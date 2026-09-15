@@ -122,7 +122,7 @@ describe("the trade editor previews the order counts its save bills (U2)", () =>
     expect(editPreviewBody(wire(id), { ...open, ownCapitalUsed: null })).toMatchObject({ buyOrders: 2, sellOrders: 0 });
 
     const closed: Legs = { ...open, sellQty: 50, avgSellPrice: 6, sellDate: "2026-09-08" };
-    expect(editPreviewBody(wire(id), { ...closed, ownCapitalUsed: null }).sellOrders).toBeUndefined();
+    expect(editPreviewBody(wire(id), { ...closed, ownCapitalUsed: null })!.sellOrders).toBeUndefined();
     const shown = await editorPreview(id, closed);
     const stored = save(id, closed);
     expect([row(id).buyOrderCount, row(id).sellOrderCount]).toEqual([2, 1]);

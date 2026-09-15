@@ -13,6 +13,7 @@ import { evaluateLimits } from "@/lib/risk/limits";
 import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
+import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
 import { recordAudit } from "@/lib/audit";
 import { AccountRequiredError, getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import {
@@ -492,7 +493,20 @@ export async function setAcquisitionAction(_prev: ActionState, formData: FormDat
     return { ok: false, message: "Cost per share must be zero or more." };
   }
 
-  const acquisitionDate = str(formData.get("acquisitionDate"));
+  // D3 (v4.3.0 wave 2M, finding G-G3-1) — the typed acquisition day.
+  //
+  // It was written RAW into `trades.acquisition_date` and, with a cost, into
+  // `trades.buy_date`: the field the IPO pairing reads FIRST
+  // (`acquisitionDate ?? buyDate`) and the day the tax pack's financial year,
+  // the MTF day count and every holding period are computed from. A date input
+  // reaches this with a half-typed year ('0002-06-15'), which is not a day that
+  // exists; it is refused here, in the same words every other typed-date writer
+  // refuses one, BEFORE anything is written.
+  const acquisitionDateRaw = str(formData.get("acquisitionDate"));
+  const acquisitionDate = acquisitionDateRaw == null ? null : normalizeDate(acquisitionDateRaw);
+  if (acquisitionDateRaw != null && acquisitionDate == null) {
+    return { ok: false, message: unreadableDateMessage("acquisition date", acquisitionDateRaw) };
+  }
 
   // Leaving the price blank is a legitimate "I do not know yet" — the trade
   // stays flagged and out of the statistics rather than being forced to a

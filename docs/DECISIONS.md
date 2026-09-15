@@ -7130,3 +7130,127 @@ out SHALLOWLY (`fatal: invalid object name '3feb22f'`). A new FAIL signature for
 passes locally and fails on every runner. → The pre-fix texts are COMMITTED fixtures (`tests/fixtures/pre-fix-3feb22f/<path>.txt`,
 twelve files written from `git show`), and the helper routes a `HEAD:` ref to the working tree. Rule: a test never reads git
 history; it reads a committed fixture.
+
+## 2026-09-16 — v4.3.0 fix wave 2M built (eighth session): the three guard findings, design-reviewed first
+
+**Before the builders.** The `vyuha-design-reviewer` (Opus) graded all three DECIDED designs REVISE, each with a rewritten
+sentence; the orchestrator adopted them with three narrowing decisions, recorded here so the rejected alternatives are not
+re-proposed:
+- **D1 (G-G2-1).** "Match on ISIN / symbol" was unbuildable as written: `ipos` has neither column (`lib/db/schema.ts:935-968`),
+  and resolving the record's name to a symbol through the bundled index map misses exactly the freshly listed issues the
+  finding is about. A raised QUESTION alone cannot turn the harness pin green — invariant I2 demands the sale be stated once,
+  so the restore must WRITE where the pair is unambiguous. → Tier A (unchanged): same account + the record's name IS the scrip
+  (+ equal allotted quantity where both state one). Tier B (new): same account + an allotted record stating an exit price and
+  an exit date + both quantities stated and equal + the record's allotment date == the holding's acquisition date (or buy
+  date) + the record's exit date == the holding's sell date. Both tiers may write on restore through `uniqueIpoRelinks`,
+  unique in both directions over ALL unlinked records of the account; anything else writes nothing. The Data Quality question
+  `ipo_record_link:<tradeId>` is raised for EVERY unlinked `acquisition:'ipo'` holding that shares an account with an
+  unlinked exited record, name or not (matching candidates first), and says plainly that one sale is counted twice until one
+  names the other; `ipo_link`'s detail carries the same consequence. REJECTED: the bundle name-resemblance clause (the
+  question already covers every pair; a second matcher is a second rule to drift); a quantity-only or date-only clause (retail
+  lots collide — two IPOs allotted 15 shares in one account would link wrongly and silently).
+- **D2 (G-G3-1).** The sentence aimed at `addLeg`; the right home is `validateLegs` (`lib/domain/staged.ts`, pure), which
+  `addLeg`, `updateLeg`, `rebuildStagedTrade` and `convertToStaged` all call BEFORE any write — that alone removes the
+  half-applied leg (invariant 5), which patching `addLeg` would not. ONE calendar implementation: `isRealDay` / `normalizeDate`
+  moved verbatim from `lib/import/commit.ts` into `lib/domain/trading-day.ts` (pure; already imported by the ladder and by the
+  client close dialog), same NAMES so the readers-follow-writers scanner's resolver list needs no change; the writers store the
+  normalised ISO day; the pricer resolves BOTH ends (the leg date and the consuming fill's date — the second raw read the
+  scanner could not see because `end` is not a date-shaped name). Accepted cost: a legacy leg whose stored date is not a real
+  day is refused on the next write with a message naming it (L3's precedent).
+- **D3 (G-G3-2).** `resolveExitIso` could not be adopted verbatim: its blank-is-today is the CLOSE dialog's semantics, while
+  `updateManualTrade` reads a blank sell date as "cleared, 0 days" — adopting it would have turned the 18 green "exit cleared"
+  editor cells red. → The editor resolves BOTH dates through the shared `normalizeDate` with its own save's semantics (blank →
+  0 days; a non-empty unreadable date → no body sent, the save's refusal sentence shown — invariant 6). The matrix gains a
+  buy-date dimension on the editor half (the raw BUY read was a second, untested divergence).
+- **Seams.** D2 and D3 share `lib/domain/trading-day.ts` → one builder (B-DATE); D1 is identity / IPO-link / Trash work →
+  one builder (B-IPO); the two sets are disjoint and touch no shared behaviour. The guards' four `it.fails` pins WERE the
+  red-on-HEAD seam cases, so the seam tester ran AFTER the builders over the built wave (to convergence), not before.
+
+**As built** (two Opus builders on disjoint sets, red-first; reports `18-FIX-WORK-4.3.0/wave2h-reports/wave2m-B-IPO.md`,
+`wave2m-B-DATE.md`; every fix red on revert with the quote in its report):
+- **B-IPO (G-G2-1).** `ipoRecordMatchesHolding` (`lib/analytics/data-quality.ts`) is tier A (the name IS the scrip) OR tier B
+  (`matchesByExit`: allotted, an exit price stated, `allottedQty == buyQty`, `allotmentDate == acquisitionDate ?? buyDate`,
+  `exitDate == sellDate`, ISO day strings, a null on either side refusing). `lib/trash.ts` hands the pairing those facts from
+  the envelope rows; `lib/queries/data-quality.ts` selects the four record columns and hands the holding's dates. A new pure
+  `ipoAskPairs` raises `ipo_record_link:<tradeId>` for every unlinked IPO holding sharing a book with an unlinked exited
+  record, matching candidates first and marked; `ipoOrphanPairs` still means MATCHES and still feeds `uniqueIpoRelinks`
+  (unique both ways, `isNull(ipos.tradeId)`, last of the writes — unchanged in kind). `ipo_link`'s detail carries the
+  double-count sentence. RECORDED LIMITATION, pinned: two records stating the same allotment cannot be told apart, so no link
+  is written and the harness's I2 correctly reads "stated twice" until the user answers on /ipos — the guard pins the QUESTION
+  there (a `VARIANTS` table beside `OPS` in `tests/helpers/book-ops.ts`, 316 `it`s). Both harness pins flipped to `it`.
+- **B-DATE (G-G3-1, G-G3-2).** `isRealDay` / `normalizeDate` moved verbatim into `lib/domain/trading-day.ts` with
+  `unreadableDateMessage` (commit.ts's own refusal sentence); commit.ts imports and re-exports them; the close dialog's
+  restatement `realDay` is deleted. `validateLegs` refuses a leg date that is blank or not a real calendar day BEFORE any
+  write (addLeg / updateLeg / rebuildStagedTrade / convertToStaged), so the half-applied ladder cannot happen; the writers
+  store the NORMALISED day; `priceLegs` resolves BOTH ends of every tranche ('2026-02-31' no longer bills 1,449.86 for an
+  honest 192.33). `convertToStaged` keeps its `?? today` fallback after normalising (refusing there would leave legs inserted
+  and the rebuild refused — a half-applied ladder). The editor's `editPreviewBody` resolves both dates with the SAVE's
+  semantics (blank sell date = 0 days) and returns null for a non-empty unreadable date — the dialog states the refusal where
+  the figure would be, sends nothing. Also fixed, found by this wave's own DB test: `updateLeg`'s `leg_edit` audit passed the
+  patch as `after` against a four-column `before`, so every date-touching leg edit threw `AuditShapeError` outside
+  production after the write had landed. Pins flipped: `tests/readers-follow-writers.test.ts` (companion rewritten
+  positively), `tests/preview-equals-save-matrix.test.ts` (merged into the green slices; a BUY-date dimension and refusal
+  cells added). New `tests/staged-leg-dates.test.ts`.
+- **Orchestrator:** `tests/order-count-default.test.ts:126`, `tests/edit-trade-preview-orders.test.ts:125` — a `!` after
+  `editPreviewBody(...)`, the designed nullable return.
+- **Recorded, not built:** `lib/import/commit.ts` `writeLadder` still writes `tradeDate: ""` when an imported execution AND
+  its trade carry no readable date (the parsers refuse undated rows, so the fallback is dead in practice); such a ladder with
+  two blank legs would be refused on every later edit by name — a later wave makes `writeLadder` refuse the ladder it cannot
+  date, or lets a date-fixing `updateLeg` through.
+
+**The seam pass** (`tests/seams-v43-fixF.test.ts` 30 → 37 cases, F27–F33, 11 `it`s; five probes from HEAD copies, five
+seams proven red on one side; report `wave2h-reports/wave2m-seams.md`). FOUR seam defects, sent to two micro builders in
+the same session (S-IPO for D1–D3 as one identity owner, S-DATE for D4), the decided designs:
+- **D1 — the restore and the report were not handed the same candidate set** (`lib/trash.ts` read every unlinked record;
+  `lib/queries/data-quality.ts` only allotted + exited): a never-allotted APPLICATION row typed under the ticker made the
+  restore call the holding ambiguous (nothing written, the sale still counted twice) while the report said "(matches this
+  holding)" — the design reviewer's named breaking case, in a shape the orchestrator's narrowing had not closed. → ONE
+  candidate rule on both sides: the account's unlinked records that are ALLOTTED, exited or not (a never-allotted
+  application cannot be an allotment's record); the query carries an `exited` fact; the question triggers only beside an
+  exited candidate but lists every allotted candidate, matching-first, so an ambiguous restore is explained on screen.
+- **D2 — `ipos.allotment_date` was the one date on the pairing no writer validated** (`app/api/ipos/route.ts` stored
+  `strOrNull(body.allotmentDate)` raw while refusing the same value as an exit date), so tier B could never match a
+  day-first value. → The route normalises `allotmentDate` / `listingDate` / `appliedDate` to the ISO day and refuses a
+  non-empty unreadable one in the exit date's own words (L3's edit-path rule); tier B compares through `normalizeDate` on
+  both sides for legacy stored values.
+- **D3 — `setAcquisitionAction` wrote an unvalidated typed date into `acquisition_date` AND `buy_date`** (the field tier B
+  reads first; a half-typed year `0002-06-15` is reachable from a real date input). → normalised, refused with
+  `unreadableDateMessage` before any write.
+- **D4 — a wave-2M REGRESSION: `convertToStaged` silently re-dated a legacy trade to today** (`normalizeDate(t.buyDate) ??
+  today` where HEAD fell back only on NULL; probe: `buyDate="2026-02-31" → ok:true, parent.buyDate = today`). → It
+  REFUSES before any write when a non-null date it would copy does not normalise, with the editor's sentence; NULL still
+  falls back to today; dd-mm-yyyy is stored as the ISO day.
+  Introduced-regression grade for 2M: ONE (D4), caught by the seam pass before the gate, not by a re-check one wave later.
+  As built — **S-DATE:** `convertToStaged` (`lib/queries/staged.ts`) resolves the two dates it would copy onto legs and
+  refuses a non-null one the calendar does not have (`""` included, matching `validateLegs`), named by the COLUMN, before
+  the first INSERT; NULL still seeds today; dd-mm-yyyy lands as the ISO day. Red on revert against both 2M's form and
+  HEAD's; a probe measured invariant 5: HEAD's form answered ok:false yet left one leg behind, the fix leaves none
+  (report `wave2h-reports/wave2m-S-DATE.md`). **S-IPO:** the restore (`lib/trash.ts`) and the report
+  (`lib/queries/data-quality.ts`) read one set — unlinked AND `allotted = 1` — and the rule is stated once more inside
+  `ipoRecordMatchesHolding`, so a never-allotted application row is a candidate nowhere; `ipoAskPairs` lists every allotted
+  candidate matching-first and asks only beside one that states an exit (an un-exited candidate gets its own sentence);
+  `app/api/ipos/route.ts` stores the applied / allotment / listing days as ISO and refuses a non-empty unreadable one (400,
+  the field named, L3's edit-path rule); tier B compares through `normalizeDate`; `setAcquisitionAction` normalises or
+  refuses before any write (`0002-06-15`, the half-typed year a real date input can produce, pinned). Six red-on-revert
+  quotes in `wave2h-reports/wave2m-S-IPO.md`. **Orchestrator, found by S-IPO in passing:** `lib/analytics/capital-gains.ts`
+  read its dates raw — `classifyTerm("20-02-2026", "2026-03-02")` returned ST through a NaN comparison, and
+  `capitalGainsRatesFor`, `isGrandfatherEligible` and the private `fyOf` compared the same text character by character (a
+  2026 day-first sale took the PRE-cutover schedule; "20-02-2019" read as grandfather-eligible; the FY bucket read
+  "NaN-aN"). All four now resolve through `normalizeDate`; a date that does not resolve keeps the module's own conservative
+  answer for a missing one. Pinned red-first in `tests/capital-gains.test.ts` ("reads a legacy day-first date as the day it
+  names"). Reach: legacy rows only — the two writers that could store a day-first value were closed by D2 / D3 in this
+  same round.
+  **Seam round 2** (the same seam tester, context intact): F28 / F29 flipped to `it` with their defect-pinning green cases
+  re-pinned to the right values (F28 (a) `[24]` → `[]` — the restore links it, so no question is left; F29 `'20-02-2026'` →
+  `'2026-02-20'` plus the 400; the note "no verdict" → "(matches this holding)"); F34 (setAcquisitionAction → tier B), F35 a/b/c
+  (convertToStaged), F36 (a legacy allotment day → classifyTerm) added; eight red-on-revert probes, all red; fixF 30 → 47
+  cases; expected-fail 0. It also found **D5** — `lib/analytics/ipo.ts` `ipoAllotmentStampBase` filtered its date chain
+  through `isPriceableExitDate`'s ISO shape test, so a legacy day-first allotment day skipped to the exit date and an
+  allottee's stamp base silently became 0 (stampDuty 0 vs 2 on a pre-2020 allotment). → The orchestrator resolves each
+  candidate through `normalizeDate` before the shape test (pinned red-first in `tests/ipo.test.ts`: `expected +0 to be
+  10000` on a HEAD copy). No third seam round: the fix is one pure reader with no new crossing value, its writer was closed
+  by D2 in the same round, and F36 already drives the same legacy input into the sibling reader; the gate re-runs every
+  seam file and guard.
+
+**Gate on the wave-2M tree:** `npm run verify` EXIT 0 (the first run was red on two counts: the README file-count guard — 426 → 427 files, `tests/staged-leg-dates.test.ts` is new — and `tests/backup-roundtrip.test.ts` "encrypted backups > round-trips" timing out at 5 s under full-suite load; alone it runs in 1,049 ms (scrypt), the same file that timed out on the Windows runner this morning on a docs-only commit — a pre-existing test-timing fragility, recorded, not a 2M defect; the second run was clean); raw line **427 files / 9,323 passed / 35 skipped** (expected fail 0 — the five guard pins are flipped); `next build` compiled; the three lint warnings are the pre-existing ones. README: 426 → 427 files, 9,218 → 9,323 tests (six mentions). **Next:** the 2L scoped re-check over this tree (pre-wave `cd1ab70`, wave `8ff4288`,
+probe prefix `zzprobe-rc7-`), then wave 3 from `plan-wave3.json`.

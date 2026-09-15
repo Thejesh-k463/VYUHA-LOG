@@ -135,3 +135,62 @@ export function toDdmmyyyy(isoDate: string): string {
   const [y, m, d] = isoDate.split("-");
   return `${d}${m}${y}`;
 }
+
+/* ─────────── reading a date a human or a broker file TYPED (L3 / G-G3-1) ──── */
+
+/**
+ * L3 (v4.3.0 wave 2L), moved here VERBATIM in wave 2M (finding G-G3-1).
+ *
+ * The two branches below matched on digit count alone, so '31-02-2026' was reordered
+ * into '2026-02-31' and '99-99-9999' into '9999-99-99', and both were stored as if
+ * they were days. `new Date('9999-99-99')` is an Invalid Date: on an eq_mtf close the
+ * holding period went NaN, the charge total with it, and the UPDATE failed with
+ * `NOT NULL constraint failed: trades.charges_total_paise` — the server action 500d
+ * instead of answering {ok:false}. On every other row the impossible day was simply
+ * stored, and the readers that date a trade (the tax pack's financial year, the MTF
+ * day count) then read a day that does not exist.
+ *
+ * A date that is not a real calendar day reads as NO date — the same answer this
+ * function already gave to text it could not parse at all, and the same rule
+ * `isPriceableExitDate` applies to an IPO exit. Callers that write a date a user
+ * TYPED refuse the whole write rather than store or silently clear it (see
+ * `closePosition`, `updateManualTrade` and `validateLegs`); an importer keeps its own
+ * rule of refusing a row it cannot read (AGENTS.md: never coerce a bad cell).
+ *
+ * WHY IT LIVES HERE: it was private to `lib/import/commit.ts`, which is server-only,
+ * so the close dialog restated it and the staged ladder did without it — and the
+ * ladder then priced MTF interest off `new Date(leg.tradeDate)`, billing 1,449.86 for
+ * a real 192.33 on '2026-02-31' (G-G3-1). This module is PURE (invariant 2) and
+ * already reaches both graphs, so there is now ONE calendar implementation:
+ * commit.ts imports it, `lib/queries/staged.ts` prices through it, and both dialogs
+ * read it. `tests/trading-day.test.ts` fails on a second private copy.
+ */
+export function isRealDay(y: string, mo: string, d: string): string | null {
+  const [yy, mm, dd] = [Number(y), Number(mo), Number(d)];
+  const t = new Date(Date.UTC(yy, mm - 1, dd));
+  return t.getUTCFullYear() === yy && t.getUTCMonth() === mm - 1 && t.getUTCDate() === dd ? `${y}-${mo}-${d}` : null;
+}
+
+/** The ISO day a typed/exported date states, or null when it states none. */
+export function normalizeDate(s: string | null): string | null {
+  if (!s) return null;
+  const t = s.trim();
+  // DD-MM-YYYY or DD/MM/YYYY
+  const m = t.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+  if (m) return isRealDay(m[3], m[2], m[1]);
+  // YYYY-MM-DD (optionally with time)
+  const m2 = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) return isRealDay(m2[1], m2[2], m2[3]);
+  return null;
+}
+
+/**
+ * The refusal a writer states for a date it was GIVEN and cannot read — commit.ts's
+ * `unreadableDate` wording, in one place both a pure module and a client component
+ * can reach (`lib/domain/staged.ts#validateLegs`, the trade editor's preview).
+ * commit.ts keeps its own copy of the sentence; `tests/trading-day.test.ts` fails if
+ * the two ever drift apart.
+ */
+export function unreadableDateMessage(label: string, raw: string): string {
+  return `The ${label} “${raw}” is not a real calendar day — enter it as a day that exists, for example 2026-06-15. Nothing was changed.`;
+}

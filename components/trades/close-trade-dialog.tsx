@@ -1,6 +1,6 @@
 "use client";
 
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate } from "@/lib/domain/trading-day";
 import { useActionState, useEffect, useState } from "react";
 import { closeTradeAction, type ActionState } from "@/app/trades/actions";
 import { Input } from "@/components/ui/input";
@@ -20,8 +20,10 @@ interface PreviewResp {
 
 /**
  * The exit date `closePosition` will actually store (I1 [1]): its own rule,
- * `normalizeDate(exitDate) ?? todayIstIso()` (lib/import/commit.ts) — restated
- * here because commit.ts is server-only and this is a client component.
+ * `normalizeDate(exitDate) ?? todayIstIso()`. Wave 2M — the SAME `normalizeDate`,
+ * not a restatement of it: it moved out of the server-only lib/import/commit.ts
+ * into the pure lib/domain/trading-day.ts, which a client component may import
+ * (finding G-G3-1).
  *
  * ONE resolution serves the dates the preview is priced at AND the holding
  * period it bills. Reading the RAW field for `daysHeld` made a cleared or
@@ -38,24 +40,13 @@ interface PreviewResp {
 export function resolveExitIso(exitDate: string): string | null {
   const s = (exitDate ?? "").trim();
   if (s === "") return todayIstIso();
-  const dmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
-  if (dmy) return realDay(dmy[3], dmy[2], dmy[1]);
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return realDay(iso[1], iso[2], iso[3]);
-  return null;
+  return normalizeDate(s);
 }
 
 /** T+1-through-settlement day count, as `closePosition` bills it; 0 without both dates. */
 function daysBetween(buyDate: string | null, exitIso: string | null): number {
   if (!buyDate || !exitIso) return 0;
   return Math.max(0, Math.floor((new Date(exitIso).getTime() - new Date(buyDate).getTime()) / 86400000));
-}
-
-/** `${y}-${mo}-${d}` when that day exists, else null (commit.ts `isRealDay`). */
-function realDay(y: string, mo: string, d: string): string | null {
-  const [yy, mm, dd] = [Number(y), Number(mo), Number(d)];
-  const t = new Date(Date.UTC(yy, mm - 1, dd));
-  return t.getUTCFullYear() === yy && t.getUTCMonth() === mm - 1 && t.getUTCDate() === dd ? `${y}-${mo}-${d}` : null;
 }
 
 /**

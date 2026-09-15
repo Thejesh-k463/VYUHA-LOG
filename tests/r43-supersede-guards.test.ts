@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { normalizeAngelTrades, toParsedFile, type AngelTradeRow } from "@/lib/import/api/angelone";
 import { normalizeDhanPositions, toParsedFile as dhanParsedFile, type DhanPositionRow } from "@/lib/import/api/dhan";
+// PURE (no DB, no React): the refusal sentence every typed-date writer states.
+import { unreadableDateMessage } from "@/lib/domain/trading-day";
 
 /**
  * v4.3.0 fix wave 2R (W2R-IDENTITY) — the three limits of R43's same-day
@@ -55,6 +57,7 @@ const ACC_COLUMN = 940; // + index, one per annotated column below
 const ACC_CONV = 962;
 const ACC_CONV_NOREL = 963;
 const ACC_STUCK = 964;
+const ACC_ACQDATE = 965; // D3 (wave 2M): the typed acquisition day
 
 /** W2H: the sentence an ask made ONLY by W2G M1 carries (lib/import/cross-source.ts). */
 const M1_REASON = "another product, segment or exchange";
@@ -136,7 +139,7 @@ beforeAll(async () => {
   t.db
     .insert(t.schema.accounts)
     .values(
-      [ACC_BASIS, ACC_JOURNAL, ACC_GROWN, ACC_TWOPROD, ACC_TWOCAND, ACC_UNKNOWN, ACC_RETAG, ACC_RETAG_SAMEKEY, ACC_RETAG_CONTROL, ACC_CONV, ACC_CONV_NOREL, ACC_STUCK, ...COLUMNS.map((_, i) => ACC_COLUMN + i)].map((id) => ({
+      [ACC_BASIS, ACC_JOURNAL, ACC_GROWN, ACC_TWOPROD, ACC_TWOCAND, ACC_UNKNOWN, ACC_RETAG, ACC_RETAG_SAMEKEY, ACC_RETAG_CONTROL, ACC_CONV, ACC_CONV_NOREL, ACC_STUCK, ACC_ACQDATE, ...COLUMNS.map((_, i) => ACC_COLUMN + i)].map((id) => ({
         id,
         name: `r43 guard ${id}`,
         isDefault: false,
@@ -564,5 +567,58 @@ describe("W2F OVERRIDE-DOUBLE · today's snapshot row the user re-tagged is aske
       [plain!.id, "eq_delivery", 10, 10],
       [tagged!.id, "eq_mtf", 5, 0],
     ]);
+  });
+});
+
+// ===========================================================================
+// D3 (wave 2M, finding G-G3-1) — the acquisition day a user TYPES
+// ===========================================================================
+
+/**
+ * `setAcquisitionAction` is the /trades "how were these shares acquired" panel,
+ * and the one typed-date writer wave 2M's calendar rule did not reach: it wrote
+ * the field RAW into `trades.acquisition_date` and, whenever a cost was given,
+ * into `trades.buy_date`. That is the field the IPO pairing reads FIRST
+ * (`acquisitionDate ?? buyDate`) and the day the tax pack's financial year, the
+ * MTF day count and every holding period are computed from.
+ *
+ * The panel's input is `type="date"`, so a day-first value needs a non-browser
+ * client — but a HALF-TYPED YEAR (`0002-06-15`) is reachable from a real date
+ * input, and `2026-02-31` is reachable from any client at all. Both were stored
+ * without a word. Measured before this fix: ok true, `acquisition_date` and
+ * `buy_date` both '0002-06-15'.
+ */
+describe("D3 · setAcquisitionAction refuses a day that does not exist, before anything is written", () => {
+  it("refuses a half-typed year and an impossible day, and stores a readable one as the ISO day", async () => {
+    const sale = fill({ tradingsymbol: "ACQDATE-EQ", transactiontype: "SELL", fillsize: "20", fillprice: "300", filltime: "11:00:00" });
+    expect(commit.commitParsedFile(parsedOf([sale]), FILE, null, ACC_ACQDATE, snap).added).toBe(1);
+    const [stored] = rowsOf(ACC_ACQDATE);
+    const dayOf = () =>
+      (t.sqlite.prepare("SELECT acquisition_date AS d FROM trades WHERE account_id = ?").get(ACC_ACQDATE) as { d: string | null }).d;
+    const form = (date: string) => {
+      const f = new FormData();
+      f.set("tradeId", String(stored!.id));
+      f.set("acquisition", "ipo");
+      f.set("acquisitionPrice", "100");
+      f.set("acquisitionDate", date);
+      return f;
+    };
+
+    for (const bad of ["0002-06-15", "2026-02-31", "31-11-2025", "not a date"]) {
+      const res = await actions.setAcquisitionAction({ ok: false, message: "" }, form(bad));
+      // THE assertion (before: ok true, the value stored as typed on both columns).
+      expect(res.ok, bad).toBe(false);
+      expect(res.message, bad).toBe(unreadableDateMessage("acquisition date", bad));
+      expect(res.message, bad).toContain("is not a real calendar day");
+      expect(res.message, bad).toContain(bad);
+      expect(rowsOf(ACC_ACQDATE), `${bad}: nothing was written`).toEqual([stored]);
+      expect(dayOf(), `${bad}: nor the acquisition date itself`).toBeNull();
+    }
+
+    // A real day still saves, and a day-first one is stored as the day it states.
+    const ok = await actions.setAcquisitionAction({ ok: false, message: "" }, form("15-01-2025"));
+    expect(ok.ok, ok.message).toBe(true);
+    expect(rowsOf(ACC_ACQDATE)[0]).toMatchObject({ acquisition: "ipo", acquisition_price: 100, buy_date: "2025-01-15" });
+    expect(dayOf()).toBe("2025-01-15");
   });
 });

@@ -15,6 +15,7 @@ import {
   type LinkedSync,
 } from "@/lib/analytics/ipo-link";
 import { computeIpo, isPriceableExitDate, type IpoInput } from "@/lib/analytics/ipo";
+import { normalizeDate } from "@/lib/domain/trading-day";
 import type { ChargeBreakdown } from "@/lib/engine/types";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
@@ -412,6 +413,35 @@ export async function POST(req: Request) {
       { status: 400 },
     );
 
+  // D2 (v4.3.0 wave 2M, seam finding F29) — the other three typed days.
+  //
+  // `allotment_date` was stored exactly as typed, three lines from an exit date
+  // that is refused unless it is a real ISO day: a day-first `20-02-2026` went
+  // in verbatim and then read as NO day to the IPO↔holding pairing (so a 4.2.x
+  // restore wrote no link and the one sale stayed counted twice), and as no day
+  // to the ST/LT split that dates a holding period. Each is now stored as the
+  // ISO day it states, and a non-empty value that states no day is refused in
+  // the exit date's own words, naming the field.
+  //
+  // The edit rule is L3's: refused on a create, or on an edit that CHANGES the
+  // value. A value stored unreadable before this wave passes through unchanged
+  // — otherwise the form, which sends the stored value back, could never save a
+  // note again — and clearing is always allowed.
+  const appliedDateRaw = strOrNull(body.appliedDate);
+  const allotmentDateRaw = strOrNull(body.allotmentDate);
+  const listingDateRaw = strOrNull(body.listingDate);
+  const storedDay = (raw: string | null): string | null => (raw == null ? null : normalizeDate(raw) ?? raw);
+  const typedDays = [
+    { label: "applied date", column: "appliedDate" as const, raw: appliedDateRaw },
+    { label: "allotment date", column: "allotmentDate" as const, raw: allotmentDateRaw },
+    { label: "listing date", column: "listingDate" as const, raw: listingDateRaw },
+  ].filter((d) => d.raw != null && normalizeDate(d.raw) == null);
+  const refuseDay = (label: string) =>
+    NextResponse.json(
+      { ok: false, message: `The ${label} must be a real calendar day written year-month-day, such as 2026-06-15. Nothing was saved.` },
+      { status: 400 },
+    );
+
   const allotted = Boolean(body.allotted);
   const values = {
     name,
@@ -427,9 +457,9 @@ export async function POST(req: Request) {
     allottedQty: allotted ? num(body.allottedQty) : 0,
     listingPrice: numOrNull(body.listingPrice),
     exitPrice: numOrNull(body.exitPrice),
-    appliedDate: strOrNull(body.appliedDate),
-    allotmentDate: strOrNull(body.allotmentDate),
-    listingDate: strOrNull(body.listingDate),
+    appliedDate: storedDay(appliedDateRaw),
+    allotmentDate: storedDay(allotmentDateRaw),
+    listingDate: storedDay(listingDateRaw),
     exitDate,
     notes: strOrNull(body.notes),
   };
@@ -449,6 +479,10 @@ export async function POST(req: Request) {
     if (!before || (viewing > 0 && before.accountId !== viewing)) {
       return NextResponse.json({ ok: false, message: "That IPO is not in the account you are viewing." }, { status: 404 });
     }
+    // D2: only a day this request CHANGES is checked (L3's rule), and the
+    // refusal comes before every write, so "Nothing was saved" is the fact.
+    const changedDay = typedDays.find((d) => d.raw !== strOrNull(before[d.column]));
+    if (changedDay) return refuseDay(changedDay.label);
     const link = linkedTradeId === undefined ? before.tradeId ?? null : linkedTradeId;
     // A link this request MAKES must point inside the IPO's own book, and the
     // refusal names both (invariant 8). A link it merely keeps is read in scope
@@ -513,6 +547,8 @@ export async function POST(req: Request) {
 
   // A create has no stored value to pass through: any unreadable exit date is refused.
   if (exitDateRefused()) return refuseExitDate();
+  // D2: nor any other typed day it cannot read.
+  if (typedDays.length > 0) return refuseDay(typedDays[0].label);
 
   // Invariant 9: 0 is a view, not a place. Defect D9 (2026-08-12) swapped
   // `getSelectedAccountId() || 1` for getWriteAccountId() and the comment here
