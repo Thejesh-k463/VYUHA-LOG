@@ -33,11 +33,14 @@ left to do*.
     flipped — **expected fail 0**. DECISIONS "2026-09-16 — v4.3.0 fix wave 2M built". Reports `18-FIX-WORK-4.3.0/wave2h-reports/wave2m-*.md`.
   - `lib/import/commit.ts` still carries no auto-close wiring against v4.2.0 (re-checked at `e23b96c`: 0 hits).
 - **Scoped re-checks:** wave 1 43 / 3 partial → wave 2 47 / 1 → 2R + 2F 34 / 0 / 0 → 2G all CONFIRMED → 2H 49 / 1 / 0 → 19 findings →
-  wave 2I → 2I/2J/2K 58 / 0 / 0 → 26 findings (15 product, 11 test) → wave 2L. **2L's scoped re-check was RUNNING when this block was
-  written** (workflow `wf_5bb7e5bb-d40`, eight units — close-readers / identity / ask / ipo / counted-once / strategies / mtf-accrual / seams —
-  probe prefix `zzprobe-rc7-`, pre-wave `cd1ab70`, wave `8ff4288`, tree `e23b96c`). Its outcome lives in
-  `18-FIX-WORK-4.3.0/wave2l-recheck.json` + a DECISIONS entry "v4.3.0 wave 2L: the scoped re-check"; **if neither exists, the eighth
-  session died mid-run** — sweep `tests/zzprobe-rc7-*` (delete every one), then re-run the script the continuation §0 names.
+  wave 2I → 2I/2J/2K 58 / 0 / 0 → 26 findings (15 product, 11 test) → wave 2L → **2L (over `e23b96c`, post-2M): 41 / 0 / 0 → 28
+  findings (19 product, 9 test) → fix wave 2N — NOT designed, NOT built** (`18-FIX-WORK-4.3.0/wave2l-recheck.json`, read whole; DECISIONS
+  "2026-09-16 — v4.3.0 wave 2L (+ M1): the scoped re-check"). Graded by INTRODUCED regressions: 2L one silent wrong number (identity#0,
+  L7's skip leaves a record in another account unlinked — the double count) + 1 medium + 4 low + 2 cosmetic; **2M one silent wrong
+  number (counted-once#0: tier B carries no scrip clause, so a restore links a record to a holding of a DIFFERENT scrip and the
+  record's own sale vanishes) + 1 medium (ipo#0: legacy day-first rows refused notes-only again) + 1 cosmetic.** Two consecutive
+  waves each introduced a silent wrong number → **the parallel builder pattern is OVER for v4.3.0: 2N, 3a, 3b run ONE builder at a
+  time, design-reviewed first** (the stopping rule's two-in-a-row clause).
 - **Wave 3 is planned, researched and ruled; NOT started; no owner question is owed.** The plan: `18-FIX-WORK-4.3.0/plan-wave3.json`
   (3a W3-ETF 26 files, 3b W3-TAX 42 files, disjoint; 13 seam contracts; every pin that moves; the AGENTS.md "Bundled ETF list"
   text; `open_questions: []`). Its preconditions (a fix wave committed with CI 6/6; no probe file in the tree) hold at `e23b96c` once
@@ -56,9 +59,10 @@ left to do*.
   caught it before the gate instead of a re-check one wave later.
 - **`e2e/z-live-desk.spec.ts` PASSED locally 2026-09-16** (9 / 9, 42.8 s) over the 2L `components/live/*` changes — NEXT item 1 of the
   seventh hand-off, done.
-- **Next:** the 2L re-check outcome under the stopping rule (a product finding at any severity, or a medium+ test finding, reopens
-  work as wave 2N — design-reviewed first, ONE builder for identity / IPO-link / Trash / merge / MTF work) → wave 3 (3a then 3b from
-  `plan-wave3.json`; the seam file is `seams-v43-fixG`) → row 2 (the bump). Decisions: the eighth-session entry dated 2026-09-16 at
+- **Next:** fix wave 2N — the 19 product + 2 medium test findings of the 2L re-check (the 2M-introduced counted-once#0 and ipo#0
+  first): decide every design with its consumer set and sequences, `vyuha-design-reviewer` FIRST, ONE builder at a time, seam pass
+  to convergence with the four guards, gate, commit, CI, its own scoped re-check → wave 3 (3a then 3b from `plan-wave3.json`; the seam
+  file is `seams-v43-fixG`; one builder per sub-wave) → row 2 (the bump). Decisions: the eighth-session entry dated 2026-09-16 at
   the END of `docs/DECISIONS.md`.
 
 *Superseded one-line state of 2026-09-15 at `2bb0fa0` (seventh session), kept for the record:* waves 2I + 2J + 2K `cd1ab70` and 2L + M1
@@ -76,7 +80,7 @@ gate 408 / 8,644 / 35; NOT bumped, NOT tagged.
 
 | # | Item | Status | Resume from EXACTLY here | Closed when |
 |---|---|---|---|---|
-| 1 | v4.3.0 fix work from the release-level audit (91 confirmed; `LIVE-DESK-RESEARCH/15-RELEASE-AUDIT-4.3.0.md`) under the owner's rulings (06-ANSWERS "v4.3.0 release-level-audit rulings"): the FIFO auto-close switched OFF (restore exactly what 4.2.0 did with a SELL of a held lot); every other 4.3.0-introduced product finding; all 19 pre-existing product findings; test-only medium+ outside auto-close; the 6 docs findings | IN PROGRESS. Built: switch-off `9e0e16f`, wave 1 `e0e6d90`, wave 2 `a7e9288`, 2R + 2F `ec89bbd`, 2G `3feb22f`, 2H `b6c1029`, 2I/2J/2K `cd1ab70`, 2L + M1 `8ff4288`, **2M `e23b96c`** (each CI 6/6; every wave through 2K scoped-re-checked). **2L's re-check was RUNNING at hand-off (§0 one-line state); wave 3 planned (`plan-wave3.json`), NOT started.** Gate 427 / 9,323 / 0 expected fail / 35 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1 (the 2L re-check outcome) → item 2 (wave 2N only if it reopens work) → wave 3 from `plan-wave3.json` | every product finding fixed or moved to row 1b by ruling; scoped re-check clean; CI 6/6 → row 2 |
+| 1 | v4.3.0 fix work from the release-level audit (91 confirmed; `LIVE-DESK-RESEARCH/15-RELEASE-AUDIT-4.3.0.md`) under the owner's rulings (06-ANSWERS "v4.3.0 release-level-audit rulings"): the FIFO auto-close switched OFF (restore exactly what 4.2.0 did with a SELL of a held lot); every other 4.3.0-introduced product finding; all 19 pre-existing product findings; test-only medium+ outside auto-close; the 6 docs findings | IN PROGRESS. Built: switch-off `9e0e16f`, wave 1 `e0e6d90`, wave 2 `a7e9288`, 2R + 2F `ec89bbd`, 2G `3feb22f`, 2H `b6c1029`, 2I/2J/2K `cd1ab70`, 2L + M1 `8ff4288`, **2M `e23b96c`** (each CI 6/6; every wave through 2K scoped-re-checked). **2L's re-check DONE 41 / 0 / 0 → 28 findings → wave 2N NOT designed, NOT built (one builder at a time from here on); wave 3 planned (`plan-wave3.json`), NOT started.** Gate 427 / 9,323 / 0 expected fail / 35 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1 (wave 2N from `wave2l-recheck.json`) → wave 3 from `plan-wave3.json` | every product finding fixed or moved to row 1b by ruling; scoped re-check clean; CI 6/6 → row 2 |
 | 1b | v4.3.1 — the FIFO auto-close rebuilt together with the duplicate-detection defects that share its trade-identity code (F-L1-3's Dhan GTR-name vs API-ticker mismatch, F-L1-7's same-hash second-sale drop, R43 if inseparable) | by ruling, after 4.3.0 | `15-RELEASE-AUDIT-4.3.0.md` (R3, R4, R8, R72, R75, R76, R2, R14, R31, R6, R39, R41, R62, R15; tests R16, R58–R60) + DECISIONS "2026-09-11 — v4.3.0 release-level audit" | a researched design, the owner's "build", its own release-level audit |
 | 2 | Bump 4.3.0 + the 11 release steps | NOT started; waits on row 1 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (the bump recipe; the drafts in `LIVE-DESK-RESEARCH/16-BUMP-4.3.0-DRAFTS/` — drop every auto-close claim first; the install guide says ONE upgrade, 0071 — ruled; the widened rate-card note; the bundle must carry `rate-card-refresh.mjs`) → `08-BUILD-PROMPTS/V400-LIVE-DESK-BUILD-PROMPT.md` §7 → `release` skill → `vyuha-release-steward` | owner says **"tag"**; tag `v4.3.0` pushed; release run 3/3; `release:verify v4.3.0 -- --deep` 3/3; `releases/latest` → 4.3.0; client ZIP built; winget manifest with the CI asset sha; WDSI form handed over unprompted |
 | 3 | Owner laptop smoke test of 4.3.0 | waits on row 2 | the six-item list in `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (last sentence) — signatures in §0.3 V6 | owner confirms all six on a non-build machine with his own keys |
