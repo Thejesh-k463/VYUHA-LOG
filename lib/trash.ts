@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { recordAudit, type AuditInput } from "@/lib/audit";
+import { heldIdentityHashes, readsLong, type RowLegs } from "@/lib/import/close-open-lots";
 import {
   TRASH_VERSION,
   trashSnapshotId,
@@ -98,6 +99,14 @@ export interface SnapshotInput {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** V1: a snapshot record's legs, as `heldIdentityHashes` reads them (unstated = 0 / null). */
+const legsOf = (row: Record<string, unknown>): RowLegs => ({
+  buyQty: typeof row.buyQty === "number" ? row.buyQty : 0,
+  sellQty: typeof row.sellQty === "number" ? row.sellQty : 0,
+  buyDate: typeof row.buyDate === "string" ? row.buyDate : null,
+  sellDate: typeof row.sellDate === "string" ? row.sellDate : null,
+});
 
 /**
  * Write the snapshot for a delete that is about to happen.
@@ -423,6 +432,124 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
     db.select({ id: trades.id }).from(trades).where(inArray(trades.id, wantedIds)).all().map((r) => r.id),
   );
 
+  // ── A joined lot cannot come back beside the sale it already counts ───────
+  //
+  // S2 (v4.3.0 wave 2H seam pass) — H3's skip below, the other way round. A lot
+  // closed from Data Quality keeps its sale's hash as a `dedup-alias:`. When
+  // that sale is STORED again (its join snapshot was restored after the lot was
+  // deleted), landing the lot would count one sale on two rows. Skipping the lot
+  // would lose its buy leg, so the WHOLE restore refuses before any write and
+  // names the stored row. Rows that would be skipped anyway (id taken, or their
+  // own hash already stored) never refuse.
+  //
+  // T1 (wave 2H second seam fix) — IDENTITY SETS are compared both ways. The
+  // index holds every stored row's own hash AND each of its aliases, and grows
+  // with the rows this restore would land ahead of the current one: a sale
+  // joined onto ANOTHER lot since is no row, only that lot's alias, and a sale
+  // landing earlier in the same snapshot is a row only in the plan.
+  //
+  // U1 (wave 2H third seam fix) — (a) no refusal advises deleting a row that
+  // carries a leg of its own: a LOT holding the sale only as an alias also holds
+  // its own purchase, and deleting it lost that purchase for good. Only a plain
+  // one-sided row hit on its own hash (S2) keeps the delete-then-restore remedy.
+  // (b) an alias counts as HELD only while its holder's closing leg holds
+  // quantity (a long's sell leg, a short's buy leg — H1's reading in
+  // updateManualTrade): the trade editor re-opening a joined lot keeps the alias
+  // for re-import dedup, but that lot no longer records the sale.
+  //
+  // V1 (wave 2H fourth seam fix) — (b) is ONE predicate for every alias reader
+  // (`heldIdentityHashes`, lib/import/close-open-lots.ts): this index, H3's skip
+  // in the transaction below and import dedup in commit.ts. An alias that is not
+  // held is not identity, so it is never indexed.
+  {
+    type Holder = RowLegs & { id: number; tradingsymbol: string; planned: boolean };
+    // The closing leg's name only where the row states its direction; a closed
+    // row with no ordered dates stays a "trade" rather than a guessed side.
+    const closingWord = (x: Holder) =>
+      readsLong(x)
+        ? "sale"
+        : x.sellQty > x.buyQty || (!!x.buyDate && !!x.sellDate && x.sellDate < x.buyDate)
+          ? "purchase"
+          : "trade";
+    const indexByBook = new Map<string, { own: Map<string, Holder>; alias: Map<string, Holder> }>();
+    const indexOf = (accountId: number, broker: string) => {
+      const key = `${accountId}|${broker}`;
+      let index = indexByBook.get(key);
+      if (!index) {
+        index = { own: new Map(), alias: new Map() };
+        const stored = db
+          .select({
+            id: trades.id, tradingsymbol: trades.tradingsymbol, dedupHash: trades.dedupHash,
+            importNotes: trades.importNotes, buyQty: trades.buyQty, sellQty: trades.sellQty,
+            buyDate: trades.buyDate, sellDate: trades.sellDate,
+          })
+          .from(trades)
+          .where(and(eq(trades.accountId, accountId), eq(trades.broker, broker)))
+          .all();
+        for (const s of stored) {
+          const holder: Holder = {
+            id: s.id, tradingsymbol: s.tradingsymbol, buyQty: s.buyQty, sellQty: s.sellQty,
+            buyDate: s.buyDate, sellDate: s.sellDate, planned: false,
+          };
+          const own = s.dedupHash.toLowerCase();
+          if (!index.own.has(own)) index.own.set(own, holder);
+          for (const h of heldIdentityHashes(s)) if (h.toLowerCase() !== own && !index.alias.has(h.toLowerCase())) index.alias.set(h.toLowerCase(), holder);
+        }
+        indexByBook.set(key, index);
+      }
+      return index;
+    };
+    for (const row of rows) {
+      if (taken.has(row.id)) continue;
+      if (typeof row.accountId !== "number" || typeof row.broker !== "string" || typeof row.dedupHash !== "string") continue;
+      const ownHash = row.dedupHash.toLowerCase();
+      const aliases = heldIdentityHashes({ dedupHash: ownHash, importNotes: typeof row.importNotes === "string" ? row.importNotes : null, ...legsOf(row) })
+        .filter((h) => h !== ownHash);
+      const index = indexOf(row.accountId, row.broker);
+      // The unique index skips it (a stored row, or one landing earlier here).
+      if (index.own.has(ownHash)) continue;
+      // H3's skip below: a plain row already recorded in the position it closed.
+      if (aliases.length === 0 && index.alias.has(ownHash)) continue;
+      const symbol = String(row.tradingsymbol ?? row.symbol ?? "—");
+      for (const h of [ownHash, ...aliases]) {
+        const byOwn = index.own.get(h);
+        // (b) the index holds only HELD aliases (V1), so an alias hit records the sale.
+        const hit = byOwn ?? index.alias.get(h);
+        if (!hit) continue;
+        const oneSided = (hit.sellQty > 0 && hit.buyQty === 0) || (hit.buyQty > 0 && hit.sellQty === 0);
+        const what = !byOwn ? closingWord(hit) : hit.sellQty > 0 && hit.buyQty === 0 ? "sale" : hit.buyQty > 0 && hit.sellQty === 0 ? "purchase" : "closing trade";
+        if (hit.planned) {
+          return fail(
+            `Trade #${row.id} (${symbol}) was closed with a ${what} this snapshot also holds (trade #${hit.id}, ${hit.tradingsymbol}) — ` +
+              `restoring both would count that ${what} twice. Nothing was changed.`,
+          );
+        }
+        if (h === ownHash) {
+          // (a) the holder is a lot recording this row as its alias: it carries
+          // its own leg, so nothing here advises deleting it.
+          return fail(
+            `Trade #${row.id} (${symbol}) is already recorded in trade #${hit.id} (${hit.tradingsymbol}), which was closed with it, ` +
+              `so restoring it would count it twice. Nothing was changed; this entry stays in Deleted items.`,
+          );
+        }
+        return fail(
+          byOwn
+            ? `Trade #${row.id} (${symbol}) was closed with a ${what} that is back in the journal ` +
+                `(trade #${hit.id}, ${hit.tradingsymbol}) — restoring it would count that ${what} twice. ` +
+                // S2's remedy only for a plain one-sided row: deleting it loses
+                // nothing the incoming lot does not already record.
+                (oneSided ? `Delete that row, then restore. Nothing was changed.` : `Nothing was changed; this entry stays in Deleted items.`)
+            : `Trade #${row.id} (${symbol}) was closed with a ${what} that trade #${hit.id} (${hit.tradingsymbol}) already records, ` +
+                `so restoring it would count that ${what} twice. Nothing was changed; this entry stays in Deleted items.`,
+        );
+      }
+      // This row lands: later rows in the snapshot meet its identity too.
+      const planned: Holder = { id: row.id, tradingsymbol: symbol, ...legsOf(row), planned: true };
+      index.own.set(ownHash, planned);
+      for (const h of aliases) if (!index.alias.has(h)) index.alias.set(h, planned);
+    }
+  }
+
   const skipped: TrashRestoreResult["skipped"] = [];
   let restored = 0, legs = 0, attachments = 0;
   let extraRestored = 0, extraSkipped = 0;
@@ -466,9 +593,41 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
       }
 
       const landed = new Set<number>();
+      // H3 (v4.3.0 wave 2H) — the ALIAS hashes of the stored rows, per
+      // (account, broker). The unique index sees only each row's own hash, but a
+      // Data Quality join keeps the sale it consumed as a `dedup-alias:` on the
+      // lot (`withStaleCloseNote`), so restoring that sale would count it twice.
+      // Read lazily per book, inside this transaction; a row landing below adds
+      // its own aliases.
+      const aliasesByBook = new Map<string, Set<string>>();
+      const aliasesOf = (accountId: number, broker: string): Set<string> => {
+        const key = `${accountId}|${broker}`;
+        let set = aliasesByBook.get(key);
+        if (!set) {
+          set = new Set<string>();
+          const stored = tx
+            .select({
+              dedupHash: trades.dedupHash, importNotes: trades.importNotes,
+              buyQty: trades.buyQty, sellQty: trades.sellQty, buyDate: trades.buyDate, sellDate: trades.sellDate,
+            })
+            .from(trades)
+            .where(and(eq(trades.accountId, accountId), eq(trades.broker, broker)))
+            .all();
+          // V1: HELD aliases only — a lot re-opened in the editor no longer records its sale.
+          for (const r of stored) for (const h of heldIdentityHashes(r)) if (h !== r.dedupHash) set.add(h.toLowerCase());
+          aliasesByBook.set(key, set);
+        }
+        return set;
+      };
       for (const row of rows) {
         if (taken.has(row.id)) {
           skipped.push({ id: row.id, symbol: String(row.symbol ?? "—"), reason: "a trade with that id is already in the journal" });
+          continue;
+        }
+        const book = typeof row.accountId === "number" && typeof row.broker === "string" ? { accountId: row.accountId, broker: row.broker } : null;
+        const ownHash = typeof row.dedupHash === "string" ? row.dedupHash.toLowerCase() : "";
+        if (book && ownHash && aliasesOf(book.accountId, book.broker).has(ownHash)) {
+          skipped.push({ id: row.id, symbol: String(row.symbol ?? "—"), reason: "an identical trade is already in the journal (recorded in the position it closed)" });
           continue;
         }
         try {
@@ -476,6 +635,11 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           tx.insert(trades).values(row as any).run();
           landed.add(row.id);
           restored++;
+          if (book && typeof row.dedupHash === "string") {
+            const notes = typeof row.importNotes === "string" ? row.importNotes : null;
+            const set = aliasesOf(book.accountId, book.broker);
+            for (const h of heldIdentityHashes({ dedupHash: row.dedupHash, importNotes: notes, ...legsOf(row) })) if (h !== row.dedupHash) set.add(h.toLowerCase());
+          }
         } catch (e) {
           // Almost always the dedup unique index: the same file was imported
           // again after the delete, so this trade is already back.

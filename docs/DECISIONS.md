@@ -6698,3 +6698,131 @@ new findings shrink each round in both severity and count (wave 1: 16 product in
 **Gate on the wave-2G tree:** `npm run verify` EXIT 0, raw line **398 files / 8,470 passed / 35 skipped**, `next build`
 compiled. The first run was red only on `readme-claims` (the file count 397 vs 398 on disk). Because `verify` stops at the
 first failure, it was re-run whole after the README's six test figures and its file count moved.
+
+## 2026-09-15 — v4.3.0 wave 2G: the scoped re-check → every fix CONFIRMED (0 refuted, 0 unverifiable); 12 new findings → fix wave 2H (decided)
+
+**The re-check.** Seven probe-capable Opus reviewers (general-purpose), one per unit (identity, dq, pull, ipo, strat-copy,
+spot-ui, seams). Each re-proved every 2G fix red-on-revert from probe copies of `cba3e6c`, against `3feb22f`, CI 34938773202
+SUCCESS 6/6. All 14 items and the seam cases D1–D6 plus the timing budget were CONFIRMED. No probe was left and no tracked
+file touched. Full verdicts and every where / reproduce / evidence: `18-FIX-WORK-4.3.0/wave2g-recheck.json`. The
+phase-check edge G1 flagged (an M1 ask target that another incoming row also supersedes) was probed and behaves correctly:
+the forced book equals the broker's statement, with no double and no lost row.
+
+**Product findings that reopen work (stopping rule), with the orchestrator's decided designs** (no owner question; overrule
+here):
+- **closePosition on a partly sold long — SILENT WRONG NUMBER, pre-existing** (found in passing). An open row at 100 / 60
+  is closed as sellQty 40 and sellValue 40 × exit, which drops the 60 already sold: +5,200 books as −9,800.
+  → The exit is ADDED to the existing leg on the closing side (the mirror for a short). The average is weighted, and the
+  row closes at equal quantities. A row with sellQty 0 is byte-identical.
+- **M2's exemption was per ROW — medium, wave 2G.** A joined lot exempted every link, so three reachable books became
+  one-click onto a sale already counted: (a) the sale restored from Trash, (b) the same sale re-arriving with another hash,
+  (c) the lot re-opened and re-closed.
+  → The exemption is per LINK. It applies only if the candidate sale is not one of the lot's identity hashes and does not
+  restate its close (same quantity and price at the paisa), and while the lot still carries the stale-close note. The
+  trade editor and closePosition drop that note (keeping the alias) whenever they change the sell leg. An identical
+  sibling sale is refused as AMBIGUOUS — the accepted cost.
+- **Trash restore of a Data Quality-joined sale — low, earlier 4.3.0.** The unique index cannot see a dedup-alias.
+  → `restoreTrashSnapshot` skips a row whose hash is a stored row's alias, counted as "already in the journal".
+- **The M1 ask's sentence — low, wave 2G.** It gave the other asks' reasons and no path.
+  → An M1-only ask names "another product, segment or exchange" and the path that reaches the broker's book (delete the
+  earlier row, pull again; committing keeps both). The other asks keep their sentence verbatim. Rejected, for 4.3.1 with
+  product-keyed snapshot identity: a one-click "replace the earlier row" action.
+- **The IPO linked close — low, wave 2G.** L3's pass-through let a save with a new exit price close a LINKED open trade
+  on the unreadable stored date (an invented FY in the tax base).
+  → The date is validated when the request changes it, when the save makes the IPO exited, or when it writes a linked
+  trade's sell date. A notes-only edit still saves. The form names the unreadable stored date.
+- **Kept pull notices at the card — low, wave 2G.** GET's per-span dedupe showed one client's fact, and the user's Clear
+  dismissed a second client's different fact unseen.
+  → One line per record (connection + span, each with its own fact), and Clear carries that record's connection (null for
+  a carry). A Clear with no connection field keeps clearing every same-span record.
+- **The audit diff — cosmetic.** A pull clear row showed "scope: — → connection". → Only `clearedAt` differs.
+- **/strategies All accounts — low, pre-existing.** G5b's in-scope fallback, and the stored-symbol grouping, let a holding
+  in one account cover another account's naked call. That bounded the max loss of a naked call, a figure no single-account
+  view shows. The 2G entry's "each account's cards equal its single-account view" was overstated.
+  → All accounts = each account's single-account cards exactly (N16, netting per account): no in-scope fallback, and
+  grouping by (account, symbol).
+
+**Test findings:** D5 case 1 was satisfiable by a no-op clear (low, fixed cheaply by the pull builder, asserting on the
+stored records). The alias half of the M2 AND was unpinned (low, fixed with the narrowing). Two stale header lines in the
+seam file (cosmetic, fixed).
+
+## 2026-09-15 — v4.3.0 fix wave 2H built (sixth session): six builders, then FIVE seam rounds before the gate
+
+**How.** Six Opus builders H1–H6 on disjoint files, then a phase check and the seam tester
+(`tests/seams-v43-fixE.test.ts`). The seam pass was run to convergence: every seam defect entered the wave as confirmed,
+was fixed by a micro builder, and the tester re-ran over the changed boundaries. That took five rounds: S1–S4, T1–T3,
+U1–U3, V1–V4, X1–X2, then Y1–Y2. Every fix below is red on revert, with the quotes in
+`LIVE-DESK-RESEARCH/18-FIX-WORK-4.3.0/wave2h.json` and `wave2h-seamfix{,2,3,4,5}.json`.
+
+**The re-check findings, as built:**
+- **H1 — closePosition on a partly closed row** (the silent wrong number). The closing leg is prior + remaining
+  (quantity, rupees, weighted average). The exit counts as one more order when the leg already holds quantity, and one
+  computeCharges call prices the aggregate. An empty closing side is byte-identical. Measured: 100/40, gross −9,800 →
+  100/100, gross +5,200. closePosition, and any editor save that changes the exit leg, removes the stale-close note and
+  keeps every alias.
+- **H2 — the M1 ask names its reason.** A local flag carries "0 candidates on the key, same symbol under another product"
+  from planSnapshot to cross-source. The sentence names another product / segment / exchange and the delete-and-pull path;
+  other asks keep theirs. The collision object is unchanged (6 keys).
+- **H3 — the M2 exemption is per LINK** (the sale is not the lot's identity hash, does not restate its close, and the note
+  is still present). A sale with no hash or no stated price never exempts. The trash restore skips a plain sale that a
+  stored lot records.
+- **H4 — one card line per record; Clear names its connection.** GET adds `unfetchedConnection[]` beside a byte-compatible
+  `unfetched[]`, because 12 wire-shape pins fix it. A clear row carries the scope on both audit sides.
+- **H5 — the IPO exit date is validated** when the request changes it, makes the IPO exited, or writes a NEW sell date to
+  a linked trade.
+- **H6 — /strategies All accounts = each account's single-account cards** (N16). `buildStrategies` runs per account, with
+  no in-scope fallback. Measured: 24 cards on 0 against 27 across the single views → equal. Owed, recorded: StrategyCard
+  has no account label.
+
+**The seam rounds, in order (each one closed what the round before it found):**
+- **S1 (medium).** The close dialog preview priced the pre-H1 write (2,200 vs a stored 5,200). The arithmetic now lives
+  once, in `lib/domain/close-aggregate.ts`, read by closePosition and the dialog's exported `closePreviewBody`.
+- **S2 → T1 → U1 → V1 (restore identity).** A lot restored beside its sale is REFUSED, never skipped (a skip would lose the
+  buy leg), and the refusal compares identity sets both ways. It advises no delete of a row that carries its own leg, and
+  says the entry stays in Deleted items. Finally ONE predicate, `aliasHeld` / `heldIdentityHashes` in
+  `lib/import/close-open-lots.ts` (with the single `readsLong`), is read by the refusal, both restore skips and the
+  re-import dedup. An alias counts only while its holder's closing leg holds quantity, so a joined lot re-opened in the
+  editor no longer strands its sale. `tests/auto-close-off.test.ts` (v) R26 was re-pinned by decision: its fixture put an
+  alias on an OPEN lot, a state only a re-open reaches. The lot is now closed in the fixture, and a reverse case was added.
+- **S3.** The named Clear clears the line shown (the preferred record, else the same span + fact + remedy); it answers 404
+  only when none is open.
+- **S4 → T3 → U3 → V2 → X1 → Y2 (IPO ↔ linked holding).**
+  - The route refuses a save that would write a new close without a readable exit date.
+  - The computed row carries `linked` / `linkedSellDate`.
+  - The form pre-fills a linked holding's readable sell date only for a sold IPO whose exit the sale matches.
+  - V2's recompute of the linked row was DELETED. `linkedSyncFor` → sync / leave / refuse:
+    - **sync** when the holding has no sale, or its sale is the IPO's own exit (stored or being recorded);
+    - **leave** (not one trade column written) when the save changes nothing the sync would write;
+    - **refuse 409** otherwise, naming Trades.
+  - A create or re-link over a Trades sale is refused.
+- **T2 → U2.** Order counts travel on `SlimTrade` (`buyOrderCount` / `sellOrderCount`). The close dialog and the trade
+  editor preview (`editPreviewBody`) send the counts their save bills.
+- **V3 → X2.** A stored MTF funded amount of 0 is kept (`?? estimate`) by closePosition, closeStaleLot, updateManualTrade,
+  applyOverride AND the daily accrual job. A typed own capital of 0 is 0 in both trade actions.
+- **V4.** One order-count default: settings `defaultBuyOrders` / `defaultSellOrders`, read by the preview route (for an
+  omitted count), the editor save and closePosition.
+- **Y1 → Z1 — CAP-IPO-LINK / TAX-IPO-LINK (pre-existing, silent wrong numbers).** A linked IPO's sale was counted twice:
+  in the capital summary (997.94 for one 500 sale, feeding `available` and compounding), in `getTaxBase` (the tax pack and
+  the ITR export), and in the AIS totals.
+  - The rule: an IPO is left out only where THAT consumer already counted its linked trade (`countedTradeIds`;
+    `ipoIdsCountedThroughTrades`, because `trade_id` is not unique).
+  - AIS applies the rule per side (purchase / sale).
+  - An unlinked IPO, or one linked to an open or missing trade, still counts once.
+  - Rejected: excluding every IPO with a `trade_id`, which silently drops a sale whose holding is open or deleted.
+  - Owed (tidy-up): move `ipoIdsCountedThroughTrades` beside `getIpoRealisedNet`, so the rule has one home.
+- **Y2 → Z2 — IPO corner cases.**
+  - `linkedSyncFor` treats an unreadable stored exit date as equal to any date for 'leave', so a notes-only save over a
+    sale corrected in Trades answers 200.
+  - The /ipos row carries `linkedSellQty` / `linkedSellPrice`. The form pre-fills only when the linked sale IS the IPO's
+    exit apart from the date; otherwise it keeps the stored date and says the sale differs and is recorded in Trades.
+  - The sync writes the IPO's computed charges onto the linked holding: all 10 charge columns from `charge_config` via
+    `computeIpo`, and net = gross − charges. The holding's net equals the IPO's (497.94, not 500).
+  - A sync-made re-open zeroes the charges. An open holding, an unreadable exit date or a missing rate row keeps the
+    trade's charges.
+  - Not proven: the paisa rounding for prices with 3+ decimals.
+
+**Gate on the wave-2H tree:** `npm run verify` EXIT 0; raw line **408 files / 8,644 passed / 35 skipped**; `next build`
+compiled. The first run was red only on the `readme-claims` file count (398 in README, 408 on disk), and was re-run whole
+after the README's six figures and its file count moved. **Next:** the SCOPED re-check of wave 2H (H1–H6 and every seam
+fix S / T / U / V / X / Y / Z) with probe-capable reviewers against `3feb22f`, then the stopping rule, then wave 3 (W3-ETF
+and W3-TAX, both researched and ruled; the inputs are in `18-FIX-WORK-4.3.0/plan-answers.md`).

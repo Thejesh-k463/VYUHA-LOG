@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
+// app/audit/page.tsx's own diff helper (the Audit log renders exactly this).
+import { diffFields } from "@/lib/analytics/audit-diff";
 
 /**
  * v4.3.0 fix wave 2R (R2-PULLNOTICE) — the kept Dhan "not fetched" notice's
@@ -54,6 +56,23 @@ const trail = (accountId: number) =>
     .all(accountId) as { conn: number | null; action: string; summary: string; f: string; too: string }[];
 const carry = (fromAccountId: number, toAccountId: number) =>
   t.db.transaction((tx) => un.carryUnfetchedOnMerge(tx, { fromAccountId, toAccountId, fromName: "X", toName: "Y", source: "ui" }));
+/** The user's Clear with NO connection field, exactly as app/api/import/broker/route.ts
+ *  writes it: entity_id = the account's current Dhan connection, no scope, source "ui". */
+const userClear = (accountId: number, connId: number, s: { from: string; to: string; reason: string }) => {
+  const snap = { notice: "dhan-unfetched", broker: "dhan", accountId, from: s.from, to: s.to, reason: s.reason };
+  t.db
+    .insert(t.schema.auditLog)
+    .values({
+      entity: "settings",
+      entityId: connId,
+      action: "update",
+      summary: `Dhan notice cleared by the user: fills from ${s.from} to ${s.to} were not fetched by a pull.`,
+      beforeJson: { ...snap, clearedAt: null },
+      afterJson: { ...snap, clearedAt: new Date().toISOString() },
+      source: "ui",
+    })
+    .run();
+};
 
 describe("N4 · a merge-carried notice (no connection) is removed by no pull — only by the user's Clear", () => {
   it("the target's own client's untruncated read, whose window covers the carried page-cap span, leaves it listed", () => {
@@ -115,27 +134,10 @@ describe("N4 · a merge-carried notice (no connection) is removed by no pull —
  * untruncated read then cleared the only row — so the source client's unread
  * fills were named nowhere. The key now includes the connection: a carried span
  * (connId null) is distinct, a pull's clear names its own connection's span,
- * and GET still lists one line per from / to / reason.
+ * and GET lists records with the same span AND the same sentences as one line
+ * (wave 2H: a different sentence is a second line — see H4 below).
  */
 describe("L1 · a carried notice is distinct from the target client's identical one", () => {
-  /** The user's Clear exactly as app/api/import/broker/route.ts writes it:
-   *  entity_id = the account's current Dhan connection, source "ui". */
-  const userClear = (accountId: number, connId: number, s: { from: string; to: string; reason: string }) => {
-    const snap = { notice: "dhan-unfetched", broker: "dhan", accountId, from: s.from, to: s.to, reason: s.reason };
-    t.db
-      .insert(t.schema.auditLog)
-      .values({
-        entity: "settings",
-        entityId: connId,
-        action: "update",
-        summary: `Dhan notice cleared by the user: fills from ${s.from} to ${s.to} were not fetched by a pull.`,
-        beforeJson: { ...snap, clearedAt: null },
-        afterJson: { ...snap, clearedAt: new Date().toISOString() },
-        source: "ui",
-      })
-      .run();
-  };
-
   it("the recheck's reproduce: the carry is written, and the target client's read clears only its own row", () => {
     const [X, Y, X_CONN, Y_CONN] = [601, 602, 61, 62];
     const spans = spansOf("2026-09-07", "2026-09-11", true);
@@ -256,5 +258,173 @@ describe("N5 · a clamped page-cap span is cleared by an untruncated retry on a 
     un.keepUnfetched(spansOf("2026-05-13", "2026-09-11", false), { ...owner, connId: CONN + 1 });
     un.keepUnfetchedAndStamp([], owner, "2026-09-11T05:00:00.000Z", { from: "2026-06-13", to: "2026-09-11" });
     expect(open(A).filter((s) => s[2] === "page-cap")).toEqual([["2026-06-12", "2026-09-09", "page-cap"]]);
+  });
+});
+
+/**
+ * v4.3.0 fix wave 2H (H4) — kept pull notices at the card, per RECORD.
+ *
+ * GET listed one line per from / to / reason with the FIRST record's fact, and
+ * the user's Clear (no connection) removed every connection's record with that
+ * span. A merge-carried record can share the span with the target client's own
+ * record but state a different fact — the source client's last pull ran at
+ * another time of day — so the second client's unread fills were dismissed
+ * unseen. Now: one line per record (same span AND same sentences share a line),
+ * each with its connection; a Clear naming a connection clears exactly that
+ * record's line; a Clear with no connection field keeps clearing every
+ * same-span record. And a clear row's audit diff shows `clearedAt` only.
+ */
+describe("H4 · one card line per kept record, and a Clear that names its record", () => {
+  const SPAN = { from: "2026-05-13", to: "2026-06-12", reason: "range-cap" };
+  /** The range-cap span a pull on 2026-09-11 keeps, its last stamp at `stamp`. */
+  const rangeCapAt = (stamp: string) =>
+    dhan.toParsedFile([], dhan.catchUpRange(stamp, "2026-09-11"), { pages: 1, truncated: false, oldest: null, newest: null }, stamp).unfetched;
+  /** "after HH:MM IST" — the part of the fact that differs between the two clients. */
+  const hhmm = (fact: string) => /after (\d\d:\d\d) IST/.exec(fact)?.[1] ?? fact;
+  const lines = (A: number) => un.outstandingUnfetchedLines(A).map((s) => [s.connection, s.from, s.to, s.reason, hhmm(s.fact)]);
+  const records = (A: number) => un.outstandingUnfetchedRecords(A).map((s) => [s.connection, hhmm(s.fact)]);
+  const USER = "Dhan notice cleared by the user.";
+
+  /** The re-check's reproduce: Y's own client (62) stamped 10:30 IST, X's client (61)
+   *  stamped 14:30 IST the same day, X's record carried into Y by a merge. */
+  function stageTwoFacts(X: number, Y: number) {
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 62, accountId: Y, source: "import" });
+    un.keepUnfetched(rangeCapAt("2026-05-13T09:00:00.000Z"), { connId: 61, accountId: X, source: "import" });
+    expect(carry(X, Y)).toBe(1);
+    expect(records(Y)).toEqual([
+      [62, "10:30"],
+      [null, "14:30"],
+    ]);
+  }
+
+  it("GET lists BOTH records, each line with its own connection and its own stored fact", () => {
+    const [X, Y] = [701, 702];
+    stageTwoFacts(X, Y);
+    // THE assertion (one line, 62's "10:30", on revert of the per-record listing).
+    expect(lines(Y)).toEqual([
+      [62, ...Object.values(SPAN), "10:30"],
+      [null, ...Object.values(SPAN), "14:30"],
+    ]);
+    // GET's `unfetched` keeps its shape (no connection key) — the connection rides beside it.
+    expect(un.outstandingUnfetched(Y).map((s) => Object.keys(s).sort())).toEqual([
+      ["fact", "from", "reason", "remedy", "to"],
+      ["fact", "from", "reason", "remedy", "to"],
+    ]);
+  });
+
+  it("a Clear naming connection 62 clears 62's record only — the carried record stays outstanding", () => {
+    const [X, Y] = [703, 704];
+    stageTwoFacts(X, Y);
+    expect(un.clearUnfetchedLine(Y, { ...SPAN, connection: 62 }, USER)).toBe(1);
+    // THE assertion ([] on revert: the named Clear cleared every same-span record).
+    expect(records(Y)).toEqual([[null, "14:30"]]);
+  });
+
+  it("a Clear naming null clears only the carried record; a record no longer open clears nothing", () => {
+    const [X, Y] = [705, 706];
+    stageTwoFacts(X, Y);
+    expect(un.clearUnfetchedLine(Y, { ...SPAN, connection: null }, USER)).toBe(1);
+    // THE assertion ([] on revert: the null Clear cleared 62's record too).
+    expect(records(Y)).toEqual([[62, "10:30"]]);
+    expect(un.clearUnfetchedLine(Y, { ...SPAN, connection: null }, USER)).toBe(0);
+    expect(un.clearUnfetchedLine(Y, { ...SPAN, connection: 61 }, USER)).toBe(0);
+    expect(records(Y)).toEqual([[62, "10:30"]]);
+  });
+
+  it("a Clear with NO connection field (the route's legacy row) still clears both records", () => {
+    const [X, Y] = [707, 708];
+    stageTwoFacts(X, Y);
+    userClear(Y, 62, SPAN);
+    expect(records(Y)).toEqual([]);
+  });
+
+  it("the same span with the SAME fact is one line, and a Clear naming either record clears both", () => {
+    const [X, Y] = [709, 710];
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 72, accountId: Y, source: "import" });
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 71, accountId: X, source: "import" });
+    expect(carry(X, Y)).toBe(1);
+    expect(records(Y)).toEqual([
+      [72, "10:30"],
+      [null, "10:30"],
+    ]);
+    // THE assertion (two identical lines on revert of the same-sentence grouping).
+    expect(lines(Y)).toEqual([[72, ...Object.values(SPAN), "10:30"]]);
+    expect(un.clearUnfetchedLine(Y, { ...SPAN, connection: 72 }, USER)).toBe(2);
+    // THE assertion (the carried record still listed on revert: the Clear left the line's other record).
+    expect(records(Y)).toEqual([]);
+  });
+
+  it("the audit diff of a clear row — a pull's and the named user Clear's — shows clearedAt only", () => {
+    const [A, CONN] = [711, 70];
+    const updates = () =>
+      (
+        t.sqlite
+          .prepare(
+            "SELECT source, before_json AS b, after_json AS a FROM audit_log WHERE action = 'update' AND json_extract(after_json, '$.notice') = 'dhan-unfetched' AND json_extract(after_json, '$.accountId') = ? ORDER BY id",
+          )
+          .all(A) as { source: string; b: string; a: string }[]
+      ).map((r) => ({ source: r.source, diff: diffFields(JSON.parse(r.b), JSON.parse(r.a)).map((c) => [c.field, c.from, typeof c.to]) }));
+    // A pull clear: the re-check's reproduce (a truncated pull's page-cap span, then an untruncated read).
+    un.keepUnfetched(spansOf("2026-09-07", "2026-09-11", true), { connId: CONN, accountId: A, source: "import" });
+    un.keepUnfetchedAndStamp([], { connId: CONN, accountId: A, source: "import" }, "2026-09-12T05:00:00.000Z", { from: "2026-09-07", to: "2026-09-12" });
+    // A named user Clear.
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: CONN, accountId: A, source: "import" });
+    expect(un.clearUnfetchedLine(A, { ...SPAN, connection: CONN }, USER)).toBe(1);
+    // THE assertion (a second ["scope", null, "string"] entry on revert: scope sat in afterJson only).
+    expect(updates()).toEqual([
+      { source: "import", diff: [["clearedAt", null, "string"]] },
+      { source: "ui", diff: [["clearedAt", null, "string"]] },
+    ]);
+    expect(open(A)).toEqual([]);
+  });
+
+  /**
+   * S3 (v4.3.0 fix wave 2H seam, low). A shared line (the same span and sentences)
+   * carries the target client's connection. The target's own untruncated pull
+   * (or lib/jobs/auto-pull.ts) clears THAT record while the card is open; the
+   * card's Clear still names it. It answered 0 (the route's 404 "not open") while
+   * the carried record stating the identical sentence stayed listed. The Clear
+   * now targets the LINE the card showed: the named record when it is open, else
+   * the open records with the same span and the same stored sentences.
+   */
+  it("S3 · a card loaded before a pull cleared its line's named record: the Clear clears the line's other record, and nothing else", () => {
+    const [X, Y, X_CONN, Y_CONN, Y_OTHER] = [721, 722, 81, 82, 83];
+    /** The page-cap span a truncated pull on 2026-09-11 keeps, its last stamp at `stamp` (the fact names HH:MM IST). */
+    const pageCapAt = (stamp: string) =>
+      dhan.toParsedFile([], dhan.catchUpRange(stamp, "2026-09-11"), { pages: 50, truncated: true, oldest: null, newest: null }, stamp).unfetched;
+    const PAGE = { from: "2026-09-07", to: "2026-09-10", reason: "page-cap" };
+    // The fixD-style merge: target and source clients stamped 10:30 IST the same day — one sentence.
+    un.keepUnfetched(pageCapAt("2026-09-07T05:00:00.000Z"), { connId: Y_CONN, accountId: Y, source: "import" });
+    un.keepUnfetched(pageCapAt("2026-09-07T05:00:00.000Z"), { connId: X_CONN, accountId: X, source: "import" });
+    expect(carry(X, Y)).toBe(1);
+    // Another connection of Y states a different fact on the same span (14:30 IST) — H4: its own line.
+    un.keepUnfetched(pageCapAt("2026-09-07T09:00:00.000Z"), { connId: Y_OTHER, accountId: Y, source: "import" });
+    const card = un.outstandingUnfetchedLines(Y);
+    expect(card.map((s) => [s.connection, s.from, s.to, s.reason, hhmm(s.fact)])).toEqual([
+      [Y_CONN, ...Object.values(PAGE), "10:30"],
+      [Y_OTHER, ...Object.values(PAGE), "14:30"],
+    ]);
+
+    // While the card is open, the target's own untruncated read clears its record (P11).
+    un.keepUnfetchedAndStamp([], { connId: Y_CONN, accountId: Y, source: "import" }, "2026-09-12T05:00:00.000Z", { from: "2026-09-07", to: "2026-09-12" });
+    expect(records(Y)).toEqual([
+      [null, "10:30"],
+      [Y_OTHER, "14:30"],
+    ]);
+
+    // The card's Clear of the line it showed, naming the connection it carried.
+    // THE assertion (0 on revert — the route's 404 "not open" — the carried 10:30 record still listed).
+    expect(un.clearUnfetchedLine(Y, { ...PAGE, connection: card[0]!.connection }, USER)).toBe(1);
+    expect(records(Y)).toEqual([[Y_OTHER, "14:30"]]);
+    // The line is gone: the same Clear again finds no open record stating it, and the other fact is untouched.
+    expect(un.clearUnfetchedLine(Y, { ...PAGE, connection: Y_CONN }, USER)).toBe(0);
+    expect(records(Y)).toEqual([[Y_OTHER, "14:30"]]);
+    expect(trail(Y).map((r) => [r.conn, r.action])).toEqual([
+      [Y_CONN, "create"],
+      [null, "create"],
+      [Y_OTHER, "create"],
+      [Y_CONN, "update"],
+      [null, "update"],
+    ]);
   });
 });

@@ -81,6 +81,12 @@ export const SLIM_TRADE_FIELDS = [
   // (lib/queries/trades.ts): /lenses groups and aggregates, it never renders a
   // per-trade review state, and that projection is being REDUCED in v3.7.
   "reviewedAt",
+  // v4.3.0 T2: brokerage is per executed order, so the close dialog's live
+  // preview bills the stored counts exactly as closePosition does — without them
+  // it billed an option closed from 2 + 3 orders as 1 + 2. Two user-journal
+  // integers (never gated analytics).
+  "buyOrderCount",
+  "sellOrderCount",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]>;

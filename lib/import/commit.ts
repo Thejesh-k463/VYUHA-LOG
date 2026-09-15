@@ -17,6 +17,7 @@ import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
 import { todayIstIso } from "@/lib/domain/trading-day";
+import { closingAggregate } from "@/lib/domain/close-aggregate";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
@@ -33,7 +34,7 @@ import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } f
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
-import { isLotIdentityFrozen, lotIdentityHashes, withStaleCloseNote } from "./close-open-lots";
+import { heldIdentityHashes, isLotIdentityFrozen, STALE_CLOSE_NOTE, withStaleCloseNote } from "./close-open-lots";
 import { saleJournalFields, staleAmbiguousNote, staleFillsNote, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
 
 /** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
@@ -360,6 +361,12 @@ interface SnapshotPlan {
    * M1). Never empty: a row with no such stored row is a new position.
    */
   ask: Map<number, number[]>;
+  /**
+   * W2H: the incoming row indexes whose `ask` exists ONLY because of W2G M1
+   * (nothing on the key; the ids are same-symbol rows of another segment or
+   * exchange). The ask is unchanged; only its sentence differs (cross-source.ts).
+   */
+  offKey: Set<number>;
 }
 
 interface SnapshotStoredRow {
@@ -484,6 +491,7 @@ function planSnapshot(
 
   const supersede = new Map<number, { id: number }>();
   const ask = new Map<number, number[]>();
+  const offKey = new Set<number>();
   const single = new Map<number, SnapshotStoredRow>();
   for (const i of snapshotRows) {
     const row = incoming[i]!;
@@ -505,7 +513,10 @@ function planSnapshot(
       // silently. A genuinely new position of another product is asked too: a
       // question is always better than a confident wrong answer.
       const sameSymbol = storedBySymbol.get(tradingsymbolKey(row.t.tradingsymbol)) ?? [];
-      if (sameSymbol.length > 0) ask.set(i, sameSymbol.map((r) => r.id));
+      if (sameSymbol.length > 0) {
+        ask.set(i, sameSymbol.map((r) => r.id));
+        offKey.add(i); // W2H: this ask's sentence names its own reason
+      }
       continue;
     }
     if (
@@ -529,7 +540,7 @@ function planSnapshot(
     if (laddered.has(r.id)) ask.set(i, [r.id]);
     else supersede.set(i, { id: r.id });
   }
-  return { day, supersede, ask };
+  return { day, supersede, ask, offKey };
 }
 
 /** The ids among `ids` that have at least one trade_legs row. */
@@ -685,8 +696,9 @@ export function previewParsedFile(
   // R26 (4.3.0): every hash a row answers to — its own AND any alias. A lot
   // Data Quality joined to its stored sale answers to the sale's record, so a
   // re-pull of that sale is a duplicate here exactly as it is at commit. A book
-  // with no alias rows gets v4.2.0's set, own hashes only.
-  const existing = new Set(existingRows.flatMap((r) => lotIdentityHashes(r)));
+  // with no alias rows gets v4.2.0's set, own hashes only. V1: an alias counts
+  // only while its lot still closes on the sale (`heldIdentityHashes`).
+  const existing = new Set(existingRows.flatMap((r) => heldIdentityHashes(r)));
 
   const rows: PreviewRow[] = [];
   let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, supersededCount = 0, openCount = 0, openingSells = 0;
@@ -779,7 +791,7 @@ export function previewParsedFile(
         // R43: a snapshot row that will NOT replace today's earlier one meets
         // that earlier one — on its own key only — here, and is reported
         // whatever the relation, so the pull asks instead of adding a second row.
-        ...(snapshot?.ask.has(i) ? { snapshotIds: snapshot.ask.get(i) } : {}),
+        ...(snapshot?.ask.has(i) ? { snapshotIds: snapshot.ask.get(i), ...(snapshot.offKey.has(i) ? { snapshotOffKey: true } : {}) } : {}),
       })),
       existingRows.map((r) => ({
         id: r.id,
@@ -1273,6 +1285,9 @@ export function commitParsedFile(
         id: tradesTable.id,
         dedupHash: tradesTable.dedupHash,
         importNotes: tradesTable.importNotes,
+        // V1: the legs `heldIdentityHashes` reads.
+        buyQty: tradesTable.buyQty,
+        sellQty: tradesTable.sellQty,
         tradingsymbol: tradesTable.tradingsymbol,
         symbol: tradesTable.symbol,
         segment: tradesTable.segment,
@@ -1295,7 +1310,7 @@ export function commitParsedFile(
       .from(tradesTable)
       .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
       .all();
-    const existing = new Set(heldRows.flatMap((r) => lotIdentityHashes(r)));
+    const existing = new Set(heldRows.flatMap((r) => heldIdentityHashes(r)));
     const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults) }));
     // R43: decided ONCE, against the account as it stands before any write.
     const snapshot = planSnapshot(
@@ -1811,9 +1826,33 @@ export function commitManualTrade(
 }
 
 /**
+ * H1 (v4.3.0 wave 2H, M2 variant (c)) — `import_notes` without the Data
+ * Quality join sentence. A writer that re-makes a joined lot's close (the trade
+ * editor changing its exit leg, `closePosition`) calls this: the close is no
+ * longer the join's, so `closedByStaleJoin` must stop exempting it. Every other
+ * segment — each `dedup-alias:` above all, which is identity for re-import
+ * dedup — is kept in order. A value without the sentence is returned as is.
+ */
+function withoutStaleCloseNote(importNotes: string | null): string | null {
+  if (!importNotes || !importNotes.includes(STALE_CLOSE_NOTE)) return importNotes;
+  const parts = importNotes
+    .split("|")
+    .map((s) => s.trim())
+    .filter((s) => s && s !== STALE_CLOSE_NOTE);
+  return parts.length > 0 ? parts.join(" | ") : null;
+}
+
+/**
  * Close an open position at an exit price: completes the missing leg (sell-to-close
  * for a long; buy-to-cover for a short sell-to-open, e.g. a written CE/PE), recomputes
  * the full (buy+sell) charges, MTF interest over the holding period, and realised net P&L.
+ *
+ * H1 (wave 2H) — a PARTLY closed row closes its REMAINING quantity by adding the
+ * exit to the leg already on the closing side (a long's sell leg, a short's buy
+ * leg): quantity and value are summed, the average is the weighted one (REAL),
+ * and the exit is one more order. It used to REPLACE that leg with the remainder,
+ * so 100 bought / 60 sold closed as 100 / 40 and a +5,200 trade booked −9,800.
+ * A row with nothing on its closing side is written exactly as before.
  */
 export function closePosition(
   tradeId: number,
@@ -1843,24 +1882,28 @@ export function closePosition(
 
   // Short (sell-to-open) has the open leg on sellQty with buyQty still 0 — closing
   // means BUYING to cover, not selling. Long (the common case) closes by selling.
-  const isShort = t.sellQty > t.buyQty;
-  const qty = Math.abs(t.buyQty - t.sellQty) || (isShort ? t.sellQty : t.buyQty);
-  const exitValue = Math.round(exitPrice * qty * 100) / 100;
+  // H1 — the closing leg is the prior leg + the remainder × exit (an empty leg
+  // keeps the pre-H1 write exactly). ONE helper, which the Trades close dialog's
+  // live preview also reads, so the preview prices this write (seam S1).
+  // Rupees at runtime; the column converts to paise (invariant 1), never here.
+  // V4 — a closing leg gaining its first quantity with no stored count bills the
+  // settings default, as updateManualTrade does (the preview route fills the same).
+  const { rates, defaults } = loadRatesContext();
+  const { isShort, closeQty, closeValue, closeAvg, closeOrderCount } = closingAggregate(t, exitPrice, defaults);
   const exitDateIso = normalizeDate(exitDate) ?? todayIstIso();
 
-  const buyQty = isShort ? qty : t.buyQty;
-  const avgBuyPrice = isShort ? exitPrice : t.avgBuyPrice;
-  const buyValue = isShort ? exitValue : t.buyValue;
+  const buyQty = isShort ? closeQty : t.buyQty;
+  const avgBuyPrice = isShort ? closeAvg : t.avgBuyPrice;
+  const buyValue = isShort ? closeValue : t.buyValue;
   const buyDate = isShort ? exitDateIso : t.buyDate;
-  const buyOrderCount = isShort ? t.buyOrderCount || 1 : t.buyOrderCount;
+  const buyOrderCount = isShort ? closeOrderCount : t.buyOrderCount;
 
-  const sellQty = isShort ? t.sellQty : qty;
-  const avgSellPrice = isShort ? t.avgSellPrice : exitPrice;
-  const sellValue = isShort ? t.sellValue : exitValue;
+  const sellQty = isShort ? t.sellQty : closeQty;
+  const avgSellPrice = isShort ? t.avgSellPrice : closeAvg;
+  const sellValue = isShort ? t.sellValue : closeValue;
   const sellDate = isShort ? t.sellDate : exitDateIso;
-  const sellOrderCount = isShort ? t.sellOrderCount : t.sellOrderCount || 1;
+  const sellOrderCount = isShort ? t.sellOrderCount : closeOrderCount;
 
-  const { rates } = loadRatesContext();
   // The COMPUTED dates, not the stale row: `t.sellDate` is null for an open long,
   // so pricing off `t` would charge the exit at the ENTRY date's epoch — the exact
   // inverse of pricingDate's own rule that the sell side dominates the bill.
@@ -1874,7 +1917,9 @@ export function closePosition(
   let mtf: { fundedAmount: number; daysHeld: number; pledgeScrips: number } | null = null;
   let mtfFundedAmount: number | null = t.mtfFundedAmount;
   if (t.segment === "eq_mtf") {
-    const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker));
+    // V3 — a stored 0 is a STATED amount (all own capital) and is kept; only a
+    // null (never set) is estimated. The close dialog's preview reads it the same way.
+    const funded = t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker));
     // Interest accrues from T+1 settlement (day after buy) through the day
     // BEFORE sale proceeds settle — which works out to exactly (sellDate −
     // buyDate) calendar days, confirmed against Dhan's own MTF documentation.
@@ -1923,6 +1968,8 @@ export function closePosition(
       netPnl,
       realisedPct,
       rMultiple,
+      // H1 — this close is made here, not by the Data Quality join (M2 (c)).
+      importNotes: withoutStaleCloseNote(t.importNotes),
       brokerage: charges.brokerage,
       sttCtt: charges.sttCtt,
       exchangeTxn: charges.exchangeTxn,
@@ -2155,7 +2202,7 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       let mtfFundedAmount = lot.mtfFundedAmount;
       if (lot.segment === "eq_mtf") {
         const r = ratesOn(exitDate);
-        const funded = lot.mtfFundedAmount && lot.mtfFundedAmount > 0 ? lot.mtfFundedAmount : defaultMtfFundedAmount(lot.buyValue, mtfOwnMarginPct(lot.broker));
+        const funded = lot.mtfFundedAmount ?? defaultMtfFundedAmount(lot.buyValue, mtfOwnMarginPct(lot.broker)); // V3: a stored 0 is kept
         const days = lot.buyDate
           ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(lot.buyDate).getTime()) / 86400000))
           : 0;
@@ -2299,7 +2346,9 @@ export function updateManualTrade(
     if (fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0) {
       fundedAmount = Math.max(0, Math.round((buyValue - fields.ownCapitalUsed) * 100) / 100);
     } else {
-      fundedAmount = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(buyValue, mtfOwnMarginPct(t.broker));
+      // V3 — a stored 0 (the whole position from own capital) is kept, as the
+      // editor's preview reads it (`trade.mtfFundedAmount ??`); only null is estimated.
+      fundedAmount = t.mtfFundedAmount ?? defaultMtfFundedAmount(buyValue, mtfOwnMarginPct(t.broker));
     }
   }
   // Same T+1-through-day-before-settlement convention as close/accrual; open
@@ -2327,6 +2376,18 @@ export function updateManualTrade(
   const riskAmount = fields.riskAmount !== undefined ? fields.riskAmount : t.riskAmount;
   const rMultiple = riskAmount && riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null;
 
+  // H1 (M2 variant (c)) — an edit that re-makes the EXIT leg of a lot joined
+  // from Data Quality leaves a close that is no longer the join's, so the join
+  // sentence goes and every alias stays. Compared by value: the editor sends
+  // every field back on each save. A long exits on its sell leg; a closed row
+  // states its direction only through its dates (the exit is the later one),
+  // so the buy leg counts too unless the row reads long. An edit that touches
+  // no exit-leg field (notes, tags, levels, the other leg of a long) keeps it.
+  const readsLong = t.buyQty > t.sellQty || (t.buyQty === t.sellQty && !!t.buyDate && !!t.sellDate && t.buyDate < t.sellDate);
+  const sellLegChanged = sellQty !== t.sellQty || avgSellPrice !== t.avgSellPrice || sellDate !== t.sellDate;
+  const buyLegChanged = buyQty !== t.buyQty || avgBuyPrice !== t.avgBuyPrice || buyDate !== t.buyDate;
+  const exitLegChanged = isOpen !== t.isOpen || sellLegChanged || (!readsLong && buyLegChanged);
+
   db.update(tradesTable)
     .set({
       buyQty,
@@ -2353,6 +2414,7 @@ export function updateManualTrade(
       setupTag: fields.setupTag !== undefined ? fields.setupTag : t.setupTag,
       exitTrigger: fields.exitTrigger !== undefined ? fields.exitTrigger : t.exitTrigger,
       notes: fields.notes !== undefined ? fields.notes : t.notes,
+      ...(exitLegChanged ? { importNotes: withoutStaleCloseNote(t.importNotes) } : {}),
       brokerage: charges.brokerage,
       sttCtt: charges.sttCtt,
       exchangeTxn: charges.exchangeTxn,
@@ -2440,9 +2502,7 @@ export function applyOverride(
   // it, so the breakdown no longer summed to the total (B4).
   const isMtf = segment === "eq_mtf";
   const fundedAmount = isMtf
-    ? t.mtfFundedAmount && t.mtfFundedAmount > 0
-      ? t.mtfFundedAmount
-      : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker))
+    ? t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker)) // V3: a stored 0 is kept
     : null;
   // Open positions accrue nothing here — the daily job (lib/jobs/mtf-accrual.ts)
   // takes over from its next run, per-epoch.

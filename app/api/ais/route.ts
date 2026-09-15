@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTrades } from "@/lib/queries/trades";
 import { getIposComputed } from "@/lib/queries/ipos";
+import { ipoIdsCountedThroughTrades } from "@/lib/queries/tax-itr";
 import { isPriceableExitDate } from "@/lib/analytics/ipo";
 import { getLedgerEntries } from "@/lib/queries/ledger";
 import { getSettings } from "@/lib/queries/settings";
@@ -51,26 +52,39 @@ export async function POST(req: Request) {
   // Per-FY equity sale consideration / purchase value (AIS SFT-17/18 shape):
   // delivery+MTF trades by leg date, plus IPO allotments (purchase) and exits (sale).
   const totals = new Map<string, JournalFyTotal>();
-  const bump = (fy: string | null, kind: "sale" | "purchase", amount: number) => {
-    if (!fy || amount <= 0) return;
+  /** True when the amount was counted into a year. */
+  const bump = (fy: string | null, kind: "sale" | "purchase", amount: number): boolean => {
+    if (!fy || amount <= 0) return false;
     const t = totals.get(fy) ?? { fy, saleConsideration: 0, purchaseValue: 0 };
     if (kind === "sale") t.saleConsideration += amount;
     else t.purchaseValue += amount;
     totals.set(fy, t);
+    return true;
   };
+  // TAX-IPO-LINK (v4.3.0 wave 2H): an IPO pushed to holdings links a trade, and the
+  // /ipos sync writes the allotment and the exit onto it — so the linked holding's
+  // purchase and sale ARE the IPO's. Bumping both read the journal's FY totals
+  // double. CAP-IPO-LINK's rule, per side: the IPO's allotment is skipped when its
+  // holding's purchase was counted above, its exit when the holding's sale was.
+  const purchaseCounted = new Set<number>();
+  const saleCounted = new Set<number>();
   for (const t of getTrades()) {
     if (!DELIVERY.has(t.segment)) continue;
-    bump(fyOf(t.buyDate), "purchase", t.buyValue);
-    if (!t.isOpen) bump(fyOf(t.sellDate), "sale", t.sellValue);
+    if (bump(fyOf(t.buyDate), "purchase", t.buyValue)) purchaseCounted.add(t.id);
+    if (!t.isOpen && bump(fyOf(t.sellDate), "sale", t.sellValue)) saleCounted.add(t.id);
   }
+  const allotmentThroughTrade = ipoIdsCountedThroughTrades(purchaseCounted);
+  const exitThroughTrade = ipoIdsCountedThroughTrades(saleCounted);
   for (const ipo of getIposComputed().rows) {
     if (ipo.allotted && ipo.allottedQty > 0) {
-      bump(fyOf(ipo.allotmentDate ?? ipo.listingDate ?? ipo.appliedDate ?? null), "purchase", ipo.investedAllotted);
+      if (!allotmentThroughTrade.has(ipo.id)) {
+        bump(fyOf(ipo.allotmentDate ?? ipo.listingDate ?? ipo.appliedDate ?? null), "purchase", ipo.investedAllotted);
+      }
       // IPO-EXITDATE (v4.3.0): fyOfDate never throws on a string but invents a
       // year for an unreadable one ('0202-06-15' → "202-03", '2026-02-30' →
       // "2025-26"). A sale is counted only on a date computeIpo can read (N13);
       // otherwise it is skipped rather than filed under a year nobody stated.
-      if (ipo.exitPrice != null && ipo.exitDate && isPriceableExitDate(ipo.exitDate)) {
+      if (!exitThroughTrade.has(ipo.id) && ipo.exitPrice != null && ipo.exitDate && isPriceableExitDate(ipo.exitDate)) {
         bump(fyOf(ipo.exitDate), "sale", ipo.exitPrice * ipo.allottedQty);
       }
     }

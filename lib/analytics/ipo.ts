@@ -89,6 +89,19 @@ export interface IpoComputed extends IpoInput {
   unpriced: boolean;
   /** Per-head exit charges when the charger stated them (the server path), else null. */
   chargeBreakdown: ChargeBreakdown | null;
+  /**
+   * U3 (v4.3.0): set by `getIposComputed` only (the client preview leaves them
+   * undefined). `linked` — the IPO names a holding that exists; `linkedSellDate` —
+   * that holding's sell date exactly as stored, readable or not.
+   */
+  linked?: boolean;
+  linkedSellDate?: string | null;
+  /**
+   * Z2 (wave 2H): that holding's sell quantity and average sell price as stored, so the
+   * form can tell whether the linked sale IS this IPO's exit apart from its date.
+   */
+  linkedSellQty?: number | null;
+  linkedSellPrice?: number | null;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;

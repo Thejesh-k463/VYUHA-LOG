@@ -1,4 +1,4 @@
-import { DEDUP_ALIAS_PREFIX, STALE_CLOSE_NOTE } from "@/lib/import/close-open-lots";
+import { DEDUP_ALIAS_PREFIX, STALE_CLOSE_NOTE, lotIdentityHashes } from "@/lib/import/close-open-lots";
 
 export type QualitySeverity = "critical" | "warning" | "info";
 
@@ -47,6 +47,12 @@ export interface QualityTrade {
   staged?: boolean;
   /** M2 (wave 2G) — read only to tell a lot the Data Quality join closed (`closedByStaleJoin`). */
   importNotes?: string | null;
+  /**
+   * H3 (wave 2H) — read only by `staleJoinExempts`: a joined lot is exempt for
+   * a sale whose hash is NOT one of its identity hashes. A row without it is
+   * never shown to be another record, so the joined lot then counts.
+   */
+  dedupHash?: string;
 }
 
 /**
@@ -507,15 +513,49 @@ function closedLotExit(r: BookRow, side: "long" | "short"): string | null {
 
 /**
  * M2 (wave 2G) — was this row closed by the Data Quality join itself? It then
- * carries `STALE_CLOSE_NOTE` and its sale's alias (`withStaleCloseNote`): the
- * join takes one whole sale row on one whole lot, so the sale it consumed is
- * recorded and it cannot have taken any other. Such a lot never counts toward
- * ambiguity; a close made elsewhere (the ladder exit, the manual close), or an
- * alias of any other provenance, still does.
+ * carries `STALE_CLOSE_NOTE` and its sale's alias (`withStaleCloseNote`). The
+ * trade editor and `closePosition` drop the sentence (keeping the alias) when
+ * they re-make the close (H1, wave 2H), so a row still carrying both is a
+ * close the join made and nobody changed since. An alias of any other
+ * provenance, or the sentence with no alias, is not.
  */
 function closedByStaleJoin(r: BookRow): boolean {
   const parts = (r.importNotes ?? "").split("|").map((s) => s.trim());
   return parts.includes(STALE_CLOSE_NOTE) && parts.some((s) => s.startsWith(DEDUP_ALIAS_PREFIX));
+}
+
+/** Two per-unit prices equal at the paisa. Only compared, never stored rounded (invariant 1). */
+const samePaisa = (a: number, b: number) => Math.round(a * 100) === Math.round(b * 100);
+
+/**
+ * H3 (wave 2H) — may the closed row `c` be left out of the ambiguity test for
+ * the link to `sale`? M2 exempted a joined lot for EVERY link; that made three
+ * reachable books one-click onto a sale the lot already counts. Exempt ONLY
+ * when all of these hold:
+ *  (c) `c` is still the join's close (`closedByStaleJoin`: sentence + alias);
+ *  (a) the sale is not one of `c`'s records — its hash is none of
+ *      `lotIdentityHashes(c)` (a sale restored from Deleted items keeps the
+ *      hash the join recorded as the alias). A sale stating no hash cannot be
+ *      shown to be another record;
+ *  (b) the sale does not restate `c`'s close: not the same closing quantity
+ *      AND the same closing price at the paisa (the same sale re-arriving from
+ *      another file kind carries another hash). A genuine sibling identical in
+ *      both is refused too — the accepted cost: a question is always better
+ *      than a confident wrong answer.
+ * Otherwise `c` counts exactly as a close made elsewhere.
+ */
+function staleJoinExempts(c: BookRow, sale: BookRow, side: "long" | "short"): boolean {
+  if (!closedByStaleJoin(c)) return false;
+  const saleHash = sale.dedupHash?.trim().toLowerCase();
+  if (!saleHash) return false;
+  const identity = lotIdentityHashes({ dedupHash: c.dedupHash ?? "", importNotes: c.importNotes ?? null });
+  if (identity.some((h) => h.trim().toLowerCase() === saleHash)) return false;
+  const [closeQty, closePrice, saleQty, salePrice] =
+    side === "long" ? [c.sellQty, c.avgSellPrice, sale.sellQty, sale.avgSellPrice] : [c.buyQty, c.avgBuyPrice, sale.buyQty, sale.avgBuyPrice];
+  // A price either row does not state never proves the sale differs.
+  const restates =
+    sameQty(saleQty, closeQty) && (salePrice == null || closePrice == null || !Number.isFinite(salePrice) || !Number.isFinite(closePrice) || samePaisa(salePrice, closePrice));
+  return !restates;
 }
 
 /** Group rows into books: accountId + broker + tradingsymbol + segment + exchange. */
@@ -562,7 +602,7 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
     const closed: { row: BookRow; date: string; exit: string | null }[] = [];
     for (const r of rows) {
       const date = closedLotEntry(r, side, "possible");
-      if (date && !closedByStaleJoin(r)) closed.push({ row: r, date, exit: closedLotExit(r, side) });
+      if (date) closed.push({ row: r, date, exit: closedLotExit(r, side) });
     }
     closed.sort(byDateThenId);
 
@@ -589,7 +629,7 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
       // R2F-DQ: only a closed lot that OVERLAPPED this lot — exited on or after
       // its entry, or with no stated exit — can have taken the sale.
       const closedLotIds = closed
-        .filter((c) => c.row.id !== s.row.id && c.date <= s.date && (c.exit == null || c.exit >= lot.date))
+        .filter((c) => c.row.id !== s.row.id && c.date <= s.date && (c.exit == null || c.exit >= lot.date) && !staleJoinExempts(c.row, s.row, side))
         .map((c) => c.row.id);
       const ambiguous = closedLotIds.length > 0;
       out.push({
@@ -648,8 +688,9 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
  *    or after the linked lot's entry (or with no stated exit) is `ambiguous` —
  *    listed for review, never one-click. A lot closed before the linked lot
  *    was entered cannot have taken the sale, and does not count. Nor does a
- *    lot the Data Quality join itself closed (M2, `closedByStaleJoin`): its
- *    close is the one sale row recorded as its alias.
+ *    lot the Data Quality join itself closed (M2), but only for a link whose
+ *    sale is not that lot's record and does not restate its close (H3,
+ *    `staleJoinExempts`).
  *
  * Linear in the book: rows are grouped once, and only a group holding both a
  * lot and a sale does any work.

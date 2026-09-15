@@ -69,6 +69,15 @@ export interface IncomingRow {
    * instead of the pull silently adding a second row.
    */
   snapshotIds?: readonly number[];
+  /**
+   * W2H (4.3.0): the `snapshotIds` exist ONLY because of W2G M1 — nothing of
+   * today's snapshot is on this row's supersede key, and the ids are rows of the
+   * same tradingsymbol under another product, segment or exchange. None of the
+   * key's reasons (a ladder, a Data Quality join, a user record, two positions on
+   * one key) applies, so such an ask gets its own sentence: that reason, and the
+   * path that reaches the broker's book. The collision object is unchanged.
+   */
+  snapshotOffKey?: boolean;
 }
 
 /**
@@ -180,6 +189,8 @@ export function detectCrossSourceDuplicates(
   incomingFileName: string,
 ): CrossSourceReport {
   const collisions: CrossSourceCollision[] = [];
+  // W2H: the same-snapshot collisions of rows asked ONLY by W2G M1 (`snapshotOffKey`).
+  const offKey = new Set<CrossSourceCollision>();
 
   /**
    * Bucket the existing book ONCE by the two fields a candidate must match
@@ -276,7 +287,10 @@ export function detectCrossSourceDuplicates(
       }
     }
     const pick = risky ?? softer;
-    if (pick) collisions.push(pick);
+    if (pick) {
+      collisions.push(pick);
+      if (pick.sameSnapshot === true && inc.snapshotOffKey === true) offKey.add(pick);
+    }
   }
 
   const symbols = [...new Set(collisions.map((c) => c.symbol))].sort();
@@ -290,7 +304,9 @@ export function detectCrossSourceDuplicates(
   // and deleting that earlier import would delete the recorded position with
   // whatever the user wrote on it (W2R N3) — so it never reads the advice below.
   const crossFile = collisions.filter((c) => !c.sameSnapshot);
-  const earlier = collisions.filter((c) => c.sameSnapshot);
+  const earlier = collisions.filter((c) => c.sameSnapshot && !offKey.has(c));
+  // W2H: an ask made only because nothing is on the key has its own reason and path.
+  const converted = collisions.filter((c) => offKey.has(c));
   const parts: string[] = [];
   if (crossFile.length > 0) {
     parts.push(
@@ -305,6 +321,18 @@ export function detectCrossSourceDuplicates(
       `${earlier.length} row${one ? "" : "s"} in this pull (${listOf(earlier)}) restate${one ? "s" : ""} a position today's earlier pull already recorded, and ${one ? "is" : "are"} not written over it: ` +
         "the recorded row carries detail a replacement would lose (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. " +
         "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.",
+    );
+  }
+  if (converted.length > 0) {
+    const one = converted.length === 1;
+    // Descriptive, not advice: the path the re-check probed (the earlier row
+    // deleted, the pull run again: no question, the broker's book) and what a
+    // forced commit does. Rejected for 4.3.0 (4.3.1, product-keyed snapshot
+    // identity): a one-click "replace the earlier row" action.
+    parts.push(
+      `${converted.length} row${one ? "" : "s"} in this pull (${listOf(converted)}) restate${one ? "s an instrument" : " instruments"} today's earlier pull already recorded under another product, segment or exchange, and ${one ? "is not written over that row" : "are not written over those rows"}. ` +
+        `If the broker converted ${one ? "the position" : "these positions"} between the two pulls, the earlier row${one ? "" : "s"} can be deleted from Trades and the pull run again, ` +
+        `which records the position${one ? "" : "s"} as the broker now states ${one ? "it" : "them"}; committing anyway keeps both rows${one ? "" : " of each"}.`,
     );
   }
 

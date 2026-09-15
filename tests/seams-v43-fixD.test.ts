@@ -43,12 +43,13 @@ import { todayIstIso } from "@/lib/domain/trading-day";
  *    |   fingerprinted (L8)                   |   shownPaise, :177 fingerprint, :202 text (G6)    |   expiry-obligations.tsx:226 spotCloseNotice → spot-mark-      |   key only, never stored as money)    |
  *    |                                        |                                                   |   editor.tsx:149 submitKeepMark → app/api/risk/spot/dismiss    |                                       |
  *    |                                        |                                                   |   route.ts:58 (unchanged) → panel_dismissals → page            |                                       |
- *  5 | admitting symbol per ACCOUNT (L5)      | lib/queries/trades.ts:204 STRATEGY_LEG_FIELDS     | app/strategies/page.tsx:89-98 optionSymbolByIsin → legSymbol   | option symbol ↔ ISIN, per account     | D6
- *    |                                        |   (+ accountId — G5b)                             |   → buildStrategies grouping under selectedAccountId = 0       |                                       | (it.fails)
- *  6 | merge-carried span, connId null (L1)   | lib/queries/account-delete.ts:775 carry           | lib/import/dhan-unfetched.ts:74 recordKeyOf, :105 clear scope, | entity_id NULL vs the target's conn;  | D5
- *    |                                        |   (unchanged) + route :1074 keepUnfetched         |   :130 GET one line, :174 pull clear scoped (G3) → route GET   |   ISO from/to/reason                  |
- *    |                                        |                                                   |   :343 → broker-connect.tsx:410 unfetchedNotice; route :593    |                                       |
- *    |                                        |                                                   |   user Clear (unchanged, no scope)                             |                                       |
+ *  5 | admitting symbol per ACCOUNT (L5)      | lib/queries/trades.ts:204 STRATEGY_LEG_FIELDS     | app/strategies/page.tsx admittingOf / admittedByAccount        | option symbol ↔ ISIN, per account     | D6
+ *    |                                        |   (+ accountId — G5b)                             |   → buildStrategies under selectedAccountId = 0                |                                       |
+ *  6 | merge-carried span, connId null (L1);  | lib/queries/account-delete.ts:775 carry           | lib/import/dhan-unfetched.ts:78 recordKeyOf, :115 clear scope, | entity_id NULL vs the target's conn;  | D5
+ *    |   H4: one card line per record, and    |   (unchanged) + route :1116 keepUnfetched         |   :150 outstandingUnfetchedLines (:90 lineKeyOf), :227 pull    |   ISO from/to/reason; each line's     |
+ *    |   the Clear names that record          |                                                   |   clear → route GET :354 unfetched + unfetchedConnection →     |   record connection, number or null   |
+ *    |                                        |                                                   |   broker-connect.tsx:120 unfetchedLines, :442 unfetchedNotice, |                                       |
+ *    |                                        |                                                   |   :131 clearUnfetchedBody → route :615 → dhan-unfetched :185   |                                       |
  *
  * Not seams (no crossing consumer outside one builder's files): G4 L3/L4 (the
  * IPO route and its own form preview; tests/ipo-charger-dates.test.ts runs both
@@ -113,10 +114,13 @@ const L1_T2 = 1334; //   D5 scenario 2, merge target
 const ST_A = 1341; //    D6
 const ST_B = 1342; //    D6
 
-// ONE temp database for this file. Measured locally 2026-09-15: this hook
-// (migrate + seed + the route imports) ~1.2-1.3 s; each hook below 0.4-1.5 s,
-// every one inside the 3 s budget. The raised timeouts are for the Windows
-// runner, measured > 15x slower (AGENTS.md Testing).
+// ONE temp database for this file. Re-measured locally 2026-09-15 (wave 2H,
+// performance.now() around each hook, three runs): this hook (migrate + seed +
+// the route imports) 1.26-1.71 s; the client components 0.42-0.62 s; the risk
+// page 1.07-1.22 s; the strategies page import 0.89-1.11 s; the strategies
+// render 0.75-2.17 s; D5's own hook 1 ms. Every one inside the 3 s budget. The
+// raised timeouts are for the Windows runner, measured > 15x slower (AGENTS.md
+// Testing).
 beforeAll(async () => {
   t = await openTempDb("seams-v43-fixD", { seed: true });
   brokerRoute = await import("@/app/api/import/broker/route");
@@ -538,10 +542,40 @@ describe("D4 · L8: a stored mark ₹1.005 and later official closes, through /r
 
 describe("D5 · L1: a truncated Dhan notice carried by a merge beside the target client's identical one (account-delete carry → dhan-unfetched → route GET / clear → card)", () => {
   const SPAN = ["page-cap", "2026-09-05", "2026-09-09"];
+  // H4 (wave 2H): D5 scenario 3 — the source client's last pull at another time
+  // of day; scenario 4 — the card's own Clear body on a one-sentence line.
+  const H4_S = 1335;
+  const H4_T = 1336;
+  const H4_S2 = 1337;
+  const H4_T2 = 1338;
+  let un: typeof import("@/lib/import/dhan-unfetched");
+  beforeAll(async () => {
+    un = await import("@/lib/import/dhan-unfetched");
+    t.db
+      .insert(t.schema.accounts)
+      .values([H4_S, H4_T, H4_S2, H4_T2].map((id) => ({ id, name: `fixD ${id}`, isDefault: false })))
+      .run();
+  });
+
+  /** The STORED records the reader holds outstanding — each record's connection,
+   *  in write order — not GET's lines, which share one line per span and sentence. */
+  const recordConns = (accountId: number) => un.outstandingUnfetchedRecords(accountId).map((r) => r.connection);
+  const connOf = (accountId: number) =>
+    (t.sqlite.prepare("SELECT id FROM broker_connections WHERE account_id = ? AND broker = 'dhan'").get(accountId) as { id: number }).id;
+  /** GET's Dhan row for this account — what the card's unfetchedLines / clearUnfetchedBody read. */
+  async function cardRowOf(accountId: number) {
+    selectAccount(0);
+    const json = (await (await brokerRoute.GET()).json()) as { connections?: { broker: string; accountId: number }[] };
+    const row = (json.connections ?? []).find((r) => r.broker === "dhan" && r.accountId === accountId);
+    if (!row) throw new Error(`GET lists no Dhan connection for account ${accountId}`);
+    return row as { broker: string; accountId: number; unfetched?: UnfetchedSpan[]; unfetchedConnection?: (number | null)[] };
+  }
 
   /** The target's own truncated pull whose commit threw (its span kept, stamp
-   *  unmoved), then the source's committed truncated pull, then the merge. */
-  async function stage(source: number, target: number) {
+   *  unmoved), then the source's committed truncated pull, then the merge. The
+   *  source's last pull at `sourceStamp`: at the target's 10:30 IST the two
+   *  records state one fact (one card line); at another time, two. */
+  async function stage(source: number, target: number, sourceStamp = "2026-09-05T05:00:00.000Z") {
     freezeAt("2026-09-10T09:30:00.000Z"); // 15:00 IST
     addDhan(target, "2026-09-05T05:00:00.000Z");
     stubDhan(target, "endless", [dhanPosition(target, "WIPRO", "CNC", 3, 250)]);
@@ -555,15 +589,18 @@ describe("D5 · L1: a truncated Dhan notice carried by a merge beside the target
     expect(first.status, "the target's commit threw, so its stamp did not move").toBe(422);
     expect(await spansOf(target)).toEqual([SPAN]);
 
-    addDhan(source, "2026-09-05T05:00:00.000Z");
+    addDhan(source, sourceStamp);
     stubDhan(source, "endless", [dhanPosition(source, "ITC", "CNC", 5, 400)]);
     expect((await pull(source, "commit")).status).toBe(200);
     expect(await spansOf(source)).toEqual([SPAN]);
 
     const merged = accountDelete.deleteAccount({ accountId: source, mode: "merge", targetId: target, connections: "delete" });
     expect(merged.ok, merged.message).toBe(true);
-    // One line on the card however many records hold the span.
-    expect(await spansOf(target)).toEqual([SPAN]);
+    // Both records are stored: the target client's own, then the carry (no connection).
+    expect(recordConns(target)).toEqual([connOf(target), null]);
+    // One line on the card per span and sentence (H4): one when the facts match, two when not.
+    const sameFact = sourceStamp === "2026-09-05T05:00:00.000Z";
+    expect(await spansOf(target)).toEqual(sameFact ? [SPAN] : [SPAN, SPAN]);
   }
 
   it("the target's own untruncated read the next day clears ITS record; the carried one stays on the card with the source's sentence", async () => {
@@ -571,10 +608,17 @@ describe("D5 · L1: a truncated Dhan notice carried by a merge beside the target
     freezeAt("2026-09-11T09:30:00.000Z");
     stubDhan(L1_T, "empty", [dhanPosition(L1_T, "WIPRO", "CNC", 3, 250)]);
     expect((await pull(L1_T, "commit")).status).toBe(200);
+    // THE assertion, on the STORED records (wave 2H): the target's own record is
+    // cleared and only the carried one (no connection) is outstanding. The GET
+    // line below cannot tell — both records state one sentence, so a pull clear
+    // that clears nothing still shows the same line. Red on that mutant
+    // (`own.cleared = false`): [<target conn>, null].
+    expect(recordConns(L1_T)).toEqual([null]);
+    expect((await cardRowOf(L1_T)).unfetchedConnection).toEqual([null]);
     const spans = await unfetchedOf(L1_T);
-    // THE assertion (on revert of dhan-unfetched.ts: [] — the merge's carry was
-    // skipped as a repeat of the target's identical span, and the target's own
-    // read then cleared the only record: the source's unread days vanish).
+    // On revert of dhan-unfetched.ts L1: [] — the merge's carry was skipped as a
+    // repeat of the target's identical span, and the target's own read then
+    // cleared the only record: the source's unread days vanish.
     expect(spans.map((s) => [s.reason, s.from, s.to])).toEqual([SPAN]);
     expect(bc.unfetchedNotice(spans[0])).toContain("the pull on 2026-09-10 stopped at the 50-page limit");
   });
@@ -582,11 +626,51 @@ describe("D5 · L1: a truncated Dhan notice carried by a merge beside the target
   it("the user's Clear on the card's one line removes it in one click, with both records open", async () => {
     await stage(L1_S2, L1_T2);
     const [line] = await unfetchedOf(L1_T2);
+    // A body with NO connection field (a client from before H4): every same-span record clears.
     const res = await postBroker({ action: "clear-unfetched", broker: "dhan", accountId: L1_T2, from: line.from, to: line.to, reason: line.reason });
     expect(res.status).toBe(200);
     // THE assertion (on a connection-scoped user Clear the carried record
     // stays: the line the user just cleared is still listed).
     expect(await spansOf(L1_T2)).toEqual([]);
+    expect(recordConns(L1_T2)).toEqual([]);
+  });
+
+  it("H4: the card's own Clear body on that one line (the same sentence twice) names a record and still clears both", async () => {
+    await stage(H4_S2, H4_T2);
+    const row = await cardRowOf(H4_T2);
+    const [line] = bc.unfetchedLines(row);
+    expect(line.connection).toBe(connOf(H4_T2));
+    expect((await postBroker(bc.clearUnfetchedBody(row, line))).status).toBe(200);
+    // THE assertion (red when a named Clear clears only the named record: the
+    // carried record, the same sentence, keeps the line the user just cleared).
+    expect(recordConns(H4_T2)).toEqual([]);
+    expect(await spansOf(H4_T2)).toEqual([]);
+  });
+
+  it("H4: two clients' records of one span with DIFFERENT facts are two card lines, and each line's Clear clears only its own record", async () => {
+    // The source client's last pull ran at 14:30 IST, the target's at 10:30 IST.
+    await stage(H4_S, H4_T, "2026-09-05T09:00:00.000Z");
+    const row = await cardRowOf(H4_T);
+    const lines = bc.unfetchedLines(row);
+    // THE assertion (one line, the target's fact, on revert of the per-record listing).
+    expect(lines.map((s) => [s.connection, /after (\d\d:\d\d) IST/.exec(s.fact)?.[1]])).toEqual([
+      [connOf(H4_T), "10:30"],
+      [null, "14:30"],
+    ]);
+    expect((await postBroker({ ...bc.clearUnfetchedBody(row, lines[0]), connection: "x" })).status, "a connection that is no id").toBe(400);
+    expect((await postBroker({ ...bc.clearUnfetchedBody(row, lines[0]), connection: 999_999 })).status, "a record not open").toBe(404);
+    expect(recordConns(H4_T)).toEqual([connOf(H4_T), null]);
+
+    expect((await postBroker(bc.clearUnfetchedBody(row, lines[0]))).status).toBe(200);
+    // THE assertion ([] on revert of the route's named Clear: the body's
+    // connection is ignored and every same-span record clears — the source
+    // client's 14:30 fact dismissed unseen).
+    expect(recordConns(H4_T)).toEqual([null]);
+    expect(bc.unfetchedLines(await cardRowOf(H4_T)).map((s) => s.connection)).toEqual([null]);
+
+    expect((await postBroker(bc.clearUnfetchedBody(row, lines[1]))).status).toBe(200);
+    expect(recordConns(H4_T)).toEqual([]);
+    expect(await spansOf(H4_T)).toEqual([]);
   });
 });
 

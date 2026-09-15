@@ -67,6 +67,9 @@ interface ConnStatus {
   /** Dhan only (C-6): history spans a COMMITTED pull never read, kept in the
    *  audit trail until the user clears them. */
   unfetched?: UnfetchedSpan[];
+  /** Dhan only (H4, v4.3.0 fix wave 2H): `unfetched[i]`'s record connection
+   *  (null: carried by a merge), by index — what the line's Clear names. */
+  unfetchedConnection?: (number | null)[];
   /** Dhan only (C-6): where the NEXT pull's history window starts — later than
    *  the last pull's day means the 90-day clamp will leave days out. */
   catchUpFrom?: string | null;
@@ -106,6 +109,35 @@ export interface UnfetchedSpan {
   reason: string;
   fact: string;
   remedy: string | null;
+  /** H4: the connection of the record this line shows (null: carried by a
+   *  merge), joined from GET's `unfetchedConnection` by unfetchedLines. Absent
+   *  when GET sent none — the Clear then names no connection. */
+  connection?: number | null;
+}
+
+/** H4 (v4.3.0 fix wave 2H): the card's kept-notice lines for one connection
+ *  row — each GET line with its record's connection joined on by index. */
+export function unfetchedLines(c: { unfetched?: UnfetchedSpan[]; unfetchedConnection?: (number | null)[] }): UnfetchedSpan[] {
+  return (c.unfetched ?? []).map((s, i) => {
+    const connection = c.unfetchedConnection?.[i];
+    return connection === undefined ? s : { ...s, connection };
+  });
+}
+
+/** H4: the Clear's request body for one line. It names the line's record
+ *  connection (null included), so the route clears exactly that line; a line
+ *  with no known connection sends no `connection` field (every same-span
+ *  record clears, the route's behaviour before H4). */
+export function clearUnfetchedBody(c: { broker: string; accountId: number }, s: UnfetchedSpan): Record<string, unknown> {
+  return {
+    action: "clear-unfetched",
+    broker: c.broker,
+    accountId: c.accountId,
+    from: s.from,
+    to: s.to,
+    reason: s.reason,
+    ...(s.connection !== undefined ? { connection: s.connection } : {}),
+  };
 }
 
 /** The slice of the pull route's JSON the message reads. */
@@ -689,7 +721,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   /** C-6 — every kept "not fetched" span on this tab's Dhan rows, derived at
    *  render time from the server's projection (never state, never an effect).
    *  Dhan only: no other puller clamps a window. */
-  const unfetchedRows = active === "dhan" ? brokerConns.flatMap((c) => (c.unfetched ?? []).map((s) => ({ c, s }))) : [];
+  const unfetchedRows = active === "dhan" ? brokerConns.flatMap((c) => unfetchedLines(c).map((s) => ({ c, s }))) : [];
   /** The row a SAVE would upsert — in the aggregate view, the picker's account. */
   const saveTargetConn =
     saveAccountId > 0
@@ -938,10 +970,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
    *  write (fetch, then re-read the list and router.refresh()), never a server
    *  action: that would remount this card and reset its state (AGENTS.md). */
   async function clearUnfetched(c: ConnStatus, s: UnfetchedSpan) {
-    const { res, data } = await post(
-      { action: "clear-unfetched", broker: c.broker, accountId: c.accountId, from: s.from, to: s.to, reason: s.reason },
-      "clear-unfetched",
-    );
+    const { res, data } = await post(clearUnfetchedBody(c, s), "clear-unfetched");
     if (!data.ok) {
       await fail(res, data, "Could not clear the notice.");
       await refresh();
@@ -1421,7 +1450,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           <div className="space-y-1.5" data-testid="pull-unfetched">
             {unfetchedRows.map(({ c, s }) => (
               <div
-                key={`${c.accountId}|${s.from}|${s.to}|${s.reason}`}
+                key={`${c.accountId}|${s.connection ?? "-"}|${s.from}|${s.to}|${s.reason}|${s.fact}`}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning/90"
               >
                 <span>

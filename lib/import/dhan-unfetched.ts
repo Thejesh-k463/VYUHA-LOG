@@ -23,8 +23,12 @@ import type { DhanUnfetchedSpan } from "@/lib/import/api/dhan";
  * wave 2G): a span's IDENTITY includes its connection (audit_log.entity_id), so
  * a merge-carried span (no connection) and the target client's span with the
  * same from / to / reason are two records — a pull's clear names its own
- * connection's (`scope: "connection"`), the user's Clear the account's, and GET
- * lists one line per from / to / reason.
+ * connection's (`scope: "connection"`). H4 (v4.3.0 fix wave 2H): GET lists one
+ * line per RECORD, each with its own fact and its connection (records with the
+ * same span AND the same sentences share one line), and the card's Clear names
+ * that connection — clearUnfetchedLine clears exactly the records on that line.
+ * A Clear with no connection field (the route's legacy row) still clears the
+ * span on every connection of the account.
  *
  * Why not the alternatives: `auth_json` is the vault-encrypted credential blob
  * — `hasAuth`, `clearAuth`, a re-save with new PIN + TOTP and the backup's
@@ -73,13 +77,22 @@ const keyOf = (s: { from: string; to: string; reason: string }) => `${s.from}|${
 /** L1: one record's identity — its connection (null: carried by a merge) and its span. */
 const recordKeyOf = (connId: number | null, s: { from: string; to: string; reason: string }) => `${connId ?? "-"}|${keyOf(s)}`;
 
-/** L1: marks a clear row a PULL appended (clearRow). It clears only the span of
- *  its own connection. A clear row without it — the user's Clear in
- *  app/api/import/broker/route.ts — clears the account's span on every
- *  connection, which is the one line the card showed. */
+/** L1: marks a clear row a PULL appended (clearRow), and H4: a user Clear that
+ *  named its record (clearUnfetchedLine). It clears only the span of its own
+ *  connection (entity_id; null = a merge-carried record). A clear row without
+ *  it — the route's legacy Clear, no connection field — clears the account's
+ *  span on every connection. */
 const CLEAR_SCOPE_CONNECTION = "connection";
 
-function outstandingVia(exec: Pick<typeof db, "select">, accountId: number): OpenSpan[] {
+/** H4: the records that share one card line — the same span AND the same
+ *  sentences. A different fact (another client's last pull at another time of
+ *  day) is a second line, so no Clear dismisses a fact the card did not show. */
+const lineKeyOf = (s: UnfetchedSpanRow) => `${keyOf(s)}|${s.fact}|${s.remedy ?? ""}`;
+
+/** Every record's LATEST state for one account — its last kept row, and whether
+ *  a later clear row cleared it (S3: a cleared record keeps the sentences it
+ *  last stated, so a Clear from a card that loaded before can find its line). */
+function latestVia(exec: Pick<typeof db, "select">, accountId: number): (OpenSpan & { cleared: boolean })[] {
   const rows = exec
     .select({ after: auditLog.afterJson, summary: auditLog.summary, entityId: auditLog.entityId })
     .from(auditLog)
@@ -118,25 +131,88 @@ function outstandingVia(exec: Pick<typeof db, "select">, accountId: number): Ope
     const remedy = typeof a.fact === "string" && a.fact && typeof a.remedy === "string" && a.remedy ? a.remedy : null;
     latest.set(recordKeyOf(connId, { from, to, reason }), { from, to, reason, fact, remedy, connId, cleared: false });
   }
-  return [...latest.values()]
+  return [...latest.values()];
+}
+
+function outstandingVia(exec: Pick<typeof db, "select">, accountId: number): OpenSpan[] {
+  return latestVia(exec, accountId)
     .filter((s) => !s.cleared)
     .map(({ from, to, reason, fact, remedy, connId }) => ({ from, to, reason, fact, remedy, connId }))
     .sort((x, y) => x.from.localeCompare(y.from) || x.to.localeCompare(y.to));
 }
 
-/** The spans still outstanding for one account, oldest first — GET's shape.
- *  L1: one line per from / to / reason, the first record's, however many
- *  connections hold it (the card keys its rows, and the user's Clear, on those). */
-export function outstandingUnfetched(accountId: number): UnfetchedSpanRow[] {
+/** One outstanding record with its connection (audit_log.entity_id; null: carried by a merge). */
+export type UnfetchedRecord = UnfetchedSpanRow & { connection: number | null };
+
+const asRecord = ({ from, to, reason, fact, remedy, connId }: OpenSpan): UnfetchedRecord => ({ from, to, reason, fact, remedy, connection: connId });
+
+/** H4: every outstanding RECORD for one account, oldest span first. */
+export function outstandingUnfetchedRecords(accountId: number): UnfetchedRecord[] {
+  return outstandingVia(db, accountId).map(asRecord);
+}
+
+/** H4: the card's lines — one per record, except that records with the same span
+ *  AND the same sentences share one line, which carries the first record's
+ *  connection (a Clear naming it clears the whole line, clearUnfetchedLine). */
+export function outstandingUnfetchedLines(accountId: number): UnfetchedRecord[] {
   const seen = new Set<string>();
-  const out: UnfetchedSpanRow[] = [];
-  for (const { from, to, reason, fact, remedy } of outstandingVia(db, accountId)) {
-    const k = keyOf({ from, to, reason });
+  const out: UnfetchedRecord[] = [];
+  for (const r of outstandingUnfetchedRecords(accountId)) {
+    const k = lineKeyOf(r);
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ from, to, reason, fact, remedy });
+    out.push(r);
   }
   return out;
+}
+
+/** The lines still outstanding for one account, oldest first — GET's `unfetched`
+ *  shape, unchanged (no connection key); GET sends each line's connection beside
+ *  it, by index (app/api/import/broker/route.ts `unfetchedConnection`). */
+export function outstandingUnfetched(accountId: number): UnfetchedSpanRow[] {
+  return outstandingUnfetchedLines(accountId).map(({ from, to, reason, fact, remedy }) => ({ from, to, reason, fact, remedy }));
+}
+
+/** A clear row's before / after snapshots. `scope` sits on BOTH sides, so the
+ *  Audit log's diff (lib/analytics/audit-diff.ts, the union of both key sets)
+ *  shows `clearedAt` only — a clear changes no scope of the notice. */
+function clearSnapshots(accountId: number, s: { from: string; to: string; reason: string }) {
+  const snap = { notice: DHAN_UNFETCHED_NOTICE, broker: "dhan", accountId, from: s.from, to: s.to, reason: s.reason, scope: CLEAR_SCOPE_CONNECTION };
+  return { beforeJson: { ...snap, clearedAt: null }, afterJson: { ...snap, clearedAt: new Date().toISOString() } };
+}
+
+/**
+ * H4: the user's Clear of ONE card line, named by its record's connection
+ * (null: a merge-carried record) and span. Clears that record and every record
+ * on its line (the same span and sentences, outstandingUnfetchedLines) — one
+ * connection-scoped clear row each, appended in one transaction, THROWING on
+ * failure. Returns how many records were cleared; 0 when no open record is on
+ * the named record's line (nothing is written).
+ *
+ * S3 (v4.3.0 fix wave 2H seam): the Clear targets the LINE the card showed. A
+ * shared line carries one record's connection; when a pull (the route's or
+ * lib/jobs/auto-pull.ts) cleared THAT record after the card loaded, the named
+ * record is no longer open, and its last stored sentences identify the line:
+ * the open records with the same span and the same sentences are cleared. A
+ * named record that was never kept for the account matches nothing.
+ */
+export function clearUnfetchedLine(
+  accountId: number,
+  record: { from: string; to: string; reason: string; connection: number | null },
+  summary: string,
+  source = "ui",
+): number {
+  return db.transaction((tx) => {
+    const all = latestVia(tx, accountId);
+    const named = all.find((o) => o.connId === record.connection && keyOf(o) === keyOf(record));
+    if (!named) return 0;
+    const line = all.filter((o) => !o.cleared && lineKeyOf(o) === lineKeyOf(named));
+    if (line.length === 0) return 0;
+    tx.insert(auditLog)
+      .values(line.map((o) => ({ entity: "settings", entityId: o.connId, action: "update", summary, ...clearSnapshots(accountId, o), source })))
+      .run();
+    return line.length;
+  });
 }
 
 interface SpanOwner {
@@ -164,14 +240,12 @@ const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_
  *  span of the owner's own connection (sameConnection), and L1's scope says so:
  *  the row clears that connection's record only. */
 function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
-  const snap = { notice: DHAN_UNFETCHED_NOTICE, broker: "dhan", accountId: owner.accountId, from: o.from, to: o.to, reason: o.reason };
   return {
     entity: "settings",
     entityId: owner.connId,
     action: "update",
     summary,
-    beforeJson: { ...snap, clearedAt: null },
-    afterJson: { ...snap, clearedAt: new Date().toISOString(), scope: CLEAR_SCOPE_CONNECTION },
+    ...clearSnapshots(owner.accountId, o),
     source: owner.source,
   };
 }

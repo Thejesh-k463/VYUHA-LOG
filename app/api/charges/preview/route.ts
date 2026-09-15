@@ -7,6 +7,7 @@ import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
 import { getMarginPct } from "@/lib/queries/margin";
+import { getSettings } from "@/lib/queries/settings";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 
 export const runtime = "nodejs";
@@ -21,8 +22,9 @@ const Body = z.object({
   sellValue: z.number().nonnegative(),
   buyQty: z.number().nonnegative(),
   sellQty: z.number().nonnegative(),
-  buyOrders: z.number().int().min(0).default(1),
-  sellOrders: z.number().int().min(0).default(1),
+  // A SENT count wins; an omitted one is filled from settings below (V4).
+  buyOrders: z.number().int().min(0).optional(),
+  sellOrders: z.number().int().min(0).optional(),
   ownCapitalUsed: z.number().nonnegative().nullish(),
   daysHeld: z.number().nonnegative().nullish(),
   grossPnl: z.number().nullish(),
@@ -41,6 +43,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message }, { status: 400 });
   }
   const v = parsed.data;
+  // V4 — ONE default for a side's order count: settings.defaultBuyOrders /
+  // defaultSellOrders, the count the saves bill for a side that gains its first
+  // quantity (commitManualTrade, updateManualTrade, closePosition). No settings
+  // row: 1, as lib/import/commit.ts loadRatesContext.
+  const s = v.buyOrders === undefined || v.sellOrders === undefined ? getSettings() : null;
+  const buyOrders = v.buyOrders ?? s?.defaultBuyOrders ?? 1;
+  const sellOrders = v.sellOrders ?? s?.defaultSellOrders ?? 1;
 
   let cls = classify({
     tradingsymbol: v.tradingsymbol,
@@ -76,8 +85,8 @@ export async function POST(req: Request) {
         sellValue: v.sellValue,
         buyQty: v.buyQty,
         sellQty: v.sellQty,
-        buyOrderCount: v.buyOrders,
-        sellOrderCount: v.sellOrders,
+        buyOrderCount: buyOrders,
+        sellOrderCount: sellOrders,
         mtf: isMtf ? { fundedAmount: fundedAmount!, daysHeld, pledgeScrips: 1 } : null,
       },
       r,

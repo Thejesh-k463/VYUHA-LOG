@@ -41,8 +41,12 @@ export function accrueMtfInterest(today = todayIstIso()): {
     // that assumes 100% broker financing and overstates interest (the bug fixed
     // here — see also closePosition/commitManualTrade in lib/import/commit.ts).
     // Own-margin % is looked up per THIS trade's broker — real leverage varies.
+    // X2 (4.3.0) — a stored 0 is STATED (the whole position from own capital),
+    // not "never set": it is kept and accrues nothing. Only null is estimated —
+    // the rule closePosition/updateManualTrade use (V3), so a close keeps what
+    // this job leaves.
     const ownMarginPct = marginRates.get(marginKey(t.broker, "eq_mtf")) ?? DEFAULT_MTF_OWN_MARGIN_PCT;
-    const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, ownMarginPct);
+    const funded = t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, ownMarginPct);
     // T+1 settlement start through the day before sale proceeds settle = exactly
     // (today − buyDate) calendar days for a still-open position — confirmed
     // against Dhan's MTF docs. No extra "-1": that undercounted by one day.
@@ -69,7 +73,7 @@ export function accrueMtfInterest(today = todayIstIso()): {
       // neighbouring rate would invent a number; leaving it alone is honest.
       continue;
     }
-    const fundedChanged = t.mtfFundedAmount == null || t.mtfFundedAmount <= 0;
+    const fundedChanged = t.mtfFundedAmount == null;
     if (interest === t.mtfInterest && !fundedChanged) continue;
 
     const newCharges = r2(t.chargesTotal - t.mtfInterest + interest);

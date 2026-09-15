@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { ipos } from "@/lib/db/schema";
+import { ipos, trades } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { computeIpo, ipoRatesDate, ipoSellChargeBreakdown, ipoVenue, isPriceableExitDate, summariseIpos, type IpoComputed, type IpoSellCharger, type IpoSummary } from "@/lib/analytics/ipo";
 import { findRates, statutoryRatesFor } from "@/lib/engine/rates";
@@ -102,11 +102,18 @@ export function chargerFor(
   };
 }
 
+/**
+ * U3 (v4.3.0): each row also carries the link facts the edit form needs — whether
+ * the linked holding exists and its stored sell date — read in this same
+ * account-scoped query (a LEFT JOIN on the IPO's own trade_id), so the form never
+ * guesses what the route's sync will compare against. Z2 (wave 2H): also its sell
+ * quantity and price, so the form pre-fills the holding's date only for the IPO's own sale.
+ */
 export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } {
-  const accountId=getSelectedAccountId(); const q=db.select().from(ipos); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
+  const accountId=getSelectedAccountId(); const q=db.select({ ipo: ipos, linkedTradeId: trades.id, linkedSellDate: trades.sellDate, linkedSellQty: trades.sellQty, linkedSellPrice: trades.avgSellPrice }).from(ipos).leftJoin(trades, eq(trades.id, ipos.tradeId)); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
   const ratesMap = loadRatesMap();
-  const rows = raw.map((r) =>
-    computeIpo({
+  const rows = raw.map(({ ipo: r, linkedTradeId, linkedSellDate, linkedSellQty, linkedSellPrice }) => ({
+    ...computeIpo({
       id: r.id,
       name: r.name,
       broker: r.broker,
@@ -127,13 +134,36 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
       exitDate: r.exitDate,
       notes: r.notes,
     }, sellChargerFor(r.broker, r.exchange, r.exitDate, ratesMap)),
-  );
+    linked: linkedTradeId != null,
+    linkedSellDate: linkedTradeId != null ? linkedSellDate : null,
+    linkedSellQty: linkedTradeId != null ? linkedSellQty : null,
+    linkedSellPrice: linkedTradeId != null ? linkedSellPrice : null,
+  }));
   return { rows, summary: summariseIpos(rows) };
 }
 
-/** Realised (exited) IPO net P&L — feeds the capital-compounding view. */
-export function getIpoRealisedNet(): number {
-  return getIposComputed().rows.filter((r) => r.realised).reduce((s, r) => s + r.netPnl, 0);
+/**
+ * Realised (exited) IPO net P&L — feeds the capital-compounding view.
+ *
+ * CAP-IPO-LINK (v4.3.0 wave 2H): `countedTradeIds` names the trades the caller
+ * has ALREADY counted. An IPO whose own trade_id is one of them is realised
+ * THROUGH that trade (the exit saved on /ipos closed it), so it is skipped here
+ * and its sale is counted once, from the trades book. With no argument every
+ * exited IPO is summed — the IPO book on its own, as /ipos reads it. The
+ * trade_id read is scoped exactly as getIposComputed is (invariant 8); every
+ * IPO linking a counted trade is skipped, since trade_id is not unique.
+ */
+export function getIpoRealisedNet(opts: { countedTradeIds?: ReadonlySet<number> } = {}): number {
+  const counted = opts.countedTradeIds;
+  const throughTrade = new Set<number>();
+  if (counted && counted.size > 0) {
+    const accountId = getSelectedAccountId();
+    const q = db.select({ id: ipos.id, tradeId: ipos.tradeId }).from(ipos);
+    for (const r of (accountId > 0 ? q.where(eq(ipos.accountId, accountId)) : q).all()) {
+      if (r.tradeId != null && counted.has(r.tradeId)) throughTrade.add(r.id);
+    }
+  }
+  return getIposComputed().rows.filter((r) => r.realised && !throughTrade.has(r.id)).reduce((s, r) => s + r.netPnl, 0);
 }
 
 /** trade id → ipo id, for holdings already pushed to the IPO section. */

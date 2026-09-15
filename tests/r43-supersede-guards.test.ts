@@ -54,6 +54,12 @@ const ACC_RETAG_CONTROL = 939;
 const ACC_COLUMN = 940; // + index, one per annotated column below
 const ACC_CONV = 962;
 const ACC_CONV_NOREL = 963;
+const ACC_STUCK = 964;
+
+/** W2H: the sentence an ask made ONLY by W2G M1 carries (lib/import/cross-source.ts). */
+const M1_REASON = "another product, segment or exchange";
+/** The reasons an ask ON the supersede key carries (unchanged since W2F). */
+const KEY_REASONS = "the recorded row carries detail a replacement would lose";
 
 const COLUMNS: [string, string, unknown][] = [
   ["acquisition 'bonus'", "acquisition", "bonus"],
@@ -77,7 +83,7 @@ beforeAll(async () => {
   t.db
     .insert(t.schema.accounts)
     .values(
-      [ACC_BASIS, ACC_JOURNAL, ACC_GROWN, ACC_TWOPROD, ACC_TWOCAND, ACC_UNKNOWN, ACC_RETAG, ACC_RETAG_SAMEKEY, ACC_RETAG_CONTROL, ACC_CONV, ACC_CONV_NOREL, ...COLUMNS.map((_, i) => ACC_COLUMN + i)].map((id) => ({
+      [ACC_BASIS, ACC_JOURNAL, ACC_GROWN, ACC_TWOPROD, ACC_TWOCAND, ACC_UNKNOWN, ACC_RETAG, ACC_RETAG_SAMEKEY, ACC_RETAG_CONTROL, ACC_CONV, ACC_CONV_NOREL, ACC_STUCK, ...COLUMNS.map((_, i) => ACC_COLUMN + i)].map((id) => ({
         id,
         name: `r43 guard ${id}`,
         isDefault: false,
@@ -149,6 +155,10 @@ describe("N1 · a stored row with a user-recorded basis or journal entry is aske
     expect(pre.crossSource?.risky).toBe(true);
     expect(pre.crossSource?.collisions).toMatchObject([{ symbol: "BASIS", existing: { id: sale!.id }, sameSnapshot: true }]);
     expect(job.classifyPreview(pre)).toBe("collision");
+    // W2H control: an ask ON the key keeps the key's reasons, and is not given
+    // the conversion sentence (red under a mutant that flags every ask as M1's).
+    expect(pre.crossSource?.message).toContain(`1 row in this pull (BASIS) restates a position today's earlier pull already recorded, and is not written over it: ${KEY_REASONS}`);
+    expect(pre.crossSource?.message).not.toContain(M1_REASON);
 
     // A commit forced past the question adds the evening row beside the recorded one; it never rewrites it.
     const res = commit.commitParsedFile(pull2, FILE, null, ACC_BASIS, snap);
@@ -339,7 +349,10 @@ describe("W2G M1 · a position the BROKER re-classified between two same-day /po
     expect(Object.keys(pre.crossSource!.collisions[0]!).sort()).toEqual(COLLISION_FIELDS);
     expect(pre.crossSource?.risky).toBe(true);
     expect(job.classifyPreview(pre)).toBe("collision");
-    expect(pre.crossSource?.message).toContain("1 row in this pull (CONV) restates a position today's earlier pull already recorded");
+    // RE-PINNED (W2H, DECISIONS 2026-09-15): an ask made only by M1 names its own reason. Measured at 3feb22f:
+    // "…restates a position today's earlier pull already recorded, and is not written over it: the recorded row carries detail…".
+    expect(pre.crossSource?.message).toContain(`1 row in this pull (CONV) restates an instrument today's earlier pull already recorded under ${M1_REASON}`);
+    expect(pre.crossSource?.message).not.toContain(KEY_REASONS);
     // The question comes before any row lands.
     expect(rowsOf(ACC_CONV)).toEqual(noon);
 
@@ -375,6 +388,31 @@ describe("W2G M1 · a position the BROKER re-classified between two same-day /po
     expect(Object.keys(pre.crossSource!.collisions[0]!).sort()).toEqual(COLLISION_FIELDS);
     expect(job.classifyPreview(pre)).toBe("collision");
     expect(rowsOf(ACC_CONV_NOREL)).toEqual([noon]);
+  });
+
+  it("W2H · the M1 ask's sentence names the actual reason and the path to the broker's book, and that path does reach the broker's book", () => {
+    // The wave-2G re-check's STUCK reproduce.
+    expect(commit.commitParsedFile(pullOf([position({ tradingSymbol: "STUCK" })]), DHAN_FILE, null, ACC_STUCK, dhanSnap).added).toBe(1);
+    const [noon] = rowsOf(ACC_STUCK);
+    const pull2 = pullOf([position({ tradingSymbol: "STUCK", productType: "CNC", buyQty: 20, netQty: 20, buyAvg: 100.5 })]);
+    const pre = commit.previewParsedFile(pull2, null, ACC_STUCK, DHAN_FILE, dhanSnap);
+    expect(pre.crossSource?.collisions.map((c) => [c.symbol, c.kind, c.sameSnapshot, c.existing.id])).toEqual([["STUCK", "partial-quantity", true, noon!.id]]);
+    // THE assertion (on revert: "…restates a position today's earlier pull already recorded, and is not written over it:
+    // the recorded row carries detail a replacement would lose (…), or more than one position shares its instrument. …").
+    expect(pre.crossSource?.message).toBe(
+      `1 row in this pull (STUCK) restates an instrument today's earlier pull already recorded under ${M1_REASON}, and is not written over that row. ` +
+        "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, " +
+        "which records the position as the broker now states it; committing anyway keeps both rows.",
+    );
+    // The dialog shows this sentence word for word: pinned on the same string in tests/cross-source.test.ts
+    // (importing the client component here would push this file's beforeAll past its 3 s budget).
+
+    // The path the sentence names: the earlier row deleted, the same pull again — no question, and the book is the broker's.
+    t.sqlite.prepare("DELETE FROM trades WHERE id = ?").run(noon!.id);
+    const again = commit.previewParsedFile(pull2, null, ACC_STUCK, DHAN_FILE, dhanSnap);
+    expect([again.crossSource?.collisions, again.crossSource?.message, job.classifyPreview(again)]).toEqual([[], null, "commit"]);
+    expect(commit.commitParsedFile(pull2, DHAN_FILE, null, ACC_STUCK, dhanSnap).added).toBe(1);
+    expect(rowsOf(ACC_STUCK).map((r) => [r.segment, r.buy_qty, r.sell_qty])).toEqual([["eq_delivery", 20, 0]]);
   });
 
   it("control: the same INTRADAY position grown on its own key (10 → 20) is still replaced in place (R43) — the same-symbol ask applies only when nothing is on the key", () => {

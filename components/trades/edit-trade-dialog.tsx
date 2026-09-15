@@ -29,6 +29,49 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/** The editor's typed legs, as numbers, with the dates it will save. */
+export interface EditPreviewFields {
+  buyQty: number;
+  avgBuyPrice: number;
+  sellQty: number;
+  avgSellPrice: number;
+  ownCapitalUsed: number | null;
+  buyDate: string | null;
+  sellDate: string | null;
+}
+
+/**
+ * The /api/charges/preview body for `trade` as the editor holds it — the request
+ * the dialog's live preview sends, and what `updateManualTrade` (lib/import/commit.ts)
+ * re-prices on Save.
+ */
+export function editPreviewBody(trade: Trade, f: EditPreviewFields) {
+  const isOpen = f.buyQty !== f.sellQty;
+  return {
+    broker: trade.broker,
+    tradingsymbol: trade.tradingsymbol,
+    segment: trade.segment,
+    exchange: trade.exchange,
+    buyValue: f.buyQty * f.avgBuyPrice,
+    sellValue: f.sellQty * f.avgSellPrice,
+    buyQty: f.buyQty,
+    sellQty: f.sellQty,
+    // The order counts updateManualTrade bills (U2): a side with quantity bills its
+    // stored count, a side without bills none. A stored 0 is omitted, so the route's
+    // default stands in for the save's settings default — which the wire row does not
+    // carry. Omitted, the route billed one order a side: a Dhan option sold in 2 orders
+    // and covered in 3 previewed ₹48.52 beside a save of ₹119.32.
+    buyOrders: f.buyQty > 0 ? trade.buyOrderCount || undefined : 0,
+    sellOrders: f.sellQty > 0 ? trade.sellOrderCount || undefined : 0,
+    grossPnl: !isOpen ? f.sellQty * f.avgSellPrice - f.buyQty * f.avgBuyPrice : 0,
+    ownCapitalUsed: f.ownCapitalUsed,
+    daysHeld: !isOpen && f.buyDate && f.sellDate ? Math.max(0, Math.floor((new Date(f.sellDate).getTime() - new Date(f.buyDate).getTime()) / 86400000)) : 0,
+    isOpen,
+    buyDate: f.buyDate,
+    sellDate: f.sellDate,
+  };
+}
+
 /** Full editor for any trade, open or closed — quantities, prices, dates, SL/TSL/
  * target, risk, MTF own-capital, tags/notes. Symbol/broker/segment/exchange stay
  * fixed here (use the Re-tag dialog for reclassification). */
@@ -137,7 +180,6 @@ export function EditTradeDialog({
     // before the debounced fetch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (bq <= 0 && sq <= 0) { setPreview(null); return; }
-    const isOpen = bq !== sq;
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
       try {
@@ -145,23 +187,18 @@ export function EditTradeDialog({
           method: "POST",
           headers: { "content-type": "application/json" },
           signal: ctrl.signal,
-          body: JSON.stringify({
-            broker: trade.broker,
-            tradingsymbol: trade.tradingsymbol,
-            segment: trade.segment,
-            exchange: trade.exchange,
-            buyValue: bq * bp,
-            sellValue: sq * sp,
-            buyQty: bq,
-            sellQty: sq,
-            grossPnl: !isOpen ? sq * sp - bq * bp : 0,
-            ownCapitalUsed: ownCapitalUsed !== "" ? Number(ownCapitalUsed) : isMtf ? currentOwnCapitalGuess : null,
-            daysHeld: !isOpen && buyDate && sellDate ? Math.max(0, Math.floor((new Date(sellDate).getTime() - new Date(buyDate).getTime()) / 86400000)) : 0,
-            isOpen,
-            // The save re-prices at pricingDate({ buyDate, sellDate }); so does the preview (R56).
-            buyDate: buyDate || null,
-            sellDate: sellDate || null,
-          }),
+          body: JSON.stringify(
+            editPreviewBody(trade, {
+              buyQty: bq,
+              avgBuyPrice: bp,
+              sellQty: sq,
+              avgSellPrice: sp,
+              ownCapitalUsed: ownCapitalUsed !== "" ? Number(ownCapitalUsed) : isMtf ? currentOwnCapitalGuess : null,
+              // The save re-prices at pricingDate({ buyDate, sellDate }); so does the preview (R56).
+              buyDate: buyDate || null,
+              sellDate: sellDate || null,
+            }),
+          ),
         });
         if (res.ok) setPreview(await res.json());
       } catch { /* aborted */ }

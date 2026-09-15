@@ -108,9 +108,10 @@ const HASH_RE = /^[0-9a-f]{40}$/;
  * EVERY hash that stands for this stored row: its own first, then its aliases,
  * de-duplicated and in a stable order.
  *
- * The single door for import dedup (`commit.ts`: the preview's and the
- * commit's existing-hash sets are every row's identity hashes — R26, 4.3.0),
- * the restore re-key (`lib/db/data-fixes.ts`) and the Data Quality report.
+ * Read by the restore re-key (`lib/db/data-fixes.ts`) and the Data Quality
+ * report. Import dedup and the restore skip/refusal read the HELD subset
+ * instead (`heldIdentityHashes`, V1): an alias whose lot no longer closes on
+ * its trade does not say that trade is recorded.
  * Pure and total: a row with no notes answers with just its own hash, so a
  * book with no alias rows de-duplicates exactly as v4.2.0 did.
  */
@@ -130,6 +131,49 @@ export function lotIdentityHashes(row: { dedupHash: string; importNotes: string 
     if (HASH_RE.test(h)) push(h);
   }
   return out;
+}
+
+/** A stored row's legs, as the long/short reading needs them. */
+export interface RowLegs {
+  buyQty: number;
+  sellQty: number;
+  buyDate: string | null;
+  sellDate: string | null;
+}
+
+/**
+ * Does this row read LONG? The ONE definition (H1, wave 2H; moved here by V1
+ * from `lib/trash.ts`, which had copied `updateManualTrade`'s): more bought than
+ * sold, or a closed row whose purchase is dated before its sale — a closed row
+ * states its direction only through its dates, the exit being the later one.
+ */
+export function readsLong(x: RowLegs): boolean {
+  return x.buyQty > x.sellQty || (x.buyQty === x.sellQty && !!x.buyDate && !!x.sellDate && x.buyDate < x.sellDate);
+}
+
+/**
+ * V1 (v4.3.0 wave 2H fourth seam fix) — do this row's `dedup-alias:` segments
+ * still RECORD the trades they name? Only while its closing leg holds quantity:
+ * a long's sell leg, a short's buy leg (`readsLong`).
+ *
+ * H1 keeps a joined lot's alias when the trade editor re-opens it (sell 0). That
+ * lot no longer records the sale, so an alias counted anyway left the sale on
+ * no row: its restore was skipped and its re-import deduped. A partial re-make
+ * (sell 60 of 100) is the user's own edit and keeps the alias held.
+ */
+export function aliasHeld(row: RowLegs): boolean {
+  return readsLong(row) ? row.sellQty > 0 : row.buyQty > 0;
+}
+
+/**
+ * The hashes that say "this trade is already recorded here": the row's OWN hash
+ * always, its aliases only while `aliasHeld`. The single door for every reader
+ * that decides a trade is already in the book — the restore refusal and skip
+ * (`lib/trash.ts`) and import dedup (`commit.ts`, preview and commit). The
+ * restore re-key and the duplicate scan keep reading `lotIdentityHashes`.
+ */
+export function heldIdentityHashes(row: { dedupHash: string; importNotes: string | null } & RowLegs): string[] {
+  return aliasHeld(row) ? lotIdentityHashes(row) : lotIdentityHashes({ dedupHash: row.dedupHash, importNotes: null });
 }
 
 /**

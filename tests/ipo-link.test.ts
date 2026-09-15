@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
+import * as ipoLink from "@/lib/analytics/ipo-link";
 import {
-  deriveHolding, tradePatchFromIpo, ipoSeedFromTrade, type IpoLinkInput,
+  deriveHolding, tradePatchFromIpo, ipoSeedFromTrade, linkedSyncFor, sellLegIsIpoExit, type IpoLinkInput,
 } from "@/lib/analytics/ipo-link";
 
 const ipo = (p: Partial<IpoLinkInput> = {}): IpoLinkInput => ({
@@ -102,6 +103,103 @@ describe("tradePatchFromIpo", () => {
 
   it("returns null rather than a patch for an unallotted application", () => {
     expect(tradePatchFromIpo(ipo({ allotted: false }))).toBeNull();
+  });
+});
+
+describe("linkedSyncFor — a holding with a sale recorded in Trades is never recomputed from the IPO (X1)", () => {
+  // Bought 10 @100 (the IPO's allotment); the sale is the trade's own.
+  const soldInTrades = { sellQty: 10, avgSellPrice: 150, sellDate: "2026-03-02" };
+  const partlySold = { sellQty: 4, avgSellPrice: 150, sellDate: "2026-03-02" };
+  const noSale = { sellQty: 0, avgSellPrice: 0, sellDate: null };
+  const unsold = ipo({ appliedPrice: 100, allottedQty: 10, listingPrice: 130, exitDate: null });
+  const soldOnIpos = { ...unsold, exitPrice: 150, exitDate: "2026-03-02" };
+
+  it("a holding with no sale always syncs, whatever the save changes", () => {
+    expect(linkedSyncFor({ stored: unsold, next: { ...unsold, allottedQty: 20 }, trade: noSale })).toBe("sync");
+    expect(linkedSyncFor({ stored: null, next: unsold, trade: noSale })).toBe("sync");
+    expect(linkedSyncFor({ stored: unsold, next: unsold, trade: null })).toBe("sync");
+  });
+
+  it("m1 · a save that changes no money field of the IPO leaves a partly or fully sold holding alone", () => {
+    expect(linkedSyncFor({ stored: unsold, next: unsold, trade: partlySold })).toBe("leave");
+    expect(linkedSyncFor({ stored: unsold, next: unsold, trade: soldInTrades })).toBe("leave");
+    // An exit date with no exit price prices nothing, so writing or clearing it changes no money field.
+    expect(linkedSyncFor({ stored: { ...unsold, exitDate: "2026-02-30" }, next: unsold, trade: soldInTrades })).toBe("leave");
+    expect(linkedSyncFor({ stored: unsold, next: { ...unsold, exitDate: "2026-03-02" }, trade: soldInTrades })).toBe("leave");
+  });
+
+  it("m2 · a save that changes a money field over that sale is refused", () => {
+    for (const next of [
+      { ...unsold, allottedQty: 20 },
+      { ...unsold, appliedPrice: 90 },
+      { ...unsold, discountPerShare: 5 },
+      { ...unsold, listingPrice: 140 },
+      { ...unsold, allotmentDate: "2019-02-01" },
+      { ...unsold, allotted: false },
+      { ...unsold, exitPrice: 160, exitDate: "2026-03-02" },
+    ]) {
+      expect(linkedSyncFor({ stored: unsold, next, trade: soldInTrades }), JSON.stringify(next)).toBe("refuse");
+    }
+    // A create, or a save that links a different holding, carries no stored record to compare: refused.
+    expect(linkedSyncFor({ stored: null, next: unsold, trade: soldInTrades })).toBe("refuse");
+  });
+
+  it("(c) · an IPO whose exit IS the trade's sell leg keeps the full sync, clearing the exit included", () => {
+    expect(sellLegIsIpoExit(soldOnIpos, soldInTrades)).toBe(true);
+    expect(linkedSyncFor({ stored: soldOnIpos, next: unsold, trade: soldInTrades })).toBe("sync");
+    expect(linkedSyncFor({ stored: soldOnIpos, next: { ...soldOnIpos, exitPrice: 160, allottedQty: 20 }, trade: soldInTrades })).toBe("sync");
+    // U3: the date corrected in Trades, then saved onto the IPO; the save makes the exit that sale.
+    expect(linkedSyncFor({ stored: { ...soldOnIpos, exitDate: "2026-02-30" }, next: soldOnIpos, trade: soldInTrades })).toBe("sync");
+  });
+
+  it("a sale differing from the IPO's exit in quantity, price or date is the trade's own", () => {
+    expect(sellLegIsIpoExit(soldOnIpos, partlySold)).toBe(false);
+    expect(sellLegIsIpoExit(soldOnIpos, { ...soldInTrades, avgSellPrice: 155 })).toBe(false);
+    expect(sellLegIsIpoExit(soldOnIpos, { ...soldInTrades, sellDate: "2026-03-03" })).toBe(false);
+    expect(sellLegIsIpoExit(unsold, soldInTrades)).toBe(false);
+    expect(linkedSyncFor({ stored: { ...soldOnIpos, exitPrice: 155 }, next: unsold, trade: soldInTrades })).toBe("refuse");
+  });
+
+  /**
+   * Y2 (v4.3.0 wave 2H): an IPO sold 150 on an unreadable '2026-02-30', its holding's sale
+   * corrected in Trades to 152 on 2026-03-02. A save carrying 2026-03-02 (U3's pre-fill) or a
+   * blank date changed nothing the sync writes but the date, which the stored row never held
+   * readably — measured before: 'refuse' (409 on a notes-only save). Unchanged price and
+   * quantity now leave the holding alone; any money change still follows X1.
+   */
+  it("Y2 · an UNREADABLE stored exit date equals any date for 'leave' while price and quantity are unchanged", () => {
+    const stored = { ...soldOnIpos, exitDate: "2026-02-30" };
+    const corrected = { sellQty: 10, avgSellPrice: 152, sellDate: "2026-03-02" };
+    // THE assertions: the pre-filled date, a cleared date, and the stored value back — all leave.
+    expect(linkedSyncFor({ stored, next: soldOnIpos, trade: corrected })).toBe("leave");
+    expect(linkedSyncFor({ stored, next: { ...soldOnIpos, exitDate: null }, trade: corrected })).toBe("leave");
+    expect(linkedSyncFor({ stored, next: stored, trade: corrected })).toBe("leave");
+    expect(linkedSyncFor({ stored, next: { ...soldOnIpos, exitDate: "2026-03-09" }, trade: partlySold })).toBe("leave");
+    // A money change over that sale is still refused; a save making the exit that sale still syncs.
+    expect(linkedSyncFor({ stored, next: { ...soldOnIpos, exitPrice: 160 }, trade: corrected })).toBe("refuse");
+    expect(linkedSyncFor({ stored, next: { ...soldOnIpos, allottedQty: 20 }, trade: corrected })).toBe("refuse");
+    expect(linkedSyncFor({ stored, next: { ...soldOnIpos, exitPrice: null, exitDate: null }, trade: corrected })).toBe("refuse");
+    expect(linkedSyncFor({ stored, next: { ...soldOnIpos, exitPrice: 152 }, trade: corrected })).toBe("sync");
+    // A READABLE stored date is compared as it is: moving it over a sale that is not the exit is refused.
+    expect(linkedSyncFor({ stored: soldOnIpos, next: { ...soldOnIpos, exitDate: "2026-03-09" }, trade: corrected })).toBe("refuse");
+  });
+
+  /**
+   * Z2 (B) (wave 2H): the patch carries the IPO's computed exit charges, handed in by the caller,
+   * and net = gross − charges. The decision builds BOTH sides without charges, so a charge figure
+   * never turns a notes-only save into a money change.
+   */
+  it("Z2 · the patch carries a priced exit's charges and net; an open or unpriced patch states none, and the decision still leaves a notes-only save", () => {
+    const p = tradePatchFromIpo(soldOnIpos, 2.06)!;
+    expect([p.grossPnl, p.chargesTotal, p.netPnl]).toEqual([500, 2.06, 497.94]);
+    expect([tradePatchFromIpo(soldOnIpos)!.chargesTotal, tradePatchFromIpo(soldOnIpos)!.netPnl]).toEqual([null, null]);
+    expect([tradePatchFromIpo(unsold, 2.06)!.chargesTotal, tradePatchFromIpo(unsold, 2.06)!.netPnl]).toEqual([null, null]);
+    expect(linkedSyncFor({ stored: unsold, next: unsold, trade: soldInTrades })).toBe("leave");
+    expect(linkedSyncFor({ stored: soldOnIpos, next: soldOnIpos, trade: { ...soldInTrades, avgSellPrice: 152 } })).toBe("leave");
+  });
+
+  it("no second writer: the recompute that re-read gross against a kept sale is gone", () => {
+    expect("keepLinkedSellLeg" in ipoLink).toBe(false);
   });
 });
 

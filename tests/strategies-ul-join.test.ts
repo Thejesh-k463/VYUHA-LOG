@@ -57,15 +57,21 @@ vi.mock("@/lib/queries/license", () => ({
   getEntitlement: () => ({ state: "trial", pro: true, payload: null, trialDaysLeft: 7 }),
 }));
 
-// A PASS-THROUGH over the real engine: the page's own `buildStrategies` call,
+// A PASS-THROUGH over the real engine: the page's own `buildStrategies` calls,
 // recorded, so a test can assert the engine's actual output for the legs the
 // page built — not a figure re-derived from rendered text.
+// H6 (fix wave 2H): the page calls the engine ONCE PER ACCOUNT, so the record
+// ACCUMULATES and `runPage` clears it before every page call.
 const seen = vi.hoisted(() => ({ groups: [] as StrategyGroup[] }));
 vi.mock("@/lib/analytics/strategies", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/analytics/strategies")>();
   return {
     ...real,
-    buildStrategies: (legs: Parameters<typeof real.buildStrategies>[0]) => (seen.groups = real.buildStrategies(legs)),
+    buildStrategies: (legs: Parameters<typeof real.buildStrategies>[0]) => {
+      const out = real.buildStrategies(legs);
+      seen.groups.push(...out);
+      return out;
+    },
   };
 });
 
@@ -84,6 +90,15 @@ const NAMES_BOTH = 7;
 /** L5 (fix wave 2G): two tickers of one ISIN, each in its OWN account — the admitting map is per account. */
 const ADMIT_A = 8;
 const ADMIT_B = 9;
+/**
+ * H6 (fix wave 2H): the wave-2G re-check's reproduce. FB is ADMIT_B above (a
+ * short SAMMAANCAP 150 CE, 100 @ 5); FA holds the IBULHSGFIN company name with
+ * NO option; RB is short RELIANCE 1500 CE; RA holds RELIANCE shares with NO option.
+ */
+const ALONE_NAME = 10;
+const RB_CALL = 11;
+const RA_SHARES = 12;
+const EVERY_ACCOUNT = [PRIMARY, SWING, BASIS, NET_A, NET_B, NAMES, NAMES_BOTH, ADMIT_A, ADMIT_B, ALONE_NAME, RB_CALL, RA_SHARES];
 
 let t: TempDb;
 let trades: typeof import("@/lib/queries/trades");
@@ -91,7 +106,12 @@ let page: typeof import("@/app/strategies/page");
 
 const select = (id: number) => t.db.update(t.schema.settings).set({ selectedAccountId: id }).run();
 const textOf = (html: string): string => html.replace(/<[^>]*>/g, "|").replace(/\|+/g, "|");
-const renderHtml = (): string => renderToStaticMarkup(page.default() as React.ReactElement);
+/** One page call, with the engine record cleared first (the page builds per account). */
+const runPage = (): React.ReactElement => {
+  seen.groups = [];
+  return page.default() as React.ReactElement;
+};
+const renderHtml = (): string => renderToStaticMarkup(runPage());
 const renderPage = (): string => textOf(renderHtml());
 /** The engine's groups for one symbol, as the page just computed them. */
 const groupsFor = (symbol: string): StrategyGroup[] => {
@@ -154,6 +174,9 @@ beforeAll(async () => {
       { id: NAMES_BOTH, name: "Names both", isDefault: false },
       { id: ADMIT_A, name: "Admit A", isDefault: false },
       { id: ADMIT_B, name: "Admit B", isDefault: false },
+      { id: ALONE_NAME, name: "FA", isDefault: false },
+      { id: RB_CALL, name: "RB", isDefault: false },
+      { id: RA_SHARES, name: "RA", isDefault: false },
     ])
     .run();
   t.db
@@ -168,6 +191,9 @@ beforeAll(async () => {
       tradeRow({ accountId: NET_A, symbol: "KOTAKBANK", tradingsymbol: "KOTAKBANK", isOpen: true, buyQty: 100, avgBuyPrice: 1900 }),
       unknownSale(NET_A, "KOTAKBANK", 150, 1950),
       tradeRow({ accountId: NET_B, symbol: "KOTAKBANK", tradingsymbol: "KOTAKBANK", isOpen: true, buyQty: 100, avgBuyPrice: 1880 }),
+      // H6 (fix wave 2H): B's OWN call over its 100. Without it B alone shows no card, so on 0 B's shares are no leg
+      // at all (a holding is a leg only where its own account's option legs admit it) and N16's case loses its B half.
+      shortCall(NET_B, "KOTAKBANK", 2100, 100, 20),
       // N17 — a company-name holding whose ISIN the listing names under ANOTHER ticker than the option's.
       shortCall(NAMES, "TATAMOTORS", 1000, 550, 15),
       tradeRow({
@@ -215,6 +241,19 @@ beforeAll(async () => {
         avgBuyPrice: 850,
       }),
       shortCall(ADMIT_B, "MINDAIND", 900, 100, 12),
+      // H6 — FA: the IBULHSGFIN company name, 100 @ 140, and no option of FA's own (FB is ADMIT_B's SAMMAANCAP call).
+      tradeRow({
+        accountId: ALONE_NAME,
+        symbol: "Indiabulls Housing Finance Ltd",
+        tradingsymbol: "Indiabulls Housing Finance Ltd",
+        isin: bundledIsinBySymbol("IBULHSGFIN"),
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 140,
+      }),
+      // H6 — RB: short RELIANCE 1500 CE, 100 @ 5; RA: RELIANCE shares 100 @ 1400, no option of RA's own.
+      shortCall(RB_CALL, "RELIANCE", 1500, 100, 5),
+      tradeRow({ accountId: RA_SHARES, symbol: "RELIANCE", tradingsymbol: "RELIANCE", isOpen: true, buyQty: 100, avgBuyPrice: 1400 }),
       // D3 (W2-FIXB) — one delivery holding of 100 under 100 short calls per symbol, and a sale beside it.
       // ITC: a v4.2.0 Angel One / Upstox sale, acquisition NULL, no price — basis NOT recorded: nets.
       shortCall(BASIS, "ITC", 450, 100, 5),
@@ -481,12 +520,18 @@ describe("N16 — in All accounts, a basis-unknown sale nets only its own accoun
   });
 
   it("each account floors at zero BEFORE the aggregate: A sold more than it held, B's 100 still stands", () => {
-    select(ALL);
-    const [g] = groupsFor("KOTAKBANK");
-    select(PRIMARY);
-    // Measured before: [["long", 50, 1890]] — A's 150 sold netted against A's 100 AND B's 100 pooled.
-    expect(g.ulLegs.map((l) => [l.side, l.qty, l.premium])).toEqual([["long", 100, 1880]]);
-    expect(ulOf(NET_A, "KOTAKBANK"), "A alone floors at zero").toEqual([]);
+    // Re-pinned (H6, fix wave 2H): one card per ACCOUNT on 0, so the UL legs are read per card. Was one card,
+    // [["long", 100, 1880]] — B's 100 under A's call. B now holds its own call (fixture above).
+    const perCard = (id: number) => {
+      select(id);
+      runPage(); // the markup is not needed (L5's measurement below)
+      select(PRIMARY);
+      return seen.groups.filter((g) => g.symbol === "KOTAKBANK").map((g) => g.ulLegs.map((l) => [l.side, l.qty, l.premium]));
+    };
+    expect(perCard(NET_A), "A alone floors at zero").toEqual([[]]);
+    expect(perCard(NET_B), "B alone").toEqual([[["long", 100, 1880]]]);
+    // Measured before N16: A's 150 sold netted against A's 100 AND B's 100 pooled.
+    expect(perCard(ALL)).toEqual([[], [["long", 100, 1880]]]);
   });
 
   it("the aggregate HDFCBANK holding equals the sum of the single-account nettings (350 + 0)", () => {
@@ -627,7 +672,7 @@ describe("L5 — in All accounts, a holding resolves against its OWN account's o
     // The page's own buildStrategies call is recorded when the page function
     // runs; the markup is not needed here (measured 2026-09-15: 189-242 ms per
     // `it` with renderToStaticMarkup, 13-21 ms without).
-    page.default();
+    runPage();
     const out = seen.groups
       .filter((g) => symbols.includes(g.symbol))
       .map((g) => [g.symbol, g.strategyId, g.ulLegs.map((l) => [l.side, l.qty, l.premium])])
@@ -665,6 +710,81 @@ describe("L5 — in All accounts, a holding resolves against its OWN account's o
     // Measured before: MINDAIND covered-call with A's 100 (B's call wore the
     // stored ticker), UNOMINDA short-call with no UL.
     expect(cardsIn(ALL, syms), "B's option symbol changed A's routing").toEqual(alone);
+  });
+});
+
+/**
+ * H6 (v4.3.0 fix wave 2H, orchestrator decision; the wave-2G re-check's "seams"
+ * finding). In All accounts (0 is a view, invariant 9) each account's cards are
+ * EXACTLY that account's single-account cards: N16's "per account, then
+ * aggregate", applied to the join and the grouping as it already was to the
+ * netting. Two cross-account joins survived L5: G5b's in-scope admitting fallback
+ * (FA's company-name holding, whose own account holds no option, routed onto FB's
+ * SAMMAANCAP call) and the stored-symbol grouping (RA's RELIANCE shares grouped
+ * with RB's RELIANCE call). Both showed a bounded loss for a call that is naked in
+ * every single-account view.
+ */
+describe("H6 — All accounts shows each account's own cards, and no card built across two accounts", () => {
+  /** The `groups` prop the page hands the client — what reaches the RSC payload. */
+  const clientGroups = (id: number): Array<StrategyGroup & { key: string }> => {
+    select(id);
+    const tree = runPage();
+    select(PRIMARY);
+    const find = (node: unknown): Record<string, unknown> | null => {
+      if (!node || typeof node !== "object") return null;
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          const hit = find(child);
+          if (hit) return hit;
+        }
+        return null;
+      }
+      const props = (node as { props?: Record<string, unknown> }).props;
+      if (!props) return null;
+      if (Array.isArray(props.groups) && props.charts) return props;
+      return find(props.children);
+    };
+    const props = find(tree);
+    expect(props, "the page no longer hands the client a groups prop").not.toBeNull();
+    return (props as { groups: Array<StrategyGroup & { key: string }> }).groups;
+  };
+  /** A card as the user reads it: every field but the React key. */
+  const faceOf = (g: StrategyGroup): string => JSON.stringify({ ...g, key: undefined });
+
+  it("the re-check's reproduce: FB's SAMMAANCAP call and RB's RELIANCE 1500 call read Unlimited on 0, exactly as alone", () => {
+    const loss = (gs: StrategyGroup[], pick: (g: StrategyGroup) => boolean) => gs.filter(pick).map((g) => g.capLabel.maxLoss);
+    const sammaan = (g: StrategyGroup) => g.symbol === "SAMMAANCAP";
+    // INFY holds a 1500 CE too, so RB's card is picked by symbol AND strike.
+    const rb = (g: StrategyGroup) => g.symbol === "RELIANCE" && g.legs.some((l) => l.strike === 1500 && l.kind === "CE");
+    // Each account alone: FB's and RB's calls are naked; FA and RA hold no option, so the query returns them nothing.
+    expect([loss(clientGroups(ADMIT_B), sammaan), loss(clientGroups(RB_CALL), rb)]).toEqual([["Unlimited"], ["Unlimited"]]);
+    expect([clientGroups(ALONE_NAME), clientGroups(RA_SHARES)]).toEqual([[], []]);
+    const all = clientGroups(ALL);
+    // Measured before (3feb22f): [["Computed at underlying = 0"], ["Computed at underlying = 0"]] — FA's 100 covered
+    // FB's call through the in-scope fallback, and one RELIANCE card held PRIMARY's 3000 CE and RB's 1500 CE under
+    // RA's 100, SWING's 100 and PRIMARY's 250 shares.
+    expect([loss(all, sammaan), loss(all, rb)], "a naked call read covered by another account's shares").toEqual([["Unlimited"], ["Unlimited"]]);
+    expect(all.filter(rb).map((g) => g.ulLegs)).toEqual([[]]);
+    expect(all.map((g) => g.symbol), "no card FA alone does not show").not.toContain("INDIABULLS HOUSING FINANCE LTD");
+  });
+
+  it("on 0, the cards are exactly the union of every account's single-account cards", () => {
+    const alone = EVERY_ACCOUNT.flatMap((id) => clientGroups(id).map(faceOf)).sort();
+    const all = clientGroups(ALL).map(faceOf).sort();
+    // Measured before (3feb22f): 24 cards on 0 against 27 alone. RELIANCE (PRIMARY + RB), TATAMOTORS (PRIMARY + NAMES)
+    // and KOTAKBANK (NET_A + NET_B) were each one card across accounts; SAMMAANCAP read covered by FA's shares.
+    expect(all.length).toBe(alone.length);
+    expect(all).toEqual(alone);
+  });
+
+  it("two accounts' same-symbol cards carry distinct keys, and no account id reaches a group or a leg", () => {
+    const all = clientGroups(ALL);
+    const keys = all.map((g) => g.key);
+    expect(all.filter((g) => g.symbol === "RELIANCE"), "PRIMARY's covered call and RB's naked call").toHaveLength(2);
+    expect(new Set(keys).size, "a duplicate key merges two cards' charts and React identity").toBe(keys.length);
+    expect(all.filter((g) => "accountId" in g || g.legs.some((l) => "accountId" in l) || g.ulLegs.some((l) => "accountId" in l))).toEqual([]);
+    // A single account keeps the engine's own key, unchanged.
+    expect(clientGroups(PRIMARY).find((g) => g.symbol === "RELIANCE")?.key).toBe("RELIANCE");
   });
 });
 

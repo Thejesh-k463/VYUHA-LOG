@@ -35,9 +35,17 @@ export function getCapitalSummary(): CapitalSummary {
   const closed = getTrades().filter((t)=>!t.isOpen);
   const account = getSelectedAccount();
   const cap = getBucketCapital();
-  const equityRealised = r2(closed.filter((t) => t.bucket === "equity").reduce((a, t) => a + t.netPnl, 0));
-  const activeRealised = r2(closed.filter((t) => t.bucket === "active").reduce((a, t) => a + t.netPnl, 0));
-  const ipoRealised = r2(getIpoRealisedNet());
+  const equityClosed = closed.filter((t) => t.bucket === "equity");
+  const activeClosed = closed.filter((t) => t.bucket === "active");
+  const equityRealised = r2(equityClosed.reduce((a, t) => a + t.netPnl, 0));
+  const activeRealised = r2(activeClosed.reduce((a, t) => a + t.netPnl, 0));
+  // CAP-IPO-LINK (v4.3.0 wave 2H): an exited IPO linked to a holding counted just
+  // above is realised THROUGH that trade — adding its own net too counted one sale
+  // twice in totalRealised, and so in the `available` figure compounding reads.
+  // Only the trades these two sums actually counted exclude an IPO: one linked to a
+  // holding still open, or to a row that is gone, still adds its own net once.
+  const counted = new Set([...equityClosed, ...activeClosed].map((t) => t.id));
+  const ipoRealised = r2(getIpoRealisedNet({ countedTradeIds: counted }));
   const totalRealised = r2(equityRealised + activeRealised + ipoRealised);
   // Rolled-in is PER-ACCOUNT (migration 0044): the aggregate view sums every
   // account's marker, matching how its realised figures are themselves sums.

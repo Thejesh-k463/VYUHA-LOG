@@ -12,7 +12,8 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toaster";
-import { computeIpo, ipoChargeHeads, IPO_CATEGORY_LABELS, type IpoComputed, type IpoStatus, type IpoCategory } from "@/lib/analytics/ipo";
+import { computeIpo, ipoChargeHeads, isPriceableExitDate, IPO_CATEGORY_LABELS, type IpoComputed, type IpoStatus, type IpoCategory } from "@/lib/analytics/ipo";
+import { sellLegIsIpoExit } from "@/lib/analytics/ipo-link";
 import { inr, num } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, type Broker } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
@@ -381,6 +382,146 @@ export function previewCellLabel(label: string, broker: string | null | undefine
   return broker ? `${label} before broker charges` : label;
 }
 
+/**
+ * H5 (v4.3.0 wave 2H). A date input cannot hold a value that is not a real day, so
+ * a stored '2026-02-30' or '15-03-2011' rendered as a blank input while the form's
+ * state still held the string and the save sent it back unseen. The field now
+ * starts from what the input can show, a line beside it says why it is blank, and
+ * the save sends what the input holds.
+ */
+export function unreadableStoredExitDate(stored: string | null | undefined): boolean {
+  const s = (stored ?? "").trim();
+  return s !== "" && !isPriceableExitDate(s);
+}
+
+/** The IPO as stored is sold: allotted, with an exit price. */
+export function storedAsSold(existing: Pick<IpoComputed, "allotted" | "exitPrice"> | null | undefined): boolean {
+  return !!existing && existing.allotted && existing.exitPrice != null;
+}
+
+/**
+ * The exit date the save sends. An unallotted IPO renders no exit-date input, so
+ * an untouched field sends the stored value back; the route passes it through
+ * because that save does not use it (L3). T3 (wave 2H seam fix): an IPO stored as
+ * SOLD on an unreadable date does the same while its date field is untouched. Its
+ * linked holding was closed on that date, so a blank would ask the route to close
+ * it undated and a notes-only save was refused (S4). Anything else, and anything
+ * typed, is what the input holds.
+ */
+export function exitDateToSend(
+  stored: string | null | undefined,
+  field: string,
+  allotted: boolean,
+  sold = false,
+  edited = false,
+): string {
+  if (field === "" && unreadableStoredExitDate(stored) && (!allotted || (sold && !edited))) return stored ?? "";
+  return field;
+}
+
+/** What the form reads of an IPO row and the holding it links (U3, Z2). */
+type LinkedRow = Pick<
+  IpoComputed,
+  | "allotted" | "allottedQty" | "appliedPrice" | "discountPerShare" | "listingPrice" | "exitPrice"
+  | "allotmentDate" | "listingDate" | "exitDate" | "linked" | "linkedSellDate" | "linkedSellQty" | "linkedSellPrice"
+>;
+
+/**
+ * Z2 (v4.3.0 wave 2H): the linked holding's sale IS this IPO's stored exit apart from
+ * the date — the same quantity and price, by the sync's own test (`sellLegIsIpoExit`)
+ * with the date set aside.
+ */
+export function linkedSaleIsStoredExit(existing: LinkedRow | null | undefined): boolean {
+  if (!storedAsSold(existing) || !existing!.linked) return false;
+  const on = existing!.linkedSellDate ?? null;
+  return sellLegIsIpoExit(
+    { ...existing!, exitDate: on },
+    { sellQty: Number(existing!.linkedSellQty) || 0, avgSellPrice: Number(existing!.linkedSellPrice) || 0, sellDate: on },
+  );
+}
+
+/** Z2: the linked holding carries a sale, and it is not this IPO's stored exit (another quantity or price). */
+export function linkedSaleDiffers(existing: LinkedRow | null | undefined): boolean {
+  return storedAsSold(existing) && !!existing!.linked && (Number(existing!.linkedSellQty) || 0) > 0 && !linkedSaleIsStoredExit(existing);
+}
+
+/**
+ * U3 (v4.3.0 wave 2H seam fix 3): the linked holding's sell date, when the IPO's
+ * stored exit date cannot be read and the holding's can. That is the date the
+ * route's sync compares a save against, so it is the one the form fills in.
+ * V2 (seam fix 4): only for an IPO stored as SOLD. An unsold IPO carries no sale for
+ * that date to belong to; its input keeps H5's blank and notice, and the sync leaves
+ * the holding's own sell leg as it is.
+ * Z2: only when that sale IS the IPO's exit apart from the date. A sale corrected in
+ * Trades to another price or quantity is the trade's own; its date is not this IPO's.
+ */
+export function linkedHoldingExitDate(existing: LinkedRow | null | undefined): string | null {
+  if (!storedAsSold(existing) || !existing!.linked || !unreadableStoredExitDate(existing!.exitDate)) return null;
+  if (!linkedSaleIsStoredExit(existing)) return null;
+  const d = (existing!.linkedSellDate ?? "").trim();
+  return isPriceableExitDate(d) ? d : null;
+}
+
+/**
+ * U3: what the exit-date input holds, derived at render. Rendered (allotted) and
+ * untouched, it is the linked holding's readable sell date when there is one;
+ * otherwise the field's own state.
+ */
+export function exitDateInputValue(
+  existing: LinkedRow | null | undefined,
+  field: string,
+  allotted: boolean,
+  edited: boolean,
+): string {
+  const holding = allotted && !edited ? linkedHoldingExitDate(existing) : null;
+  return holding ?? field;
+}
+
+/**
+ * T3 + U3: an IPO stored as sold sends its unreadable stored date back untouched
+ * only when the route passes it through — unlinked, or linked to a holding closed
+ * on that same value. Linked to a holding carrying any other sell date (a readable
+ * one is filled in instead; none, or another unreadable one, is refused), the
+ * stored date would be written over it, so it is not sent.
+ * Z2: linked to a holding whose sale is NOT the IPO's exit (another price or quantity),
+ * the route leaves that holding alone (Y2), so the stored value goes back as T3 sends it.
+ */
+export function keepsStoredExitDate(existing: LinkedRow | null | undefined): boolean {
+  if (!storedAsSold(existing)) return false;
+  return !existing!.linked || existing!.linkedSellDate === (existing!.exitDate ?? "").trim() || linkedSaleDiffers(existing);
+}
+
+/**
+ * The line beside the exit-date input of an IPO whose stored exit date cannot be
+ * read (H5, T3, U3), or null when there is nothing to explain. `field` is what the
+ * input holds (`exitDateInputValue`). Each sentence names only an outcome the route
+ * gives the save the form then sends: the holding's date filled in (U3), the stored
+ * value kept (T3), a date needed for a sold linked IPO (U3), or blank clearing (H5).
+ */
+export function unreadableExitDateNotice(
+  existing: LinkedRow | null | undefined,
+  field: string,
+  allotted: boolean,
+  edited: boolean,
+): string | null {
+  if (!existing || !unreadableStoredExitDate(existing.exitDate)) return null;
+  const stored = `The stored exit date (${existing.exitDate}) could not be read`;
+  const holding = allotted && !edited ? linkedHoldingExitDate(existing) : null;
+  if (holding != null) return `${stored}. The linked holding's sell date, ${holding}, is filled in and will be saved as the exit date; to use another day, enter it.`;
+  if (field !== "") return null;
+  if (linkedSaleDiffers(existing)) {
+    // Z2: describes the sale and what this save sends (the stored value, or the blank typed).
+    const differs = `${stored}. The linked holding's sale (${Number(existing.linkedSellQty)} at ${Number(existing.linkedSellPrice)}) differs from this IPO's exit (${existing.allottedQty} at ${existing.exitPrice}) and is recorded in Trades.`;
+    return edited ? `${differs} Saved blank, the exit date is cleared.` : `${differs} The stored date is kept; to change it, enter the date the shares were sold.`;
+  }
+  if (keepsStoredExitDate(existing)) return `${stored}. It is kept as stored; to change it, enter the date the shares were sold.`;
+  if (storedAsSold(existing) && existing.linked) {
+    const none = linkedHoldingExitDate(existing) == null ? ", and the linked holding has no readable sell date" : "";
+    return `${stored}${none}. Enter the date the shares were sold.`;
+  }
+  return `${stored} — enter the date. Saved blank, the exit date is cleared.`;
+}
+
 export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => void }) {
   const [name, setName] = React.useState(existing?.name ?? "");
   const [broker, setBroker] = React.useState(existing?.broker ?? "");
@@ -402,7 +543,12 @@ export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: 
   const [appliedDate, setAppliedDate] = React.useState(existing?.appliedDate ?? "");
   const [allotmentDate, setAllotmentDate] = React.useState(existing?.allotmentDate ?? "");
   const [listingDate, setListingDate] = React.useState(existing?.listingDate ?? "");
-  const [exitDate, setExitDate] = React.useState(existing?.exitDate ?? "");
+  const storedExitDateUnreadable = unreadableStoredExitDate(existing?.exitDate);
+  const [exitDate, setExitDate] = React.useState(storedExitDateUnreadable ? "" : existing?.exitDate ?? "");
+  const [exitDateEdited, setExitDateEdited] = React.useState(false);
+  const exitDateField = exitDateInputValue(existing, exitDate, allotted, exitDateEdited);
+  const exitDateSent = exitDateToSend(existing?.exitDate, exitDateField, allotted, keepsStoredExitDate(existing), exitDateEdited);
+  const exitDateNotice = unreadableExitDateNotice(existing, exitDateField, allotted, exitDateEdited);
   const [notes, setNotes] = React.useState(existing?.notes ?? "");
   const [pending, setPending] = React.useState(false);
 
@@ -414,7 +560,7 @@ export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: 
     appliedPrice: Number(appliedPrice) || 0, lotSize: ls || 1, lotsApplied: Number(lotsApplied) || 1,
     allotted, allottedQty, listingPrice: listingPrice === "" ? null : Number(listingPrice),
     exitPrice: exitPrice === "" ? null : Number(exitPrice),
-    allotmentDate: allotmentDate || null, exitDate: exitDate || null,
+    allotmentDate: allotmentDate || null, exitDate: exitDateSent || null,
     appliedDate: appliedDate || null, listingDate: listingDate || null,
   });
 
@@ -427,7 +573,8 @@ export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: 
         body: JSON.stringify({
           id: existing?.id, name, broker, exchange, board, category, discountPerShare,
           appliedPrice, lotSize, lotsApplied,
-          allotted, allottedQty, listingPrice, exitPrice, appliedDate, allotmentDate, listingDate, exitDate, notes,
+          allotted, allottedQty, listingPrice, exitPrice, appliedDate, allotmentDate, listingDate,
+          exitDate: exitDateSent, notes,
         }),
       });
       const json = await res.json();
@@ -476,7 +623,14 @@ export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: 
           <F label="Applied date"><Input type="date" value={appliedDate} onChange={(e) => setAppliedDate(e.target.value)} /></F>
           <F label="Allotment date"><Input type="date" value={allotmentDate} onChange={(e) => setAllotmentDate(e.target.value)} /></F>
           <F label="Listing date"><Input type="date" value={listingDate} onChange={(e) => setListingDate(e.target.value)} /></F>
-          <F label="Exit date"><Input type="date" value={exitDate} onChange={(e) => setExitDate(e.target.value)} /></F>
+          <F label="Exit date">
+            <Input type="date" value={exitDateField} onChange={(e) => { setExitDate(e.target.value); setExitDateEdited(true); }} />
+            {exitDateNotice != null && (
+              <p className="text-[0.6875rem] text-warning/90" data-testid="ipo-exit-date-unreadable">
+                {exitDateNotice}
+              </p>
+            )}
+          </F>
         </div>
       )}
       <F label="Notes"><Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="optional" /></F>

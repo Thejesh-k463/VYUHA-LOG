@@ -32,6 +32,8 @@
  * into a gain or loss it never had.
  */
 
+import { isPriceableExitDate } from "@/lib/analytics/ipo";
+
 export interface IpoLinkInput {
   /** Issue price per share actually applied at. */
   appliedPrice: number;
@@ -110,8 +112,10 @@ export function deriveHolding(i: IpoLinkInput): DerivedHolding | null {
  * The patch to apply to a linked trade.
  *
  * Deliberately narrow: it sets the basis, the mark and the acquisition
- * provenance, and touches nothing else. Charges, notes, tags and the journal
- * entry all belong to the trade and are never overwritten by the IPO record.
+ * provenance, and touches nothing else. Notes, tags and the journal entry all
+ * belong to the trade and are never overwritten by the IPO record. Z2 (wave 2H):
+ * an exit the IPO records and prices carries its charges, so the holding it closes
+ * nets what /ipos nets.
  */
 export interface TradePatch {
   acquisition: "ipo";
@@ -130,6 +134,13 @@ export interface TradePatch {
   sellDate: string | null;
   isOpen: boolean;
   grossPnl: number;
+  /**
+   * Z2 (v4.3.0 wave 2H): the IPO's own computed exit charges, and net = gross − charges.
+   * Set only for an exit the caller priced; null states no figure, and the caller keeps
+   * the trade's own (an unpriced exit is never charged 0 — invariant 6).
+   */
+  chargesTotal: number | null;
+  netPnl: number | null;
 }
 
 /**
@@ -137,15 +148,16 @@ export interface TradePatch {
  *
  * `charges` is passed in rather than computed here because the charge engine
  * lives elsewhere and this module stays pure; the caller supplies whatever the
- * engine says the exit cost.
+ * engine says the exit cost — null (the default) when it priced none.
  */
-export function tradePatchFromIpo(i: IpoLinkInput, charges = 0): TradePatch | null {
+export function tradePatchFromIpo(i: IpoLinkInput, charges: number | null = null): TradePatch | null {
   const h = deriveHolding(i);
   if (!h) return null;
 
   const exit = h.closed ? Number(i.exitPrice) : null;
   const sellValue = exit != null ? r2(exit * h.qty) : null;
   const grossPnl = sellValue != null ? r2(sellValue - h.buyValue) : 0;
+  const chargesTotal = h.closed && charges != null && Number.isFinite(charges) ? r2(charges) : null;
 
   return {
     acquisition: "ipo",
@@ -162,8 +174,87 @@ export function tradePatchFromIpo(i: IpoLinkInput, charges = 0): TradePatch | nu
     sellValue,
     sellDate: h.closed ? (i.exitDate ?? null) : null,
     isOpen: !h.closed,
-    grossPnl: grossPnl - 0 * charges, // charges are applied by the caller on net
+    grossPnl,
+    chargesTotal,
+    netPnl: chargesTotal == null ? null : r2(grossPnl - chargesTotal),
   };
+}
+
+/** The linked trade's own sell leg, as stored. */
+export interface LinkedSellLeg {
+  sellQty: number;
+  avgSellPrice: number;
+  sellDate: string | null;
+}
+
+const sameNumber = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+
+/**
+ * X1 (v4.3.0 wave 2H seam fix 5): is this trade's sell leg exactly the exit this
+ * IPO record carries — the quantity, price and date the sync writes from it?
+ */
+export function sellLegIsIpoExit(i: IpoLinkInput, trade: LinkedSellLeg): boolean {
+  const p = tradePatchFromIpo(i);
+  if (!p || p.sellQty == null || p.avgSellPrice == null) return false;
+  return (
+    sameNumber(Number(trade.sellQty) || 0, p.sellQty) &&
+    sameNumber(Number(trade.avgSellPrice) || 0, p.avgSellPrice) &&
+    (trade.sellDate ?? null) === p.sellDate
+  );
+}
+
+function samePatch(a: TradePatch | null, b: TradePatch | null, ignoreSellDate = false): boolean {
+  if (!a || !b) return a === b;
+  return (Object.keys(a) as (keyof TradePatch)[]).every((k) => (ignoreSellDate && k === "sellDate") || a[k] === b[k]);
+}
+
+/** A stored exit date that is present but not a readable day ('2026-02-30', '15-03-2011'). */
+const unreadableExitDate = (d: string | null | undefined) => (d ?? "").trim() !== "" && !isPriceableExitDate((d ?? "").trim());
+
+/**
+ * What a save of an IPO record may do to the holding it is linked to.
+ *   sync   — write the IPO's patch onto the holding (the IPO is its source of truth);
+ *   leave  — write nothing to the holding, and save the IPO record;
+ *   refuse — save nothing.
+ */
+export type LinkedSync = "sync" | "leave" | "refuse";
+
+/**
+ * X1 (v4.3.0 wave 2H seam fix 5): the sync over a holding with a sale recorded in
+ * Trades. V2 recomputed that holding from the IPO around its kept sale, a second
+ * writer of gross and open/closed: a notes-only save over a partly sold holding left
+ * an OPEN row at gross −400, and a quantity corrected to 20 over 10 sold kept the row
+ * CLOSED at buy 20 / sell 10 (seam probe 2026-09-15). The holding is now never
+ * recomputed:
+ *   - a holding with no sale syncs as always;
+ *   - a sale that IS the IPO's exit — as stored or as this save records it — syncs in
+ *     full, so clearing an exit made on /ipos re-opens the holding, as that page reads;
+ *   - otherwise the sale is the trade's own: a save that changes nothing the sync would
+ *     write leaves the holding alone, and any other save is refused.
+ * `stored` is the IPO as stored when the save keeps the same link; null for a create or
+ * a save that links a different holding (every value is then a new write).
+ *
+ * Y2 (wave 2H): a stored exit date that cannot be read equals ANY date in the 'leave'
+ * comparison, so only a change to what else the sync writes (exit price, quantity, basis,
+ * mark) is refused. Measured before: an IPO sold 150 on '2026-02-30' over a sale corrected
+ * in Trades to 152 on 2026-03-02 refused every notes-only save (409) — with U3's pre-filled
+ * date, with the date cleared — because the date "changed" from one the row never held.
+ *
+ * Z2 (wave 2H): both sides are built with NO charges, so the patch's charge fields are
+ * null on each and compare equal. Charges are written only by a 'sync', from the save's
+ * own values; over a sale that is not the IPO's exit nothing is written, so broker and
+ * exchange (which change only the charges) stay out of this decision, as X1 left it.
+ */
+export function linkedSyncFor(args: {
+  stored: IpoLinkInput | null;
+  next: IpoLinkInput;
+  trade: LinkedSellLeg | null;
+}): LinkedSync {
+  const { stored, next, trade } = args;
+  if (!trade || !(Number(trade.sellQty) > 0)) return "sync";
+  if (sellLegIsIpoExit(next, trade) || (stored != null && sellLegIsIpoExit(stored, trade))) return "sync";
+  if (stored != null && samePatch(tradePatchFromIpo(stored), tradePatchFromIpo(next), unreadableExitDate(stored.exitDate))) return "leave";
+  return "refuse";
 }
 
 /**

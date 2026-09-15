@@ -14,7 +14,7 @@ import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
-import { withStaleCloseNote } from "@/lib/import/close-open-lots";
+import { STALE_CLOSE_NOTE, withStaleCloseNote } from "@/lib/import/close-open-lots";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 /**
@@ -41,6 +41,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push:
 let seq = 0;
 const q = (p: Partial<QualityTrade> = {}): QualityTrade => ({
   id: ++seq,
+  // H3 (wave 2H) — every stored row states its dedup hash (NOT NULL); a distinct one per fixture row.
+  dedupHash: seq.toString(16).padStart(40, "0"),
   isOpen: true,
   acquisition: null,
   acquisitionPrice: null,
@@ -443,6 +445,82 @@ describe("M2 (wave 2G) — a lot closed by the Data Quality join itself never ma
     expect(staleOpenPairs([elsewhere, L2, S2]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L2.id, true, false, [elsewhere.id]]]);
     const aliasOnly = joined({ buyDate: "2026-08-20", sellDate: "2026-08-25", importNotes: `dedup-alias:${SALE_HASH}` });
     expect(staleOpenPairs([aliasOnly, L2, S2]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L2.id, true, false, [aliasOnly.id]]]);
+    // H3 (wave 2H) — the alias half of the AND: the Data Quality sentence with NO alias is not a join's close.
+    const noteOnly = joined({ buyDate: "2026-08-20", sellDate: "2026-08-25", importNotes: STALE_CLOSE_NOTE });
+    expect(staleOpenPairs([noteOnly, L2, S2]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L2.id, true, false, [noteOnly.id]]]);
+  });
+});
+
+describe("H3 (wave 2H) — M2 is per LINK: a joined lot is exempt only for a sale it cannot have recorded", () => {
+  // L1 100 @200 (08-20) joined with S1 100 @250 (08-25) from Data Quality; a held L2 100 @210 (08-21).
+  const SALE_HASH = "c".repeat(40);
+  const joinedL1 = (p: Partial<QualityTrade> = {}) =>
+    lot({ isOpen: false, sellQty: 100, avgSellPrice: 250, buyDate: "2026-08-20", sellDate: "2026-08-25", importNotes: withStaleCloseNote(null, SALE_HASH), ...p });
+  const heldL2 = () => lot({ avgBuyPrice: 210, buyDate: "2026-08-21" });
+  const row4 = (trades: QualityTrade[]) => staleOpenPairs(trades).map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick, p.closedLotIds]);
+
+  it("(a) the joined sale back as an open row (restored from Deleted items): [L2, S1] is AMBIGUOUS, never one-click", () => {
+    const L1 = joinedL1();
+    const L2 = heldL2();
+    const S1 = sale({ dedupHash: SALE_HASH, sellDate: "2026-08-25" });
+    expect(row4([L1, L2, S1])).toEqual([[L2.id, S1.id, true, false, [L1.id]]]);
+    expect(staleIssues([L1, L2, S1]), "a held lot is never a CRITICAL stale_open onto a sale L1 already counts").toEqual([]);
+    // The hash half on its own: the same record with a price the close does not restate is still L1's alias.
+    const S1b = sale({ dedupHash: SALE_HASH, avgSellPrice: 251, sellDate: "2026-08-25" });
+    expect(row4([L1, L2, S1b])).toEqual([[L2.id, S1b.id, true, false, [L1.id]]]);
+  });
+
+  it("(b) the same sale re-arriving under another hash (same quantity and price, another date): AMBIGUOUS", () => {
+    const L1 = joinedL1();
+    const L2 = heldL2();
+    const again = sale({ sellDate: "2026-08-28" });
+    expect(again.dedupHash).not.toBe(SALE_HASH);
+    expect(row4([L1, L2, again])).toEqual([[L2.id, again.id, true, false, [L1.id]]]);
+    // The restatement is read at the paisa: 250.004 is 250.00.
+    const nearly = sale({ avgSellPrice: 250.004, sellDate: "2026-08-28" });
+    expect(row4([L1, L2, nearly])).toEqual([[L2.id, nearly.id, true, false, [L1.id]]]);
+  });
+
+  it("the accepted cost: a genuine sibling sale identical in quantity AND price to the joined one is refused too", () => {
+    // A question is always better than a confident wrong answer (AGENTS.md): nothing in the book tells a second
+    // sale of 100 @250 from the joined one re-arriving, so it is listed for review and the join refuses it.
+    const L1 = joinedL1();
+    const L2 = heldL2();
+    const S2 = sale({ sellDate: "2026-08-26" });
+    expect(row4([L1, L2, S2])).toEqual([[L2.id, S2.id, true, false, [L1.id]]]);
+    // M2 kept: a sibling differing in quantity OR in price stays one-click.
+    const L2half = lot({ buyQty: 50, avgBuyPrice: 210, buyDate: "2026-08-21" });
+    const byQty = sale({ sellQty: 50, sellDate: "2026-08-26" });
+    expect(row4([L1, L2half, byQty])).toEqual([[L2half.id, byQty.id, false, true, []]]);
+    const byPrice = sale({ avgSellPrice: 250.01, sellDate: "2026-08-26" });
+    expect(row4([L1, L2, byPrice])).toEqual([[L2.id, byPrice.id, false, true, []]]);
+  });
+
+  it("(c) a joined lot whose close was re-made (the editor and closePosition keep the alias, drop the note): counts", () => {
+    const L1 = joinedL1({ avgSellPrice: 252, sellDate: "2026-08-26", importNotes: `dedup-alias:${SALE_HASH}` });
+    const L2 = lot({ buyQty: 40, avgBuyPrice: 210, buyDate: "2026-08-22" });
+    const S2 = sale({ sellQty: 40, avgSellPrice: 255, sellDate: "2026-08-26" });
+    expect(row4([L1, L2, S2])).toEqual([[L2.id, S2.id, true, false, [L1.id]]]);
+    // Control: the same row still carrying the note (a join nobody re-made) is exempt for this sale.
+    const kept = { ...L1, importNotes: withStaleCloseNote(null, SALE_HASH) };
+    expect(row4([kept, L2, S2])).toEqual([[L2.id, S2.id, false, true, []]]);
+  });
+
+  it("a sale row that states no hash cannot be shown to be another record: the joined lot counts", () => {
+    const L1 = joinedL1();
+    const L2half = lot({ buyQty: 50, avgBuyPrice: 210, buyDate: "2026-08-21" });
+    const S2 = sale({ sellQty: 50, avgSellPrice: 260, sellDate: "2026-08-26", dedupHash: undefined });
+    expect(row4([L1, L2half, S2])).toEqual([[L2half.id, S2.id, true, false, [L1.id]]]);
+  });
+
+  it("short side: a joined short is exempt only for a cover it does not restate (quantity and price of its buy leg)", () => {
+    const F = { segment: "future", instrumentType: "future", symbol: "NIFTY", tradingsymbol: "NIFTY26SEPFUT" };
+    const J = q({ ...F, isOpen: false, sellQty: 50, avgSellPrice: 120, sellDate: "2026-09-01", buyQty: 50, avgBuyPrice: 110, buyDate: "2026-09-04", importNotes: withStaleCloseNote(null, SALE_HASH) });
+    const L = q({ ...F, sellQty: 50, avgSellPrice: 125, sellDate: "2026-09-02" });
+    const restates = q({ ...F, buyQty: 50, avgBuyPrice: 110, buyDate: "2026-09-05" });
+    expect(row4([J, L, restates])).toEqual([[L.id, restates.id, true, false, [J.id]]]);
+    const other = q({ ...F, buyQty: 50, avgBuyPrice: 108, buyDate: "2026-09-05" });
+    expect(row4([J, L, other])).toEqual([[L.id, other.id, false, true, []]]);
   });
 });
 
@@ -1147,5 +1225,37 @@ describe("R2-DQ N10 — the FILLS guard reads the sale's trade_legs, not only it
     expect([status, json.ok, json.code]).toEqual([409, false, "FILLS"]);
     expect(rowsOf(ACC)).toEqual(before);
     expect(legsOfTrade(S.id)).toHaveLength(2);
+  });
+});
+
+describe("H3 (wave 2H) — M2 variant (b): after the join, the same sale re-arriving from another file kind is refused AMBIGUOUS", () => {
+  const ACC = 819;
+  const SYM = "RESALEX";
+
+  it("L1 100 @200 (08-20) + L2 100 @210 (08-21), S1 100 @250 pulled 08-28 joined on 08-25; the tradebook's copy dated 08-25 pairs with L2 for review and POST refuses it", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-h3-b" }).run();
+    const buy = (qty: number, price: number, day: string) =>
+      parsed([trade({ tradingsymbol: SYM, buyQty: qty, avgBuyPrice: price, buyValue: qty * price, buyDate: day })]);
+    const sell = (day: string) => parsed([trade({ tradingsymbol: SYM, sellQty: 100, avgSellPrice: 250, sellValue: 25000, sellDate: day })]);
+    expect(commit.commitParsedFile(buy(100, 200, "2026-08-20"), "h3b-l1", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(buy(100, 210, "2026-08-21"), "h3b-l2", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell("2026-08-28"), "dhan-api-2026-08-28", null, ACC).added).toBe(1);
+    const [L1, L2, S1] = rowsOf(ACC);
+    selectAccount(ACC);
+    const first = await post({ lotId: L1.id, saleId: S1.id, exitDate: "2026-08-25" });
+    expect([first.status, first.json.ok], first.json.message).toEqual([200, true]);
+
+    const again = { ...sell("2026-08-25"), sourceId: "dhan-gtr", format: "csv" } as ParsedFile;
+    expect(commit.commitParsedFile(again, "dhan-gtr-2026-08-25", null, ACC).added).toBe(1);
+    const S1again = rowsOf(ACC).find((r) => r.id !== L1.id && r.id !== L2.id)!;
+    expect(S1again.dedupHash, "another file kind, another hash").not.toBe(S1.dedupHash);
+
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([
+      [L2.id, S1again.id, true, false, [L1.id]],
+    ]);
+    const before = rowsOf(ACC);
+    const second = await post({ lotId: L2.id, saleId: S1again.id, exitDate: "2026-08-25" });
+    expect([second.status, second.json.ok, second.json.code]).toEqual([409, false, "AMBIGUOUS"]);
+    expect(rowsOf(ACC), "the held lot stays open and the sale is not counted twice").toEqual(before);
   });
 });

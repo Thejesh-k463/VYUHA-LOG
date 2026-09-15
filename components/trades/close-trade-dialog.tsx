@@ -10,6 +10,7 @@ import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
 import { toast } from "@/components/ui/toaster";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
+import { closeRemainder, closingAggregate, closingCountIsDefault } from "@/lib/domain/close-aggregate";
 
 interface PreviewResp {
   breakdown: { total: number };
@@ -17,11 +18,55 @@ interface PreviewResp {
   netPnl: number;
 }
 
+/**
+ * The /api/charges/preview body for closing `trade` at `exitPrice` — built from
+ * the SAME closing-leg aggregate `closePosition` writes (lib/domain/close-aggregate.ts),
+ * so a partly closed row previews prior leg + remainder × exit, not the remainder
+ * alone (seam S1: it previewed sell 40 for ₹10,200 beside a save of sell 100 for
+ * ₹25,200). The open side is the row's stored value. `dates` are the dates the
+ * close stores, decided at the call site.
+ */
+export function closePreviewBody(
+  trade: Trade,
+  exitPrice: number,
+  exitDate: string,
+  dates: { buyDate: string | null; sellDate: string | null },
+) {
+  const close = closingAggregate(trade, exitPrice);
+  const isShort = close.isShort;
+  // V4 — a closing leg gaining its first quantity with no stored count bills the
+  // settings default, which the wire row does not carry: omitted, the route fills it.
+  const closeOrders = closingCountIsDefault(trade) ? undefined : close.closeOrderCount;
+  const buyQty = isShort ? close.closeQty : trade.buyQty;
+  const buyValue = isShort ? close.closeValue : trade.buyValue;
+  const sellQty = isShort ? trade.sellQty : close.closeQty;
+  const sellValue = isShort ? trade.sellValue : close.closeValue;
+  return {
+    broker: trade.broker,
+    tradingsymbol: trade.tradingsymbol,
+    segment: trade.segment,
+    exchange: trade.exchange,
+    buyValue,
+    sellValue,
+    buyQty,
+    sellQty,
+    // Both sides' order counts as closePosition bills them (T2): the closing side
+    // as the aggregate writes it, the open side the stored count.
+    buyOrders: isShort ? closeOrders : trade.buyOrderCount,
+    sellOrders: isShort ? trade.sellOrderCount : closeOrders,
+    grossPnl: Math.round((sellValue - buyValue) * 100) / 100,
+    ownCapitalUsed: trade.mtfFundedAmount != null ? Math.max(0, buyValue - trade.mtfFundedAmount) : null,
+    daysHeld: trade.buyDate ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(trade.buyDate).getTime()) / 86400000)) : 0,
+    isOpen: false,
+    buyDate: dates.buyDate,
+    sellDate: dates.sellDate,
+  };
+}
+
 /** Quick close: exit price + date, with a live recomputed preview before you confirm. */
 export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () => void }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(closeTradeAction, { ok: false, message: "" });
-  const isShort = trade.sellQty > trade.buyQty;
-  const qty = Math.abs(trade.buyQty - trade.sellQty) || Math.max(trade.buyQty, trade.sellQty);
+  const { isShort, qty } = closeRemainder(trade);
   const entryPrice = isShort ? trade.avgSellPrice : trade.avgBuyPrice;
 
   const [exitPrice, setExitPrice] = useState("");
@@ -46,40 +91,26 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
       try {
-        const buyQty = isShort ? qty : trade.buyQty;
-        const avgBuyPrice = isShort ? price : trade.avgBuyPrice;
-        const sellQty = isShort ? trade.sellQty : qty;
-        const avgSellPrice = isShort ? trade.avgSellPrice : price;
         const exitIso = exitDate || todayIstIso();
         const res = await fetch("/api/charges/preview", {
           method: "POST",
           headers: { "content-type": "application/json" },
           signal: ctrl.signal,
-          body: JSON.stringify({
-            broker: trade.broker,
-            tradingsymbol: trade.tradingsymbol,
-            segment: trade.segment,
-            exchange: trade.exchange,
-            buyValue: buyQty * avgBuyPrice,
-            sellValue: sellQty * avgSellPrice,
-            buyQty,
-            sellQty,
-            grossPnl: (avgSellPrice - avgBuyPrice) * qty,
-            ownCapitalUsed: trade.mtfFundedAmount != null ? Math.max(0, buyQty * avgBuyPrice - trade.mtfFundedAmount) : null,
-            daysHeld: trade.buyDate ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(trade.buyDate).getTime()) / 86400000)) : 0,
-            isOpen: false,
-            // The dates closePosition will store, so the preview prices at the
-            // same epoch (R56): the exit lands on the covering side — the SELL
-            // for a long, the BUY for a short — and a blank exit date is today.
-            buyDate: isShort ? exitIso : trade.buyDate,
-            sellDate: isShort ? trade.sellDate : exitIso,
-          }),
+          body: JSON.stringify(
+            closePreviewBody(trade, price, exitDate, {
+              // The dates closePosition will store, so the preview prices at the
+              // same epoch (R56): the exit lands on the covering side — the SELL
+              // for a long, the BUY for a short — and a blank exit date is today.
+              buyDate: isShort ? exitIso : trade.buyDate,
+              sellDate: isShort ? trade.sellDate : exitIso,
+            }),
+          ),
         });
         if (res.ok) setPreview(await res.json());
       } catch { /* aborted */ }
     }, 300);
     return () => { clearTimeout(id); ctrl.abort(); };
-  }, [exitPrice, exitDate, isShort, qty, trade]);
+  }, [exitPrice, exitDate, isShort, trade]);
 
   return (
     <form action={formAction} className="space-y-3">

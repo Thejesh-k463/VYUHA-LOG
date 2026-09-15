@@ -41,6 +41,17 @@ const str = (v: FormDataEntryValue | null) => {
   const s = String(v ?? "").trim();
   return s === "" ? null : s;
 };
+/**
+ * "Own capital used" (MTF): blank or missing → null (keep / estimate); a typed 0
+ * is a STATED figure — the whole position broker-funded — as both forms' previews
+ * price it. `num(...) || null` read that 0 as blank (X2, 4.3.0).
+ */
+const ownCapital = (v: FormDataEntryValue | null) => {
+  const s = String(v ?? "").replace(/,/g, "").trim();
+  if (s === "") return null;
+  const x = Number(s);
+  return Number.isFinite(x) ? x : null;
+};
 
 const ManualSchema = z.object({
   broker: z.enum(BROKERS),
@@ -163,7 +174,7 @@ export async function createManualTrade(
       trailingSl: num(formData.get("trailingSl")) || null,
       targetPlanned: num(formData.get("targetPlanned")) || null,
       riskAmount: num(formData.get("riskAmount")) || null,
-      ownCapitalUsed: num(formData.get("ownCapitalUsed")) || null,
+      ownCapitalUsed: ownCapital(formData.get("ownCapitalUsed")),
       daysHeld: num(formData.get("daysHeld")) || null,
       currentPrice: num(formData.get("currentPrice")) || null,
       lotSize: num(formData.get("lotSize")) || null,
@@ -274,7 +285,7 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
     trailingSl: num(formData.get("trailingSl")) || null,
     targetPlanned: num(formData.get("targetPlanned")) || null,
     riskAmount: num(formData.get("riskAmount")) || null,
-    ownCapitalUsed: num(formData.get("ownCapitalUsed")) || null,
+    ownCapitalUsed: ownCapital(formData.get("ownCapitalUsed")),
     setupTag: str(formData.get("setupTag")),
     exitTrigger: str(formData.get("exitTrigger")),
     notes: str(formData.get("notes")),

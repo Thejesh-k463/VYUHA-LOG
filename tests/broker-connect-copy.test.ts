@@ -20,6 +20,8 @@ import {
   pullGapNotice,
   pullResultMessage,
   tokenExpiredMessage,
+  clearUnfetchedBody,
+  unfetchedLines,
   unfetchedNotice,
   type UnfetchedSpan,
 } from "@/components/import/broker-connect";
@@ -440,6 +442,47 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
 });
 
 /**
+ * H4 (v4.3.0 fix wave 2H): one card line per kept RECORD. GET sends each line's
+ * record connection beside `unfetched` (`unfetchedConnection`, by index; null =
+ * carried by a merge); the card joins it on and its Clear names it, so the route
+ * clears exactly that line. The route and the stored records are pinned in
+ * tests/dhan-unfetched-rules.test.ts (H4) and tests/seams-v43-fixD.test.ts (D5).
+ */
+describe("unfetchedLines / clearUnfetchedBody — the Clear names the line's record", () => {
+  const SPAN = { from: "2026-05-13", to: "2026-06-12", reason: "range-cap", remedy: null };
+  const row = {
+    broker: "dhan",
+    accountId: 7,
+    unfetched: [
+      { ...SPAN, fact: "… after 10:30 IST …" },
+      { ...SPAN, fact: "… after 14:30 IST …" },
+    ],
+    unfetchedConnection: [62, null],
+  };
+
+  it("two records of one span are two lines, each carrying its own connection — null for the merge-carried one", () => {
+    // THE assertion (no `connection` on either line on revert of the join).
+    expect(unfetchedLines(row).map((s) => [s.fact, s.connection])).toEqual([
+      ["… after 10:30 IST …", 62],
+      ["… after 14:30 IST …", null],
+    ]);
+  });
+
+  it("each line's Clear body names that record's connection; null is sent, not dropped", () => {
+    const [own, carried] = unfetchedLines(row);
+    // THE assertion (no `connection` key on revert: the route would clear every same-span record).
+    expect(clearUnfetchedBody(row, own!)).toEqual({ action: "clear-unfetched", broker: "dhan", accountId: 7, ...{ from: SPAN.from, to: SPAN.to, reason: SPAN.reason }, connection: 62 });
+    expect(JSON.parse(JSON.stringify(clearUnfetchedBody(row, carried!)))).toHaveProperty("connection", null);
+  });
+
+  it("a GET row without unfetchedConnection sends NO connection field — the route's pre-H4 Clear", () => {
+    const lines = unfetchedLines({ unfetched: row.unfetched });
+    expect(lines).toEqual(row.unfetched);
+    expect(Object.keys(clearUnfetchedBody(row, lines[0]!))).not.toContain("connection");
+  });
+});
+
+/**
  * Seam D1 (v4.3.0 fix wave 2F). R2-IDENTITY's N2 made the pull route answer 409
  * with collisions of kind 'earlier-snapshot' and its own sentence ("restates a
  * position today's earlier pull already recorded … committing anyway adds this
@@ -607,7 +650,11 @@ describe("the card reads those functions — the copy is not re-typed in JSX", (
     const b = code.indexOf("function switchBroker(", a);
     expect(a).toBeGreaterThan(-1);
     const fn = code.slice(a, b);
-    expect(fn).toContain('action: "clear-unfetched"');
+    // H4 re-pin (was the inline body `{ action: "clear-unfetched", … }`): the body is
+    // clearUnfetchedBody's, so the line's record connection rides with the span.
+    expect(fn).toContain('post(clearUnfetchedBody(c, s), "clear-unfetched")');
+    expect(code).toContain('action: "clear-unfetched"');
+    expect(code).toContain("brokerConns.flatMap((c) => unfetchedLines(c).map((s) => ({ c, s })))");
     expect(fn).toContain("await refresh();");
     expect(fn).toContain("router.refresh();");
     expect(code).not.toMatch(/["']use server["']/);

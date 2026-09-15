@@ -58,10 +58,18 @@ export default function StrategiesPage() {
   // The open/option/strike/CE-PE filter lives in SQL (getOpenOptionPositions):
   // the whole-book read mapped 25k rows to keep 673 on the 25k perf tier.
   const optionRows = getOpenOptionPositions();
-  const optionLegs: PositionedLeg[] = optionRows.map((t) => {
+  // H6 (fix wave 2H): every leg is filed under its OWN account; see the grouping below.
+  const optionLegsByAccount = new Map<number, PositionedLeg[]>();
+  const underlyingLegsByAccount = new Map<number, PositionedLeg[]>();
+  const fileUnder = (byAccount: Map<number, PositionedLeg[]>, accountId: number, leg: PositionedLeg) => {
+    const list = byAccount.get(accountId);
+    if (list) list.push(leg);
+    else byAccount.set(accountId, [leg]);
+  };
+  for (const t of optionRows) {
     const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
     const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
-    return {
+    fileUnder(optionLegsByAccount, t.accountId, {
       symbol: t.symbol,
       expiry: t.expiry,
       kind: t.optionType as "CE" | "PE",
@@ -70,8 +78,8 @@ export default function StrategiesPage() {
       side,
       qty,
       premium: side === "long" ? t.avgBuyPrice : t.avgSellPrice,
-    };
-  });
+    });
+  }
 
   // The underlying, read-only (research note Q4): without it there is no
   // covered call and no protective put. `premium` on a UL leg is its ENTRY
@@ -88,12 +96,16 @@ export default function StrategiesPage() {
   // "Tata Motors Ltd" holding off its calls. Two option symbols with one ISIN:
   // the listing's ticker if it is one of them, else the first alphabetically.
   // L5 (fix wave 2G): the map is built PER ACCOUNT and a row reads its OWN
-  // account's first, so in All accounts (0 is a view, invariant 9) account B's
-  // ticker for the same ISIN never takes account A's shares off A's calls — each
-  // account's cards equal its single-account view. The in-scope map is reached
-  // only by a row its own account's option legs did not admit (no single-account
-  // view holds it), and keeps today's All-accounts grouping for it. A single
-  // account has one entry, equal to the in-scope map: unchanged there.
+  // account's, so in All accounts (0 is a view, invariant 9) account B's ticker
+  // for the same ISIN never takes account A's shares off A's calls.
+  // H6 (fix wave 2H): and ONLY its own. G5b's in-scope fallback is gone: a row
+  // its own account's option legs do not admit is no leg on 0, because no
+  // single-account view holds it — the query admits a row only against option
+  // legs in the SAME scope, so account FA alone (a holding, no option) shows no
+  // card, and FA's shares covered account FB's naked call only on 0. This
+  // lookup admits every row the query admits in a single-account view (case
+  // folded the same way; bundledIsinBySymbol trims and upper-cases), so a single
+  // account drops nothing and is unchanged.
   const admittingOf = (symbols: Iterable<string>) => {
     const own = new Set([...symbols].map((s) => s.toUpperCase()));
     const byIsin = new Map<string, string>();
@@ -111,11 +123,6 @@ export default function StrategiesPage() {
     else symbolsByAccount.set(r.accountId, [r.symbol]);
   }
   const admittedByAccount = new Map([...symbolsByAccount].map(([id, symbols]) => [id, admittingOf(symbols)] as const));
-  const admittedInScope = admittingOf(optionRows.map((r) => r.symbol));
-  const legSymbol = (stored: string, isin: string | null, accountId: number): string => {
-    const upper = stored.toUpperCase();
-    return admittedByAccount.get(accountId)?.(upper, isin) ?? admittedInScope(upper, isin) ?? upper;
-  };
 
   // P5: a basis-unknown sale is never a leg. It NETS against the same
   // instrument's long in this scope, floored at zero — never a short the user
@@ -133,9 +140,10 @@ export default function StrategiesPage() {
   // view (0 is a view, invariant 9) is then the sum of those per-account nets —
   // never account B's sale taken out of account A's demat.
   const unknownSold = new Map<string, number>();
-  const held: { key: string; leg: PositionedLeg }[] = [];
+  const held: { accountId: number; key: string; leg: PositionedLeg }[] = [];
   for (const t of getOpenUnderlyingPositions()) {
-    const symbol = legSymbol(t.symbol, t.isin, t.accountId);
+    const symbol = admittedByAccount.get(t.accountId)?.(t.symbol.toUpperCase(), t.isin);
+    if (!symbol) continue;
     const isFuture = t.instrumentType === "future";
     const key = `${t.accountId}|${symbol}|${t.instrumentType}|${isFuture ? (t.expiry ?? t.tradingsymbol.toUpperCase()) : ""}`;
     const deliverySale = DELIVERY_SEGMENTS.has(t.segment) && t.buyQty === 0 && t.sellQty > 0;
@@ -151,6 +159,7 @@ export default function StrategiesPage() {
     // holding that outlives every option; its compact symbol may state a month.
     const undated = isFuture && !t.expiry;
     held.push({
+      accountId: t.accountId,
       key,
       leg: {
         symbol,
@@ -167,24 +176,48 @@ export default function StrategiesPage() {
       },
     });
   }
-  const underlyingLegs: PositionedLeg[] = [];
-  const nettedLots = new Map<string, PositionedLeg[]>();
-  for (const { key, leg } of held) {
-    if (leg.side === "long" && (unknownSold.get(key) ?? 0) > 0) nettedLots.set(key, [...(nettedLots.get(key) ?? []), leg]);
-    else underlyingLegs.push(leg);
+  const nettedLots = new Map<string, { accountId: number; lots: PositionedLeg[] }>();
+  for (const { accountId, key, leg } of held) {
+    if (leg.side === "long" && (unknownSold.get(key) ?? 0) > 0) {
+      const netted = nettedLots.get(key);
+      if (netted) netted.lots.push(leg);
+      else nettedLots.set(key, { accountId, lots: [leg] });
+    } else fileUnder(underlyingLegsByAccount, accountId, leg);
   }
-  for (const [key, lots] of nettedLots) {
+  for (const [key, { accountId, lots }] of nettedLots) {
     const longQty = lots.reduce((s, l) => s + l.qty, 0);
     const remaining = Math.max(0, longQty - (unknownSold.get(key) ?? 0));
     // Priced from the long lots: their quantity-weighted entry price (a REAL
     // per-unit level, invariant 1), since the sale does not say which lot went.
     if (remaining > 0) {
       const entry = lots.reduce((s, l) => s + l.qty * l.premium, 0) / longQty;
-      underlyingLegs.push({ ...lots[0], qty: remaining, premium: entry });
+      fileUnder(underlyingLegsByAccount, accountId, { ...lots[0], qty: remaining, premium: entry });
     }
   }
 
-  const groups = withholdForFree(buildStrategies([...optionLegs, ...underlyingLegs]), pro);
+  // H6 (fix wave 2H, orchestrator decision): in All accounts each account's
+  // cards are EXACTLY that account's single-account cards — N16's "per account,
+  // then aggregate", applied to the grouping. `buildStrategies` groups by symbol
+  // alone, so one call over every account's legs put account RB's RELIANCE call
+  // and account RA's RELIANCE shares on one card, reading a bounded loss for a
+  // call RB holds naked. It is called once per account and the cards are joined.
+  // The join re-sorts with the engine's own order (nearest expiry, then symbol;
+  // `buildStrategies` in lib/analytics/strategies.ts) — stable, so a single
+  // account's order is unchanged and same-symbol cards follow account id.
+  // The account id reaches no leg and no group field but the React KEY, and only
+  // when two or more accounts contribute: two accounts' RELIANCE cards would
+  // otherwise share one key, one chart slot and one React identity. A single
+  // account keeps the engine's key. Legs are still built field by field.
+  const accountIds = [...new Set([...optionLegsByAccount.keys(), ...underlyingLegsByAccount.keys()])].sort((a, b) => a - b);
+  const keyedByAccount = accountIds.length > 1;
+  const built = accountIds.flatMap((accountId) => {
+    const optionLegs = optionLegsByAccount.get(accountId) ?? [];
+    const underlyingLegs = underlyingLegsByAccount.get(accountId) ?? [];
+    const own = buildStrategies([...optionLegs, ...underlyingLegs]);
+    return keyedByAccount ? own.map((g) => ({ ...g, key: `${accountId}|${g.key}` })) : own;
+  });
+  built.sort((a, b) => (a.nearestExpiry ?? "").localeCompare(b.nearestExpiry ?? "") || a.symbol.localeCompare(b.symbol));
+  const groups = withholdForFree(built, pro);
 
   // THE CHARTS ARE BUILT HERE, not inside the card, and stay MOUNTED ON
   // APPROACH. All 626 of them used to build their SVGs in one commit after

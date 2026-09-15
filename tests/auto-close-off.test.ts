@@ -316,19 +316,47 @@ describe("(v) R26 — import dedup answers to a row's aliases, not only its own 
   const buys = () => parsed([buyRow("ALIASED", 100, 200, "2026-08-20")]);
   const sale = () => parsed([sellRow("ALIASED", 100, 250, "2026-08-28")]);
 
-  it("a row carrying dedup-alias:H makes a re-import of the record hashed H a duplicate, in preview and commit", () => {
+  // RE-PINNED DELIBERATELY (v4.3.0 wave 2H, V1 — `aliasHeld` in
+  // lib/import/close-open-lots.ts): an alias records the sale only while the
+  // lot's closing leg holds quantity. Only the Data Quality join writes an
+  // alias, and the join closes the lot on the sale, so the fixture now states
+  // that joined shape. Measured 2026-09-15 with the alias on an OPEN buy-only lot
+  // (this case's fixture before the re-pin): preview [new, dup] = [1, 0], commit
+  // [added, skipped] = [1, 0], 2 rows — the [0, 1] below went red. With the lot
+  // closed on the sale in the same update: [0, 1] / [0, 1], 1 row.
+  it("a lot joined to its sale (closed on it) carrying dedup-alias:H makes a re-import of the record hashed H a duplicate, in preview and commit", () => {
     newAccount(ACC, "off-v-alias");
     expect(commit.commitParsedFile(buys(), "buys.csv", null, ACC).added).toBe(1);
     const H = dedup.dedupHash(sale().trades[0]);
     const [lot] = rowsOf(ACC);
     expect(lot.dedupHash).not.toBe(H);
-    t.db.update(t.schema.trades).set({ importNotes: `dedup-alias:${H}` }).where(eq(t.schema.trades.id, lot.id)).run();
+    t.db
+      .update(t.schema.trades)
+      .set({ importNotes: `dedup-alias:${H}`, sellQty: 100, avgSellPrice: 250, sellValue: 25000, sellDate: "2026-08-28", isOpen: false })
+      .where(eq(t.schema.trades.id, lot.id))
+      .run();
 
     const p = commit.previewParsedFile(sale(), null, ACC);
     expect([p.summary.newCount, p.summary.dupCount], "the preview reads the alias").toEqual([0, 1]);
     const res = commit.commitParsedFile(sale(), "sells.csv", null, ACC);
     expect([res.added, res.skipped], "the commit reads it too").toEqual([0, 1]);
     expect(rowsOf(ACC)).toHaveLength(1);
+  });
+
+  it("the same alias on a lot left OPEN (no sell leg) records nothing: the re-import is new, in preview and commit", () => {
+    const OPEN_ACC = 706;
+    newAccount(OPEN_ACC, "off-v-alias-open");
+    expect(commit.commitParsedFile(buys(), "buys.csv", null, OPEN_ACC).added).toBe(1);
+    const H = dedup.dedupHash(sale().trades[0]);
+    const [lot] = rowsOf(OPEN_ACC);
+    t.db.update(t.schema.trades).set({ importNotes: `dedup-alias:${H}` }).where(eq(t.schema.trades.id, lot.id)).run();
+
+    // V1: the lot no longer records the sale, so the sale must be able to land.
+    const p = commit.previewParsedFile(sale(), null, OPEN_ACC);
+    expect([p.summary.newCount, p.summary.dupCount], "an open lot's alias is not held").toEqual([1, 0]);
+    const res = commit.commitParsedFile(sale(), "sells.csv", null, OPEN_ACC);
+    expect([res.added, res.skipped]).toEqual([1, 0]);
+    expect(rowsOf(OPEN_ACC)).toHaveLength(2);
   });
 });
 

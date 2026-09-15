@@ -28,7 +28,14 @@ import {
   toParsedFile as openAlgoToParsedFile,
 } from "@/lib/import/api/openalgo";
 import { brokerLabel, findRivalConnection } from "@/lib/import/broker-identity";
-import { DHAN_UNFETCHED_NOTICE, keepUnfetched, keepUnfetchedAndStamp, outstandingUnfetched } from "@/lib/import/dhan-unfetched";
+import {
+  DHAN_UNFETCHED_NOTICE,
+  clearUnfetchedLine,
+  keepUnfetched,
+  keepUnfetchedAndStamp,
+  outstandingUnfetched,
+  outstandingUnfetchedLines,
+} from "@/lib/import/dhan-unfetched";
 import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import type { Broker } from "@/lib/domain/constants";
 import { looksLikeTotpSecret } from "@/lib/totp";
@@ -340,7 +347,13 @@ export async function GET() {
       // window starts — later than the last pull's day means the clamp will
       // leave days out, and the card's gap line says so before the pull.
       if (r.broker === "dhan") {
-        out.unfetched = outstandingUnfetched(r.accountId);
+        // H4 (v4.3.0 fix wave 2H): one line per kept record, each with its own
+        // fact. `unfetched` keeps its shape; `unfetchedConnection[i]` is line
+        // i's record connection (null: carried by a merge), which the card's
+        // Clear sends back so the route clears exactly that line.
+        const lines = outstandingUnfetchedLines(r.accountId);
+        out.unfetched = lines.map(({ from, to, reason, fact, remedy }) => ({ from, to, reason, fact, remedy }));
+        out.unfetchedConnection = lines.map((l) => l.connection);
         out.catchUpFrom = catchUpRange(r.lastPullAt)?.from ?? null;
       }
       // OpenAlgo's host and underlying broker are CONFIG, not credentials —
@@ -594,6 +607,35 @@ export async function POST(req: Request) {
     const from = str(body.from);
     const to = str(body.to);
     const reason = str(body.reason);
+    // H4 (v4.3.0 fix wave 2H): the card names the line's record by its
+    // connection (GET's `unfetchedConnection`; null = carried by a merge), and
+    // exactly that line's records are cleared — never another client's fact the
+    // card did not show. A body with NO `connection` field (an older client, any
+    // other caller) keeps the behaviour below: every same-span record clears.
+    if ("connection" in body) {
+      const connection: unknown = body.connection;
+      if (connection !== null && !(typeof connection === "number" && Number.isInteger(connection) && connection > 0)) {
+        return NextResponse.json(
+          { ok: false, message: "The notice's connection must be a connection id or null — nothing was changed." },
+          { status: 400 },
+        );
+      }
+      const cleared = clearUnfetchedLine(
+        accountId,
+        { from, to, reason, connection },
+        `Dhan notice cleared by the user: fills from ${from} to ${to} were not fetched by a pull.`,
+      );
+      if (cleared === 0) {
+        return NextResponse.json(
+          { ok: false, message: "That notice is not open for this account — nothing was changed." },
+          { status: 404 },
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        message: `Notice cleared. Fills from ${from} to ${to} are in the journal only if a Dhan tradebook for those dates has been imported.`,
+      });
+    }
     const open = outstandingUnfetched(accountId).find((s) => s.from === from && s.to === to && s.reason === reason);
     if (!open) {
       return NextResponse.json(
