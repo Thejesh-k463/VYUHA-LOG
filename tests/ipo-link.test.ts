@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import * as ipoLink from "@/lib/analytics/ipo-link";
+import { computeIpo } from "@/lib/analytics/ipo";
 import {
-  deriveHolding, tradePatchFromIpo, ipoSeedFromTrade, linkedSyncFor, sellLegIsIpoExit, type IpoLinkInput,
+  deriveHolding, tradePatchFromIpo, ipoSeedFromTrade, linkedSyncFor, sellLegIsIpoExit, syncOwnsClose, type IpoLinkInput,
 } from "@/lib/analytics/ipo-link";
 
 const ipo = (p: Partial<IpoLinkInput> = {}): IpoLinkInput => ({
@@ -106,6 +107,57 @@ describe("tradePatchFromIpo", () => {
   });
 });
 
+/**
+ * ONE GROSS ARITHMETIC (v4.3.0 wave 2I). `computeIpo` booked
+ * gross = r2((exit − cost) × qty) while `tradePatchFromIpo` books the trade row's
+ * own form, r2(r2(exit × qty) − r2(cost × qty)) — and for a price carrying three
+ * or more decimals the extra rounding of sellValue can round the other way. /ipos
+ * then showed one figure while the Trades row, the capital summary (which counts
+ * the TRADE under CAP-IPO-LINK), the tax pack and the ITR export showed another,
+ * one paisa apart. The trade row must be self-consistent (sellValue − buyValue),
+ * so the IPO adopted its form.
+ */
+describe("the IPO and the holding it is linked to book the SAME gross and net", () => {
+  const threeDp: IpoLinkInput = {
+    appliedPrice: 99.995, discountPerShare: 0, allottedQty: 3, allotted: true,
+    listingPrice: 130, exitPrice: 150.005,
+    allotmentDate: "2019-01-10", listingDate: null, exitDate: "2026-03-02",
+  };
+  const asIpo = (i: IpoLinkInput) => ({
+    id: 1, name: "3DP", broker: null, exchange: "NSE",
+    appliedPrice: i.appliedPrice, discountPerShare: i.discountPerShare ?? 0,
+    lotSize: i.allottedQty, lotsApplied: 1, allotted: i.allotted, allottedQty: i.allottedQty,
+    listingPrice: i.listingPrice ?? null, exitPrice: i.exitPrice ?? null,
+    allotmentDate: i.allotmentDate ?? null, listingDate: i.listingDate ?? null, exitDate: i.exitDate ?? null,
+  });
+
+  it("a 3-decimal exit over a 3-decimal issue price: the two gross figures are equal (150.02, not 150.01 against 150.02)", () => {
+    const c = computeIpo(asIpo(threeDp));
+    const patch = tradePatchFromIpo(threeDp)!;
+    // THE assertion: one arithmetic, so the IPO's gross IS the holding's.
+    expect(c.grossPnl).toBe(patch.grossPnl);
+    expect([patch.sellValue, patch.buyValue, patch.grossPnl]).toEqual([450.02, 300, 150.02]);
+    // And net follows, once the caller feeds the IPO's own charges to the patch
+    // (which is exactly what POST /api/ipos does).
+    expect(tradePatchFromIpo(threeDp, c.charges)!.netPnl).toBe(c.netPnl);
+  });
+
+  it("every price shape agrees, whole rupees and fractions alike", () => {
+    for (const p of [
+      threeDp,
+      { ...threeDp, appliedPrice: 100.005, exitPrice: 101.017, allottedQty: 10_000 },
+      { ...threeDp, appliedPrice: 100, exitPrice: 150, allottedQty: 10 },
+      { ...threeDp, appliedPrice: 245.5, exitPrice: 311.25, allottedQty: 61 },
+      { ...threeDp, appliedPrice: 500, discountPerShare: 25, exitPrice: 498.335, allottedQty: 37 },
+      { ...threeDp, appliedPrice: 0.995, exitPrice: 1.005, allottedQty: 999 },
+    ] as IpoLinkInput[]) {
+      const c = computeIpo(asIpo(p));
+      const patch = tradePatchFromIpo(p, c.charges)!;
+      expect([c.grossPnl, c.netPnl], JSON.stringify(p)).toEqual([patch.grossPnl, patch.netPnl]);
+    }
+  });
+});
+
 describe("linkedSyncFor — a holding with a sale recorded in Trades is never recomputed from the IPO (X1)", () => {
   // Bought 10 @100 (the IPO's allotment); the sale is the trade's own.
   const soldInTrades = { sellQty: 10, avgSellPrice: 150, sellDate: "2026-03-02" };
@@ -182,6 +234,39 @@ describe("linkedSyncFor — a holding with a sale recorded in Trades is never re
     expect(linkedSyncFor({ stored, next: { ...soldOnIpos, exitPrice: 152 }, trade: corrected })).toBe("sync");
     // A READABLE stored date is compared as it is: moving it over a sale that is not the exit is refused.
     expect(linkedSyncFor({ stored: soldOnIpos, next: { ...soldOnIpos, exitDate: "2026-03-09" }, trade: corrected })).toBe("refuse");
+  });
+
+  /**
+   * J4 (v4.3.0 wave 2J): a sale that matches the IPO's exit has two possible histories, and
+   * only one of them is the sync's own. `syncOwnsClose` asks which, of the exit AS STORED
+   * before the save: the sync wrote that close (or one identical to it), so its charges may
+   * be recomputed when the exit is re-priced; a sale that matches only the exit BEING
+   * RECORDED was recorded in Trades with the broker's own charges and is the user's record.
+   * Y2's rule carries over: a stored exit date that was never readable equals any date.
+   */
+  it("J4 · the sync owns a close only when the sale is the exit AS STORED; a sale that is only the exit being recorded is the user's", () => {
+    // Owned: no sale at all (the sync writes the close itself), or the sale IS the stored exit.
+    expect(syncOwnsClose({ stored: unsold, trade: noSale })).toBe(true);
+    expect(syncOwnsClose({ stored: null, trade: null })).toBe(true);
+    expect(syncOwnsClose({ stored: soldOnIpos, trade: soldInTrades })).toBe(true);
+    // The user's: the stored IPO carried no exit, or another one, or only part of this sale.
+    expect(syncOwnsClose({ stored: unsold, trade: soldInTrades })).toBe(false);
+    expect(syncOwnsClose({ stored: { ...soldOnIpos, exitPrice: 155 }, trade: soldInTrades })).toBe(false);
+    expect(syncOwnsClose({ stored: { ...soldOnIpos, allottedQty: 4 }, trade: soldInTrades })).toBe(false);
+    expect(syncOwnsClose({ stored: soldOnIpos, trade: partlySold })).toBe(false);
+    // A create, or a save that links a different holding, has no stored exit to have written.
+    expect(syncOwnsClose({ stored: null, trade: soldInTrades })).toBe(false);
+    // Y2: the sync wrote that close on an unreadable date, and the date was corrected in Trades.
+    const unreadable = { ...soldOnIpos, exitDate: "2026-02-30" };
+    expect(syncOwnsClose({ stored: unreadable, trade: soldInTrades })).toBe(true);
+    expect(syncOwnsClose({ stored: unreadable, trade: { ...soldInTrades, sellDate: "2026-03-09" } })).toBe(true);
+    expect(syncOwnsClose({ stored: unreadable, trade: { ...soldInTrades, avgSellPrice: 152 } })).toBe(false);
+    // A READABLE stored date is compared as it is, and the date-blind form is opt-in only.
+    expect(syncOwnsClose({ stored: soldOnIpos, trade: { ...soldInTrades, sellDate: "2026-03-09" } })).toBe(false);
+    expect(sellLegIsIpoExit(soldOnIpos, { ...soldInTrades, sellDate: "2026-03-09" })).toBe(false);
+    expect(sellLegIsIpoExit(soldOnIpos, { ...soldInTrades, sellDate: "2026-03-09" }, true)).toBe(true);
+    // Ownership of the close never changes what the save is ALLOWED to do (linkedSyncFor).
+    expect(linkedSyncFor({ stored: unsold, next: { ...soldOnIpos, exitPrice: 150 }, trade: soldInTrades })).toBe("sync");
   });
 
   /**

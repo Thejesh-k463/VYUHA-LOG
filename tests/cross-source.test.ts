@@ -314,11 +314,14 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     const r = detectCrossSourceDuplicates([stuck], [morning({ symbol: "STUCK", tradingsymbol: "STUCK", buyQty: 10, buyValue: 1000 })], FILE);
     // The collision itself is the one G1 built: no new field.
     expect(r.collisions.map((c) => [c.kind, c.sameSnapshot, Object.keys(c).length])).toEqual([["partial-quantity", true, 6]]);
-    // THE assertion (the key's reasons on revert).
+    // THE assertion (the key's reasons on revert). W2I re-pinned the tail: the
+    // remedy counts the stored rows, and the sentence carries the user-record
+    // warning and the way back from Deleted items.
     expect(r.message).toBe(
       "1 row in this pull (STUCK) restates an instrument today's earlier pull already recorded under another product, segment or exchange, and is not written over that row. " +
         "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, " +
-        "which records the position as the broker now states it; committing anyway keeps both rows.",
+        "which records the position as the broker now states it; committing anyway adds this pull's row beside the earlier one. " +
+        "That row may carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.",
     );
     expect(r.message).not.toContain("carries detail a replacement would lose");
     // The pull dialog (earlierOnly) shows the route's 409 message less the route's tail, word for word.
@@ -341,10 +344,12 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     expect(both.message).toContain(" 1 row in this pull (STUCK) restates an instrument today's earlier pull already recorded under another product, segment or exchange");
 
     const two = detectCrossSourceDuplicates([conv("CONVB", 3), conv("CONVA", 2)], [stored("CONVA", 2), stored("CONVB", 3)], FILE);
+    // W2I re-pinned the tail (two incoming rows, two stored rows: the remedy counts the stored ones).
     expect(two.message).toBe(
       "2 rows in this pull (CONVA, CONVB) restate instruments today's earlier pull already recorded under another product, segment or exchange, and are not written over those rows. " +
-        "If the broker converted these positions between the two pulls, the earlier rows can be deleted from Trades and the pull run again, " +
-        "which records the positions as the broker now states them; committing anyway keeps both rows of each.",
+        "If the broker converted these positions between the two pulls, the 2 earlier rows can be deleted from Trades and the pull run again, " +
+        "which records the positions as the broker now states them; committing anyway adds this pull's rows beside the earlier ones. " +
+        "Those rows may carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.",
     );
   });
 
@@ -354,6 +359,77 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     expect(r.message!.startsWith("1 row in this file (RELIANCE) look like trades already recorded from a different file. ")).toBe(true);
     expect(r.message).not.toContain("another product, segment or exchange");
     expect(detectCrossSourceDuplicates([evening({ snapshotOffKey: true })], [morning()], FILE).collisions).toEqual([]);
+  });
+
+  /**
+   * W2I (v4.3.0 fix wave 2I, the wave-2H re-check's two `ask` findings).
+   *
+   * [0] The M1 ask is raised against EVERY same-tradingsymbol row of today's
+   *     snapshot (commit.ts planSnapshot → `snapshotIds`), but its sentence
+   *     pluralised on the number of colliding INCOMING rows. One incoming row
+   *     whose ask names two stored rows (two exchanges, or two products) read
+   *     "the earlier row can be deleted" and reported only one of them, so
+   *     following the sentence once left the same pull refused with the same
+   *     sentence. The remedy now counts the STORED rows the plan named, so one
+   *     round of it clears the ask.
+   * [1] An M1 ask never reaches planSnapshot's `carriesUserRecord` check (the
+   *     stored row is on another key), so the row it names to delete may carry
+   *     a cost basis or a journal entry the user recorded. The on-key sentence
+   *     says so; the M1 sentence had lost that warning, and named no way back.
+   */
+  const conv2 = (over: Partial<IncomingRow> = {}) =>
+    evening({
+      symbol: "TWOEX", tradingsymbol: "TWOEX", buyQty: 20, buyValue: 2010, sellQty: 0, sellValue: 0, sellDate: null,
+      snapshotOffKey: true, ...over,
+    });
+  const stored2 = (id: number, over: Partial<ExistingRow> = {}) =>
+    morning({ id, symbol: "TWOEX", tradingsymbol: "TWOEX", buyQty: 10, buyValue: 1000, dedupHash: `m-${id}`, ...over });
+
+  it("W2I: one incoming row whose ask names TWO stored rows reads the remedy in the plural and counts them, so one round of it clears the ask", () => {
+    // The re-check's TWOEX reproduce: NSE_EQ intraday 10 and BSE_EQ intraday 5
+    // committed at noon; the evening pull states TWOEX CNC 20 on NSE_EQ, so
+    // nothing is on its key and the plan names BOTH stored rows.
+    const r = detectCrossSourceDuplicates([conv2({ snapshotIds: [1, 2] })], [stored2(1), stored2(2, { buyQty: 5, buyValue: 495 })], FILE);
+    // The collision object is untouched: still one report per incoming row, still 6 keys.
+    expect(r.collisions.map((c) => [c.symbol, c.sameSnapshot, Object.keys(c).length])).toEqual([["TWOEX", true, 6]]);
+    // THE assertion (on revert: "… is not written over that row. … the earlier
+    // row can be deleted … committing anyway keeps both rows.").
+    expect(r.message).toBe(
+      "1 row in this pull (TWOEX) restates an instrument today's earlier pull already recorded under another product, segment or exchange, and is not written over those rows. " +
+        "If the broker converted the position between the two pulls, the 2 earlier rows can be deleted from Trades and the pull run again, " +
+        "which records the position as the broker now states it; committing anyway adds this pull's row beside the earlier ones. " +
+        "Those rows may carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.",
+    );
+  });
+
+  it("W2I: the M1 sentence carries the on-key sentence's user-record warning and the way back from Deleted items", () => {
+    const one = detectCrossSourceDuplicates([conv2({ snapshotIds: [1] })], [stored2(1)], FILE).message!;
+    // THE assertions (on revert: the M1 sentence ended at "keeps both rows.").
+    expect(one).toContain("may carry a cost basis or journal entry you recorded");
+    expect(one).toContain("put back from Backup & Restore → Deleted items");
+    // One stored row keeps the singular throughout.
+    expect(one).toBe(
+      "1 row in this pull (TWOEX) restates an instrument today's earlier pull already recorded under another product, segment or exchange, and is not written over that row. " +
+        "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, " +
+        "which records the position as the broker now states it; committing anyway adds this pull's row beside the earlier one. " +
+        "That row may carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.",
+    );
+    // Descriptive, not advice (the dialog's own SEBI guard, applied to the server sentence).
+    expect(one).not.toMatch(/\b(recommend|suggest|should|consider|buy|sell)\b/i);
+  });
+
+  it("W2I: the two NON-M1 sentences are unchanged, byte for byte", () => {
+    // THE assertions: only the M1 sentence moved in wave 2I.
+    expect(detectCrossSourceDuplicates([inc()], [ex()], "dhan-pnl.csv").message).toBe(
+      "1 row in this file (RELIANCE) look like trades already recorded from a different file. " +
+        "The two file kinds state different facts — a transaction report has dates and both legs, a P&L export has neither — so the duplicate check cannot match them and importing both would record the same trade twice. " +
+        "Nothing is merged automatically: merging means choosing whose numbers to keep, and getting that wrong silently corrupts cost basis and holding period. Delete the earlier import first if these are the same trades.",
+    );
+    expect(detectCrossSourceDuplicates([evening({ snapshotIds: [1] })], [morning()], FILE).message).toBe(
+      "1 row in this pull (NIFTY) restates a position today's earlier pull already recorded, and is not written over it: " +
+        "the recorded row carries detail a replacement would lose (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. " +
+        "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.",
+    );
   });
 
   it("the most severe overlap is reported: a partial candidate met first does not hide a same-quantity one", () => {

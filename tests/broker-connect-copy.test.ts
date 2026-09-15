@@ -480,6 +480,44 @@ describe("unfetchedLines / clearUnfetchedBody — the Clear names the line's rec
     expect(lines).toEqual(row.unfetched);
     expect(Object.keys(clearUnfetchedBody(row, lines[0]!))).not.toContain("connection");
   });
+
+  /**
+   * J1 (v4.3.0 fix wave 2J): a MERGE-CARRIED line names no connection, so its
+   * record is told apart from another book's carry of the same span only by
+   * the sentences it states (I5, lib/import/dhan-unfetched.ts recordKeyOf).
+   * The body therefore carries the line's own `fact` and `remedy` — the card's
+   * words, never re-derived — and the route forwards them to
+   * clearUnfetchedLine. A connection-owned line's body is unchanged: its
+   * connection id already names its record, and adding a sentence there would
+   * make an old card's body and a new one's disagree for no gain.
+   */
+  it("a carried line's Clear body names the sentence the card shows; a connection line's body is unchanged", () => {
+    const [own, carried] = unfetchedLines(row);
+    // THE assertion (no `fact`/`remedy` on revert: two carried lines post
+    // identical bodies and the route clears whichever record comes first).
+    expect(JSON.parse(JSON.stringify(clearUnfetchedBody(row, carried!)))).toEqual({
+      action: "clear-unfetched",
+      broker: "dhan",
+      accountId: 7,
+      from: SPAN.from,
+      to: SPAN.to,
+      reason: SPAN.reason,
+      connection: null,
+      fact: "… after 14:30 IST …",
+      remedy: null,
+    });
+    expect(Object.keys(clearUnfetchedBody(row, own!))).not.toContain("fact");
+    expect(Object.keys(clearUnfetchedBody(row, own!))).not.toContain("remedy");
+  });
+
+  it("a carried line's own remedy rides with it — the server's sentence, not an inferred one", () => {
+    const withRemedy = { ...row, unfetched: [{ ...SPAN, fact: "… after 14:30 IST …", remedy: "Import a Dhan tradebook for 13 May 2026 to 12 Jun 2026." }] , unfetchedConnection: [null] };
+    const [line] = unfetchedLines(withRemedy);
+    expect(clearUnfetchedBody(withRemedy, line!)).toMatchObject({
+      fact: "… after 14:30 IST …",
+      remedy: "Import a Dhan tradebook for 13 May 2026 to 12 Jun 2026.",
+    });
+  });
 });
 
 /**

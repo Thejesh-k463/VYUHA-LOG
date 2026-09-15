@@ -127,7 +127,16 @@ export function unfetchedLines(c: { unfetched?: UnfetchedSpan[]; unfetchedConnec
 /** H4: the Clear's request body for one line. It names the line's record
  *  connection (null included), so the route clears exactly that line; a line
  *  with no known connection sends no `connection` field (every same-span
- *  record clears, the route's behaviour before H4). */
+ *  record clears, the route's behaviour before H4).
+ *
+ *  J1 (v4.3.0 fix wave 2J): a line whose connection is NULL was carried by an
+ *  account merge and names no client, so its record is told apart from another
+ *  book's carry of the same span only by the sentences it states (I5,
+ *  lib/import/dhan-unfetched.ts recordKeyOf). Such a line therefore sends the
+ *  `fact` and `remedy` IT SHOWS — the server's own sentences, echoed back, never
+ *  re-derived here — and the route hands them to clearUnfetchedLine. A
+ *  connection-owned line's body is unchanged: its connection id already names
+ *  its record. */
 export function clearUnfetchedBody(c: { broker: string; accountId: number }, s: UnfetchedSpan): Record<string, unknown> {
   return {
     action: "clear-unfetched",
@@ -137,6 +146,7 @@ export function clearUnfetchedBody(c: { broker: string; accountId: number }, s: 
     to: s.to,
     reason: s.reason,
     ...(s.connection !== undefined ? { connection: s.connection } : {}),
+    ...(s.connection === null ? { fact: s.fact, remedy: s.remedy } : {}),
   };
 }
 

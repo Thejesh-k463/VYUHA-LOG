@@ -761,7 +761,12 @@ describe("S5 · the restore re-key skips a frozen lot (F1 close-open-lots → F1
 
     // ── the restore, for real ───────────────────────────────────────────────
     const results = fixes.rerunDataFixesAfterRestore(t.sqlite);
-    expect(results.map((r) => [r.name, r.applied])).toEqual([["paytm-dedup-isin-v1", true]]);
+    // W2J J3 registered a SECOND data fix (ipo-account-rehome-v1). The paytm fix
+    // is deliberately still FIRST in FIXES, which `results[0]` below depends on.
+    expect(results.map((r) => [r.name, r.applied])).toEqual([
+      ["paytm-dedup-isin-v1", true],
+      ["ipo-account-rehome-v1", true],
+    ]);
     expect(results[0].rekeyed, "no frozen row may be re-keyed").toBe(0);
 
     const after = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, reduced.id)).get()!;

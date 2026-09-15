@@ -6,6 +6,8 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
 import { STALE_CLOSE_NOTE } from "@/lib/import/close-open-lots";
+import * as crossSource from "@/lib/import/cross-source";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
 import { taxByFy } from "@/lib/analytics/tax";
 
@@ -209,6 +211,23 @@ import { taxByFy } from "@/lib/analytics/tax";
  * [ true, null, +0, +0, +0, 130, 300 ]") and V2's message. The consumers (getIposComputed,
  * getIpoRealisedNet, tradeStatsOf, taxByFy, updateManualTrade's sale) are unchanged by X1.
  *
+ * THE WAVE 2I/2J SEAM PASS (2026-09-15) made three edits here and no others —
+ * the wave's own file is tests/seams-v43-fixF.test.ts:
+ *   1. `M1` (E-d) no longer pastes the sentence: it is BUILT by the real
+ *      producer (`detectCrossSourceDuplicates`), so I3's rewrite needs no
+ *      re-paste, with I3's three clauses byte-pinned beside it — a revert of
+ *      cross-source.ts moves both sides of the equality together, and only the
+ *      literals catch that.
+ *   2. `dialogPreview`'s fallback is now the 3feb22f body VERBATIM on
+ *      `ownCapitalUsed` and `daysHeld` (the 2H re-check's finding: it hard-coded
+ *      null / 0, so a whole-module revert reddened the MTF `it`s for the wrong
+ *      reason), and the dates come from the same RESOLVED exit date the dialog's
+ *      own call site uses — I1 changed that resolution this wave. `editorPreview`'s
+ *      fallback was checked expression by expression against 3feb22f and is faithful.
+ *   3. Both helpers read their module's exports through the export LIST, so a
+ *      whole-module revert reaches the fallback instead of throwing on vitest's
+ *      mock proxy ("No \"resolveExitIso\" export is defined on the … mock").
+ *
  * SEAM DEFECTS found by a pass are reported to the orchestrator, not fixed here
  * (earlier passes left comments marked SEAM DEFECT; none is open in this file).
  *
@@ -380,6 +399,8 @@ const textOf = (html: string): string => unescape(html.replace(/<[^>]*>/g, "|").
 
 const json = (url: string, body: unknown) =>
   new Request(`http://localhost${url}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+/** A module's export, or undefined — never a throw on a build that lacks it. */
+const exported = (m: Record<string, unknown>, k: string): unknown => (Object.keys(m).includes(k) ? m[k] : undefined);
 
 function trade(over: Partial<NormalizedTrade> & { tradingsymbol: string }): NormalizedTrade {
   return {
@@ -458,11 +479,28 @@ type WireTrade = ReturnType<typeof wireTrade>;
  */
 async function dialogPreview(trade: WireTrade, exitPrice: number, exitDate: string): Promise<number[]> {
   const isShort = trade.sellQty > trade.buyQty;
-  const dates = { buyDate: isShort ? exitDate : trade.buyDate, sellDate: isShort ? trade.sellDate : exitDate };
+  // The dialog's OWN call site decides the dates from the RESOLVED exit date
+  // (close-trade-dialog.tsx:117 `resolveExitIso`, I1 [1]). A build without that
+  // export resolves as 3feb22f did — `exitDate || todayIstIso()`.
+  // Read through the export LIST: a module without the export must not throw
+  // here (vitest's mock proxy throws on an unknown key, which would redden the
+  // `it` before the pre-2H body below could answer for that build).
+  const resolveFn = exported(closeDialog, "resolveExitIso") as ((d: string) => string) | undefined;
+  const previewFn = exported(closeDialog, "closePreviewBody") as typeof closeDialog.closePreviewBody | undefined;
+  const exitIso = typeof resolveFn === "function" ? resolveFn(exitDate) : exitDate || todayIstIso();
+  const dates = { buyDate: isShort ? exitIso : trade.buyDate, sellDate: isShort ? trade.sellDate : exitIso };
   let body: unknown;
-  if (typeof closeDialog.closePreviewBody === "function") {
-    body = closeDialog.closePreviewBody(trade, exitPrice, exitDate, dates);
+  if (typeof previewFn === "function") {
+    body = previewFn(trade, exitPrice, exitDate, dates);
   } else {
+    // THE PRE-2H BODY, VERBATIM (git show 3feb22f:components/trades/close-trade-dialog.tsx
+    // :47-83 — the effect built it inline, so a whole-module revert has no export to
+    // call and this stands in for it). It must be FAITHFUL, not merely different:
+    // the 2H re-check found `ownCapitalUsed: null, daysHeld: 0` here, which reddened
+    // the MTF `it`s for the wrong reason (the real pre-2H dialog sent own capital
+    // 10,000 on a funded-0 row and MATCHED its save). `daysHeld` reads the RAW field,
+    // which is exactly the I1 [1] defect: a cleared date gives NaN → JSON null → the
+    // route bills 0 days.
     const qty = Math.abs(trade.buyQty - trade.sellQty) || Math.max(trade.buyQty, trade.sellQty);
     const buyQty = isShort ? qty : trade.buyQty;
     const avgBuyPrice = isShort ? exitPrice : trade.avgBuyPrice;
@@ -471,7 +509,9 @@ async function dialogPreview(trade: WireTrade, exitPrice: number, exitDate: stri
     body = {
       broker: trade.broker, tradingsymbol: trade.tradingsymbol, segment: trade.segment, exchange: trade.exchange,
       buyValue: buyQty * avgBuyPrice, sellValue: sellQty * avgSellPrice, buyQty, sellQty, grossPnl: (avgSellPrice - avgBuyPrice) * qty,
-      ownCapitalUsed: null, daysHeld: 0, isOpen: false, ...dates,
+      ownCapitalUsed: trade.mtfFundedAmount != null ? Math.max(0, buyQty * avgBuyPrice - trade.mtfFundedAmount) : null,
+      daysHeld: trade.buyDate ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(trade.buyDate).getTime()) / 86400000)) : 0,
+      isOpen: false, ...dates,
     };
   }
   const res = await chargesPreview.POST(json("/api/charges/preview", body));
@@ -515,6 +555,14 @@ async function editorPreview(trade: WireTrade, fd: FormData): Promise<number[]> 
   if (typeof helper === "function") {
     body = (helper as (t: WireTrade, fields: typeof f) => unknown)(trade, f);
   } else {
+    // THE PRE-2H BODY, VERBATIM (git show 3feb22f:components/trades/edit-trade-dialog.tsx
+    // :147-164). Checked expression by expression against that text on 2026-09-15 for the
+    // two fields the 2H re-check flagged on the dialog's fallback: `ownCapitalUsed` is
+    // pre-2H's `ownCapitalUsed !== "" ? Number(...) : isMtf ? currentOwnCapitalGuess : null`
+    // — `f.ownCapitalUsed` above is the typed value, else the guess READ OFF THE MODULE'S
+    // OWN rendered placeholder (so a reverted module supplies its own guess), else null;
+    // `daysHeld` is pre-2H's sellDate−buyDate on a closed row, 0 otherwise. No order counts
+    // (U2 added them), gross unrounded.
     const isOpen = f.buyQty !== f.sellQty;
     body = {
       broker: trade.broker, tradingsymbol: trade.tradingsymbol, segment: trade.segment, exchange: trade.exchange,
@@ -1169,9 +1217,39 @@ describe("E-d · a Dhan position the broker converted between two same-day pulls
   };
   const NOON = "2026-09-08T06:30:00.000Z"; // 12:00 IST
   const EVENING = "2026-09-08T10:30:00.000Z"; // 16:00 IST, the same IST day
-  const M1 = (sym: string) =>
-    `1 row in this pull (${sym}) restates an instrument today's earlier pull already recorded under another product, segment or exchange, and is not written over that row. ` +
-    "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, which records the position as the broker now states it; committing anyway keeps both rows.";
+  /**
+   * The M1 sentence, BUILT BY THE REAL PRODUCER (I3, wave 2I) rather than pasted:
+   * `detectCrossSourceDuplicates` is pure, so the expectation is the module's own
+   * output for one incoming row standing against `stored` rows of today's earlier
+   * snapshot, off the supersede key. What the seam then proves is that the pull
+   * route's 409 — commit.ts planSnapshot's `snapshotIds` / `snapshotOffKey` on the
+   * wire, through the route's JSON, through broker-connect's collisionDialogCopy —
+   * is byte-identical to it. The distinguishing I3 clauses are pinned literally
+   * below, because a revert of cross-source.ts moves BOTH sides of this equality
+   * together and only a literal can catch that.
+   */
+  const M1 = (sym: string, stored = 1) => {
+    const existing = Array.from({ length: stored }, (_, i) => ({
+      id: 90_000 + i, broker: "dhan", symbol: sym, tradingsymbol: sym,
+      buyQty: 10, sellQty: 0, buyValue: 1000, sellValue: 0,
+      buyDate: "2026-09-08", sellDate: null, sourceFile: "dhan-positions", dedupHash: `stored-${sym}-${i}`,
+    }));
+    const report = crossSource.detectCrossSourceDuplicates(
+      [{
+        broker: "dhan", symbol: sym, tradingsymbol: sym, buyQty: 20, sellQty: 0, buyValue: 2010, sellValue: 0,
+        buyDate: "2026-09-08", sellDate: null, dedupHash: `incoming-${sym}`,
+        snapshotIds: existing.map((e) => e.id), snapshotOffKey: true,
+      }],
+      existing,
+      "dhan-positions",
+    );
+    return report.message ?? "";
+  };
+  /** I3's three clauses, byte-pinned: red on revert of cross-source.ts alone. */
+  const M1_CLAUSES = [
+    "committing anyway adds this pull's row beside the earlier one.",
+    "That row may carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.",
+  ];
 
   it("the 409's sentence reaches the dialog whole; the path it names — delete the earlier row from Trades, pull again — records the broker's book", async () => {
     freezeAt(NOON);
@@ -1189,6 +1267,7 @@ describe("E-d · a Dhan position the broker converted between two same-day pulls
     // key's reasons — "a ladder of fills, a Data Quality join, a segment or
     // exchange you set …" — none of which is true of a conversion).
     expect(shown).toEqual({ description: "Nothing has been committed.", serverMessage: M1("SEAMD"), otherSourceFooter: false });
+    for (const clause of M1_CLAUSES) expect(shown.serverMessage ?? "", "I3's own clauses, byte-pinned").toContain(clause);
 
     // The path the sentence names, through the Trades delete and the same route.
     selectAccount(D_ONE);
@@ -1225,6 +1304,7 @@ describe("E-d · a Dhan position the broker converted between two same-day pulls
     // THE assertions (on revert: one plural key sentence naming both rows).
     expect(keyAt).toBe(0);
     expect(msg.endsWith(M1("SEAMDM")), msg).toBe(true);
+    for (const clause of M1_CLAUSES) expect(msg, "I3's own clauses, byte-pinned").toContain(clause);
     expect(msg).not.toContain(bc.PULL_FORCE_ROUTE_TAIL.trim());
   });
 });

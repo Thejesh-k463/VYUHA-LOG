@@ -886,4 +886,185 @@ describe("IPO-EXITDATE · an unreadable exit date is refused on the way in and s
     const r = tradeRow(trade);
     expect([r.isOpen, r.grossPnl, r.chargesTotal, r.netPnl, r.sttCtt, r.stampDuty]).toEqual([true, 0, 0, 0, 0, 0]);
   });
+
+  /**
+   * F1 (v4.3.0 wave 2I) — STORED CHARGES ARE NEVER REWRITTEN (owner ruling F1).
+   *
+   * Z2 wrote the IPO's exit charges over ALL TEN heads of every holding it synced,
+   * so a holding carrying charges of its own lost them and its net P&L was
+   * overstated — which feeds capital (CAP-IPO-LINK counts the TRADE), the tax
+   * base, the ITR export and the /trades KPIs. Measured before: a holding stating
+   * brokerage 20, DP 15.93 and mtfInterest 40 for the very sale the IPO records
+   * came back as chargesTotal 2.06 with all three heads zeroed and net 497.94
+   * instead of 424.07 ('[rc5 charges-wipe] CUR [17.4,0,15.34,0,482.6]').
+   *
+   * The rule as built: the IPO's figures are written only where nothing stated is
+   * destroyed by them — the sync itself writes the close (the holding carried no
+   * sale, so no sale charges either), or the holding states no charges at all.
+   * And `mtfInterest` / `pledgeCharges` are NEVER written from here in any case:
+   * the IPO model prices neither (an allotment is not brokered on margin and holds
+   * no pledge), so a figure in those columns is money that really moved and it is
+   * preserved verbatim, carried into the total the row states so the heads still
+   * sum to `chargesTotal`.
+   */
+  it("F1 · the sync writes the IPO's charges only where nothing stated is destroyed: a no-sale or no-charges holding takes them, a holding stating its own for that sale keeps every head, and accrued MTF interest always survives", async () => {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const link = (name: string, tradeId: number, over: Record<string, unknown> = {}) =>
+      legacy(name, "2026-03-02", { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId, ...over });
+    const sold = { isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", grossPnl: 500 };
+    const save = async (id: number, name: string) => {
+      const res = await post(formPayload(id, name, { exitDate: "2026-03-02" }));
+      expect(res.status, name).toBe(200);
+    };
+
+    // (a) A holding with no sale of its own: the sync writes the close, so it
+    //     writes that sale's charges — Z2's figure, unchanged.
+    const a = openTrade("F1-NOSALE");
+    await save(link("F1-NOSALE", a), "F1-NOSALE");
+    const e = q.getIposComputed().rows.find((r) => r.name === "F1-NOSALE")!;
+    expect([e.realised, e.netPnl]).toEqual([true, 497.94]);
+    expect([tradeRow(a).chargesTotal, tradeRow(a).netPnl]).toEqual([e.charges, 497.94]);
+
+    // (b) THE fix: a holding whose sale IS the IPO's exit and which states its own
+    //     charges keeps every one of them, and nets gross − its own.
+    const b = openTrade("F1-OWNCHG", { ...sold, chargesTotal: 75.93, brokerage: 20, dpCharges: 15.93, mtfInterest: 40, netPnl: 424.07 });
+    await save(link("F1-OWNCHG", b), "F1-OWNCHG");
+    const rb = tradeRow(b);
+    expect([rb.chargesTotal, rb.brokerage, rb.dpCharges, rb.mtfInterest, rb.netPnl]).toEqual([75.93, 20, 15.93, 40, 424.07]);
+    expect([rb.sttCtt, rb.stampDuty, rb.gst, rb.exchangeTxn, rb.sebi, rb.ipft, rb.pledgeCharges]).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect([rb.grossPnl, rb.isOpen]).toEqual([500, false]); // everything else still syncs
+
+    // (c) A holding whose sale is the IPO's exit but which states NO charges: the
+    //     computed charges land, as Z2 built them.
+    const c = openTrade("F1-ZERO", { ...sold, netPnl: 500 });
+    await save(link("F1-ZERO", c), "F1-ZERO");
+    expect([tradeRow(c).chargesTotal, tradeRow(c).netPnl]).toEqual([e.charges, 497.94]);
+
+    // (d) An OPEN holding carrying purchase-side charges and ₹100 of accrued MTF
+    //     interest. The sync writes the close, so the exit's own heads land over a
+    //     row the IPO rewrites from the allotment (an allotment carries no
+    //     brokerage — N15) — but the MTF interest is money that really moved: it
+    //     survives verbatim and is part of the total the row states.
+    const d = openTrade("F1-MTF", { chargesTotal: 141.5, brokerage: 20, dpCharges: 15.93, gst: 5.57, mtfInterest: 100, netPnl: -141.5 });
+    await save(link("F1-MTF", d), "F1-MTF");
+    const rd = tradeRow(d);
+    expect([rd.mtfInterest, rd.chargesTotal, rd.netPnl]).toEqual([100, r2(e.charges + 100), r2(500 - e.charges - 100)]);
+    const dHeads = [rd.brokerage, rd.sttCtt, rd.exchangeTxn, rd.sebi, rd.stampDuty, rd.ipft, rd.gst, rd.dpCharges, rd.mtfInterest, rd.pledgeCharges];
+    expect(r2(dHeads.reduce((s, v) => s + v, 0))).toBe(rd.chargesTotal);
+  });
+
+  /**
+   * ONE GROSS ARITHMETIC (v4.3.0 wave 2I), through the route. `computeIpo` booked
+   * gross = r2((exit − cost) × qty) while the linked holding books
+   * r2(r2(exit × qty) − r2(cost × qty)); for a 3-decimal price the extra rounding
+   * of sellValue can round the other way, so /ipos read 150.01 where the Trades row,
+   * capital, the tax pack and the ITR export read 150.02. The pure halves are pinned
+   * in tests/ipo-link.test.ts; this is the two of them meeting on the row.
+   */
+  it("a 3-decimal issue and exit price: the IPO's [gross, charges, net] and the linked holding's are equal to the paisa", async () => {
+    const trade = openTrade("GROSS-3DP");
+    const id = legacy("GROSS-3DP", "2026-06-15", { exitPrice: null, exitDate: null, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: trade });
+    const res = await post(formPayload(id, "GROSS-3DP", {
+      appliedPrice: "99.995", lotSize: "3", allottedQty: 3, exitPrice: "150.005", exitDate: "2026-03-02",
+    }));
+    expect(res.status).toBe(200);
+    const e = q.getIposComputed().rows.find((r) => r.name === "GROSS-3DP")!;
+    const r = tradeRow(trade);
+    // THE assertion: one arithmetic on both sides.
+    expect([e.grossPnl, e.charges, e.netPnl]).toEqual([r.grossPnl, r.chargesTotal, r.netPnl]);
+    expect([r.sellValue, r.buyValue, r.grossPnl]).toEqual([450.02, 300, 150.02]);
+  });
+
+  /**
+   * J4 (v4.3.0 wave 2J) — the sync OWNS a close it wrote and recomputes its charges;
+   * a sale recorded in Trades keeps its own.
+   *
+   * F1 asked ONE question — "does this holding already state charges?" — of two
+   * different histories, and answered both with "keep":
+   *
+   *   (a) the sale IS the IPO's exit AS STORED before this save: it is the sync's own
+   *       earlier write (or a sale identical to it), so re-pricing the exit on /ipos
+   *       moved the holding's price and gross while its charges stayed computed for the
+   *       OLD sale — a stale figure the sync itself had written, and /ipos then read one
+   *       net while the Trades row, capital (CAP-IPO-LINK counts the TRADE), the tax base
+   *       and the ITR export read another;
+   *   (b) the sale equals only the exit BEING RECORDED: the user recorded it in Trades
+   *       first, with the broker's own charges. Those are the user's record and stay
+   *       (owner ruling F1) — unchanged by this fix.
+   *
+   * Ownership is of the CLOSE and of the CHARGES on it: a holding whose sale is the
+   * stored exit but whose heads are not the ones the sync priced for it (a contract
+   * note's brokerage) still keeps every one of them — case (c) below, F1 (b)'s rule
+   * under a re-price. `mtfInterest`/`pledgeCharges` are never written either way.
+   */
+  it("J4 · re-pricing an exit the sync itself closed recomputes its charges for the new exit, keeping accrued MTF interest; a sale recorded in Trades keeps its own charges", async () => {
+    const r2n = (n: number) => Math.round(n * 100) / 100;
+    const ipoRow = (name: string) => q.getIposComputed().rows.find((r) => r.name === name)!;
+
+    // (a) A holding with no sale of its own, carrying 40 of accrued MTF interest, closed
+    //     by the sync at 150: Z2's figure plus the 40 that really moved.
+    const owned = openTrade("J4-OWNED", { chargesTotal: 40, mtfInterest: 40, netPnl: -40 });
+    const id = legacy("J4-OWNED", "2026-03-02", { exitPrice: null, exitDate: null, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: owned });
+    const sold = await post(formPayload(id, "J4-OWNED", { exitPrice: "150", exitDate: "2026-03-02" }));
+    expect(sold.status).toBe(200);
+    const at150 = ipoRow("J4-OWNED");
+    expect([at150.charges, at150.netPnl]).toEqual([2.06, 497.94]);
+    const first = tradeRow(owned);
+    expect([first.sellQty, first.avgSellPrice, first.chargesTotal, first.netPnl, first.mtfInterest])
+      .toEqual([10, 150, r2n(2.06 + 40), r2n(500 - 2.06 - 40), 40]);
+
+    // The user corrects that exit to 155 on /ipos. The sync wrote this close and wrote
+    // these charges, so both follow the new exit.
+    const repriced = await post(formPayload(id, "J4-OWNED", { exitPrice: "155", exitDate: "2026-03-02" }));
+    expect(repriced.status).toBe(200);
+    const at155 = ipoRow("J4-OWNED");
+    const r = tradeRow(owned);
+    // THE assertions: price, gross AND charges follow the new exit; the 40 survives.
+    expect([r.avgSellPrice, r.sellValue, r.grossPnl]).toEqual([155, 1550, 550]);
+    expect([r.chargesTotal, r.netPnl]).toEqual([r2n(at155.charges + 40), r2n(550 - at155.charges - 40)]);
+    expect([r.sttCtt, r.stampDuty, r.mtfInterest]).toEqual([r2n(at155.chargeBreakdown!.sttCtt), r2n(at155.chargeBreakdown!.stampDuty), 40]);
+    const heads = (x: typeof r) => [x.brokerage, x.sttCtt, x.exchangeTxn, x.sebi, x.stampDuty, x.ipft, x.gst, x.dpCharges, x.mtfInterest, x.pledgeCharges];
+    expect(r2n(heads(r).reduce((a, v) => a + v, 0))).toBe(r.chargesTotal);
+
+    // Ten shares at 150 and at 155 both price to 2.06 (STT rounds to the rupee), so the
+    // charges must also be seen MOVING: the same exit corrected again, to 500.
+    const big = await post(formPayload(id, "J4-OWNED", { exitPrice: "500", exitDate: "2026-03-02" }));
+    expect(big.status).toBe(200);
+    const at500 = ipoRow("J4-OWNED");
+    expect(at500.charges).not.toBe(at150.charges); // charge_config prices the bigger sale higher
+    const rb = tradeRow(owned);
+    expect([rb.avgSellPrice, rb.sellValue, rb.grossPnl]).toEqual([500, 5000, 4000]);
+    expect([rb.chargesTotal, rb.netPnl]).toEqual([r2n(at500.charges + 40), r2n(4000 - at500.charges - 40)]);
+    expect([rb.sttCtt, rb.stampDuty, rb.mtfInterest]).toEqual([r2n(at500.chargeBreakdown!.sttCtt), r2n(at500.chargeBreakdown!.stampDuty), 40]);
+    expect(r2n(heads(rb).reduce((a, v) => a + v, 0))).toBe(rb.chargesTotal);
+
+    // (b) The user recorded the sale in Trades first, with the broker's own 20 of
+    //     brokerage, and then records that same exit on /ipos: the stored IPO carried no
+    //     exit, so the sale is the user's record and every head of it stays.
+    const byUser = openTrade("J4-TRADES", {
+      isOpen: false, sellQty: 10, avgSellPrice: 155, sellValue: 1550, sellDate: "2026-03-02",
+      grossPnl: 550, chargesTotal: 23.6, brokerage: 20, gst: 3.6, netPnl: 526.4,
+    });
+    const uid = legacy("J4-TRADES", "2026-03-02", { exitPrice: null, exitDate: null, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: byUser });
+    const recorded = await post(formPayload(uid, "J4-TRADES", { exitPrice: "155", exitDate: "2026-03-02" }));
+    expect(recorded.status).toBe(200);
+    const u = tradeRow(byUser);
+    expect([u.chargesTotal, u.brokerage, u.gst, u.netPnl]).toEqual([23.6, 20, 3.6, 526.4]);
+    expect([u.sttCtt, u.stampDuty, u.dpCharges]).toEqual([0, 0, 0]);
+    expect([u.isOpen, u.avgSellPrice, u.grossPnl]).toEqual([false, 155, 550]);
+
+    // (c) The sale IS the stored exit, but its charges are the user's own record: a
+    //     re-price follows on price and gross and rewrites not one stated head (F1).
+    const stated = openTrade("J4-STATED", {
+      isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02",
+      grossPnl: 500, chargesTotal: 75.93, brokerage: 20, dpCharges: 15.93, mtfInterest: 40, netPnl: 424.07,
+    });
+    const sid = legacy("J4-STATED", "2026-03-02", { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: stated });
+    const restated = await post(formPayload(sid, "J4-STATED", { exitPrice: "155", exitDate: "2026-03-02" }));
+    expect(restated.status).toBe(200);
+    const s = tradeRow(stated);
+    expect([s.chargesTotal, s.brokerage, s.dpCharges, s.mtfInterest]).toEqual([75.93, 20, 15.93, 40]);
+    expect([s.sttCtt, s.stampDuty, s.gst]).toEqual([0, 0, 0]);
+    expect([s.avgSellPrice, s.grossPnl, s.netPnl]).toEqual([155, 550, r2n(550 - 75.93)]);
+  });
 });

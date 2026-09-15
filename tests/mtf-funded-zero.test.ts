@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { NormalizedTrade } from "@/lib/engine/types";
+import type { PositionTrade } from "@/lib/analytics/positions";
 import type { ParsedFile } from "@/lib/import/types";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 
@@ -39,6 +40,7 @@ let toSlimTrade: typeof import("@/lib/domain/slim-trade").toSlimTrade;
 let accrueMtfInterest: typeof import("@/lib/jobs/mtf-accrual").accrueMtfInterest;
 let actions: typeof import("@/app/trades/actions");
 let buildManualPreviewBody: typeof import("@/components/trades/manual-preview-body").buildManualPreviewBody;
+let deriveOpenPositions: typeof import("@/lib/analytics/positions").deriveOpenPositions;
 
 // Measured locally 2026-09-15: migrate + seed + the commit, route and both dialog
 // imports ~2 s, inside the 3 s local hook budget. The raised timeout is for the
@@ -53,6 +55,7 @@ beforeAll(async () => {
   ({ accrueMtfInterest } = await import("@/lib/jobs/mtf-accrual"));
   actions = await import("@/app/trades/actions");
   ({ buildManualPreviewBody } = await import("@/components/trades/manual-preview-body"));
+  ({ deriveOpenPositions } = await import("@/lib/analytics/positions"));
 }, 120_000);
 afterAll(() => t?.cleanup());
 
@@ -165,10 +168,45 @@ describe("V3 — a stored MTF funded amount of 0 is kept (all own capital), a nu
     expect([m.mtfFundedAmount, m.mtfInterest, m.pledgeCharges]).toEqual([j.mtfFundedAmount, j.mtfInterest, j.pledgeCharges]);
   });
 
-  it("every commit.ts reader and the editor preview use the same null-vs-0 rule (no `mtfFundedAmount > 0` guard left)", () => {
+  /**
+   * I1 [2] (wave 2I): this scan used to read lib/import/commit.ts ALONE while
+   * claiming "every reader", so the three live readers that still treated a
+   * stated 0 as never set (lib/analytics/positions.ts:128,
+   * app/reports/broker-compare/page.tsx:59, lib/analytics/data-quality.ts:883)
+   * passed it untouched — and one of them was a silent wrong number on /equity.
+   * It now walks lib/, app/ and components/ with NOTHING allow-listed.
+   * Measured locally 2026-09-15: 120 ms for the whole walk (639 files).
+   */
+  it("every reader in lib/, app/ and components/ uses the same null-vs-0 rule (no `> 0` or truthiness guard left)", () => {
     const src = (p: string) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
-    const guards = src("lib/import/commit.ts").match(/\w+\.mtfFundedAmount\s*&&\s*\w+\.mtfFundedAmount\s*>\s*0/g) ?? [];
-    expect(guards, "a reader that treats a stated 0 as never set").toEqual([]);
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (/\.tsx?$/.test(e.name)) files.push(p);
+      }
+    };
+    for (const root of ["lib", "app", "components"]) walk(path.join(process.cwd(), root));
+
+    // The shapes that read a STATED 0 as "never set". The CORRECT reads — `??`,
+    // `== null` / `!= null`, and the `?:` of an optional property — are not
+    // matched, which is why nothing needs allow-listing.
+    const GUARDS = [
+      /mtfFundedAmount\s*&&/, // truthiness conjunction
+      /mtfFundedAmount\s*(?:>|>=|<|<=)\s*0/, // a comparison against zero
+      /!\s*[\w.]*\bmtfFundedAmount\b/, // a negated read
+      /mtfFundedAmount\s*\?(?![?:.])/, // a truthiness ternary
+    ];
+    const hits: string[] = [];
+    for (const f of files) {
+      const text = fs.readFileSync(f, "utf8");
+      if (!text.includes("mtfFundedAmount")) continue;
+      text.split(/\r?\n/).forEach((line, i) => {
+        if (GUARDS.some((re) => re.test(line))) hits.push(`${path.relative(process.cwd(), f).replace(/\\/g, "/")}:${i + 1} ${line.trim()}`);
+      });
+    }
+    expect(hits, "a reader that treats a stated 0 as never set").toEqual([]);
     expect(/const currentFundedGuess = trade\.mtfFundedAmount \?\?/.test(src("components/trades/edit-trade-dialog.tsx")), "the editor preview's null-vs-0 read").toBe(true);
   });
 });
@@ -277,5 +315,44 @@ describe("X2 (ii) — own capital typed 0 is a stated figure (funded = the full 
 
     expect((await create("MTFADDB", "")).ok).toBe(true);
     expect(bySymbol("MTFADDB").mtfFundedAmount, "blank is estimated").toBe(8000);
+  });
+});
+
+/**
+ * I1 [0] (v4.3.0 wave 2I, introduced by wave 2H) — a stated funded 0 now
+ * SURVIVES every writer, so every READER must honour it too.
+ * `deriveOpenPositions` still used the old `mtfFundedAmount && > 0` rule and
+ * substituted the margin estimate, so the row the journal records as 100% own
+ * capital was shown with `ownCapital` = invested − a fabricated estimate and
+ * `roiOnCapitalPct` measured against that invented denominator (invariant 6) —
+ * the "Own capital in MTF" KPI and the "ROI on capital" column on /equity,
+ * /active, /targets and the Live Desk, beside a Trades-table cell
+ * (lib/domain/trade-columns.ts `investedSummary`, already `??`-correct) saying
+ * the opposite on the same screen. Probe (rc5-close-c): invested 20,000,
+ * fundedAmount 15,000, ownCapital 5,000, ROI 40% where the truth was 20,000
+ * and 10%.
+ *
+ * Pure — no database is touched by this block.
+ */
+describe("I1 [0] — deriveOpenPositions keeps a stated MTF funded 0 (all own capital) and estimates only a null", () => {
+  const openMtf = (mtfFundedAmount: number | null): PositionTrade => ({
+    id: 1, broker: "angelone", bucket: "equity", segment: "eq_mtf", instrumentType: "equity", exchange: "NSE",
+    symbol: "Z", tradingsymbol: "Z", optionType: null, strike: null, expiry: null, isOpen: true,
+    buyQty: 100, sellQty: 0, avgBuyPrice: 200, avgSellPrice: 0, closingPrice: 205,
+    buyDate: "2026-08-20", sellDate: null, mtfFundedAmount, mtfInterest: 0,
+    riskAmount: null, slPlanned: null, targetPlanned: null,
+  });
+
+  it("a stated 0: own capital is the whole ₹20,000 invested and ROI on capital is the real 2.5%", () => {
+    const [p] = deriveOpenPositions([openMtf(0)], new Map(), "2026-09-19");
+    // THE assertions (on revert: [20000, 500, 15000, 5000, 10] — 15,000 of
+    // financing the user never took, and four times the true return).
+    expect([p.invested, p.unrealised, p.fundedAmount, p.ownCapital, p.roiOnCapitalPct]).toEqual([20000, 500, 0, 20000, 2.5]);
+  });
+
+  it("a never-set (null) funded amount is still the margin estimate, unchanged", () => {
+    const [p] = deriveOpenPositions([openMtf(null)], new Map(), "2026-09-19");
+    // 25% own margin (DEFAULT_MTF_OWN_MARGIN_PCT) on 20,000.
+    expect([p.fundedAmount, p.ownCapital, p.roiOnCapitalPct]).toEqual([15000, 5000, 10]);
   });
 });

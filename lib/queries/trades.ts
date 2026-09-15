@@ -257,9 +257,10 @@ export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
  * THE JOIN IS READ-TIME ONLY (R105): option symbols are upper-cased at import,
  * an equity row keeps the broker's spelling ("reliance"), and a Groww row is
  * stored under the COMPANY NAME with its ISIN. So a row joins when its symbol
- * matches case-folded, OR its ISIN is the bundled ISIN of an option-side
- * symbol — both inside the same account filter. No stored symbol changes; the
- * page resolves the leg's symbol through `isin`.
+ * matches case-folded, OR its CANONICAL ISIN (upper, trimmed — I6, fix wave 2I,
+ * exactly as the page canonicalises its lookup key) is the bundled ISIN of an
+ * option-side symbol — both inside the same account filter. No stored symbol
+ * changes; the page resolves the leg's symbol through `isin`.
  *
  * A basis-unknown sale (`acquisition = 'unknown'`, stored open) is RETURNED,
  * with its `acquisition`, and is never a leg of its own (P5). Read as a short
@@ -302,17 +303,27 @@ export const getOpenUnderlyingPositions = cache((): UnderlyingLegRow[] => {
   const byCase = inArray(sql`upper(${trades.symbol})`, withAnOptionLeg);
   // The option-side symbols are a handful of distinct tickers, so their ISINs
   // are resolved here, from the bundled snapshot, under the same scope.
+  // I6 (fix wave 2I): CANONICAL on BOTH sides of the compare. The page looks a
+  // stored ISIN up as `isin.trim().toUpperCase()`, so comparing this column raw
+  // made the two predicates equal in one direction only: a holding stored
+  // lower-case or padded (generic-map trims the cell but does not upper-case it;
+  // the Angel One / Upstox and Groww parsers store it raw) was invisible to its
+  // OWN account's read, while another account's ticker could still carry it in
+  // on 0 through `byCase` — and the page then admitted it under its own account
+  // and bounded a call that reads Unlimited in that account's own view (H6).
+  // `bundledIsinBySymbol` already trims and upper-cases; this is explicit.
   const optionIsins = [
     ...new Set(
       db.selectDistinct({ symbol: trades.symbol }).from(trades).where(optionLeg).all()
-        .map((r) => bundledIsinBySymbol(r.symbol))
+        .map((r) => bundledIsinBySymbol(r.symbol)?.trim().toUpperCase())
         .filter((isin): isin is string => !!isin),
     ),
   ];
   const isUnderlying = and(
     eq(trades.isOpen, true),
     inArray(trades.instrumentType, ["equity", "future"]),
-    optionIsins.length ? or(byCase, inArray(trades.isin, optionIsins)) : byCase,
+    // The column folded the same way (I6): `upper(trim(...))`, never a raw compare.
+    optionIsins.length ? or(byCase, inArray(sql`upper(trim(${trades.isin}))`, optionIsins)) : byCase,
   );
   return db.select(pickCols(UNDERLYING_LEG_FIELDS)).from(trades)
     .where(accountId > 0 ? and(isUnderlying, eq(trades.accountId, accountId)) : isUnderlying)

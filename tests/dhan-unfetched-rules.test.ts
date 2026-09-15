@@ -428,3 +428,105 @@ describe("H4 · one card line per kept record, and a Clear that names its record
     ]);
   });
 });
+
+/**
+ * v4.3.0 fix wave 2I (I5) — a merge CARRY keeps one record per distinct fact.
+ *
+ * H4 promises one card line per kept RECORD, each with its own fact. A carried
+ * record has no connection (`connId` null by design: it names no client), so
+ * under the L1 key `(connection, span)` every carry of one span was the SAME
+ * record. Two source books merged into one target on the identical span with
+ * DIFFERENT facts (their last pulls ran at different times of day) therefore
+ * collapsed: the second merge wrote nothing at all (carry returned 0), the
+ * card listed the span once with whichever book merged first, and clearing
+ * that one line dismissed both books' gaps — H4's defect reached by a double
+ * merge. A carried record's identity is now its span AND the sentences it
+ * carries; an identical carry (same span, same sentences) is still one record.
+ */
+describe("I5 · two books merged into one target: one record per distinct fact", () => {
+  const SPAN = { from: "2026-05-13", to: "2026-06-12", reason: "range-cap" };
+  const rangeCapAt = (stamp: string) =>
+    dhan.toParsedFile([], dhan.catchUpRange(stamp, "2026-09-11"), { pages: 1, truncated: false, oldest: null, newest: null }, stamp).unfetched;
+  const hhmm = (fact: string) => /after (\d\d:\d\d) IST/.exec(fact)?.[1] ?? fact;
+  const records = (A: number) => un.outstandingUnfetchedRecords(A).map((s) => [s.connection, hhmm(s.fact)]);
+  const lines = (A: number) => un.outstandingUnfetchedLines(A).map((s) => [s.connection, s.from, s.to, s.reason, hhmm(s.fact)]);
+  const USER = "Dhan notice cleared by the user.";
+
+  it("the re-check's reproduce: both books' facts survive the two merges, as two card lines", () => {
+    const [S1, S2, T] = [741, 742, 743];
+    // S1's client last pulled at 14:30 IST, S2's at 10:30 IST — the same span, two sentences.
+    un.keepUnfetched(rangeCapAt("2026-05-13T09:00:00.000Z"), { connId: 91, accountId: S1, source: "import" });
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 92, accountId: S2, source: "import" });
+    expect(carry(S1, T)).toBe(1);
+    // THE assertion (0 on revert: the second book's sentence was never stored).
+    expect(carry(S2, T)).toBe(1);
+    expect(records(T)).toEqual([
+      [null, "14:30"],
+      [null, "10:30"],
+    ]);
+    // GET lists a line per record — each with its own fact, both carried (no connection).
+    expect(lines(T)).toEqual([
+      [null, ...Object.values(SPAN), "14:30"],
+      [null, ...Object.values(SPAN), "10:30"],
+    ]);
+    expect(un.outstandingUnfetched(T).map((s) => hhmm(s.fact))).toEqual(["14:30", "10:30"]);
+  });
+
+  it("a named Clear on one carried line leaves the other book's line outstanding", () => {
+    const [S1, S2, T] = [744, 745, 746];
+    un.keepUnfetched(rangeCapAt("2026-05-13T09:00:00.000Z"), { connId: 93, accountId: S1, source: "import" });
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 94, accountId: S2, source: "import" });
+    carry(S1, T);
+    carry(S2, T);
+    const card = un.outstandingUnfetchedLines(T);
+    expect(card.map((s) => hhmm(s.fact))).toEqual(["14:30", "10:30"]);
+    // The card names the line it showed: its record's connection (null) AND its sentences.
+    expect(un.clearUnfetchedLine(T, { ...SPAN, connection: null, fact: card[1]!.fact, remedy: card[1]!.remedy }, USER)).toBe(1);
+    // THE assertion (the 14:30 line cleared instead on revert: a Clear naming
+    // only (null, span) resolves to the first carried record).
+    expect(records(T)).toEqual([[null, "14:30"]]);
+    // The same Clear again finds no open record stating that sentence.
+    expect(un.clearUnfetchedLine(T, { ...SPAN, connection: null, fact: card[1]!.fact, remedy: card[1]!.remedy }, USER)).toBe(0);
+    expect(un.clearUnfetchedLine(T, { ...SPAN, connection: null, fact: card[0]!.fact, remedy: card[0]!.remedy }, USER)).toBe(1);
+    expect(records(T)).toEqual([]);
+  });
+
+  it("the identical carry — the same span AND the same sentences — is written once", () => {
+    const [S1, S2, T] = [747, 748, 749];
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 95, accountId: S1, source: "import" });
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 96, accountId: S2, source: "import" });
+    expect(carry(S1, T)).toBe(1);
+    expect(carry(S2, T)).toBe(0);
+    expect(carry(S1, T)).toBe(0);
+    expect(records(T)).toEqual([[null, "10:30"]]);
+    expect(trail(T).map((r) => [r.conn, r.action])).toEqual([[null, "create"]]);
+  });
+
+  it("a Clear naming no sentence still clears the carried line (the route's body today), and the legacy clear row clears the span's carried records", () => {
+    const [S1, S2, T, T2] = [751, 752, 753, 754];
+    un.keepUnfetched(rangeCapAt("2026-05-13T09:00:00.000Z"), { connId: 97, accountId: S1, source: "import" });
+    un.keepUnfetched(rangeCapAt("2026-05-13T05:00:00.000Z"), { connId: 98, accountId: S2, source: "import" });
+    // One carried record: a Clear with no `fact` (what the route sends today) clears it.
+    carry(S1, T);
+    expect(un.clearUnfetchedLine(T, { ...SPAN, connection: null }, USER)).toBe(1);
+    expect(records(T)).toEqual([]);
+    // A clear row written BEFORE I5 (connection-scoped, no connection, no sentence)
+    // clears the span's carried records — the only shape a pre-I5 store can hold.
+    carry(S1, T2);
+    carry(S2, T2);
+    const snap = { notice: "dhan-unfetched", broker: "dhan", accountId: T2, ...SPAN, scope: "connection" };
+    t.db
+      .insert(t.schema.auditLog)
+      .values({
+        entity: "settings",
+        entityId: null,
+        action: "update",
+        summary: USER,
+        beforeJson: { ...snap, clearedAt: null },
+        afterJson: { ...snap, clearedAt: new Date().toISOString() },
+        source: "ui",
+      })
+      .run();
+    expect(records(T2)).toEqual([]);
+  });
+});

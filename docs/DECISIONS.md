@@ -6771,7 +6771,7 @@ U1–U3, V1–V4, X1–X2, then Y1–Y2. Every fix below is red on revert, with 
 - **H5 — the IPO exit date is validated** when the request changes it, makes the IPO exited, or writes a NEW sell date to
   a linked trade.
 - **H6 — /strategies All accounts = each account's single-account cards** (N16). `buildStrategies` runs per account, with
-  no in-scope fallback. Measured: 24 cards on 0 against 27 across the single views → equal. Owed, recorded: StrategyCard
+  no in-scope fallback. Measured: before the fix, 24 cards on account 0 against 27 across the single views; after it, 27 against 27 → equal. Owed, recorded: StrategyCard
   has no account label.
 
 **The seam rounds, in order (each one closed what the round before it found):**
@@ -6826,3 +6826,132 @@ compiled. The first run was red only on the `readme-claims` file count (398 in R
 after the README's six figures and its file count moved. **Next:** the SCOPED re-check of wave 2H (H1–H6 and every seam
 fix S / T / U / V / X / Y / Z) with probe-capable reviewers against `3feb22f`, then the stopping rule, then wave 3 (W3-ETF
 and W3-TAX, both researched and ruled; the inputs are in `18-FIX-WORK-4.3.0/plan-answers.md`).
+
+## 2026-09-15 — v4.3.0 wave 2H: the scoped re-check → 49 CONFIRMED, 1 REFUTED (the Z2 paisa item), 0 UNVERIFIABLE; 19 new findings → fix wave 2I (decided, seventh session)
+
+**The re-check.** Eight probe-capable Opus reviewers (general-purpose), one per unit of `18-FIX-WORK-4.3.0/wave2h-recheck-brief.md`
+(close, identity-restore, ask, pull, ipo, counted-once, strategies, seams). Each re-proved every 2H fix red-on-revert from
+probe copies of `3feb22f`, against `b6c1029` (CI 34963173558 SUCCESS 6/6). 50 verdicts: 49 CONFIRMED; the one REFUTED is
+the builders' own open item "not proven: the paisa rounding for prices with 3+ decimals" — now proven FALSE (a one-paisa
+divergence, graded cosmetic, fixed below). No probe was left and no tracked file touched. Full verdicts and every
+where / reproduce / evidence: `18-FIX-WORK-4.3.0/wave2h-recheck.json`.
+
+**Product findings that reopen work (stopping rule), with the orchestrator's decided designs** (no owner question: each is
+settled by an invariant or a standing ruling, cited):
+- **A stated MTF funded amount of 0 is still fabricated by three READERS — SILENT WRONG NUMBER, wave 2H.** V3/X2 made every
+  writer keep a stored 0, but `lib/analytics/positions.ts:128` (deriveOpenPositions → ownCapital, roiOnCapitalPct — a
+  fabricated denominator, invariant 6), `app/reports/broker-compare/page.tsx:59` and `lib/analytics/data-quality.ts:883`
+  still test `&& > 0`. → Every reader follows the writers' rule (`?? estimate`); the pin in `tests/mtf-funded-zero.test.ts`
+  scans lib/ + app/ + components/, not commit.ts alone (that narrow scan was the test finding that let these through).
+- **The close dialog preview loses the MTF interest when the exit-date field is cleared — medium, pre-existing.** daysHeld
+  was computed from the raw field (`new Date("")` → NaN → null → 0 days) while the save falls back to today. → daysHeld uses
+  the same resolved date the body uses; pinned through the real route against the real closePosition on an MTF row.
+- **A Deleted-items snapshot holding BOTH a Data Quality-joined lot and the sale its alias names is refused WHOLE — DATA
+  LOSS, wave 2H.** T1's `planned` branch (`lib/trash.ts:527-532`) treated a row landing earlier in the same restore as a
+  collision; an account-deletion snapshot then restores nothing. → A snapshot is restored to the state it was captured
+  from: the refusal applies only against a row ALREADY STORED; two rows planned in the same restore are the pair the book
+  held and both come back.
+- **An account MERGE moves a sale the target's joined lot already records — medium, earlier 4.3.0.** `dedupCollisionIds`
+  compared dedup_hash only, so the alias was invisible and the merged book held the sale twice (a phantom open short). →
+  The merge uses the ONE predicate (`heldIdentityHashes`): a source row whose hash a target lot holds is a collision; the
+  reverse (a source lot whose held alias names a target sale) refuses the merge before any write.
+- **The unstated-price guard in `staleJoinExempts` can never fire — low, wave 2H.** avg prices are NOT NULL DEFAULT 0, so
+  "unstated" arrives as 0 and reads as a different price; the lot was exempted and a held lot offered a one-click. → A
+  price of 0 / null / non-finite is unstated and never proves the sale differs; the pair is refused as AMBIGUOUS.
+- **The M1 ask sentence — two cosmetic copy findings, wave 2H.** Singular when several stored rows collide (following the
+  remedy once left the same ask); and it dropped the on-key sentence's warning that the earlier row may carry the user's
+  cost basis or journal entry, with no mention of Deleted items. → Plural per stored row named, the warning restored, the
+  restore path named; every other ask byte-identical.
+- **A merge carry writes nothing for a second source book on the same span with a different fact — low, earlier 4.3.0.**
+  Carried records all use connId null, so writeSpans skipped the second. → A carried record's identity is (null
+  connection, span, fact); identical carries still write once.
+- **"This holding came from an IPO" creates the IPO in ACCOUNT 1 whatever account the holding is in, and /api/ipos reads
+  and writes that trade unscoped — medium, pre-existing** (invariant 8/9). → The ipos row takes the holding's account; every
+  trades read / UPDATE in the route and the ipos join are scoped to the IPO's account; a cross-account link is refused.
+- **The Z2 sync OVERWROTE all ten charge heads of the linked holding — medium, wave 2H** (against F1: stored charges are
+  never rewritten). → The sync writes charges only when it writes the close itself or the holding states none; stated
+  charges stay, and mtfInterest / pledgeCharges are never written by the sync.
+- **One-paisa divergence between the IPO's gross and the linked holding's for 3+-decimal prices — cosmetic,
+  pre-existing** (the refuted Z2 item). → One arithmetic, the value-based form the trade row must satisfy.
+- **A legged trade linked to an IPO has its parent rewritten with the legs untouched — low, pre-existing** (invariant 5).
+  → The link and the sync refuse a trade carrying trade_legs / staged, the STAGED-shaped refusal closePosition uses.
+- **A plain /trades delete + Trash restore drops `ipos.trade_id`, and the linked sale is counted TWICE again in capital,
+  the tax pack, the ITR export and both AIS sides — SILENT WRONG NUMBER, pre-existing.** `deleteTradesByIds` nulled the
+  link and wrote no `ipoRefs` (only `removeBrokerRows` did, since v3.8). → Every deleter writes `ipoRefs` in that shape;
+  the existing restore re-link loop then re-points the IPO.
+- **/strategies: the page canonicalises the stored ISIN (trim/upper) while the query compares it raw — low, pre-existing.**
+  A case-or-whitespace-variant ISIN was invisible to its own account's view but admitted on All accounts. → Both compare
+  the canonical form.
+
+**Test findings.** Recorded, not built: commit.ts keeps an inline copy of `readsLong` (cosmetic; `tests/alias-held.test.ts`
+pins the single definition for trash.ts only). Ridden along in the wave because a product fix needs them: the narrow
+funded-0 scan (low); `pushTradeToIpoAction`'s asymmetric recordAudit before/after (low — it threw AuditShapeError in
+dev/test after its writes, which is why no test ever drove the action). Passed to the seam tester: the seam file's two
+preview FALLBACK bodies are not faithful to the pre-2H code on ownCapitalUsed / daysHeld (low). Corrected at its source
+above: the 2H entry's H6 measurement read "24 … against 27 → equal"; it was a before/after pair (cosmetic).
+
+**Fix wave 2I:** six Opus builders on disjoint files (I1 MTF readers + close preview; I2 trash restore + merge + the
+unstated-price guard + the DQ reader; I3 the M1 copy; I4 the IPO lifecycle; I5 the merge carry; I6 the ISIN compare), each
+red-first, then the seam tester, then the gate. Reports: `18-FIX-WORK-4.3.0/wave2i.json` and `wave2h-reports/wave2i-*.md`.
+
+## 2026-09-15 — v4.3.0 fix waves 2I + 2J + 2K built (seventh session): six builders, five micro builders, one more, then the seam pass to convergence
+
+**How.** Six Opus builders I1–I6 on disjoint files (the 2H re-check's product findings), then five micro builders J1–J5 on the
+cross-builder gaps the six reported, then K1 on a finding J2 made, then the seam tester (`tests/seams-v43-fixF.test.ts`, 13
+boundaries, 15 cases, 16 red-on-revert probes from HEAD copies; three owed edits to `seams-v43-fixE` and `seams-v43-fix1`).
+The seam pass found **no seam defect**. Reports: `18-FIX-WORK-4.3.0/wave2i.json`, `wave2j.json`, `wave2h-reports/wave2i-*.md`,
+`wave2j-*.md`, `wave2k-K1.md`. Every fix below is red on revert with the quote in its report.
+
+**The re-check findings, as built:**
+- **I1 — MTF funded-0 readers.** `deriveOpenPositions` (positions.ts) and the broker-compare page read `?? estimate`; a stored
+  0 is 100% own capital (20,000 invested, +500 → ownCapital 20,000, ROI 2.5%). The pin now scans lib/ + app/ + components/
+  for the old shapes with nothing allow-listed. The close preview's daysHeld uses the resolved exit date (today when the field
+  is cleared): preview = save on an MTF row, [405.42, 5094.58] both sides where the old body sent [168.71, 5331.29].
+- **I2 — restore, merge, the unstated price, the DQ reader.** A snapshot is restored to the state it was captured from: a row
+  planned in the same restore is never a collision, so a joined lot + its sale come back together (the refusal applies only
+  against a STORED row). A merge uses `heldIdentityHashes`: an alias-held source sale is a collision; the reverse refuses the
+  merge before any write (a preview warning added so the dialog does not offer a merge that will refuse). A price of 0 / null /
+  non-finite is unstated and never proves a sale differs → AMBIGUOUS. data-quality.ts:883 reads unstated-only.
+- **I3 — the M1 sentence.** Plural per STORED row named, as a COUNT ("the 2 earlier rows can be deleted from Trades …"): naming
+  each row's product / segment / exchange would widen the collision wire shape, which the design forbade — decided: the count
+  suffices, the rows share the tradingsymbol the sentence names. The user-record warning and the Deleted-items path restored;
+  every other ask byte-identical (pinned).
+- **I4 — the IPO lifecycle.** `deleteTradesByIds` writes `ipoRefs` (the removeBrokerRows shape) before nulling the link, so a
+  /trades delete + restore keeps the IPO counted once. `pushTradeToIpoAction` inserts the ipos row in the HOLDING's account;
+  every trades read / UPDATE in `/api/ipos` and the ipos join are scoped to `ipos.account_id` (so the rule holds in the
+  All-accounts view); a cross-account link is refused; a legged / staged holding is refused for a link and a sync (the
+  STAGED-shaped refusal). recordAudit's before/after carry the same keys, which is what let the action be driven by a test.
+  The sync writes charges only when it writes the close or the holding states none; mtfInterest / pledgeCharges never
+  written by the sync. Accepted, recorded: an OPEN holding carrying purchase-side charges gets the exit's heads written over
+  them when the sync writes the close (the IPO's record wins where the user chose to record the exit on /ipos). computeIpo
+  books gross = r2(r2(exit × qty) − r2(cost × qty)), the form the trade row must satisfy; the orchestrator's 3-decimal example
+  did not diverge, the reviewer's (qty 3, 150.005 vs 99.995: 150.01 vs 150.02) is the pin.
+- **I5 — merge carry.** A carried record's identity is (null connection, span, fact); identical carries write once. Beyond the
+  design: `clearUnfetchedLine` took the FIRST (connId, span) match, so it gained optional fact / remedy.
+- **I6 — /strategies ISIN.** The query compares the canonical form on both sides (SQL upper(trim) vs canonicalised
+  candidates); a lowercase-padded stored ISIN is found by its own account's view and All accounts equals the singles.
+
+**The micro round (2J):** J1 — the card's Clear body for a carried line carries fact + remedy and the route forwards them; a
+body without fact behaves as before. J2 — account purge / merge write `ipoRefs` for every ipos row they unlink (the delete.ts
+shape); measured: under 2I's account-scoped link read this restores the recorded link and changes no figure. J3 — legacy
+cross-account IPO rows (the pre-2I insert put them in account 1) are re-homed to their holding's account by a STARTUP DATA
+FIX `ipo-account-rehome-v1` in `lib/db/data-fixes.ts` (idempotent, never a migration; J3 edited that file because the
+"data-fix block" in index.ts is a three-line call into it). J4 — the sync OWNS a close only while the holding's sale equals
+the IPO's exit as STORED before the save AND its priced heads equal the ones the sync wrote for that exit; then an exit edit
+recomputes price and charges (the old bill 17.06 is not left behind); a Trades-recorded sale, or any head the IPO never
+prices, is kept (F1). J5 — the r43 guard's byte pin became an invariant assertion through the real sentence.
+
+**J2's finding → K1 (silent wrong number, pre-existing):** a MERGE that drops a source trade as a duplicate left its IPO
+UNLINKED in the target while the target's copy stayed — the sale counted twice at merge time (captured: totalRealised 972.85
+for one 10-share allotment). → `identityCollisions` returns `partnerOf` (dropped → surviving target row, same-hash AND
+alias); the merge re-points every ipos row naming a dropped duplicate onto its partner before the blanket unlink; `ipoRefs`
+still records the original link. Accepted deviation: after a restore of the source snapshot the duplicate comes back UNLINKED
+and the IPO keeps naming the target's copy (the trash re-link writes only where trade_id is null) — each book still counts
+its sale once. Flagged, not built: `ledger_entries.refTradeId` of a dropped duplicate is still nulled (no double measured).
+
+**Recorded, not built:** the inline `readsLong` copy in commit.ts (cosmetic); `lib/risk/mtf-drift.ts:45` reads
+`mtfFundedAmount ?? 0` (understates drift on an unresolved row, fabricates no denominator).
+
+**Gate on the wave tree:** `npm run verify` EXIT 0; raw line **417 files / 8,729 passed / 35 skipped**; `next build` compiled.
+README's file count (408 → 417) and its six test figures (8,644 → 8,729) moved with it. **Next:** commit, push, CI, then the
+SCOPED re-check of 2I / 2J / 2K with probe-capable reviewers against `b6c1029`, then wave 3 (`18-FIX-WORK-4.3.0/plan-wave3.json`).

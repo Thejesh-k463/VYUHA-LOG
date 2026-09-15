@@ -19,12 +19,13 @@ import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
  */
 
 export const PAYTM_DEDUP_FIX = "paytm-dedup-isin-v1";
+export const IPO_ACCOUNT_REHOME_FIX = "ipo-account-rehome-v1";
 
 export interface DataFixResult {
   name: string;
   /** false when the marker already existed and nothing ran. */
   applied: boolean;
-  /** Rows whose dedup_hash was rewritten. */
+  /** Rows the fix rewrote (a dedup_hash re-keyed, an IPO row re-homed). */
   rekeyed: number;
   /** Rows left untouched because the new hash already existed on another row. */
   skippedCollisions: number;
@@ -123,8 +124,59 @@ function applyPaytmDedupIsin(sqlite: Database.Database): DataFixResult {
   return result;
 }
 
+/**
+ * ipo-account-rehome-v1 — file a legacy IPO record in the account its holding
+ * is actually in (v4.3.0 wave 2J).
+ *
+ * "This holding came from an IPO" used to INSERT the `ipos` row with no
+ * accountId, so the column took its schema default of 1 whatever account the
+ * holding was in (fixed at the write in wave 2I). A journal that used that
+ * button from a second account therefore stores rows in account 1 whose
+ * `trade_id` names a trade in another book. Under the account-scoped read and
+ * join those rows are invisible on their holding's /ipos, unreachable for a
+ * sync, and read as UNLINKED by the counted-once consumers — so the same sale
+ * is counted twice across "All accounts" (invariant 8).
+ *
+ * The holding is the fact the user cannot have got wrong: it is the row they
+ * pressed the button on. So the IPO moves to the TRADE's account, and nothing
+ * else moves — `trades` is never written here, and neither is `trade_id`.
+ *
+ * Left exactly as stored, deliberately: a null link (an ordinary application),
+ * a trade already in the same account, a `trade_id` naming a trade that no
+ * longer exists (deleted — the link is history, not a destination), and a trade
+ * whose `accounts` row is gone, which would move the record into a book that
+ * cannot be selected and hide it from every single-account view. Account 0 is a
+ * view and is never written (invariant 9); `t.account_id > 0` refuses it even
+ * if a trade somehow carries it.
+ *
+ * Naturally idempotent — after the move the two account ids are equal, so a
+ * re-run (a restore forgets the markers) selects nothing.
+ */
+function applyIpoAccountRehome(sqlite: Database.Database): DataFixResult {
+  const result: DataFixResult = { name: IPO_ACCOUNT_REHOME_FIX, applied: true, rekeyed: 0, skippedCollisions: 0 };
+  const rows = sqlite
+    .prepare(
+      `SELECT i.id AS id, t.account_id AS account_id
+         FROM ipos i
+         JOIN trades t ON t.id = i.trade_id
+         JOIN accounts a ON a.id = t.account_id
+        WHERE i.trade_id IS NOT NULL
+          AND t.account_id > 0
+          AND t.account_id <> i.account_id
+        ORDER BY i.id`,
+    )
+    .all() as { id: number; account_id: number }[];
+  const rehome = sqlite.prepare("UPDATE ipos SET account_id = ? WHERE id = ?");
+  for (const r of rows) {
+    rehome.run(r.account_id, r.id);
+    result.rekeyed++;
+  }
+  return result;
+}
+
 const FIXES: { name: string; apply: (sqlite: Database.Database) => DataFixResult }[] = [
   { name: PAYTM_DEDUP_FIX, apply: applyPaytmDedupIsin },
+  { name: IPO_ACCOUNT_REHOME_FIX, apply: applyIpoAccountRehome },
 ];
 
 /**

@@ -61,6 +61,59 @@ const M1_REASON = "another product, segment or exchange";
 /** The reasons an ask ON the supersede key carries (unchanged since W2F). */
 const KEY_REASONS = "the recorded row carries detail a replacement would lose";
 
+/**
+ * W2J: the M1 ask's sentence, asserted part by PART rather than byte by byte.
+ * W2I rewrote it deliberately (the remedy counts the STORED rows the plan
+ * named, and the ask now carries the on-key user-record warning and the way
+ * back), and the byte pin that used to live below went red for that. The
+ * word-for-word pin belongs with the pure builder — tests/cross-source.test.ts
+ * pins every byte of each shape; what THIS file owns is that every part of the
+ * sentence reaches the pre-flight message through the REAL preview. Each part
+ * is its own promise to the user: which rows are asked about and why (M1's
+ * reason, never the on-key ones), the path back to the broker's book, what
+ * committing anyway does, and — an M1 ask never reaches planSnapshot's
+ * `carriesUserRecord` check — that the stored row may carry the user's own
+ * record, plus the way back from Deleted items.
+ */
+function expectM1Sentence(message: string, symbol: string): void {
+  // which rows are asked about, and M1's own reason rather than the on-key ones
+  expect(message).toContain(`1 row in this pull (${symbol}) restates an instrument today's earlier pull already recorded under ${M1_REASON}`);
+  expect(message).not.toContain(KEY_REASONS);
+  // the stored row (one here, so singular throughout) is not written over
+  expect(message).toContain("is not written over that row");
+  // the path to the broker's book: that row deleted, the pull run again
+  expect(message).toMatch(/the earlier row can be deleted from Trades and the pull run again/);
+  expect(message).toContain("records the position as the broker now states it");
+  // what a forced commit does
+  expect(message).toMatch(/committing anyway adds this pull's row beside the earlier one/);
+  // W2I: the user-record warning an M1 ask carries, and the way back
+  expect(message).toMatch(/That row may carry a cost basis or journal entry you recorded/);
+  expect(message).toContain("Backup & Restore → Deleted items");
+}
+
+/** Near misses `expectM1Sentence` must refuse — a guard that cannot fail proves nothing. */
+const M1_MUTANTS: [string, string][] = [
+  [
+    "the superseded W2H sentence: no user-record warning, no way back, and 'keeps both rows'",
+    `1 row in this pull (STUCK) restates an instrument today's earlier pull already recorded under ${M1_REASON}, and is not written over that row. ` +
+      "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, " +
+      "which records the position as the broker now states it; committing anyway keeps both rows.",
+  ],
+  [
+    "the on-key ask's reason in place of M1's",
+    "1 row in this pull (STUCK) restates a position today's earlier pull already recorded, and is not written over it: " +
+      `${KEY_REASONS} (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. ` +
+      "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.",
+  ],
+  [
+    "a remedy counting rows that are not stored: two earlier rows named where one is stored",
+    `1 row in this pull (STUCK) restates an instrument today's earlier pull already recorded under ${M1_REASON}, and is not written over those rows. ` +
+      "If the broker converted the position between the two pulls, the 2 earlier rows can be deleted from Trades and the pull run again, " +
+      "which records the position as the broker now states it; committing anyway adds this pull's row beside the earlier ones. " +
+      "Those rows may carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.",
+  ],
+];
+
 const COLUMNS: [string, string, unknown][] = [
   ["acquisition 'bonus'", "acquisition", "bonus"],
   ["an acquisition price", "acquisition_price", 100],
@@ -397,15 +450,15 @@ describe("W2G M1 · a position the BROKER re-classified between two same-day /po
     const pull2 = pullOf([position({ tradingSymbol: "STUCK", productType: "CNC", buyQty: 20, netQty: 20, buyAvg: 100.5 })]);
     const pre = commit.previewParsedFile(pull2, null, ACC_STUCK, DHAN_FILE, dhanSnap);
     expect(pre.crossSource?.collisions.map((c) => [c.symbol, c.kind, c.sameSnapshot, c.existing.id])).toEqual([["STUCK", "partial-quantity", true, noon!.id]]);
-    // THE assertion (on revert: "…restates a position today's earlier pull already recorded, and is not written over it:
+    // THE assertions (on revert: "…restates a position today's earlier pull already recorded, and is not written over it:
     // the recorded row carries detail a replacement would lose (…), or more than one position shares its instrument. …").
-    expect(pre.crossSource?.message).toBe(
-      `1 row in this pull (STUCK) restates an instrument today's earlier pull already recorded under ${M1_REASON}, and is not written over that row. ` +
-        "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, " +
-        "which records the position as the broker now states it; committing anyway keeps both rows.",
-    );
-    // The dialog shows this sentence word for word: pinned on the same string in tests/cross-source.test.ts
-    // (importing the client component here would push this file's beforeAll past its 3 s budget).
+    // W2J: pinned part by part (expectM1Sentence, above) after W2I rewrote this sentence for good reasons.
+    const m1 = pre.crossSource?.message ?? "";
+    expectM1Sentence(m1, "STUCK");
+    // …and that guard can fail: the superseded sentence and two near misses are refused.
+    for (const [label, mutant] of M1_MUTANTS) expect(() => expectM1Sentence(mutant, "STUCK"), label).toThrow();
+    // The dialog shows this sentence word for word: pinned byte for byte on the pure builder in
+    // tests/cross-source.test.ts (importing the client component here would push this file's beforeAll past its 3 s budget).
 
     // The path the sentence names: the earlier row deleted, the same pull again — no question, and the book is the broker's.
     t.sqlite.prepare("DELETE FROM trades WHERE id = ?").run(noon!.id);

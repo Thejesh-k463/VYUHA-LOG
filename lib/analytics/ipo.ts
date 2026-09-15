@@ -351,7 +351,17 @@ export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = seedFallba
   let chargeBreakdown: ChargeBreakdown | null = null;
 
   if (status === "exited" && i.exitPrice != null) {
-    grossPnl = r2((i.exitPrice - effectiveCost) * allottedQty);
+    // ONE gross arithmetic (v4.3.0 wave 2I). The value-based form, identical to
+    // the one `tradePatchFromIpo` books onto the linked holding
+    // (lib/analytics/ipo-link.ts: r2(sellValue) − r2(buyValue), where buyValue
+    // IS `investedAllotted`). The per-share form r2((exit − cost) × qty) rounds
+    // the opposite way for a price carrying 3+ decimals — exit 150.005 over a
+    // cost of 99.995, qty 3: 150.01 here against 150.02 on the trade row — so
+    // /ipos showed one figure while the Trades row, the capital summary (which
+    // counts the trade under CAP-IPO-LINK), the tax pack and the ITR export
+    // showed another, one paisa apart. The trade row must be self-consistent
+    // (sellValue − buyValue), so the IPO adopts its form rather than the reverse.
+    grossPnl = r2(r2(i.exitPrice * allottedQty) - investedAllotted);
     // N13: an unreadable exit date is never handed to a charger — not yet priced.
     const priced =
       !i.exitDate || isPriceableExitDate(i.exitDate)

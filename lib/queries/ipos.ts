@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { ipos, trades } from "@/lib/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { computeIpo, ipoRatesDate, ipoSellChargeBreakdown, ipoVenue, isPriceableExitDate, summariseIpos, type IpoComputed, type IpoSellCharger, type IpoSummary } from "@/lib/analytics/ipo";
 import { findRates, statutoryRatesFor } from "@/lib/engine/rates";
 import type { ChargeBreakdown, ChargeRates } from "@/lib/engine/types";
@@ -110,7 +110,12 @@ export function chargerFor(
  * quantity and price, so the form pre-fills the holding's date only for the IPO's own sale.
  */
 export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } {
-  const accountId=getSelectedAccountId(); const q=db.select({ ipo: ipos, linkedTradeId: trades.id, linkedSellDate: trades.sellDate, linkedSellQty: trades.sellQty, linkedSellPrice: trades.avgSellPrice }).from(ipos).leftJoin(trades, eq(trades.id, ipos.tradeId)); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
+  // The join is account-scoped too (invariant 8, wave 2I): an IPO and the holding
+  // it became belong to ONE book, so a trade_id naming another account's row reads
+  // as NOT LINKED rather than surfacing that book's sale date, quantity and price
+  // on this form — and the route, which re-reads the trade in the IPO's account,
+  // then writes nothing to it.
+  const accountId=getSelectedAccountId(); const q=db.select({ ipo: ipos, linkedTradeId: trades.id, linkedSellDate: trades.sellDate, linkedSellQty: trades.sellQty, linkedSellPrice: trades.avgSellPrice }).from(ipos).leftJoin(trades, and(eq(trades.id, ipos.tradeId), eq(trades.accountId, ipos.accountId))); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
   const ratesMap = loadRatesMap();
   const rows = raw.map(({ ipo: r, linkedTradeId, linkedSellDate, linkedSellQty, linkedSellPrice }) => ({
     ...computeIpo({
@@ -158,7 +163,13 @@ export function getIpoRealisedNet(opts: { countedTradeIds?: ReadonlySet<number> 
   const throughTrade = new Set<number>();
   if (counted && counted.size > 0) {
     const accountId = getSelectedAccountId();
-    const q = db.select({ id: ipos.id, tradeId: ipos.tradeId }).from(ipos);
+    // The link is read through the same account-scoped join `getIposComputed`
+    // uses (wave 2I): a trade_id naming another account's row is NOT a link, so
+    // it can neither suppress this IPO's net nor claim that book's sale.
+    const q = db
+      .select({ id: ipos.id, tradeId: trades.id })
+      .from(ipos)
+      .leftJoin(trades, and(eq(trades.id, ipos.tradeId), eq(trades.accountId, ipos.accountId)));
     for (const r of (accountId > 0 ? q.where(eq(ipos.accountId, accountId)) : q).all()) {
       if (r.tradeId != null && counted.has(r.tradeId)) throughTrade.add(r.id);
     }

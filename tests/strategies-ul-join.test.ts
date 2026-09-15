@@ -98,7 +98,18 @@ const ADMIT_B = 9;
 const ALONE_NAME = 10;
 const RB_CALL = 11;
 const RA_SHARES = 12;
-const EVERY_ACCOUNT = [PRIMARY, SWING, BASIS, NET_A, NET_B, NAMES, NAMES_BOTH, ADMIT_A, ADMIT_B, ALONE_NAME, RB_CALL, RA_SHARES];
+/**
+ * I6 (fix wave 2I): the ISIN the join matches on, stored NON-canonically -
+ * lower-case and padded, which is how a broker cell can reach the column
+ * (generic-map trims the cell but does not upper-case it; the Angel One /
+ * Upstox and Groww parsers store it raw). CB holds the security under its OWN
+ * call; CA holds the same call and no units. The instrument is immaterial to
+ * the predicate under test - NIFTYBEES is the ticker the bundled snapshot
+ * resolves to INF204KB14I2.
+ */
+const CASE_A = 13;
+const CASE_B = 14;
+const EVERY_ACCOUNT = [PRIMARY, SWING, BASIS, NET_A, NET_B, NAMES, NAMES_BOTH, ADMIT_A, ADMIT_B, ALONE_NAME, RB_CALL, RA_SHARES, CASE_A, CASE_B];
 
 let t: TempDb;
 let trades: typeof import("@/lib/queries/trades");
@@ -177,6 +188,8 @@ beforeAll(async () => {
       { id: ALONE_NAME, name: "FA", isDefault: false },
       { id: RB_CALL, name: "RB", isDefault: false },
       { id: RA_SHARES, name: "RA", isDefault: false },
+      { id: CASE_A, name: "Case A", isDefault: false },
+      { id: CASE_B, name: "Case B", isDefault: false },
     ])
     .run();
   t.db
@@ -254,6 +267,20 @@ beforeAll(async () => {
       // H6 — RB: short RELIANCE 1500 CE, 100 @ 5; RA: RELIANCE shares 100 @ 1400, no option of RA's own.
       shortCall(RB_CALL, "RELIANCE", 1500, 100, 5),
       tradeRow({ accountId: RA_SHARES, symbol: "RELIANCE", tradingsymbol: "RELIANCE", isOpen: true, buyQty: 100, avgBuyPrice: 1400 }),
+      // I6 (fix wave 2I) - CB: a short NIFTYBEES 300 CE over 100 units held under the
+      // COMPANY NAME, with the ISIN stored lower-case AND padded. CA: a NIFTYBEES 320 CE
+      // and no units at all - CB's holding stays CB's in every view.
+      shortCall(CASE_B, "NIFTYBEES", 300, 100, 5),
+      tradeRow({
+        accountId: CASE_B,
+        symbol: "Nippon India ETF Nifty BeES",
+        tradingsymbol: "Nippon India ETF Nifty BeES",
+        isin: " inf204kb14i2 ",
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 280,
+      }),
+      shortCall(CASE_A, "NIFTYBEES", 320, 100, 4),
       // D3 (W2-FIXB) — one delivery holding of 100 under 100 short calls per symbol, and a sale beside it.
       // ITC: a v4.2.0 Angel One / Upstox sale, acquisition NULL, no price — basis NOT recorded: nets.
       shortCall(BASIS, "ITC", 450, 100, 5),
@@ -785,6 +812,67 @@ describe("H6 — All accounts shows each account's own cards, and no card built 
     expect(all.filter((g) => "accountId" in g || g.legs.some((l) => "accountId" in l) || g.ulLegs.some((l) => "accountId" in l))).toEqual([]);
     // A single account keeps the engine's own key, unchanged.
     expect(clientGroups(PRIMARY).find((g) => g.symbol === "RELIANCE")?.key).toBe("RELIANCE");
+  });
+});
+
+/**
+ * I6 (v4.3.0 fix wave 2I; the wave-2H re-check's "strategies" finding). H6's
+ * two predicates were equal in ONE direction only: the page's admitting map
+ * canonicalises a stored ISIN (`isin.trim().toUpperCase()`) while the query's
+ * ISIN branch compared the column RAW. So a holding whose stored ISIN differed
+ * from the canonical form only in case or padding was invisible to its OWN
+ * account's query — and on 0 another account's ticker could still carry it in,
+ * where its own account's map then admitted it and bounded a call that reads
+ * Unlimited in that account's own view. Both sides now compare the canonical
+ * form, so the holding is found where it is held, in every view.
+ */
+describe("I6 — the query's ISIN branch compares the canonical form, exactly as the page's admitting map does", () => {
+  /** Every NIFTYBEES card in the view given, as the page just built it. */
+  const cardsIn = (id: number) => {
+    select(id);
+    // The markup is not needed here: the page's own buildStrategies output is
+    // recorded when the page function runs (see L5's note on the cost).
+    runPage();
+    const out = seen.groups
+      .filter((g) => g.symbol === "NIFTYBEES")
+      .map((g) => [
+        // The OPTION strikes: a UL leg carries a 0 placeholder, never a level.
+        g.legs.filter((l) => l.kind !== "UL").map((l) => l.strike).sort((a, b) => a - b).join("/"),
+        g.strategyId,
+        g.capLabel.maxLoss,
+        g.ulLegs.map((l) => [l.side, l.qty, l.premium]),
+      ])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    select(PRIMARY);
+    return out;
+  };
+
+  it("the fixture is the trap: the stored ISIN is the option symbol's own bundled ISIN, lower-cased and padded", () => {
+    expect(bundledIsinBySymbol("NIFTYBEES")).toBe("INF204KB14I2");
+    const stored = " inf204kb14i2 ";
+    expect(stored, "the fixture stores the canonical form and tests nothing").not.toBe(bundledIsinBySymbol("NIFTYBEES"));
+    expect(stored.trim().toUpperCase()).toBe(bundledIsinBySymbol("NIFTYBEES"));
+  });
+
+  it("CB's own single-account read returns the holding: the query canonicalises the column as the page canonicalises its key", () => {
+    select(CASE_B);
+    const rows = trades.getOpenUnderlyingPositions().map((r) => [r.symbol, r.isin, r.buyQty]);
+    select(PRIMARY);
+    // Measured before (a raw `inArray(trades.isin, optionIsins)`): [] — the row was
+    // invisible to the only account that holds it.
+    expect(rows).toEqual([["Nippon India ETF Nifty BeES", " inf204kb14i2 ", 100]]);
+  });
+
+  it("CB's call is bounded alone and reads the IDENTICAL card on 0; CA's call stays Unlimited in both views", () => {
+    const cb = cardsIn(CASE_B);
+    const ca = cardsIn(CASE_A);
+    // Measured before: CB alone was [["300", "short-call", "Unlimited", []]] — the
+    // units CB holds, under CB's own call, never reached the card.
+    expect(cb).toEqual([["300", "covered-call", "Computed at underlying = 0", [["long", 100, 280]]]]);
+    expect(ca, "CA holds no units; another account's holding must never bound its call").toEqual([["320", "short-call", "Unlimited", []]]);
+    // 0 is a view (invariant 9), and H6's headline: each account's card, exactly as
+    // that account's own view shows it. CB's 300 sorts before CA's 320.
+    expect(cardsIn(ALL), "a NIFTYBEES card changed between a single account and All accounts").toEqual([...cb, ...ca]);
   });
 });
 

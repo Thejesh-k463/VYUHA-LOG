@@ -132,15 +132,23 @@ describe("H3 — a Trash restore never re-inserts a sale a Data Quality join rec
     expect(rowsOf(ACC).map((r) => r.id)).toEqual([L1.id, L2.id, X.id]);
   });
 
-  it("one snapshot carrying BOTH the joined lot and its sale (e.g. a broker-remove of a book restored before H3): the lot lands, the sale after it is skipped", () => {
+  // Y1 (wave 2I) re-pin. Wave 2H asserted [1, [90_002]] here — the lot landed and
+  // the sale behind it was skipped "recorded in the position it closed". Both rows
+  // come out of the SAME book in the SAME delete, so the journal they were captured
+  // from held them side by side: the snapshot is restored to the state it was taken
+  // from, and only a row ALREADY STORED refuses or skips (the S2/T1 describes below).
+  it("one snapshot carrying BOTH the joined lot and its sale (a book deleted whole): both land, the book is the one that was captured", () => {
     const ACC2 = 952;
     t.db.insert(t.schema.accounts).values({ id: ACC2, name: "trash-alias-both" }).run();
     const lot = { ...row(L1.id)!, id: 90_001, accountId: ACC2 } as unknown as Record<string, unknown> & { id: number };
     const sale = { ...S1, id: 90_002, accountId: ACC2 } as unknown as Record<string, unknown> & { id: number };
     const id = trash.writeTrashSnapshot({ trades: [lot, sale], legs: [], attachments: [], reason: "H3 lot and sale", accountId: ACC2 });
     const res = trash.restoreTrashSnapshot(id);
-    expect([res.restored, res.skipped.map((s) => s.id)]).toEqual([1, [90_002]]);
-    expect(rowsOf(ACC2).map((r) => [r.id, r.isOpen, r.sellQty])).toEqual([[90_001, false, 100]]);
+    expect([res.ok, res.restored, res.skipped.map((s) => s.id)], res.message).toEqual([true, 2, []]);
+    expect(rowsOf(ACC2).map((r) => [r.id, r.isOpen, r.sellQty])).toEqual([
+      [90_001, false, 100],
+      [90_002, true, 100],
+    ]);
   });
 });
 
@@ -273,7 +281,12 @@ describe("T1 — a Trash restore refuses a lot whose sale is recorded only as AN
     expect(trash.listTrashSnapshots().find((s) => s.id === lotSnapshot), "the snapshot is kept, unchanged").toEqual(listedBefore);
   });
 
-  it("one snapshot holding the sale BEFORE the lot that closed with it: the lot meets the sale landed earlier in the same restore and the whole restore refuses", () => {
+  // Y1 (wave 2I) re-pin. Wave 2H refused this whole restore (ok false, message
+  // "…was closed with a sale this snapshot also holds…"). A row landing earlier in
+  // the SAME restore is not a stored row: the pair was consistent in the book the
+  // snapshot was taken from, so it is restored as it was — in either order (the H3
+  // describe above pins the lot-first ordering).
+  it("one snapshot holding the sale BEFORE the lot that closed with it: both land, whichever order the snapshot holds them in", () => {
     const ACC5 = 955;
     t.db.insert(t.schema.accounts).values({ id: ACC5, name: "trash-alias-t1-order" }).run();
     const lotRow = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.accountId, ACC4)).all().find((r) => !r.isOpen)!;
@@ -288,12 +301,11 @@ describe("T1 — a Trash restore refuses a lot whose sale is recorded only as AN
       accountId: ACC5,
     });
     const res = trash.restoreTrashSnapshot(id);
-    expect([res.ok, res.restored, res.skipped]).toEqual([false, 0, []]);
-    expect(res.message).toBe(
-      `Trade #91002 (${SYM4}) was closed with a sale this snapshot also holds (trade #91001, ${SYM4}) — ` +
-        `restoring both would count that sale twice. Nothing was changed.`,
-    );
-    expect(rowsOf(ACC5)).toEqual([]);
+    expect([res.ok, res.restored, res.skipped], res.message).toEqual([true, 2, []]);
+    expect(rowsOf(ACC5).map((r) => [r.id, r.isOpen, r.buyQty, r.sellQty])).toEqual([
+      [91_001, true, 0, 100],
+      [91_002, false, 100, 100],
+    ]);
   });
 });
 
@@ -435,6 +447,110 @@ describe("V1 — an alias records the sale only while its lot still closes on it
     expect(rowsOf(ACC8).map((r) => [r.isOpen, r.buyQty, r.sellQty, r.sellValue])).toEqual([
       [true, 100, 0, 0],
       [true, 0, 100, 25000],
+    ]);
+  });
+});
+
+/**
+ * Y1 (v4.3.0 wave 2I) — a snapshot is restored to the state it was CAPTURED
+ * from.
+ *
+ * T1's `planned` branch refused the whole restore when a row landing earlier in
+ * the same restore held the incoming row's identity. But both rows came out of
+ * the same book in the same delete: the journal held the joined lot and the sale
+ * side by side, so restoring both restores exactly that book. Refusing it lost
+ * the snapshot's OTHER rows too (an account-deletion snapshot: every trade, plus
+ * the imports, sessions, capital history, IPOs, ledger and reviews that come back
+ * with it), permanently and with no remedy — nothing was stored to delete.
+ *
+ * The refusal (S2/T1) and the skip (H3) apply ONLY against a row ALREADY STORED
+ * in the journal, which is pinned again at the end of this describe.
+ */
+describe("Y1 — a self-consistent snapshot restores whole", () => {
+  const ACC9 = 959;
+  const SYM9 = "TRASHJ";
+  let L: NonNullable<ReturnType<typeof row>>;
+  let S: NonNullable<ReturnType<typeof row>>;
+  let O: NonNullable<ReturnType<typeof row>>;
+  const join = (lotId: number, saleId: number) =>
+    route.POST(
+      new Request("http://local/api/data-quality/close-stale", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lotId, saleId, exitDate: "2026-08-25" }),
+      }),
+    );
+
+  it("(a) the joined lot and the sale its alias names, deleted together: both come back, the alias intact, Data Quality reading exactly what it read before", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC9, name: "trash-alias-y1" }).run();
+    t.db.update(t.schema.settings).set({ selectedAccountId: ACC9 }).run();
+    expect(commit.commitParsedFile(buy(SYM9, 100, 200, "2026-08-20"), "ty1-l", null, ACC9).added).toBe(1);
+    expect(commit.commitParsedFile(sell(SYM9, 100, 250, "2026-08-25"), "ty1-s", null, ACC9).added).toBe(1);
+    [L, S] = rowsOf(ACC9);
+    // How the book gets there with no user mistake: join, re-open the lot in the
+    // editor (the alias is kept but no longer held — V1), restore the join's
+    // snapshot so the sale comes back, then re-close the lot in the editor.
+    expect((await join(L.id, S.id)).status).toBe(200);
+    const joinSnapshot = trash.listTrashSnapshots().find((s) => s.reason.startsWith(`joined to trade #${L.id} (`))!.id;
+    expect(commit.updateManualTrade(L.id, { sellQty: 0, avgSellPrice: 0, sellDate: null }).ok).toBe(true);
+    expect(trash.restoreTrashSnapshot(joinSnapshot).restored, "the sale returns (V1)").toBe(1);
+    expect(commit.updateManualTrade(L.id, { sellQty: 100, avgSellPrice: 250, sellDate: "2026-08-25" }).ok).toBe(true);
+    expect(row(L.id)!.importNotes ?? "", "the lot records the sale again").toContain(`dedup-alias:${S.dedupHash}`);
+
+    const before = rowsOf(ACC9);
+    const listingBefore = dq.getStaleOpenSection();
+    const del = (await import("@/lib/queries/delete")).deleteTradesByIds([L.id, S.id], "Y1: the pair removed together", "test");
+    expect(del.ok).toBe(true);
+    expect(rowsOf(ACC9)).toEqual([]);
+
+    const res = trash.restoreTrashSnapshot(del.snapshotId!);
+    // On revert: {ok:false, restored:0} and "Trade #<L> (TRASHJ) was closed with a
+    // sale this snapshot also holds (trade #<S>, TRASHJ) — restoring both would
+    // count that sale twice. Nothing was changed."
+    expect([res.ok, res.restored, res.skipped], res.message).toEqual([true, 2, []]);
+    expect(rowsOf(ACC9), "the book is the one the snapshot was taken from").toEqual(before);
+    expect(row(L.id)!.importNotes ?? "").toContain(`dedup-alias:${S.dedupHash}`);
+    expect(dq.getStaleOpenSection(), "and Data Quality says what it said before the delete").toEqual(listingBefore);
+  });
+
+  it("(b) the same pair inside an ACCOUNT-deletion snapshot: every row comes back, the unrelated ones included", async () => {
+    expect(commit.commitParsedFile(buy("OTHERJ", 5, 40, "2026-08-22"), "ty1-o", null, ACC9).added).toBe(1);
+    O = rowsOf(ACC9).find((r) => r.tradingsymbol === "OTHERJ")!;
+    const before = rowsOf(ACC9);
+    const del = (await import("@/lib/queries/account-delete")).deleteAccount({ accountId: ACC9, mode: "purge", connections: "delete" });
+    expect([del.ok, del.snapshotId != null], del.message).toEqual([true, true]);
+    expect(rowsOf(ACC9)).toEqual([]);
+
+    const res = trash.restoreTrashSnapshot(del.snapshotId!);
+    // On revert: {ok:false, restored:0} — the whole account lost, the unrelated
+    // OTHERJ trade with it, and the refusal names nothing to delete.
+    expect([res.ok, res.restored, res.skipped], res.message).toEqual([true, 3, []]);
+    expect(rowsOf(ACC9)).toEqual(before);
+    expect(t.db.select().from(t.schema.accounts).where(eq(t.schema.accounts.id, ACC9)).get()?.name).toBe("trash-alias-y1");
+    expect(rowsOf(ACC9).map((r) => r.id)).toContain(O.id);
+    t.db.update(t.schema.settings).set({ selectedAccountId: ACC9 }).run();
+  });
+
+  it("(c) unchanged against a STORED row: the lot beside the stored sale is still refused, the sale beside the lot that records it still skipped", async () => {
+    const del = await import("@/lib/queries/delete");
+    const lotSnapshot = del.deleteTradesByIds([L.id], "Y1: the lot alone", "test").snapshotId!;
+    const before = rowsOf(ACC9);
+    const refused = trash.restoreTrashSnapshot(lotSnapshot);
+    expect([refused.ok, refused.restored, refused.skipped]).toEqual([false, 0, []]);
+    expect(refused.message).toBe(
+      `Trade #${L.id} (${SYM9}) was closed with a sale that is back in the journal (trade #${S.id}, ${SYM9}) — ` +
+        `restoring it would count that sale twice. Delete that row, then restore. Nothing was changed.`,
+    );
+    expect(rowsOf(ACC9)).toEqual(before);
+
+    const saleSnapshot = del.deleteTradesByIds([S.id], "Y1: the sale alone", "test").snapshotId!;
+    expect(trash.restoreTrashSnapshot(lotSnapshot).restored, "with the sale gone, the lot restores").toBe(1);
+    const skipped = trash.restoreTrashSnapshot(saleSnapshot);
+    expect([skipped.restored, skipped.skipped.map((s) => s.id)]).toEqual([0, [S.id]]);
+    expect(skipped.skipped[0].reason).toMatch(/recorded in the position it closed/);
+    expect(rowsOf(ACC9).map((r) => [r.id, r.isOpen])).toEqual([
+      [L.id, false],
+      [O.id, true],
     ]);
   });
 });

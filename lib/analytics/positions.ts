@@ -122,12 +122,16 @@ export function deriveOpenPositions(
       const isMtf = t.segment === "eq_mtf";
       // Reuse the persisted funded amount (set at entry, reused by accrual/close —
       // never the full invested value, which assumes 100% broker financing).
-      // Fallback only covers a row that predates both the column and its first
-      // accrual pass.
+      // A STORED 0 IS A STATED AMOUNT — the position paid for in full out of own
+      // capital — and is kept, the same null-vs-0 rule every writer follows
+      // (V3/X2, lib/import/commit.ts and lib/jobs/mtf-accrual.ts) and the same
+      // one the Trades table's own cell already reads (`investedSummary` in
+      // lib/domain/trade-columns.ts). Substituting the estimate for a stated 0
+      // reported `ownCapital` and `roiOnCapitalPct` against a denominator the
+      // journal never recorded (invariant 6). Only a null — a row predating both
+      // the column and its first accrual pass — is estimated.
       const fundedAmount = isMtf
-        ? t.mtfFundedAmount && t.mtfFundedAmount > 0
-          ? t.mtfFundedAmount
-          : defaultMtfFundedAmount(invested, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT)
+        ? t.mtfFundedAmount ?? defaultMtfFundedAmount(invested, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT)
         : 0;
       const ownCapital = isMtf ? Math.round((invested - fundedAmount) * 100) / 100 : 0;
       const riskAmount = t.riskAmount;

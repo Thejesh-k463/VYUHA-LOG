@@ -461,6 +461,15 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   // (`heldIdentityHashes`, lib/import/close-open-lots.ts): this index, H3's skip
   // in the transaction below and import dedup in commit.ts. An alias that is not
   // held is not identity, so it is never indexed.
+  //
+  // Y1 (wave 2I) — a snapshot is restored to the state it was CAPTURED from.
+  // Rows landing in the SAME restore came out of the same book in the same
+  // delete, so the journal held them side by side and restoring both restores
+  // exactly that book: a PLANNED holder is never a collision, in either order.
+  // T1 refused the whole snapshot there, which lost its unrelated rows too —
+  // for an account-deletion snapshot, the entire book — permanently, and named
+  // no remedy because nothing was stored to delete. The refusal and the skip
+  // apply ONLY against a row ALREADY STORED in the journal.
   {
     type Holder = RowLegs & { id: number; tradingsymbol: string; planned: boolean };
     // The closing leg's name only where the row states its direction; a closed
@@ -509,7 +518,10 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
       // The unique index skips it (a stored row, or one landing earlier here).
       if (index.own.has(ownHash)) continue;
       // H3's skip below: a plain row already recorded in the position it closed.
-      if (aliases.length === 0 && index.alias.has(ownHash)) continue;
+      // Y1: only where that holder is STORED — a holder landing in this same
+      // restore was beside this row in the book the snapshot was taken from.
+      const ownHolder = index.alias.get(ownHash);
+      if (aliases.length === 0 && ownHolder && !ownHolder.planned) continue;
       const symbol = String(row.tradingsymbol ?? row.symbol ?? "—");
       for (const h of [ownHash, ...aliases]) {
         const byOwn = index.own.get(h);
@@ -518,12 +530,10 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
         if (!hit) continue;
         const oneSided = (hit.sellQty > 0 && hit.buyQty === 0) || (hit.buyQty > 0 && hit.sellQty === 0);
         const what = !byOwn ? closingWord(hit) : hit.sellQty > 0 && hit.buyQty === 0 ? "sale" : hit.buyQty > 0 && hit.sellQty === 0 ? "purchase" : "closing trade";
-        if (hit.planned) {
-          return fail(
-            `Trade #${row.id} (${symbol}) was closed with a ${what} this snapshot also holds (trade #${hit.id}, ${hit.tradingsymbol}) — ` +
-              `restoring both would count that ${what} twice. Nothing was changed.`,
-          );
-        }
+        // Y1: the holder is a row of this same snapshot, not a stored row —
+        // the pair was consistent in the book that was deleted, so both rows
+        // come back as they were. `what` is unused on this path.
+        if (hit.planned) continue;
         if (h === ownHash) {
           // (a) the holder is a lot recording this row as its alias: it carries
           // its own leg, so nothing here advises deleting it.
@@ -597,8 +607,10 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
       // (account, broker). The unique index sees only each row's own hash, but a
       // Data Quality join keeps the sale it consumed as a `dedup-alias:` on the
       // lot (`withStaleCloseNote`), so restoring that sale would count it twice.
-      // Read lazily per book, inside this transaction; a row landing below adds
-      // its own aliases.
+      // Read lazily per book, inside this transaction — and the picture it takes
+      // is the STORED one: the first row of a book is checked before any row of
+      // that book is inserted, and Y1 adds nothing afterwards, so a snapshot's
+      // own rows never make each other skip (they were in that book together).
       const aliasesByBook = new Map<string, Set<string>>();
       const aliasesOf = (accountId: number, broker: string): Set<string> => {
         const key = `${accountId}|${broker}`;
@@ -635,11 +647,9 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           tx.insert(trades).values(row as any).run();
           landed.add(row.id);
           restored++;
-          if (book && typeof row.dedupHash === "string") {
-            const notes = typeof row.importNotes === "string" ? row.importNotes : null;
-            const set = aliasesOf(book.accountId, book.broker);
-            for (const h of heldIdentityHashes({ dedupHash: row.dedupHash, importNotes: notes, ...legsOf(row) })) if (h !== row.dedupHash) set.add(h.toLowerCase());
-          }
+          // Y1: a row landing HERE never makes a later row of the same snapshot
+          // skip — they were in the book together, so the set stays the STORED
+          // picture it was built from (and the pre-flight above agrees).
         } catch (e) {
           // Almost always the dedup unique index: the same file was imported
           // again after the delete, so this trade is already back.

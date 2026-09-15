@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { trades, ipos as iposTable } from "@/lib/db/schema";
+import { trades, tradeLegs, ipos as iposTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { commitManualTrade, applyOverride, closePosition, updateManualTrade, type UpdateTradeFields } from "@/lib/import/commit";
 import { deleteTradesByIds, deleteImportBatch } from "@/lib/queries/delete";
@@ -14,7 +14,7 @@ import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
 import { recordAudit } from "@/lib/audit";
-import { AccountRequiredError } from "@/lib/queries/accounts";
+import { AccountRequiredError, getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import {
   addLeg,
   updateLeg,
@@ -28,9 +28,11 @@ export type ActionState = {
   message: string;
   tradeId?: number | null;
   /** Stable refusal code — `ACCOUNT_REQUIRED` when the write has no account
-   *  to land on (All accounts selected, no accountId in the form). The
+   *  to land on (All accounts selected, no accountId in the form); `STAGED`
+   *  when the row holds `trade_legs` and the write would leave the parent
+   *  aggregate unsummed (the same code `closePosition` returns). The
    *  server-action analogue of the routes' 400 `{code}`. */
-  code?: "ACCOUNT_REQUIRED";
+  code?: "ACCOUNT_REQUIRED" | "STAGED";
 };
 
 const num = (v: FormDataEntryValue | null) => {
@@ -538,13 +540,53 @@ export async function setAcquisitionAction(_prev: ActionState, formData: FormDat
  * Nothing is guessed here. The issue price is left blank unless the holding
  * genuinely has a purchase price, because that price is precisely the fact the
  * journal is missing.
+ *
+ * IPO-ACCOUNT (v4.3.0 wave 2I): the record is filed in the HOLDING's account.
+ * The insert named no accountId, so the column took its schema default of 1
+ * whatever book the holding was in — after which the holding's own account
+ * could not see the record, account 1's /ipos showed it joined to the other
+ * book's holding, and an exit saved there closed that holding across the
+ * boundary (invariant 8). The holding itself is read in the viewing scope, so a
+ * stale tab cannot reach into a book the user is not in, and 0 never reaches
+ * the column (invariant 9).
  */
 export async function pushTradeToIpoAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const id = Number(formData.get("tradeId"));
   if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
 
+  const viewing = getSelectedAccountId();
   const row = db.select().from(trades).where(eq(trades.id, id)).get();
-  if (!row) return { ok: false, message: "Trade not found." };
+  if (!row || (viewing > 0 && row.accountId !== viewing)) {
+    return { ok: false, message: "That holding is not in the account you are viewing." };
+  }
+
+  // Invariant 5: the parent row always holds the aggregate, and legs are additive
+  // detail. An IPO rewrites the parent's quantity, basis and dates from the
+  // allotment with no knowledge of legs and no leg write, so a staged holding
+  // would stop being the sum of its ladder. Refused at both doors (the other is
+  // POST /api/ipos), in the shape closePosition's own STAGED refusal uses.
+  if (row.staged || db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, id)).all().length > 0) {
+    return {
+      ok: false,
+      code: "STAGED",
+      message:
+        "This is a staged position built from more than one fill, so it is not pushed to IPOs: an IPO record would rewrite the parent row from its allotment and leave the ladder unsummed. Its entries and exits are booked on its own ladder in Trades. Nothing was changed.",
+    };
+  }
+
+  // Invariant 9: 0 is a view, not a place. The holding's own account is the one
+  // real account this record can belong to; a holding whose account no longer
+  // exists has nowhere to file it.
+  let accountId: number;
+  try {
+    accountId = getWriteAccountId(row.accountId);
+  } catch (e) {
+    if (e instanceof AccountRequiredError) return { ok: false, code: e.code, message: e.message };
+    return { ok: false, message: (e as Error).message };
+  }
+  if (accountId !== row.accountId) {
+    return { ok: false, message: "This holding's account no longer exists, so there is nowhere to file the IPO record. Nothing was changed." };
+  }
 
   const existing = db.select().from(iposTable).where(eq(iposTable.tradeId, id)).get();
   if (existing) {
@@ -564,6 +606,7 @@ export async function pushTradeToIpoAction(_prev: ActionState, formData: FormDat
   const created = db
     .insert(iposTable)
     .values({
+      accountId,
       name: seed.name,
       exchange: seed.exchange,
       board: "mainboard",
@@ -588,11 +631,18 @@ export async function pushTradeToIpoAction(_prev: ActionState, formData: FormDat
     .where(eq(trades.id, id))
     .run();
 
+  // ONE key list on both sides (lib/audit.ts, the single-binding convention):
+  // `before: { acquisition }` against `after: { acquisition, ipoId }` rendered
+  // ipoId as a change on a key the before-snapshot never had, and — because
+  // AuditShapeError THROWS outside production — rejected this action in dev and
+  // test AFTER the insert and the trade UPDATE had run, which is why nothing
+  // covered it.
   recordAudit({
     entity: "trade",
+    entityId: id,
     action: "update",
     summary: `${row.symbol}: pushed to IPOs as an allotment (IPO #${created!.id})`,
-    before: { acquisition: row.acquisition },
+    before: { acquisition: row.acquisition, ipoId: null },
     after: { acquisition: "ipo", ipoId: created!.id },
   });
 

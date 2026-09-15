@@ -23,6 +23,7 @@ import {
 } from "@/lib/db/schema";
 import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { carryUnfetchedOnMerge } from "@/lib/import/dhan-unfetched";
+import { heldIdentityHashes, type RowLegs } from "@/lib/import/close-open-lots";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
 import { forEachIdChunk, collectIdChunks } from "./delete";
 
@@ -51,7 +52,10 @@ import { forEachIdChunk, collectIdChunks } from "./delete";
  *     ledger_entries.refTradeId) survives untouched. Trades carry
  *     UNIQUE(account_id, broker, dedup_hash): colliding source trades are
  *     snapshotted and deleted, and the skip count is reported — a silent drop
- *     would make the merge look lossless when it was not.
+ *     would make the merge look lossless when it was not. An `ipos` row naming
+ *     a dropped duplicate is RE-POINTED at the target's surviving copy of that
+ *     trade (wave 2K) rather than unlinked: they are the same trade, and an
+ *     unlinked exited IPO beside the target's copy counted the sale twice.
  *
  * ── Account scoping is an EXPLICIT parameter here, deliberately ─────────────
  *
@@ -264,14 +268,104 @@ function gatherCounts(accountId: number): AccountDeleteCounts {
   };
 }
 
-/** merge: source trade ids whose (broker, dedup_hash) the target already holds. */
-function dedupCollisionIds(accountId: number, targetId: number): number[] {
-  const rows = db.all(
-    sql`select s.id as id from ${trades} s join ${trades} t
-        on t.account_id = ${targetId} and t.broker = s.broker and t.dedup_hash = s.dedup_hash
-        where s.account_id = ${accountId}`,
-  ) as { id: number }[];
-  return rows.map((r) => r.id);
+/** The identity columns of one book's trades, as `heldIdentityHashes` reads them. */
+const IDENTITY_COLS = {
+  id: trades.id,
+  broker: trades.broker,
+  tradingsymbol: trades.tradingsymbol,
+  dedupHash: trades.dedupHash,
+  importNotes: trades.importNotes,
+  buyQty: trades.buyQty,
+  sellQty: trades.sellQty,
+  buyDate: trades.buyDate,
+  sellDate: trades.sellDate,
+};
+type IdentityRow = { id: number; broker: string; tradingsymbol: string; dedupHash: string; importNotes: string | null } & RowLegs;
+
+/**
+ * What a row the target HOLDS is, read from its own legs: a sell-only row is a
+ * sale, a buy-only row a purchase. Only used to name a row in a sentence.
+ */
+const rowKind = (x: RowLegs) => (x.sellQty > 0 && x.buyQty === 0 ? "sale" : x.buyQty > 0 && x.sellQty === 0 ? "purchase" : "trade");
+
+/**
+ * Y2 (v4.3.0 wave 2I) — the one fact both the preview and the refusal state.
+ * Tenseless, so the two cannot drift: each caller adds its own tail.
+ */
+function identityClash(pair: { source: IdentityRow; target: IdentityRow }, targetName: string): string {
+  const what = rowKind(pair.target);
+  return (
+    `Trade #${pair.source.id} (${pair.source.tradingsymbol}) was closed with a ${what} that “${targetName}” already holds ` +
+    `(trade #${pair.target.id}, ${pair.target.tradingsymbol}) — moving it would count that ${what} twice`
+  );
+}
+
+/**
+ * merge: the source trades the target already records, and the one shape a
+ * merge cannot express.
+ *
+ * Y2 (wave 2I) — this compared `dedup_hash` only, so a source row whose hash
+ * lives on as a TARGET lot's `dedup-alias:` (a Data Quality join records the
+ * sale it consumed on the lot — `withStaleCloseNote`) was not seen as a
+ * duplicate and was MOVED: the merged book then held that sale twice, realised
+ * inside the closed round trip AND back as an open sell-only row. Identity is
+ * ONE predicate (`heldIdentityHashes`, lib/import/close-open-lots.ts — an alias
+ * counts only while its holder's closing leg holds quantity), read both ways:
+ *
+ *   `ids` — the source row's own hash is a hash the target HOLDS (its own or a
+ *     held alias). Skipped exactly like a same-hash duplicate: snapshotted to
+ *     Deleted items, deleted, counted and reported.
+ *   `refusal` — the reverse: a source LOT whose held alias names a row the
+ *     target stores. Moving it would count that trade twice and dropping it
+ *     would lose the lot's own other leg, so the merge refuses before any
+ *     write and names the pair; the rows stay where they are.
+ *
+ * Both directions are per (broker, hash), like the unique index.
+ */
+function identityCollisions(
+  accountId: number,
+  target: AccountRow,
+): { ids: number[]; partnerOf: Map<number, number>; refusal: { source: IdentityRow; target: IdentityRow } | null } {
+  const key = (broker: string, hash: string) => `${broker.trim().toLowerCase()}|${hash.trim().toLowerCase()}`;
+  const targetRows = db.select(IDENTITY_COLS).from(trades).where(eq(trades.accountId, target.id)).all() as IdentityRow[];
+  const sourceRows = db.select(IDENTITY_COLS).from(trades).where(eq(trades.accountId, accountId)).all() as IdentityRow[];
+
+  const held = new Map<string, IdentityRow>();
+  const ownOnly = new Map<string, IdentityRow>();
+  for (const r of targetRows) {
+    const own = key(r.broker, r.dedupHash);
+    if (!ownOnly.has(own)) ownOnly.set(own, r);
+    for (const h of heldIdentityHashes(r)) {
+      const k = key(r.broker, h);
+      if (!held.has(k)) held.set(k, r);
+    }
+  }
+
+  const ids: number[] = [];
+  // K1 (wave 2K): the surviving TARGET row each dropped source row collides
+  // with — the same-hash row, or the lot whose held alias names it. They are
+  // the same trade, which is why one of them is dropped, so anything the
+  // dropped row was the anchor for (today: `ipos.tradeId`) follows the survivor
+  // instead of being cut loose.
+  const partnerOf = new Map<number, number>();
+  for (const s of sourceRows) {
+    const own = key(s.broker, s.dedupHash);
+    // A duplicate first: a row the target already records is dropped, and a
+    // dropped row moves nothing, so its own aliases cannot double anything.
+    const partner = held.get(own);
+    if (partner) {
+      ids.push(s.id);
+      partnerOf.set(s.id, partner.id);
+      continue;
+    }
+    for (const h of heldIdentityHashes(s)) {
+      const k = key(s.broker, h);
+      if (k === own) continue;
+      const hit = ownOnly.get(k);
+      if (hit) return { ids: [], partnerOf: new Map(), refusal: { source: s, target: hit } };
+    }
+  }
+  return { ids, partnerOf, refusal: null };
 }
 
 /** merge: source session ids whose date the target already has (UNIQUE account+date). */
@@ -338,10 +432,28 @@ export function previewAccountDelete(opts: { accountId: number; mode: AccountDel
 
   if (r.target) {
     if (r.target.archived) warnings.push(`“${r.target.name}” is archived — the merged journal will live in an archived account.`);
-    dedupCollisions = dedupCollisionIds(opts.accountId, r.target.id).length;
+    const identity = identityCollisions(opts.accountId, r.target);
+    dedupCollisions = identity.ids.length;
     if (dedupCollisions > 0) {
       warnings.push(
         `${dedupCollisions} trade${dedupCollisions === 1 ? " is" : "s are"} already recorded in “${r.target.name}” (same broker and dedup identity) — ${dedupCollisions === 1 ? "it" : "they"} will be skipped and saved to Deleted items, not duplicated.`,
+      );
+      // K1 (wave 2K): a link the USER made survives the drop — say so before
+      // the merge, since it is the one thing a skipped trade still changes.
+      const linkedIpos = collectIdChunks(identity.ids, (chunk) =>
+        db.select({ id: ipos.id }).from(ipos).where(inArray(ipos.tradeId, chunk)).all(),
+      ).length;
+      if (linkedIpos > 0) {
+        warnings.push(
+          `${linkedIpos} IPO record${linkedIpos === 1 ? " is" : "s are"} linked to ${linkedIpos === 1 ? "one of those trades" : "those trades"} — the link${linkedIpos === 1 ? "" : "s"} will be re-pointed to “${r.target.name}”'s own copy, never left unlinked (an unlinked exited IPO beside the target's copy counts that sale twice).`,
+        );
+      }
+    }
+    // Y2: the merge will refuse — say so before the user presses anything.
+    if (identity.refusal) {
+      warnings.push(
+        `${identityClash(identity.refusal, r.target.name)}, and skipping it would drop the other leg it records. ` +
+          `The merge will not run until those two rows are resolved.`,
       );
     }
     sessionCollisions = sessionCollisionIds(opts.accountId, r.target.id).length;
@@ -442,11 +554,17 @@ export function deleteAccount(opts: {
   const counts = gatherCounts(accountId);
 
   // ── Which trades are about to be DESTROYED (vs moved) ─────────────────────
-  // purge: all of them. merge: only the dedup collisions.
+  // purge: all of them. merge: only the identity collisions (Y2).
+  const identity = mode === "merge" ? identityCollisions(accountId, r.target!) : null;
+  // Y2: the one shape a merge cannot express — refused BEFORE the snapshot, so
+  // nothing is written and both books stay exactly as they are.
+  if (identity?.refusal) {
+    return fail(mode, `${identityClash(identity.refusal, r.target!.name)}. Nothing was merged; both accounts are unchanged.`);
+  }
   const doomedIds =
     mode === "purge"
       ? db.select({ id: trades.id }).from(trades).where(eq(trades.accountId, accountId)).all().map((x) => x.id)
-      : dedupCollisionIds(accountId, r.target!.id);
+      : identity!.ids;
 
   const doomedRows = collectIdChunks(doomedIds, (chunk) => db.select().from(trades).where(inArray(trades.id, chunk)).all());
   const legRows = collectIdChunks(doomedIds, (chunk) => db.select().from(tradeLegs).where(inArray(tradeLegs.tradeId, chunk)).all());
@@ -458,6 +576,46 @@ export function deleteAccount(opts: {
       .where(inArray(ledgerEntries.refTradeId, chunk))
       .all(),
   ) as { ledgerId: number; tradeId: number }[];
+  // ACCDEL-IPO-REFS (v4.3.0 wave 2J): the IPO records pointing at those trades,
+  // gathered BEFORE anything is unlinked — the account-delete counterpart of the
+  // `ipoRefs` lib/queries/delete.ts and `removeBrokerRows` write, same envelope
+  // shape. Both branches below UNLINK survivors rather than deleting them
+  // (purge: rows in OTHER accounts, after this account's own IPOs are gone;
+  // merge: any row naming a skipped duplicate — the row itself moves to the
+  // target), and `restoreTrashSnapshot`'s re-link loop reads exactly this field.
+  // Without it the trade came back under its own id with the link gone: a fact
+  // the user recorded (this allotment BECAME that holding) destroyed by a
+  // RECOVERABLE operation, and the counted-once rule of wave 2H
+  // (CAP-IPO-LINK / TAX-IPO-LINK, keyed on `ipos.trade_id`) left reading a null.
+  // The purge's OWN rows are in here too: they ride back inside
+  // `accountRows.ipos` with `trade_id` intact, so their ref is inert — the
+  // envelope states the whole picture rather than a filtered one.
+  const ipoRefRows = collectIdChunks(doomedIds, (chunk) =>
+    db.select({ ipoId: ipos.id, tradeId: ipos.tradeId }).from(ipos).where(inArray(ipos.tradeId, chunk)).all(),
+  ) as { ipoId: number; tradeId: number }[];
+
+  // ACCDEL-IPO-RELINK (v4.3.0 wave 2K) — merge only: where an IPO names a trade
+  // this merge DROPS as a duplicate, the link follows the target's surviving
+  // collision partner instead of being cut. Nulling it moved the IPO to the
+  // target unlinked while the target's own copy of that trade stayed, so the
+  // merged book counted the sale TWICE — once through the trade and once
+  // through the IPO, because wave 2H's counted-once rule (CAP-IPO-LINK /
+  // TAX-IPO-LINK, and the AIS sale side) keys on `ipos.trade_id`. Measured on a
+  // temp book before the fix: capital {equity 490.25, ipo 482.6, total 972.85}
+  // and AIS FY totals 2,000 / 3,000 for ONE allotment of 10 shares.
+  // The two rows are the SAME trade — that is the whole reason one of them is
+  // dropped — so the target's copy is the row the user's link names from now on.
+  // `ipoRefs` above still records the ORIGINAL (ipoId → source trade): the
+  // pre-merge fact, stated by the envelope whatever the restore then does with
+  // it (`restoreTrashSnapshot` re-links only a link that is still NULL, so a
+  // re-pointed row is left alone — a link this merge set deliberately is not
+  // the restore's to overwrite).
+  const ipoRelinks =
+    mode === "merge"
+      ? ipoRefRows
+          .map((ref) => ({ ipoId: ref.ipoId, tradeId: identity!.partnerOf.get(ref.tradeId) }))
+          .filter((x): x is { ipoId: number; tradeId: number } => x.tradeId != null)
+      : [];
 
   const sessionDropIds = mode === "merge" ? sessionCollisionIds(accountId, r.target!.id) : [];
   const connCollisions = mode === "merge" && connections === "move" ? connectionCollisionBrokers(accountId, r.target!.id) : [];
@@ -551,6 +709,10 @@ export function deleteAccount(opts: {
       legs: legRows as unknown as Record<string, unknown>[],
       attachments: attachRows as unknown as Record<string, unknown>[],
       ledgerRefs: ledgerRefRows,
+      // Undefined, not [], when there are none: JSON.stringify drops an
+      // undefined field, so an account delete with no linked IPO keeps writing
+      // the exact shape it always did (the rule delete.ts follows).
+      ipoRefs: ipoRefRows.length ? ipoRefRows : undefined,
       account: account as unknown as Record<string, unknown> & { id: number; name: string },
       accountRows: destroyedRows,
       referenceRows: destroyedRefRows.length ? (destroyedRefRows as unknown as Record<string, unknown>[]) : undefined,
@@ -608,9 +770,21 @@ export function deleteAccount(opts: {
         tx.delete(brokerReference).where(eq(brokerReference.accountId, accountId)).run();
       } else {
         const targetId = r.target!.id;
-        // Unlink anything pointing at the SKIPPED (deleted) duplicates, then
-        // remove them — so the account-keyed moves below cannot violate the
-        // dedup unique index.
+        // K1: first, the IPO links that follow the target's surviving copy of a
+        // dropped duplicate (see `ipoRelinks` above). Keyed on the IPO's own id,
+        // so the blanket unlink below still catches every other row.
+        const byPartner = new Map<number, number[]>();
+        for (const rel of ipoRelinks) {
+          const list = byPartner.get(rel.tradeId) ?? [];
+          list.push(rel.ipoId);
+          byPartner.set(rel.tradeId, list);
+        }
+        for (const [tradeId, ipoIds] of byPartner) {
+          forEachIdChunk(ipoIds, (chunk) => tx.update(ipos).set({ tradeId }).where(inArray(ipos.id, chunk)).run());
+        }
+        // Unlink anything still pointing at the SKIPPED (deleted) duplicates,
+        // then remove them — so the account-keyed moves below cannot violate
+        // the dedup unique index.
         forEachIdChunk(doomedIds, (chunk) => tx.update(ipos).set({ tradeId: null }).where(inArray(ipos.tradeId, chunk)).run());
         forEachIdChunk(doomedIds, (chunk) => tx.update(ledgerEntries).set({ refTradeId: null }).where(inArray(ledgerEntries.refTradeId, chunk)).run());
         forEachIdChunk(doomedIds, (chunk) => tx.delete(trades).where(inArray(trades.id, chunk)).run());
@@ -815,7 +989,9 @@ export function deleteAccount(opts: {
         summary:
           mode === "purge"
             ? `${account.name} — deleted with ${counts.trades} trade(s)`
-            : `${account.name} — merged into ${r.target!.name} (${counts.trades - doomedIds.length} moved, ${doomedIds.length} duplicate(s) skipped)`,
+            : `${account.name} — merged into ${r.target!.name} (${counts.trades - doomedIds.length} moved, ${doomedIds.length} duplicate(s) skipped` +
+              (ipoRelinks.length ? `, ${ipoRelinks.length} IPO link(s) re-pointed to the surviving copy` : "") +
+              ")",
         before: account as unknown as Record<string, unknown>,
         source,
       });
@@ -834,6 +1010,9 @@ export function deleteAccount(opts: {
         (failed.length ? ` ${failed.length} attachment file${failed.length === 1 ? "" : "s"} could not be moved into the snapshot.` : "")
       : `Merged “${account.name}” into “${r.target!.name}” — ${counts.trades - doomedIds.length} trade${counts.trades - doomedIds.length === 1 ? "" : "s"} moved` +
         (doomedIds.length ? `, ${doomedIds.length} duplicate${doomedIds.length === 1 ? "" : "s"} skipped (saved to Deleted items)` : "") +
+        (ipoRelinks.length
+          ? `, ${ipoRelinks.length} IPO link${ipoRelinks.length === 1 ? "" : "s"} re-pointed to “${r.target!.name}”'s own copy of that trade`
+          : "") +
         (sessionDropIds.length ? `, ${sessionDropIds.length} same-day session${sessionDropIds.length === 1 ? "" : "s"} discarded (saved to Deleted items)` : "") +
         (counts.capitalSnapshots ? `, ${counts.capitalSnapshots} capital checkpoint${counts.capitalSnapshots === 1 ? "" : "s"} discarded (saved to Deleted items)` : "") +
         (counts.capitalGoals ? `, ${counts.capitalGoals} capital goal${counts.capitalGoals === 1 ? "" : "s"} removed (goals never merge — set a new one on the target)` : "") +

@@ -103,9 +103,13 @@ export default function StrategiesPage() {
   // single-account view holds it — the query admits a row only against option
   // legs in the SAME scope, so account FA alone (a holding, no option) shows no
   // card, and FA's shares covered account FB's naked call only on 0. This
-  // lookup admits every row the query admits in a single-account view (case
-  // folded the same way; bundledIsinBySymbol trims and upper-cases), so a single
-  // account drops nothing and is unchanged.
+  // lookup and the query's predicate admit the SAME rows in a single-account
+  // view, in BOTH directions (I6, fix wave 2I): the symbol is case-folded on
+  // both sides, and the ISIN is canonicalised on both — here by
+  // `trim().toUpperCase()`, there by `upper(trim(trades.isin))` against the same
+  // trimmed, upper-cased `bundledIsinBySymbol` candidates. So a single account
+  // drops nothing, and a holding stored with a lower-case or padded ISIN is
+  // found by its OWN account's read, not only on 0.
   const admittingOf = (symbols: Iterable<string>) => {
     const own = new Set([...symbols].map((s) => s.toUpperCase()));
     const byIsin = new Map<string, string>();

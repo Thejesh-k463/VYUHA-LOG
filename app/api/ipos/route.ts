@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { ipos, trades } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
-import { linkedSyncFor, tradePatchFromIpo, type IpoLinkInput, type LinkedSync } from "@/lib/analytics/ipo-link";
+import { accounts, ipos, tradeLegs, trades } from "@/lib/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { linkedSyncFor, syncOwnsClose, tradePatchFromIpo, type IpoLinkInput, type LinkedSync } from "@/lib/analytics/ipo-link";
 import { computeIpo, isPriceableExitDate, type IpoInput } from "@/lib/analytics/ipo";
 import type { ChargeBreakdown } from "@/lib/engine/types";
 import { loadRatesMap } from "@/lib/engine/rates-db";
@@ -68,14 +68,69 @@ function linkPatch(values: Record<string, unknown>) {
  * the sync writes leaves it alone, any other save is refused. `stored` is the IPO as
  * stored while the save keeps its link; null for a create or a new link.
  */
-function linkedSync(tradeId: number, stored: Record<string, unknown> | null, values: Record<string, unknown>): LinkedSync {
+function linkedSync(tradeId: number, accountId: number, stored: Record<string, unknown> | null, values: Record<string, unknown>): LinkedSync {
   const trade = db
     .select({ sellQty: trades.sellQty, avgSellPrice: trades.avgSellPrice, sellDate: trades.sellDate })
     .from(trades)
-    .where(eq(trades.id, tradeId))
+    .where(inAccount(tradeId, accountId))
     .get();
   return linkedSyncFor({ stored: stored ? linkInput(stored) : null, next: linkInput(values), trade: trade ?? null });
 }
+
+/**
+ * IPO-ACCOUNT (v4.3.0 wave 2I): every `trades` read and the UPDATE below are
+ * scoped to the IPO's OWN account. An IPO and the holding it became belong to
+ * one account's book (invariant 8) — a link pointing outside it (a record
+ * written before this fix, when the insert defaulted every IPO to account 1, or
+ * a restore) is inert rather than a cross-account write: the read finds no row
+ * and `syncLinkedTrade` writes nothing. `getIposComputed`'s LEFT JOIN carries
+ * the same condition, so such a row reads as not linked.
+ */
+const inAccount = (tradeId: number, accountId: number) => and(eq(trades.id, tradeId), eq(trades.accountId, accountId));
+
+/** The account's name, for a refusal that says WHICH books it is talking about. */
+const accountName = (id: number) =>
+  db.select({ name: accounts.name }).from(accounts).where(eq(accounts.id, id)).get()?.name ?? `account ${id}`;
+
+/**
+ * A holding the IPO may not rewrite: it carries `trade_legs` (or is staged), so
+ * the sync — which sets quantity, basis and dates from the allotment with no leg
+ * read and no leg write — would leave the parent no longer the sum of its ladder
+ * (invariant 5). Refused for a new link and for a sync; unlinking is still allowed.
+ */
+function holdingIsStaged(tradeId: number, accountId: number): boolean {
+  const row = db.select({ staged: trades.staged }).from(trades).where(inAccount(tradeId, accountId)).get();
+  if (!row) return false; // not this account's row: nothing is written to it at all
+  return row.staged || db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length > 0;
+}
+const refuseStagedHolding = () =>
+  NextResponse.json(
+    {
+      ok: false,
+      code: "STAGED",
+      message:
+        "That holding is a staged position built from more than one fill. An IPO record would rewrite its parent row from the allotment and leave the ladder unsummed, so its quantity, prices and exits are booked on its own ladder in Trades. Unlink the holding here to edit this IPO. Nothing was saved.",
+    },
+    { status: 409 },
+  );
+const refuseOtherAccount = (tradeAccountId: number, ipoAccountId: number) =>
+  NextResponse.json(
+    {
+      ok: false,
+      message:
+        `That holding is in “${accountName(tradeAccountId)}” and this IPO is in “${accountName(ipoAccountId)}”. ` +
+        "An IPO and the holding it became belong to one account's book. Nothing was saved.",
+    },
+    { status: 409 },
+  );
+
+/**
+ * The account a holding is in, or null when there is no such row. Used only to
+ * refuse a LINK the request is making across the boundary, naming both books —
+ * a silent "not linked" would look like the link had been saved.
+ */
+const accountOfTrade = (tradeId: number) =>
+  db.select({ accountId: trades.accountId }).from(trades).where(eq(trades.id, tradeId)).get()?.accountId ?? null;
 const refuseHoldingSold = () =>
   NextResponse.json(
     { ok: false, message: "The linked holding has a sale recorded in Trades. Change its quantity or prices there, or remove the sale first. Nothing was saved." },
@@ -88,10 +143,10 @@ const refuseHoldingSold = () =>
  * trade is still open or carries a different sell date. A trade an earlier save
  * already closed on the same date gets that same date back and writes nothing new.
  */
-function syncWritesSellDate(tradeId: number, values: Record<string, unknown>): boolean {
+function syncWritesSellDate(tradeId: number, accountId: number, values: Record<string, unknown>): boolean {
   const patch = linkPatch(values);
   if (!patch?.sellDate) return false;
-  const row = db.select({ isOpen: trades.isOpen, sellDate: trades.sellDate }).from(trades).where(eq(trades.id, tradeId)).get();
+  const row = db.select({ isOpen: trades.isOpen, sellDate: trades.sellDate }).from(trades).where(inAccount(tradeId, accountId)).get();
   if (!row) return false; // syncLinkedTrade writes nothing to a trade that is not there
   return row.isOpen || row.sellDate !== patch.sellDate;
 }
@@ -104,11 +159,11 @@ function syncWritesSellDate(tradeId: number, values: Record<string, unknown>): b
  * base files in the current financial year. A trade already closed on that same
  * date gets the same values back and writes nothing new, so it is not refused.
  */
-function syncClosesUndated(tradeId: number, values: Record<string, unknown>): boolean {
+function syncClosesUndated(tradeId: number, accountId: number, values: Record<string, unknown>): boolean {
   const patch = linkPatch(values);
   if (!patch || patch.isOpen) return false;
   if (patch.sellDate != null && isPriceableExitDate(patch.sellDate)) return false;
-  const row = db.select({ isOpen: trades.isOpen, sellDate: trades.sellDate }).from(trades).where(eq(trades.id, tradeId)).get();
+  const row = db.select({ isOpen: trades.isOpen, sellDate: trades.sellDate }).from(trades).where(inAccount(tradeId, accountId)).get();
   if (!row) return false; // syncLinkedTrade writes nothing to a trade that is not there
   return row.isOpen || row.sellDate !== patch.sellDate;
 }
@@ -134,30 +189,94 @@ function ipoExitCharges(values: Record<string, unknown>): ChargeBreakdown | numb
     return null;
   }
 }
-const HEADS = ["brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty", "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges"] as const;
+/** The eight heads the IPO model prices. */
+const HEADS = ["brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty", "ipft", "gst", "dpCharges"] as const;
+/**
+ * The two it prices NEITHER of, so the sync never writes them (wave 2I). An
+ * allotment is not brokered on margin and holds no pledge, so any figure in
+ * these columns is the holding's own record of money that really moved — Z2
+ * zeroed ₹100 of accrued MTF interest on a holding it closed. They are preserved
+ * verbatim and carried into the total the row states, so the heads still sum to
+ * `chargesTotal`.
+ */
+const KEPT_HEADS = ["mtfInterest", "pledgeCharges"] as const;
 const headsOf = (b: ChargeBreakdown | null) => Object.fromEntries(HEADS.map((k) => [k, b ? b[k] : 0])) as Record<(typeof HEADS)[number], number>;
+const r2 = (n: number) => Math.round(n * 100) / 100;
 
-function syncLinkedTrade(tradeId: number, values: Record<string, unknown>) {
+/** The ten charge columns of a holding, as stored (rupees at the paisa). */
+type ChargeColumns = Record<(typeof HEADS)[number] | (typeof KEPT_HEADS)[number], number> & { chargesTotal: number };
+
+/**
+ * J4 (v4.3.0 wave 2J): are the charges this holding states the ones the SYNC ITSELF
+ * wrote, for the IPO's exit as STORED before this save — the eight heads the IPO model
+ * prices, and a total that is their sum plus the two it never writes?
+ *
+ * Only then may they be recomputed for a new exit. A figure the user stated (a contract
+ * note's brokerage, an imported total) is never rewritten, even on a close the sync owns
+ * — that is owner ruling F1, and it is why ownership of the close is not enough on its
+ * own. An exit that cannot be priced (no charge_config row, an unreadable stored date)
+ * claims nothing: what cannot be recomputed is not ours to replace (invariant 6).
+ */
+function syncWroteCharges(row: ChargeColumns, stored: Record<string, unknown> | null): boolean {
+  if (!stored) return false;
+  const priced = ipoExitCharges(stored);
+  if (priced == null || typeof priced === "number") return false;
+  const kept = r2(row.mtfInterest + row.pledgeCharges);
+  return HEADS.every((k) => row[k] === r2(priced[k])) && row.chargesTotal === r2(r2(priced.total) + kept);
+}
+
+/**
+ * `stored` is the IPO as stored BEFORE this save, while the save keeps the same link;
+ * null for a create or a save that links a different holding. It is what decides whether
+ * the close the holding carries is the sync's own (J4) — never what is written.
+ */
+function syncLinkedTrade(tradeId: number, accountId: number, values: Record<string, unknown>, stored: Record<string, unknown> | null) {
   const priced = ipoExitCharges(values);
   const patch = tradePatchFromIpo(linkInput(values), typeof priced === "number" ? priced : priced?.total ?? null);
   // An application that was not allotted produced no shares, so there is
   // nothing to write — the trade is left exactly as it was.
   if (!patch) return;
 
-  const row = db.select().from(trades).where(eq(trades.id, tradeId)).get();
+  const row = db.select().from(trades).where(inAccount(tradeId, accountId)).get();
   if (!row) return;
 
   const grossPnl = patch.grossPnl;
-  // Z2: a priced exit writes the IPO's charges (every head the trade row carries, when the
-  // charger stated them). Re-opening a holding this sync closed takes that sale's charges
-  // off with the sale. Otherwise (open and staying open, or an unpriced exit) the trade's
-  // own charges stand, as before.
+  // Z2: a priced exit writes the IPO's charges (every head it prices) and net =
+  // gross − charges. Re-opening a holding this sync closed takes that sale's
+  // charges off with the sale. Otherwise (open and staying open, or an unpriced
+  // exit) the trade's own charges stand, as before.
+  //
+  // F1 (owner ruling, wave 2I): STORED CHARGES ARE NEVER REWRITTEN. Z2 wrote the
+  // IPO's exit charges over all ten heads of any holding it synced, so a holding
+  // that carried charges of its own lost them and its net P&L was overstated —
+  // which feeds capital (CAP-IPO-LINK counts the TRADE), the tax base, the ITR
+  // export and the /trades KPIs. The IPO's figures are written only where nothing
+  // stated is destroyed by them: when the sync itself writes the close (the
+  // holding carried no sale of its own, so no sale charges either), or when the
+  // holding states no charges at all. A holding that already carries stated
+  // charges for the sale that IS this IPO's exit keeps every head and its total,
+  // and nets gross − its own charges.
+  //
+  // J4 (wave 2J): "the sale IS this IPO's exit" was two histories under one name.
+  // A sale equal to the exit as STORED is the sync's own earlier write, so re-pricing
+  // the exit left the holding's price and gross on the new sale and its charges on the
+  // old one — a stale figure the sync itself wrote, and /ipos then read one net while
+  // the holding (and capital, the tax base, the ITR export) read another. Such a close
+  // is recomputed, but only while the charges on it are also the sync's own
+  // (`syncWroteCharges`): a sale the user recorded in Trades with the broker's own
+  // charges, or any head the IPO never priced, still keeps every figure (F1).
   const reopens = patch.isOpen && !row.isOpen;
-  const chargesTotal = patch.chargesTotal ?? (reopens ? 0 : row.chargesTotal);
-  const heads = patch.chargesTotal != null
+  const heldOwnSale = row.sellQty > 0;
+  const ownsClose = syncOwnsClose({ stored: stored ? linkInput(stored) : null, trade: row });
+  const statesNoCharges = row.chargesTotal === 0 && [...HEADS, ...KEPT_HEADS].every((k) => row[k] === 0);
+  const writesCharges =
+    patch.chargesTotal != null && (!heldOwnSale || statesNoCharges || (ownsClose && syncWroteCharges(row, stored)));
+  const kept = r2(row.mtfInterest + row.pledgeCharges);
+  const chargesTotal = writesCharges ? r2(patch.chargesTotal! + kept) : reopens ? kept : row.chargesTotal;
+  const heads = writesCharges
     ? (typeof priced === "object" && priced ? headsOf(priced) : patch.chargesTotal === 0 ? headsOf(null) : {})
     : reopens ? headsOf(null) : {};
-  const netPnl = patch.netPnl ?? Math.round((grossPnl - chargesTotal) * 100) / 100;
+  const netPnl = r2(grossPnl - chargesTotal);
 
   db.update(trades)
     .set({
@@ -187,7 +306,7 @@ function syncLinkedTrade(tradeId: number, values: Record<string, unknown>) {
         : null,
       updatedAt: sql`(datetime('now'))`,
     })
-    .where(eq(trades.id, tradeId))
+    .where(inAccount(tradeId, accountId))
     .run();
 }
 
@@ -253,8 +372,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, message: "That IPO is not in the account you are viewing." }, { status: 404 });
     }
     const link = linkedTradeId === undefined ? before.tradeId ?? null : linkedTradeId;
+    // A link this request MAKES must point inside the IPO's own book, and the
+    // refusal names both (invariant 8). A link it merely keeps is read in scope
+    // and is inert if it points outside — never re-pointed silently.
+    if (linkedTradeId != null && linkedTradeId !== (before.tradeId ?? null)) {
+      const tradeAccount = accountOfTrade(linkedTradeId);
+      if (tradeAccount != null && tradeAccount !== before.accountId) return refuseOtherAccount(tradeAccount, before.accountId);
+    }
+    if (link && holdingIsStaged(link, before.accountId)) return refuseStagedHolding();
     // X1: the stored IPO is compared only while the save keeps the same link.
-    const sync = link ? linkedSync(link, link === (before.tradeId ?? null) ? before : null, values) : null;
+    const storedForLink = link === (before.tradeId ?? null) ? before : null;
+    const sync = link ? linkedSync(link, before.accountId, storedForLink, values) : null;
     // H5 (v4.3.0 wave 2H): the stored value passes through only while the save does
     // not USE it. It is checked when the request changes it, when this save makes
     // the IPO exited (an exit price where there was none), or when the sync would
@@ -263,10 +391,10 @@ export async function POST(req: Request) {
     if (exitDateRefused()) {
       const changed = exitDate !== strOrNull(before.exitDate);
       const becomesExited = values.allotted && values.exitPrice != null && !(before.allotted && before.exitPrice != null);
-      if (changed || becomesExited || (!!link && sync === "sync" && syncWritesSellDate(link, values))) return refuseExitDate();
+      if (changed || becomesExited || (!!link && sync === "sync" && syncWritesSellDate(link, before.accountId, values))) return refuseExitDate();
     }
     if (sync === "refuse") return refuseHoldingSold();
-    if (link && sync === "sync" && syncClosesUndated(link, values)) return refuseUndatedClose();
+    if (link && sync === "sync" && syncClosesUndated(link, before.accountId, values)) return refuseUndatedClose();
     db.update(ipos)
       .set({
         ...values,
@@ -276,7 +404,7 @@ export async function POST(req: Request) {
       .where(eq(ipos.id, id))
       .run();
 
-    if (link && sync === "sync") syncLinkedTrade(link, values);
+    if (link && sync === "sync") syncLinkedTrade(link, before.accountId, values, storedForLink);
 
     revalidate();
     return NextResponse.json({
@@ -318,16 +446,26 @@ export async function POST(req: Request) {
     );
   }
 
+  // The book this application lands in — and the only one a holding it links may
+  // be in (invariant 8; invariant 9 is enforced by the 403 above).
+  const writeAccountId = getWriteAccountId();
+  if (linkedTradeId) {
+    const tradeAccount = accountOfTrade(linkedTradeId);
+    if (tradeAccount != null && tradeAccount !== writeAccountId) return refuseOtherAccount(tradeAccount, writeAccountId);
+    if (holdingIsStaged(linkedTradeId, writeAccountId)) return refuseStagedHolding();
+  }
   // X1: a create has no stored IPO, so linking a holding whose sale is not this exit is refused.
-  if (linkedTradeId && linkedSync(linkedTradeId, null, values) === "refuse") return refuseHoldingSold();
-  if (linkedTradeId && syncClosesUndated(linkedTradeId, values)) return refuseUndatedClose();
+  if (linkedTradeId && linkedSync(linkedTradeId, writeAccountId, null, values) === "refuse") return refuseHoldingSold();
+  if (linkedTradeId && syncClosesUndated(linkedTradeId, writeAccountId, values)) return refuseUndatedClose();
 
   const row = db
     .insert(ipos)
-    .values({ accountId: getWriteAccountId(), ...values, ...(linkedTradeId ? { tradeId: linkedTradeId } : {}) })
+    .values({ accountId: writeAccountId, ...values, ...(linkedTradeId ? { tradeId: linkedTradeId } : {}) })
     .returning({ id: ipos.id })
     .get();
-  if (linkedTradeId) syncLinkedTrade(linkedTradeId, values);
+  // A create has no stored IPO: any sale the holding carries predates the link and is
+  // the user's own record, charges included (J4).
+  if (linkedTradeId) syncLinkedTrade(linkedTradeId, writeAccountId, values, null);
   revalidate();
   return NextResponse.json({ ok: true, message: "IPO added.", id: row!.id });
 }

@@ -55,7 +55,12 @@ const sqlite =
     // fix's own transaction, so a failed fix simply runs again next open, and
     // the journal must still open.
     try {
-      runDataFixes(conn);
+      // One line per fix that actually rewrote something, so an upgrade says
+      // what it repaired; silent on a clean journal (every count 0) and silent
+      // on every open after the first, when the marker exists.
+      for (const r of runDataFixes(conn)) {
+        if (r.applied && r.rekeyed > 0) console.log(`[vyuha] data fix ${r.name}: ${r.rekeyed} row(s) rewritten`);
+      }
     } catch (e) {
       console.warn("[vyuha] data fixes skipped:", e instanceof Error ? e.message : e);
     }

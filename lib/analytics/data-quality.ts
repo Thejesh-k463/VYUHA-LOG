@@ -528,6 +528,16 @@ function closedByStaleJoin(r: BookRow): boolean {
 const samePaisa = (a: number, b: number) => Math.round(a * 100) === Math.round(b * 100);
 
 /**
+ * Y3 (wave 2I) — does this row STATE a per-unit price?
+ *
+ * `trades.avg_sell_price` / `avg_buy_price` are NOT NULL DEFAULT 0, so a stored
+ * row with quantity and no price arrives as 0: 0 IS the unstated value, and the
+ * null/non-finite guards alone could never fire for a stored row. A row that
+ * states no price never proves a sale differs from a close.
+ */
+const statedPrice = (p: number | null | undefined): p is number => p != null && Number.isFinite(p) && p !== 0;
+
+/**
  * H3 (wave 2H) — may the closed row `c` be left out of the ambiguity test for
  * the link to `sale`? M2 exempted a joined lot for EVERY link; that made three
  * reachable books one-click onto a sale the lot already counts. Exempt ONLY
@@ -552,9 +562,11 @@ function staleJoinExempts(c: BookRow, sale: BookRow, side: "long" | "short"): bo
   if (identity.some((h) => h.trim().toLowerCase() === saleHash)) return false;
   const [closeQty, closePrice, saleQty, salePrice] =
     side === "long" ? [c.sellQty, c.avgSellPrice, sale.sellQty, sale.avgSellPrice] : [c.buyQty, c.avgBuyPrice, sale.buyQty, sale.avgBuyPrice];
-  // A price either row does not state never proves the sale differs.
+  // A price either row does not state never proves the sale differs — and an
+  // unstated price arrives as 0 (Y3), which is why the code asks `statedPrice`
+  // and not `!= null`. Both quantities are stated here (the sale is sale-shaped).
   const restates =
-    sameQty(saleQty, closeQty) && (salePrice == null || closePrice == null || !Number.isFinite(salePrice) || !Number.isFinite(closePrice) || samePaisa(salePrice, closePrice));
+    sameQty(saleQty, closeQty) && (!statedPrice(salePrice) || !statedPrice(closePrice) || samePaisa(salePrice, closePrice));
   return !restates;
 }
 
@@ -880,7 +892,12 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
   const unstopped = i.trades.filter((t) => t.isOpen && (t.slPlanned == null || t.riskAmount == null));
   add({ code: "missing_stop", severity: "warning", title: "Open positions without complete risk", detail: "Set both a stop and risk amount so limit, R and cockpit calculations reconcile.", count: unstopped.length, href: "/trades?view=open" }, unstopped.map((t) => t.id));
 
-  const mtf = i.trades.filter((t) => t.segment === "eq_mtf" && (!t.mtfFundedAmount || t.mtfFundedAmount <= 0));
+  // X2 reader (wave 2I) — a STATED 0 is a statement: the position is 100% the
+  // trader's own capital, and since X2 that 0 survives every writer. The old
+  // `!x || <= 0` rule flagged it as missing, telling the user to set what they
+  // had just set. Only a row that states NOTHING — null, absent or non-finite —
+  // is listed, the same null-vs-0 rule every other reader now uses.
+  const mtf = i.trades.filter((t) => t.segment === "eq_mtf" && !Number.isFinite(t.mtfFundedAmount ?? NaN));
   add({ code: "mtf_funding", severity: "warning", title: "MTF positions without funded principal", detail: "Interest, leverage and own-capital return need the broker-funded amount.", count: mtf.length, href: "/equity?funding=mtf" }, mtf.map((t) => t.id));
 
   const options = i.trades.filter((t) => t.instrumentType === "option" && (!t.expiry || t.strike == null || !t.optionType));

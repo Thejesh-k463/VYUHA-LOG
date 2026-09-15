@@ -19,6 +19,27 @@ interface PreviewResp {
 }
 
 /**
+ * The exit date `closePosition` will actually store (I1 [1]): its own rule,
+ * `normalizeDate(exitDate) ?? todayIstIso()` (lib/import/commit.ts) — restated
+ * here because commit.ts is server-only and this is a client component.
+ *
+ * ONE resolution serves the dates the preview is priced at AND the holding
+ * period it bills. Reading the RAW field for `daysHeld` made a cleared or
+ * unreadable date an Invalid Date, so `daysHeld` was NaN, `JSON.stringify` sent
+ * it as null, and the route billed 0 days of MTF interest against a save that
+ * charged the real holding period (a preview of ₹168.71 charges beside a stored
+ * ₹405.42 on a 30-day ₹16,000-funded MTF row).
+ */
+export function resolveExitIso(exitDate: string): string {
+  const s = (exitDate ?? "").trim();
+  const dmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  return todayIstIso();
+}
+
+/**
  * The /api/charges/preview body for closing `trade` at `exitPrice` — built from
  * the SAME closing-leg aggregate `closePosition` writes (lib/domain/close-aggregate.ts),
  * so a partly closed row previews prior leg + remainder × exit, not the remainder
@@ -56,7 +77,9 @@ export function closePreviewBody(
     sellOrders: isShort ? trade.sellOrderCount : closeOrders,
     grossPnl: Math.round((sellValue - buyValue) * 100) / 100,
     ownCapitalUsed: trade.mtfFundedAmount != null ? Math.max(0, buyValue - trade.mtfFundedAmount) : null,
-    daysHeld: trade.buyDate ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(trade.buyDate).getTime()) / 86400000)) : 0,
+    // The RESOLVED exit date, the same one `dates` carries and `closePosition`
+    // stores — never the raw field (I1 [1]).
+    daysHeld: trade.buyDate ? Math.max(0, Math.floor((new Date(resolveExitIso(exitDate)).getTime() - new Date(trade.buyDate).getTime()) / 86400000)) : 0,
     isOpen: false,
     buyDate: dates.buyDate,
     sellDate: dates.sellDate,
@@ -91,7 +114,7 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
       try {
-        const exitIso = exitDate || todayIstIso();
+        const exitIso = resolveExitIso(exitDate);
         const res = await fetch("/api/charges/preview", {
           method: "POST",
           headers: { "content-type": "application/json" },

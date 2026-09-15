@@ -192,14 +192,18 @@ const sameNumber = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 /**
  * X1 (v4.3.0 wave 2H seam fix 5): is this trade's sell leg exactly the exit this
  * IPO record carries — the quantity, price and date the sync writes from it?
+ *
+ * `ignoreDate` compares the quantity and price alone; it is opt-in and exists for
+ * one caller, `syncOwnsClose` below, where the stored date was never readable and
+ * so cannot be the date the sync wrote (Y2).
  */
-export function sellLegIsIpoExit(i: IpoLinkInput, trade: LinkedSellLeg): boolean {
+export function sellLegIsIpoExit(i: IpoLinkInput, trade: LinkedSellLeg, ignoreDate = false): boolean {
   const p = tradePatchFromIpo(i);
   if (!p || p.sellQty == null || p.avgSellPrice == null) return false;
   return (
     sameNumber(Number(trade.sellQty) || 0, p.sellQty) &&
     sameNumber(Number(trade.avgSellPrice) || 0, p.avgSellPrice) &&
-    (trade.sellDate ?? null) === p.sellDate
+    (ignoreDate || (trade.sellDate ?? null) === p.sellDate)
   );
 }
 
@@ -255,6 +259,40 @@ export function linkedSyncFor(args: {
   if (sellLegIsIpoExit(next, trade) || (stored != null && sellLegIsIpoExit(stored, trade))) return "sync";
   if (stored != null && samePatch(tradePatchFromIpo(stored), tradePatchFromIpo(next), unreadableExitDate(stored.exitDate))) return "leave";
   return "refuse";
+}
+
+/**
+ * J4 (v4.3.0 wave 2J): whose close is the holding carrying?
+ *
+ * A sale that matches the IPO's exit has two possible histories, and X1 read both
+ * as one ("the holding's sale IS the IPO's exit"):
+ *
+ *   • the sync wrote it — the sale equals the IPO's exit AS STORED before this save
+ *     (its own earlier write, or a sale identical to it). The sync OWNS that close:
+ *     re-pricing the exit on /ipos moves the holding's price and gross, so the
+ *     charges it computed for the OLD exit must move with them or the row states a
+ *     figure nothing prices any more;
+ *   • the user wrote it — the sale equals only the exit BEING RECORDED, having been
+ *     entered in Trades first with the broker's own charges. Those are the user's
+ *     record and are never rewritten (owner ruling F1).
+ *
+ * A holding with NO sale is the first case by construction: the sync is about to
+ * write the close itself. A create, or a save that links a different holding, has no
+ * stored exit it could have written, so a sale there is always the user's.
+ *
+ * Y2 (wave 2H) carries over: a stored exit date that was never readable cannot be the
+ * date the sync wrote, so it equals any date — the quantity and price decide.
+ *
+ * This answers ownership of the CLOSE only. Whether the charges ON it are also the
+ * sync's own is the caller's question (it needs the charge engine): a holding whose
+ * sale is the stored exit but whose heads were never the ones the IPO priced keeps
+ * every one of them.
+ */
+export function syncOwnsClose(args: { stored: IpoLinkInput | null; trade: LinkedSellLeg | null }): boolean {
+  const { stored, trade } = args;
+  if (!trade || !(Number(trade.sellQty) > 0)) return true; // no sale: the sync writes this close
+  if (!stored) return false; // a create or a new link: the sale predates the link
+  return sellLegIsIpoExit(stored, trade, unreadableExitDate(stored.exitDate));
 }
 
 /**

@@ -141,6 +141,19 @@ export function deleteTradesByIds(
       .where(inArray(ledgerEntries.refTradeId, chunk))
       .all(),
   ) as { ledgerId: number; tradeId: number }[];
+  // IPO records pointing at these trades. Like the ledger entries they are
+  // UNLINKED, never deleted (see the header) — and like them the LINK must be
+  // snapshotted, or a restore brings the trade back with `ipos.trade_id` still
+  // null. That is not inert: CAP-IPO-LINK / TAX-IPO-LINK (v4.3.0 wave 2H) count
+  // a linked, exited IPO's sale ONCE by keying on this column, so a delete then
+  // a restore silently counted the same sale twice again — in the capital
+  // summary and through it `available`, in the tax pack, in the ITR export and
+  // on both AIS sides, with nothing on screen saying the link had gone.
+  // `restoreTrashSnapshot` has read `ipoRefs` since v3.8; until now only
+  // `removeBrokerRows` ever wrote it.
+  const ipoRefRows = collectIdChunks(allowedIds, (chunk) =>
+    db.select({ ipoId: ipos.id, tradeId: ipos.tradeId }).from(ipos).where(inArray(ipos.tradeId, chunk)).all(),
+  ) as { ipoId: number; tradeId: number }[];
 
   // The recovery, before anything is touched. See the header: no snapshot, no
   // delete.
@@ -153,7 +166,9 @@ export function deleteTradesByIds(
       ledgerRefs: ledgerRefRows,
       // Undefined, not [], when there are none: JSON.stringify drops an
       // undefined field, so an ordinary delete keeps writing the EXACT shape
-      // it always did (tests/trash-roundtrip.test.ts pins that).
+      // it always did (tests/trash-roundtrip.test.ts pins that). `ipoRefs`
+      // follows the same rule.
+      ipoRefs: ipoRefRows.length ? ipoRefRows : undefined,
       referenceRows: referenceRows.length ? (referenceRows as unknown as Record<string, unknown>[]) : undefined,
       reason,
       accountId,

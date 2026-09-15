@@ -191,6 +191,11 @@ export function detectCrossSourceDuplicates(
   const collisions: CrossSourceCollision[] = [];
   // W2H: the same-snapshot collisions of rows asked ONLY by W2G M1 (`snapshotOffKey`).
   const offKey = new Set<CrossSourceCollision>();
+  // W2I: the STORED rows those asks named (`snapshotIds`, the plan's own list),
+  // deduplicated — two incoming rows of one tradingsymbol name the same set. One
+  // report is made per incoming row, but the ask stands until EVERY named row is
+  // gone, so the remedy's number is this, not the number of incoming rows.
+  const offKeyStored = new Set<number>();
 
   /**
    * Bucket the existing book ONCE by the two fields a candidate must match
@@ -289,7 +294,10 @@ export function detectCrossSourceDuplicates(
     const pick = risky ?? softer;
     if (pick) {
       collisions.push(pick);
-      if (pick.sameSnapshot === true && inc.snapshotOffKey === true) offKey.add(pick);
+      if (pick.sameSnapshot === true && inc.snapshotOffKey === true) {
+        offKey.add(pick);
+        for (const id of inc.snapshotIds ?? []) offKeyStored.add(id);
+      }
     }
   }
 
@@ -325,14 +333,27 @@ export function detectCrossSourceDuplicates(
   }
   if (converted.length > 0) {
     const one = converted.length === 1;
-    // Descriptive, not advice: the path the re-check probed (the earlier row
-    // deleted, the pull run again: no question, the broker's book) and what a
-    // forced commit does. Rejected for 4.3.0 (4.3.1, product-keyed snapshot
-    // identity): a one-click "replace the earlier row" action.
+    // W2I: the remedy counts the STORED rows the plan named, NOT the incoming
+    // rows. The M1 ask is raised against every same-tradingsymbol row of today's
+    // snapshot, so one incoming row can stand against two stored rows (two
+    // exchanges, or two products) while only one of them is reported — and a
+    // singular "the earlier row can be deleted" then left the same pull refused
+    // with the same sentence after the user had followed it. Only `stored` rows
+    // are named, so one round of the remedy ends the ask.
+    const stored = offKeyStored.size;
+    const storedOne = stored <= 1;
+    // Descriptive, not advice: the path the re-check probed (the earlier rows
+    // deleted, the pull run again: no question, the broker's book), what a
+    // forced commit does, and — since an M1 ask never reaches planSnapshot's
+    // `carriesUserRecord` check, the stored row being on another key — the same
+    // warning the on-key sentence carries, plus the way back. Rejected for 4.3.0
+    // (4.3.1, product-keyed snapshot identity): a one-click "replace the earlier
+    // row" action.
     parts.push(
-      `${converted.length} row${one ? "" : "s"} in this pull (${listOf(converted)}) restate${one ? "s an instrument" : " instruments"} today's earlier pull already recorded under another product, segment or exchange, and ${one ? "is not written over that row" : "are not written over those rows"}. ` +
-        `If the broker converted ${one ? "the position" : "these positions"} between the two pulls, the earlier row${one ? "" : "s"} can be deleted from Trades and the pull run again, ` +
-        `which records the position${one ? "" : "s"} as the broker now states ${one ? "it" : "them"}; committing anyway keeps both rows${one ? "" : " of each"}.`,
+      `${converted.length} row${one ? "" : "s"} in this pull (${listOf(converted)}) restate${one ? "s an instrument" : " instruments"} today's earlier pull already recorded under another product, segment or exchange, and ${one ? "is" : "are"} not written over ${storedOne ? "that row" : "those rows"}. ` +
+        `If the broker converted ${one ? "the position" : "these positions"} between the two pulls, the ${storedOne ? "earlier row" : `${stored} earlier rows`} can be deleted from Trades and the pull run again, ` +
+        `which records the position${one ? "" : "s"} as the broker now states ${one ? "it" : "them"}; committing anyway adds this pull's row${one ? "" : "s"} beside the earlier ${storedOne ? "one" : "ones"}. ` +
+        `${storedOne ? "That row may" : "Those rows may"} carry a cost basis or journal entry you recorded; a deleted row can be put back from Backup & Restore → Deleted items.`,
     );
   }
 

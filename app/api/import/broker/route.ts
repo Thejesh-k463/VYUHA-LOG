@@ -620,9 +620,22 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
+      // J1 (v4.3.0 fix wave 2J): a merge-carried record names NO connection, so
+      // its identity is its span AND the sentences it states (I5,
+      // lib/import/dhan-unfetched.ts recordKeyOf) — two books merged into one
+      // target on one span are told apart by nothing else. The card sends the
+      // `fact` (with its `remedy`) of the line it showed, and it is forwarded
+      // verbatim: exactly that record's line is cleared, and a sentence no open
+      // record holds clears nothing (the 404 below). A body WITHOUT `fact` —
+      // any older client, any other caller — is passed on unchanged, so the
+      // span's first record of that connection is taken, as before.
+      const named =
+        typeof body.fact === "string"
+          ? { fact: body.fact, remedy: typeof body.remedy === "string" ? body.remedy : null }
+          : {};
       const cleared = clearUnfetchedLine(
         accountId,
-        { from, to, reason, connection },
+        { from, to, reason, connection, ...named },
         `Dhan notice cleared by the user: fills from ${from} to ${to} were not fetched by a pull.`,
       );
       if (cleared === 0) {

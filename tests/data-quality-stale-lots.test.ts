@@ -513,6 +513,26 @@ describe("H3 (wave 2H) — M2 is per LINK: a joined lot is exempt only for a sal
     expect(row4([L1, L2half, S2])).toEqual([[L2half.id, S2.id, true, false, [L1.id]]]);
   });
 
+  // Y3 (wave 2I) — `trades.avg_sell_price` / `avg_buy_price` are NOT NULL DEFAULT 0,
+  // so a sale that states NO price arrives as 0 and the null/non-finite guards could
+  // never fire for a stored row: 0 read as "a different price", the joined lot was
+  // exempted, and a held lot was offered a CRITICAL one-click onto a sale L1 may
+  // already count. The code's own comment said the opposite rule; now both agree.
+  it("a 0 price is not a stated price: a sibling sale of the same quantity stating none restates the close, so L1 counts", () => {
+    const L1 = joinedL1();
+    const L2 = heldL2();
+    const noPrice = sale({ avgSellPrice: 0, sellDate: "2026-08-28" });
+    expect(row4([L1, L2, noPrice])).toEqual([[L2.id, noPrice.id, true, false, [L1.id]]]);
+    expect(staleIssues([L1, L2, noPrice]), "no CRITICAL one-click onto a sale that may already be counted").toEqual([]);
+    // A sibling that DOES state another price is exempt exactly as today.
+    const stated = sale({ avgSellPrice: 260, sellDate: "2026-08-28" });
+    expect(row4([L1, L2, stated])).toEqual([[L2.id, stated.id, false, true, []]]);
+    // Both halves at 60: the design's shape, and the same answer.
+    const L1half = joinedL1({ buyQty: 60, sellQty: 60 });
+    const L2half = lot({ buyQty: 60, avgBuyPrice: 210, buyDate: "2026-08-21" });
+    expect(row4([L1half, L2half, sale({ sellQty: 60, avgSellPrice: 0, sellDate: "2026-08-28" })])[0].slice(2)).toEqual([true, false, [L1half.id]]);
+  });
+
   it("short side: a joined short is exempt only for a cover it does not restate (quantity and price of its buy leg)", () => {
     const F = { segment: "future", instrumentType: "future", symbol: "NIFTY", tradingsymbol: "NIFTY26SEPFUT" };
     const J = q({ ...F, isOpen: false, sellQty: 50, avgSellPrice: 120, sellDate: "2026-09-01", buyQty: 50, avgBuyPrice: 110, buyDate: "2026-09-04", importNotes: withStaleCloseNote(null, SALE_HASH) });
@@ -521,6 +541,31 @@ describe("H3 (wave 2H) — M2 is per LINK: a joined lot is exempt only for a sal
     expect(row4([J, L, restates])).toEqual([[L.id, restates.id, true, false, [J.id]]]);
     const other = q({ ...F, buyQty: 50, avgBuyPrice: 108, buyDate: "2026-09-05" });
     expect(row4([J, L, other])).toEqual([[L.id, other.id, false, true, []]]);
+  });
+});
+
+/**
+ * X2 reader (wave 2I) — a STATED MTF funded amount of 0 is a statement: the
+ * position is 100% the trader's own capital. Since X2 it survives every writer
+ * (the accrual job, closePosition, updateManualTrade), so a reader that treats
+ * it as "not set" tells the user to set what they just set. The `mtf_funding`
+ * issue is about a row that states NOTHING.
+ */
+describe("X2 reader — data quality flags an MTF row with NO funded amount, never a stated 0", () => {
+  const mtfIssue = (trades: QualityTrade[]) => assessDataQuality(inputs(trades)).issues.find((i) => i.code === "mtf_funding");
+  const mtfRow = (funded: number | null) =>
+    q({ segment: "eq_mtf", mtfFundedAmount: funded, buyQty: 100, avgBuyPrice: 200, buyDate: "2026-08-20", closingPrice: 220 });
+
+  it("funded 0 raises no issue; an unstated (null) one still does", () => {
+    const zero = mtfRow(0);
+    // On revert: {code:"mtf_funding", count:1} — "MTF positions without funded principal".
+    expect(mtfIssue([zero]), "a warning telling the user to set what they already stated").toBeUndefined();
+    const unstated = mtfRow(null);
+    expect(mtfIssue([unstated])).toMatchObject({ code: "mtf_funding", severity: "warning", count: 1, ids: [unstated.id] });
+    // Two rows, one of each: only the unstated one is listed.
+    const a = mtfRow(0);
+    const b = mtfRow(null);
+    expect(mtfIssue([a, b])?.ids).toEqual([b.id]);
   });
 });
 

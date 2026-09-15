@@ -28,7 +28,10 @@ import type { DhanUnfetchedSpan } from "@/lib/import/api/dhan";
  * same span AND the same sentences share one line), and the card's Clear names
  * that connection — clearUnfetchedLine clears exactly the records on that line.
  * A Clear with no connection field (the route's legacy row) still clears the
- * span on every connection of the account.
+ * span on every connection of the account. I5 (v4.3.0 fix wave 2I): a carried
+ * record names NO connection, so its identity is its span AND its sentences —
+ * two books merged into one target keep one record each (their last pulls ran
+ * at different times of day), and an identical carry is still written once.
  *
  * Why not the alternatives: `auth_json` is the vault-encrypted credential blob
  * — `hasAuth`, `clearAuth`, a re-save with new PIN + TOTP and the backup's
@@ -74,8 +77,22 @@ export interface UnfetchedSpanRow {
 type OpenSpan = UnfetchedSpanRow & { connId: number | null };
 
 const keyOf = (s: { from: string; to: string; reason: string }) => `${s.from}|${s.to}|${s.reason}`;
-/** L1: one record's identity — its connection (null: carried by a merge) and its span. */
-const recordKeyOf = (connId: number | null, s: { from: string; to: string; reason: string }) => `${connId ?? "-"}|${keyOf(s)}`;
+
+/** H4: the records that share one card line — the same span AND the same
+ *  sentences. A different fact (another client's last pull at another time of
+ *  day) is a second line, so no Clear dismisses a fact the card did not show. */
+const lineKeyOf = (s: UnfetchedSpanRow) => `${keyOf(s)}|${s.fact}|${s.remedy ?? ""}`;
+
+/** L1: one record's identity — its connection (audit_log.entity_id) and its
+ *  span. I5 (v4.3.0 fix wave 2I): a record with NO connection was carried by an
+ *  account merge and names no source client, so its identity is its span AND
+ *  the sentences it carries. Two books merged into one target on the identical
+ *  span state DIFFERENT facts (their last pulls ran at different times of day)
+ *  and H4 gives each its own card line, so both are kept; an identical carry
+ *  (same span, same sentences) is still one record. A connection's record keeps
+ *  its (connection, span) key, so a live client never lists its own span twice
+ *  however its sentence moves. */
+const recordKeyOf = (connId: number | null, s: UnfetchedSpanRow) => (connId == null ? `-|${lineKeyOf(s)}` : `${connId}|${keyOf(s)}`);
 
 /** L1: marks a clear row a PULL appended (clearRow), and H4: a user Clear that
  *  named its record (clearUnfetchedLine). It clears only the span of its own
@@ -83,11 +100,6 @@ const recordKeyOf = (connId: number | null, s: { from: string; to: string; reaso
  *  it — the route's legacy Clear, no connection field — clears the account's
  *  span on every connection. */
 const CLEAR_SCOPE_CONNECTION = "connection";
-
-/** H4: the records that share one card line — the same span AND the same
- *  sentences. A different fact (another client's last pull at another time of
- *  day) is a second line, so no Clear dismisses a fact the card did not show. */
-const lineKeyOf = (s: UnfetchedSpanRow) => `${keyOf(s)}|${s.fact}|${s.remedy ?? ""}`;
 
 /** Every record's LATEST state for one account — its last kept row, and whether
  *  a later clear row cleared it (S3: a cleared record keeps the sentences it
@@ -115,12 +127,23 @@ function latestVia(exec: Pick<typeof db, "select">, accountId: number): (OpenSpa
     if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) continue;
     const connId = r.entityId ?? null;
     if (a.clearedAt != null) {
-      if (a.scope === CLEAR_SCOPE_CONNECTION) {
-        const own = latest.get(recordKeyOf(connId, { from, to, reason }));
-        if (own) own.cleared = true;
-      } else {
-        const k = keyOf({ from, to, reason });
+      const span = { from, to, reason };
+      if (a.scope !== CLEAR_SCOPE_CONNECTION) {
+        const k = keyOf(span);
         for (const o of latest.values()) if (keyOf(o) === k) o.cleared = true;
+      } else if (connId == null && typeof a.fact !== "string") {
+        // I5: a carried record's clear row written BEFORE wave 2I named no
+        // sentence — only one carried record per span could exist then — so it
+        // clears the span's carried records, as it did when it was written.
+        const k = keyOf(span);
+        for (const o of latest.values()) if (o.connId == null && keyOf(o) === k) o.cleared = true;
+      } else {
+        // I5: the row names the record it cleared — its connection, or (a carry:
+        // no connection) the sentences that record stated (clearSnapshots).
+        const own = latest.get(
+          recordKeyOf(connId, { ...span, fact: String(a.fact ?? ""), remedy: typeof a.remedy === "string" ? a.remedy : null }),
+        );
+        if (own) own.cleared = true;
       }
       continue;
     }
@@ -129,7 +152,7 @@ function latestVia(exec: Pick<typeof db, "select">, accountId: number): (OpenSpa
         ? a.fact
         : r.summary || `Fills from ${from} to ${to} were not fetched by a Dhan pull.`;
     const remedy = typeof a.fact === "string" && a.fact && typeof a.remedy === "string" && a.remedy ? a.remedy : null;
-    latest.set(recordKeyOf(connId, { from, to, reason }), { from, to, reason, fact, remedy, connId, cleared: false });
+    latest.set(recordKeyOf(connId, { from, to, reason, fact, remedy }), { from, to, reason, fact, remedy, connId, cleared: false });
   }
   return [...latest.values()];
 }
@@ -176,8 +199,21 @@ export function outstandingUnfetched(accountId: number): UnfetchedSpanRow[] {
 /** A clear row's before / after snapshots. `scope` sits on BOTH sides, so the
  *  Audit log's diff (lib/analytics/audit-diff.ts, the union of both key sets)
  *  shows `clearedAt` only — a clear changes no scope of the notice. */
-function clearSnapshots(accountId: number, s: { from: string; to: string; reason: string }) {
-  const snap = { notice: DHAN_UNFETCHED_NOTICE, broker: "dhan", accountId, from: s.from, to: s.to, reason: s.reason, scope: CLEAR_SCOPE_CONNECTION };
+function clearSnapshots(accountId: number, s: UnfetchedSpanRow, connId: number | null) {
+  const snap = {
+    notice: DHAN_UNFETCHED_NOTICE,
+    broker: "dhan",
+    accountId,
+    from: s.from,
+    to: s.to,
+    reason: s.reason,
+    scope: CLEAR_SCOPE_CONNECTION,
+    // I5: a carried record has no connection, so its identity is the sentences
+    // it states (recordKeyOf) — the row names them, on BOTH sides, so the Audit
+    // log's diff still shows `clearedAt` only. A connection's clear row is
+    // unchanged: its entity id already names its record.
+    ...(connId == null ? { fact: s.fact, remedy: s.remedy } : {}),
+  };
   return { beforeJson: { ...snap, clearedAt: null }, afterJson: { ...snap, clearedAt: new Date().toISOString() } };
 }
 
@@ -198,18 +234,28 @@ function clearSnapshots(accountId: number, s: { from: string; to: string; reason
  */
 export function clearUnfetchedLine(
   accountId: number,
-  record: { from: string; to: string; reason: string; connection: number | null },
+  record: { from: string; to: string; reason: string; connection: number | null; fact?: string; remedy?: string | null },
   summary: string,
   source = "ui",
 ): number {
   return db.transaction((tx) => {
     const all = latestVia(tx, accountId);
-    const named = all.find((o) => o.connId === record.connection && keyOf(o) === keyOf(record));
+    const onSpan = all.filter((o) => o.connId === record.connection && keyOf(o) === keyOf(record));
+    // I5 (v4.3.0 fix wave 2I): a merge-carried record names no connection, so two
+    // books' records of one span are told apart ONLY by their sentences — a
+    // caller that states the line's `fact` (with its `remedy`) clears exactly
+    // that line, and states a sentence no record holds clears nothing. A caller
+    // naming no sentence takes the span's first record of that connection, as
+    // before.
+    const named =
+      record.fact == null
+        ? onSpan[0]
+        : onSpan.find((o) => o.fact === record.fact && (record.remedy === undefined || o.remedy === (record.remedy ?? null)));
     if (!named) return 0;
     const line = all.filter((o) => !o.cleared && lineKeyOf(o) === lineKeyOf(named));
     if (line.length === 0) return 0;
     tx.insert(auditLog)
-      .values(line.map((o) => ({ entity: "settings", entityId: o.connId, action: "update", summary, ...clearSnapshots(accountId, o), source })))
+      .values(line.map((o) => ({ entity: "settings", entityId: o.connId, action: "update", summary, ...clearSnapshots(accountId, o, o.connId), source })))
       .run();
     return line.length;
   });
@@ -245,7 +291,7 @@ function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
     entityId: owner.connId,
     action: "update",
     summary,
-    ...clearSnapshots(owner.accountId, o),
+    ...clearSnapshots(owner.accountId, o, owner.connId),
     source: owner.source,
   };
 }
@@ -256,7 +302,9 @@ function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
  * Idempotent: a span already outstanding for the account with the same
  * connection and from/to/reason is skipped (L1: the same span of ANOTHER
  * connection — a merge's carry beside the target client's own — is a second
- * record, not a repeat). A pull whose write failed leaves lastPullAt where
+ * record, not a repeat; I5: a carry states no connection, so a REPEAT is a carry
+ * of the same span with the same sentences — another book's carry of that span,
+ * its own fact, is a second record). A pull whose write failed leaves lastPullAt where
  * it was, so the next pull recomputes the very same span — and must not list
  * it twice once the write succeeds.
  *
@@ -397,6 +445,12 @@ export function keepUnfetchedAndStamp(
  * Whatever happens to the connection row: the fact is about the BOOK, and the
  * book's trades are what moved. Append-only — the source's own rows stay as
  * they were; one new row per span names the target's account id.
+ *
+ * I5 (v4.3.0 fix wave 2I): one record per distinct FACT. A carried row states no
+ * connection, so a SECOND book merged into the same target on the identical span
+ * is a repeat only when it states the same sentences; its own sentence (its last
+ * pull ran at another time of day) is a second record and a second card line,
+ * each Clear-able on its own (recordKeyOf).
  */
 export function carryUnfetchedOnMerge(
   tx: Exec,

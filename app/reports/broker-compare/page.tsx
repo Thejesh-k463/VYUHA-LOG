@@ -54,11 +54,11 @@ export default function BrokerComparePage() {
             // Re-price on the PERSISTED funded amount, never the full buy value
             // (that assumes 100% broker financing and overstates every broker's
             // MTF interest equally, which would still rank them correctly but
-            // report an inflated absolute cost).
-            fundedAmount:
-              t.mtfFundedAmount && t.mtfFundedAmount > 0
-                ? t.mtfFundedAmount
-                : defaultMtfFundedAmount(t.buyValue, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT),
+            // report an inflated absolute cost). A stored 0 is a STATED amount
+            // (bought outright, nothing financed) and re-prices as no interest
+            // on every broker — the same null-vs-0 rule the writers keep (V3/X2);
+            // only a never-set null is estimated.
+            fundedAmount: t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT),
             daysHeld: heldDays(t.buyDate, t.sellDate, today),
             pledgeScrips: 1,
           }
