@@ -7068,3 +7068,58 @@ Also pinned as current contract: `app/api/positions/close/route.ts` maps only ST
 compiled; the three lint warnings are pre-existing and in files no wave touched. README: 417 → 422 files, 8,729 → 8,835 tests.
 **Next:** commit, push, CI; then the SCOPED re-check of wave 2L (+ M1) with probe-capable reviewers against `cd1ab70` — run
 `e2e/z-live-desk.spec.ts` locally first, because `components/live/*` changed (desk-types, load-desk, tracker-client); then wave 3.
+
+## 2026-09-15 — why the v4.3.0 fix waves regressed, and the mechanisms built against it (seventh session; the owner: "zero repeated errors")
+
+**The measurement.** Across the 2H and 2I/2J/2K scoped re-checks, about half of every round's product findings were
+regressions the fix wave itself introduced (2H: 6 of 14; 2I: 7 of 15), including two silent wrong numbers per round; the
+other half were pre-existing defects in shipped 4.2.0, clustered in four areas — IPO-to-holding linking, Trash restore,
+account merge, MTF funded amounts. Plain imports, charges and P&L came through every round with low or cosmetic findings only.
+
+**The causes, in order of weight.** (1) Disjoint FILES are not disjoint BEHAVIOUR: six parallel builders each fixed their
+file; the defect sat at the seam (the counted-once split — one builder scoped the link read in `ipos.ts`, the tax / AIS
+consumers kept the unscoped read). (2) The orchestrator's decided designs did not enumerate the reachable SEQUENCES
+(restore after merge; a rate edit between a sync and a later exit edit) or the CONSUMER SET of the value they changed; the
+next re-check found it one wave later. (3) The suite is mostly pure-module unit tests; the defects live in stateful
+sequences and cross-consumer consistency, which no unit test of a pure module can see. Trade identity carried in
+`import_notes` markers is the fragile part — 4.3.1 rebuilds it by ruling.
+
+**The mechanisms (this commit).**
+- Four executable guards (AGENTS.md "Invariant guards …"): `tests/oracle-counted-once.test.ts` (+ `tests/helpers/oracle-book.ts`:
+  every realised sale counted once in every consumer and view, re-asserted after 13 real operations);
+  `tests/harness-book-sequences.test.ts` (+ `tests/helpers/book-ops.ts`: 17 real operations, every ordered pair plus 13
+  curated longer sequences from this release's findings, six invariants); `tests/readers-follow-writers.test.ts` (+
+  `tests/helpers/field-rules.ts`: an AST scan, proven to see the three funded-0 readers in `3feb22f` and the three shapes
+  the line-based scan missed); `tests/preview-equals-save-matrix.test.ts` (667 cells over every broker × plan × segment ×
+  funded state × exit-date shape × order counts).
+- A new agent `.claude/agents/vyuha-design-reviewer.md`: writers, readers, sequences and the breaking case for every
+  DECIDED design BEFORE any builder launches; REVISE comes with the rewritten sentence.
+- `vyuha-builder`: the consumer sweep (readers touched / left, in the report) and the guards gate the identity files.
+  `vyuha-seam-tester`: the seam cases are written FIRST, red on HEAD; the guards run in the seam pass. The global
+  `planner`: consumer sets and sequences per value; identity work gets ONE builder. `vyuha-audit` §0.5: design review before
+  a fix wave; the re-check graded by INTRODUCED regressions; two regressing waves in a row end the parallel pattern.
+- Two isolation facts the guards had to respect, recorded: `lib/db` caches its connection on `globalThis`, so an in-memory
+  `new Database(tpl.serialize())` copy is invisible to product code — the oracle resets the journal between scenarios and the
+  harness restores a `VACUUM INTO` template over `main` through the live connection (~8 ms). The harness's one declared
+  model boundary: `deleteJoinedLot → reimportSameHash` legitimately leaves the book short (the app's own `stale_sale` warning),
+  the only op allowed to add a symbol to `mayReadShort`. The pair sweep re-checks after the second step only (the first is the
+  single-op case, asserted on its own) — halves the wall clock, loses nothing.
+
+**What the guards found on HEAD `8ff4288` (each pinned as `it.fails` with its id; they reopen work — fix wave 2M, before wave 3):**
+- **G-G2-1 — medium, wave 2L (L6):** a pre-4.3.0 envelope's re-link fallback and its Data Quality question both go through
+  `ipoRecordMatchesHolding`, whose name clause matches only a record CREATED FROM a holding (the symbol in `name`); a record
+  entered on /ipos under the issue's name matches nothing, so no link is written and no question raised — the sale counts
+  twice again. → match on ISIN / symbol / allotted quantity, and raise the question for every unlinked exited record with a
+  candidate holding, name or not.
+- **G-G3-1 — medium class, low reach, pre-existing:** the staged ladder prices off an unvalidated leg date
+  (`lib/queries/staged.ts:178 new Date(leg.tradeDate)`; `'2026-02-31'` rolls forward and books MTF interest 1,449.86 for
+  192.33; some inputs 500). → `addLeg` / the ladder use `normalizeDate` + the calendar check L3 gave closePosition, and refuse.
+- **G-G3-2 — low, pre-existing:** the trade EDITOR's preview still takes daysHeld off the raw date (I1 fixed the close dialog
+  only): a dd-mm-yyyy sell date previews 0 days of MTF interest against a save of 30. → `editPreviewBody` resolves through
+  the same rule as `resolveExitIso`.
+
+**Gate on the guards tree:** `npm run verify` EXIT 0; raw line **426 files / 9,218 passed | 5 expected fail | 35 skipped**;
+`next build` compiled; the three lint warnings are the pre-existing ones. The "5 expected fail" are the recorded defects
+(G-G2-1 ×2 in the harness, G-G3-1, G-G3-2 ×2 in the matrix): an `it.fails` goes RED the day its defect is fixed, so a fix
+must flip the pin in the same commit. README: 422 → 426 files, 8,835 → 9,218 tests. **Next:** fix wave 2M (the three
+findings, `vyuha-design-reviewer` first, one builder for the IPO / trash item) → the 2L re-check → wave 3.

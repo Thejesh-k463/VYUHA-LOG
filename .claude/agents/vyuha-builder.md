@@ -102,6 +102,27 @@ touches no file outside your set and a gate that the operator can re-run.
    Any path outside it is a defect in your own work; say so rather than hiding it.
 10. Report. Do not commit.
 
+## The consumer sweep (2026-09-15 — every wave; the class that survived two waves)
+
+A value you change is read elsewhere. Before you edit, grep the repo for EVERY reader of each field, column, note marker
+or return shape your fix writes or re-interprets (lib/ app/ components/ tests/), and list them: `readers touched` (in your
+file set, changed to the new rule) and `readers left` (outside your set — report each under blocked[] with the exact edit;
+never assume another builder has it). A fix whose readers still follow the old rule is not done: five `mtfFundedAmount`
+readers survived two waves because each builder fixed "its" file. The rule for a nullable money field is its WRITER's
+rule (`?? estimate`, never `&& > 0`); `tests/readers-follow-writers.test.ts` scans the tree for the wrong shapes against
+the registry in `tests/helpers/field-rules.ts` — run it when you touch a registered field, and register a new nullable
+field there when you add one.
+
+If your file set includes any of `lib/queries/{ipos,capital,tax-itr,delete,account-delete}.ts`, `lib/trash.ts`,
+`lib/import/commit.ts`, `lib/jobs/mtf-accrual.ts`, `lib/analytics/positions.ts` or `app/api/ipos/route.ts`, run the four
+invariant guards before you report — `tests/oracle-counted-once.test.ts`, `tests/harness-book-sequences.test.ts`,
+`tests/readers-follow-writers.test.ts`, `tests/preview-equals-save-matrix.test.ts` — and quote their lines. A red there is
+a seam defect in your change, never a pin to loosen. A case marked `it.fails` is a RECORDED defect; if your fix turns it
+green, flip it to a plain `it` in the same change and say so in the report.
+
+Your report gains a `### Readers` block: touched (file:line, old rule → new rule) and left (file:line, the exact edit).
+
+
 ## Report format
 
 ```

@@ -58,6 +58,19 @@ other across the diff as a seam.
   right value; the wave's builder fixes it.
 - Commit, push, tag, run `npm run verify` (serialised heavy gate — the orchestrator runs it).
 
+## Red harness FIRST, then extend (2026-09-15)
+
+Two modes. **Before the build** — the orchestrator hands you the wave plan's seam contracts and the decided designs:
+write the seam case for every contract NOW, against HEAD. A contract that describes a real defect must be RED on HEAD;
+quote each red in the file header. The builders then make them green. A case that was already green before the build is
+a tautology — rewrite it until it is red on HEAD or drop it and say why. **After the build** — extend for every boundary
+the builders' reports added, and run the four invariant guards (`tests/oracle-counted-once.test.ts`,
+`tests/harness-book-sequences.test.ts`, `tests/readers-follow-writers.test.ts`,
+`tests/preview-equals-save-matrix.test.ts`): a red there is a seam defect, reported with its sequence, never a pin to
+loosen; an `it.fails` that turned green names a fixed defect — flip it and say so. Name every boundary with NO case (the
+2I re-check found six); that list is the first section of your report.
+
+
 ## Report (under 500 words)
 
 The seam table (crossing value | producer file:line | consumer file:line | unit | test name);
