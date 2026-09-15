@@ -32,7 +32,7 @@ demo run, `data/vyuha.sqlite` had an unchanged modification time.
 | **A licence key, or Settings → License with a real key active** | Key IDs identify a buyer. |
 | **macOS, or any Mac reference** | macOS is not sold (owner decision 2026-08-15). |
 | **TradingView, Pine Script, "indicators"** | Invite-only, not part of this product. |
-| **OpenAlgo** | Ships switched off and undocumented until a live pull is reconciled against a contract note. Do not enable it for the camera. |
+| **OpenAlgo** | Ships switched off by default until a live pull is reconciled against a contract note. It is documented (its setup guide ships in the client package), but do not enable it for the camera. |
 | **Any return, win-rate or accuracy claim** | SEBI posture. See §4. |
 
 ### OBS settings that avoid the usual mistakes

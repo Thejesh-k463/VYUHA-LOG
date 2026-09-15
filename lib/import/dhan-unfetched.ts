@@ -17,9 +17,14 @@ import type { DhanUnfetchedSpan } from "@/lib/import/api/dhan";
  * snapshot is `{notice, broker, accountId, from, to, reason, fact, remedy,
  * clearedAt: null}` (`fact` / `remedy` since v4.3.0 fix wave 2, P15 / P16);
  * the user's clear is a SECOND row with the same keys and `clearedAt` set. The
- * notice is outstanding while the latest row for its span is uncleared. Keyed
+ * notice is outstanding while the latest row for its span is uncleared. Read
  * by ACCOUNT, not connection id, because the fact is about the book: a
- * disconnect + reconnect in the same account still shows it.
+ * disconnect + reconnect in the same account still shows it. L1 (v4.3.0 fix
+ * wave 2G): a span's IDENTITY includes its connection (audit_log.entity_id), so
+ * a merge-carried span (no connection) and the target client's span with the
+ * same from / to / reason are two records — a pull's clear names its own
+ * connection's (`scope: "connection"`), the user's Clear the account's, and GET
+ * lists one line per from / to / reason.
  *
  * Why not the alternatives: `auth_json` is the vault-encrypted credential blob
  * — `hasAuth`, `clearAuth`, a re-save with new PIN + TOTP and the backup's
@@ -65,6 +70,14 @@ export interface UnfetchedSpanRow {
 type OpenSpan = UnfetchedSpanRow & { connId: number | null };
 
 const keyOf = (s: { from: string; to: string; reason: string }) => `${s.from}|${s.to}|${s.reason}`;
+/** L1: one record's identity — its connection (null: carried by a merge) and its span. */
+const recordKeyOf = (connId: number | null, s: { from: string; to: string; reason: string }) => `${connId ?? "-"}|${keyOf(s)}`;
+
+/** L1: marks a clear row a PULL appended (clearRow). It clears only the span of
+ *  its own connection. A clear row without it — the user's Clear in
+ *  app/api/import/broker/route.ts — clears the account's span on every
+ *  connection, which is the one line the card showed. */
+const CLEAR_SCOPE_CONNECTION = "connection";
 
 function outstandingVia(exec: Pick<typeof db, "select">, accountId: number): OpenSpan[] {
   const rows = exec
@@ -87,12 +100,23 @@ function outstandingVia(exec: Pick<typeof db, "select">, accountId: number): Ope
     const to = String(a.to ?? "");
     const reason = String(a.reason ?? "");
     if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) continue;
+    const connId = r.entityId ?? null;
+    if (a.clearedAt != null) {
+      if (a.scope === CLEAR_SCOPE_CONNECTION) {
+        const own = latest.get(recordKeyOf(connId, { from, to, reason }));
+        if (own) own.cleared = true;
+      } else {
+        const k = keyOf({ from, to, reason });
+        for (const o of latest.values()) if (keyOf(o) === k) o.cleared = true;
+      }
+      continue;
+    }
     const fact =
       typeof a.fact === "string" && a.fact
         ? a.fact
         : r.summary || `Fills from ${from} to ${to} were not fetched by a Dhan pull.`;
     const remedy = typeof a.fact === "string" && a.fact && typeof a.remedy === "string" && a.remedy ? a.remedy : null;
-    latest.set(keyOf({ from, to, reason }), { from, to, reason, fact, remedy, connId: r.entityId ?? null, cleared: a.clearedAt != null });
+    latest.set(recordKeyOf(connId, { from, to, reason }), { from, to, reason, fact, remedy, connId, cleared: false });
   }
   return [...latest.values()]
     .filter((s) => !s.cleared)
@@ -100,9 +124,19 @@ function outstandingVia(exec: Pick<typeof db, "select">, accountId: number): Ope
     .sort((x, y) => x.from.localeCompare(y.from) || x.to.localeCompare(y.to));
 }
 
-/** The spans still outstanding for one account, oldest first — GET's shape. */
+/** The spans still outstanding for one account, oldest first — GET's shape.
+ *  L1: one line per from / to / reason, the first record's, however many
+ *  connections hold it (the card keys its rows, and the user's Clear, on those). */
 export function outstandingUnfetched(accountId: number): UnfetchedSpanRow[] {
-  return outstandingVia(db, accountId).map(({ from, to, reason, fact, remedy }) => ({ from, to, reason, fact, remedy }));
+  const seen = new Set<string>();
+  const out: UnfetchedSpanRow[] = [];
+  for (const { from, to, reason, fact, remedy } of outstandingVia(db, accountId)) {
+    const k = keyOf({ from, to, reason });
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ from, to, reason, fact, remedy });
+  }
+  return out;
 }
 
 interface SpanOwner {
@@ -126,7 +160,9 @@ const sameConnection = (a: number | null, b: number | null) => a != null && b !=
 const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 /** The row that CLEARS an outstanding span — the same keys, `clearedAt` set,
- *  appended (the record it clears is never rewritten). */
+ *  appended (the record it clears is never rewritten). Every caller passes a
+ *  span of the owner's own connection (sameConnection), and L1's scope says so:
+ *  the row clears that connection's record only. */
 function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
   const snap = { notice: DHAN_UNFETCHED_NOTICE, broker: "dhan", accountId: owner.accountId, from: o.from, to: o.to, reason: o.reason };
   return {
@@ -135,7 +171,7 @@ function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
     action: "update",
     summary,
     beforeJson: { ...snap, clearedAt: null },
-    afterJson: { ...snap, clearedAt: new Date().toISOString() },
+    afterJson: { ...snap, clearedAt: new Date().toISOString(), scope: CLEAR_SCOPE_CONNECTION },
     source: owner.source,
   };
 }
@@ -144,7 +180,9 @@ function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
  * Append the spans to the store through `exec`, THROWING on failure.
  *
  * Idempotent: a span already outstanding for the account with the same
- * from/to/reason is skipped. A pull whose write failed leaves lastPullAt where
+ * connection and from/to/reason is skipped (L1: the same span of ANOTHER
+ * connection — a merge's carry beside the target client's own — is a second
+ * record, not a repeat). A pull whose write failed leaves lastPullAt where
  * it was, so the next pull recomputes the very same span — and must not list
  * it twice once the write succeeds.
  *
@@ -161,17 +199,17 @@ function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
 function writeSpans(exec: Exec, spans: readonly SpanWrite[], owner: SpanOwner, supersede = false): number {
   if (spans.length === 0) return 0;
   const outstanding = outstandingVia(exec, owner.accountId);
-  const open = new Set(outstanding.map(keyOf));
+  const open = new Set(outstanding.map((o) => recordKeyOf(o.connId, o)));
   const values = [];
   for (const s of spans) {
-    const k = keyOf(s);
+    const k = recordKeyOf(owner.connId, s);
     if (open.has(k)) continue;
     open.add(k);
     if (supersede) {
       for (const o of outstanding) {
         if (o.reason !== s.reason || o.from !== s.from || o.to === s.to || !sameConnection(o.connId, owner.connId)) continue;
-        if (!open.has(keyOf(o))) continue;
-        open.delete(keyOf(o));
+        if (!open.has(recordKeyOf(o.connId, o))) continue;
+        open.delete(recordKeyOf(o.connId, o));
         values.push(
           clearRow(o, owner, `Dhan notice superseded by a later pull: fills from ${o.from} to ${o.to} are now named as fills from ${s.from} to ${s.to}.`),
         );

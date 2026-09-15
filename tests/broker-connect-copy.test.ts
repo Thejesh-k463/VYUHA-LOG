@@ -14,6 +14,7 @@ import {
   PULL_FORCE_ROUTE_TAIL,
   collisionBadge,
   collisionDialogCopy,
+  dialogCollisions,
   formatTs,
   pullGapLines,
   pullGapNotice,
@@ -347,8 +348,9 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
 
   it("range cap: the card line IS the pull's warning — the dates, why, the last pull's own day, and the day-after remedy", () => {
     const span = spanOf(pulled("2026-05-01T05:00:00.000Z", false), "range-cap");
+    // L2 (wave 2G): re-pinned. Before: "The last pull ran on <day>"; after: "The pull before it ran on <day>" — the kept line sat under the card's newer "last pull" stamp and contradicted it.
     expect(unfetchedNotice(asGet(span))).toBe(
-      "Not fetched: fills from 2026-05-01 to 2026-06-12. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-12.",
+      "Not fetched: fills from 2026-05-01 to 2026-06-12. The pull before it ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-12.",
     );
     expect(unfetchedNotice(asGet(span))).toBe(span.message);
   });
@@ -380,8 +382,9 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
     const page = spanOf(pulled("2026-09-10T05:00:00.000Z", true), "page-cap");
     expect(asGet(range).remedy).toBeNull();
     expect(asGet(page).remedy).toBeNull();
+    // L2 (wave 2G): re-pinned. Before: "The last pull ran on <day>"; after: "The pull before it ran on <day>" — the kept line sat under the card's newer "last pull" stamp and contradicted it.
     expect(unfetchedNotice(asGet(range))).toBe(
-      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-06-12 after 10:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.",
+      "Not fetched: fills from 2026-06-12 to 2026-06-12. The pull before it ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-06-12 after 10:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.",
     );
     expect(unfetchedNotice(asGet(page))).toBe(
       "Truncated: the pull on 2026-09-11 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-10 to 2026-09-10 were not read. The book for 2026-09-11 came from /v2/positions. Fills on 2026-09-10 after 10:30 IST were not fetched; a tradebook for 2026-09-10 would repeat the fills already imported from it.",
@@ -407,6 +410,23 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
     expect(unfetchedNotice(asGet(page))).toContain(`The book for ${TODAY} came from /v2/positions.`);
     for (const stamp of ["2026-05-01T05:00:00.000Z", "2026-06-01T05:00:00.000Z", "2026-09-07T05:00:00.000Z", "2026-09-10T05:00:00.000Z"]) {
       for (const s of pulled(stamp, true).unfetched) expect(unfetchedNotice(asGet(s))).not.toMatch(/\bthis pull\b|\btoday\b/i);
+    }
+  });
+
+  /**
+   * L2 (fix wave 2G): the KEPT range-cap line said "The last pull ran on
+   * 2026-05-01" beneath the card's own "last pull <newer stamp>" label once the
+   * pull that kept it committed. It names that pull's predecessor instead. The
+   * N6 guard above never caught it (it tests only 'this pull' and 'today').
+   */
+  it("L2: a kept range-cap line names 'the pull before it' — never 'the last pull ran'", () => {
+    for (const stamp of ["2026-05-01T05:00:00.000Z", "2026-06-01T05:00:00.000Z", "2026-06-12T05:00:00.000Z"]) {
+      for (const truncated of [false, true]) {
+        const span = spanOf(pulled(stamp, truncated), "range-cap");
+        // THE assertion (red on revert: "The last pull ran on …").
+        expect(unfetchedNotice(asGet(span))).toContain(`The pull before it ran on ${stamp.slice(0, 10)}, `);
+        expect(unfetchedNotice(asGet(span))).not.toMatch(/\bthe last pull ran\b/i);
+      }
     }
   });
 
@@ -497,6 +517,48 @@ describe("Seam D1 · the pull dialog's words for a collision with today's earlie
     expect(collisionDialogCopy({ collisions: kinds, message: "A sentence." }).serverMessage).toBe("A sentence.");
   });
 
+  /**
+   * M3 (v4.3.0 fix wave 2G). A same-day Dhan re-pull over a noted snapshot row
+   * reaches the route as kind 'same-quantity' WITH `sameSnapshot: true` — a
+   * relation kind wins over 'earlier-snapshot' in lib/import/cross-source.ts.
+   * The dialog keyed on the kind, so it badged the row "same quantity", led
+   * with "Different sources … a paisa" and told the user to cancel because
+   * "the journal already has them" — false here: the evening pull states a
+   * sale the morning row does not hold. The badge and the copy now follow
+   * `sameSnapshot: true` for ANY kind. The report is wave2rf-recheck's reproduce.
+   */
+  it("M3: a same-snapshot collision of a RELATION kind gets today's-earlier-pull words — badge, lead and no other-source footer", () => {
+    const FILE_D = "dhan-api-2026-09-08";
+    const report = detectCrossSourceDuplicates(
+      [{ broker: "dhan", symbol: "SBIN", tradingsymbol: "SBIN", buyQty: 10, sellQty: 10, buyValue: 1000, sellValue: 1200, buyDate: "2026-09-08", sellDate: "2026-09-08", dedupHash: "e", snapshotIds: [7] }],
+      [{ id: 7, broker: "dhan", symbol: "SBIN", tradingsymbol: "SBIN", buyQty: 10, sellQty: 0, buyValue: 1000, sellValue: 0, buyDate: "2026-09-08", sellDate: null, sourceFile: FILE_D, dedupHash: "m" }],
+      FILE_D,
+    );
+    // The shape the route sends (the recheck's captured 409): a relation kind, same snapshot.
+    expect(report.collisions.map((c) => [c.symbol, c.kind, c.sameSnapshot])).toEqual([["SBIN", "same-quantity", true]]);
+    const copy = collisionDialogCopy({ collisions: report.collisions, message: routeMessage(report.message) });
+    // THE assertions (red on revert: the "Different sources …" lead and otherSourceFooter true).
+    expect(copy).toEqual({ description: "Nothing has been committed.", serverMessage: report.message, otherSourceFooter: false });
+    expect(copy.serverMessage).toContain("1 row in this pull (SBIN) restates a position today's earlier pull already recorded");
+    // THE badge (red on revert: "same quantity").
+    expect(dialogCollisions(report.collisions).map((c) => collisionBadge(c.kind))).toEqual(["today's earlier pull"]);
+    // The row's own facts are untouched; only the badge's kind follows the snapshot.
+    expect(dialogCollisions(report.collisions)[0]).toMatchObject({ symbol: "SBIN", detail: report.collisions[0]!.detail, incoming: report.collisions[0]!.incoming });
+  });
+
+  it("M3: every relation kind with sameSnapshot true reads as today's earlier pull; without it, its own label and the other-source words", () => {
+    for (const kind of ["same-quantity", "same-value", "partial-quantity", "earlier-snapshot"]) {
+      expect(collisionDialogCopy({ collisions: [{ kind, sameSnapshot: true }] }).otherSourceFooter).toBe(false);
+      expect(dialogCollisions([{ kind, sameSnapshot: true }]).map((c) => collisionBadge(c.kind))).toEqual(["today's earlier pull"]);
+    }
+    expect(collisionDialogCopy({ collisions: [{ kind: "same-quantity" }] }).description).toBe(GENERIC_ONE);
+    expect(dialogCollisions([{ kind: "same-value" }]).map((c) => collisionBadge(c.kind))).toEqual(["same value"]);
+    // Mixed: one same-snapshot row beside a cross-file row keeps the other-source words.
+    expect(collisionDialogCopy({ collisions: [{ kind: "same-quantity", sameSnapshot: true }, { kind: "same-quantity" }] }).otherSourceFooter).toBe(true);
+    // An 'earlier-snapshot' row that does not carry the flag still reads as today's earlier pull (no regression of seam D1).
+    expect(collisionDialogCopy({ collisions: [{ kind: "earlier-snapshot" }] }).otherSourceFooter).toBe(false);
+  });
+
   it("the dialog's own words carry no SEBI-forbidden verb", () => {
     for (const kind of ["same-quantity", "same-value", "partial-quantity", "earlier-snapshot"]) {
       expect(collisionBadge(kind)).not.toMatch(SEBI);
@@ -516,6 +578,14 @@ describe("the card reads those functions — the copy is not re-typed in JSX", (
     expect(code).toContain("setMsg({ ok: true, text: pullResultMessage(mode, data) });");
     expect(code.match(/Committed — /g)).toHaveLength(1);
     expect(code.match(/Preview: \$\{/g)).toHaveLength(1);
+  });
+
+  it("M3: the dialog lists dialogCollisions(…), so each badge follows sameSnapshot — the raw collisions are never badged directly", async () => {
+    const code = await load();
+    // THE assertion (red on revert: the list mapped `(collisionPrompt?.collisions ?? [])` and badged the raw kind).
+    expect(code).toContain("{dialogCollisions(collisionPrompt?.collisions ?? []).map((c, i) => (");
+    expect(code).not.toMatch(/(?<!dialogCollisions)\(collisionPrompt\?\.collisions \?\? \[\]\)\.map\(/);
+    expect(code.match(/collisionBadge\(/g) ?? []).toHaveLength(2); // the definition and the one call
   });
 
   it("the kept notices render unfetchedNotice with an explicit Clear control, on the Dhan tab only", async () => {

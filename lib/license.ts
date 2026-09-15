@@ -284,8 +284,9 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // every book they once described: a position in the underlying, long or
   // short, or a second expiry can turn legs once named a long call, a short
   // call, a long put or a short put into a covered call, a covered put, a
-  // protective put, a protective call, a collar, a calendar or a diagonal
-  // (N19; the list is derived from the engine in tests/strategies-copy.test.ts),
+  // protective put, a protective call, a calendar or a diagonal (N19, L6: the
+  // list is derived from the engine in tests/strategies-copy.test.ts, and the
+  // collar is not on it — its option pair alone is already a Pro shape),
   // and a free build reads that book as "Custom (n legs)". So
   // app/strategies/page.tsx must check `getEntitlement()` and gate the
   // CAPABILITY; a whole-page <ProGate> there would take away the free record —

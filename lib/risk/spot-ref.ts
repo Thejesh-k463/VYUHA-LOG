@@ -136,11 +136,33 @@ export function resolveSpotRef(
  * days (docs/DECISIONS.md 2026-09-15, N23).
  *
  * ISO days compare correctly as strings. Prices are REAL rupees per unit; the
- * `× 100` is a comparison at the paisa, not a stored conversion (invariant 1).
+ * paise are `shownPaise` — a comparison at the paisa AS DISPLAYED, not a stored
+ * conversion (invariant 1).
  */
 export function closeDiffers(mark: DatedPrice, close: DatedPrice): boolean {
   if (close.asOf < mark.asOf) return false;
-  return Math.round(mark.price * 100) !== Math.round(close.price * 100);
+  return shownPaise(mark.price) !== shownPaise(close.price);
+}
+
+/**
+ * The whole paise a per-unit price SHOWS as — the ONE rounding that
+ * `closeDiffers` compares, the notice sentence prints and the "Keep my mark"
+ * fingerprint keys on.
+ *
+ * L8 (fix wave 2G): the comparison used `Math.round(price * 100)` on the binary
+ * double while the sentence formatted with `num` (Intl). The two disagree on a
+ * price whose ×100 lands just under .5: 1.005 × 100 is 100.49999999999999, so
+ * the comparison read 100 paise while the screen read "1.01" — and a mark of
+ * 1.005 against a close of 1.01 printed "differs from your mark ₹1.01" over
+ * ₹1.01 (the N23 symptom class). Deriving the paise FROM `num`'s own output
+ * makes compare and display one rounding by construction, whatever Intl does.
+ *
+ * DISPLAY/COMPARE ROUNDING ONLY: the price itself stays REAL rupees per unit
+ * (invariant 1's documented exception); nothing here is stored. `num` groups
+ * en-IN ("1,23,456.79"), so the separators are dropped before reading it back.
+ */
+export function shownPaise(price: number): number {
+  return Math.round(Number(num(price, 2).replace(/,/g, "")) * 100);
 }
 
 /** The panel a "Keep my mark" dismissal is filed under (`panel_dismissals`). */
@@ -153,7 +175,7 @@ export const SPOT_CLOSE_DIFF_PANEL = "spot-close-diff" as const satisfies Dismis
  * the notice returns.
  */
 export function spotCloseFingerprint(symbol: string, close: DatedPrice): string {
-  return `${symbol.trim().toUpperCase()}|${close.asOf}|${Math.round(close.price * 100)}`;
+  return `${symbol.trim().toUpperCase()}|${close.asOf}|${shownPaise(close.price)}`;
 }
 
 export interface SpotCloseNotice {
@@ -177,8 +199,9 @@ export function spotCloseNotice(
   if (!closeDiffers({ price: spot.value, asOf: spot.asOf }, spot.close)) return null;
   const fingerprint = spotCloseFingerprint(symbol, spot.close);
   if (dismissedFingerprints.includes(fingerprint)) return null;
+  // L8: the sentence prints the SAME paise `closeDiffers` just compared.
   return {
-    text: `Official close ${spot.close.asOf}: ₹${num(spot.close.price, 2)} — differs from your mark ₹${num(spot.value, 2)}`,
+    text: `Official close ${spot.close.asOf}: ₹${num(shownPaise(spot.close.price) / 100, 2)} — differs from your mark ₹${num(shownPaise(spot.value) / 100, 2)}`,
     close: spot.close,
     fingerprint,
   };

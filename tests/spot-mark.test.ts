@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import { todayIstIso } from "@/lib/domain/trading-day";
+// The display formatter the notice and the chip print with (dependency-free).
+import { num } from "@/lib/format";
 // The PURE half — no React, no DB, no `"use client"` — is what the server
 // render and the route call (see the module's own header, and
 // tests/client-value-imports.test.ts).
@@ -14,6 +16,7 @@ import {
   isContractKey,
   isIsoDay,
   resolveSpotRef,
+  shownPaise,
   spotChipLabel,
   spotCloseFingerprint,
   spotCloseNotice,
@@ -137,8 +140,45 @@ describe("closeDiffers — the matrix", () => {
     ["same day, equal at the paisa", mark(800.001, "2026-09-11"), mark(800.004, "2026-09-11"), false],
     ["newer mark, older close", mark(800, "2026-09-14"), mark(820, "2026-09-11"), false],
     ["newer mark, older close, equal price", mark(800, "2026-09-14"), mark(800, "2026-09-11"), false],
+    // L8 (wave 2G): 1.005 × 100 is 100.49999999999999, but the screen shows 1.005
+    // as "1.01" — equal AS DISPLAYED, so no difference (was true on `Math.round(price * 100)`).
+    ["L8: older mark 1.005, newer close 1.01, equal as displayed", mark(1.005, "2026-09-08"), mark(1.01, "2026-09-11"), false],
+    ["L8: same day, 1.005 vs 1.00, a genuine paisa apart as displayed", mark(1.005, "2026-09-11"), mark(1, "2026-09-11"), true],
   ] as const)("%s → %s", (_name, m, c, want) => {
     expect(closeDiffers(m, c)).toBe(want);
+  });
+});
+
+/* ── L8: ONE rounding for the paise compared, printed and fingerprinted ───── */
+
+describe("shownPaise — the paise compared are the paise displayed (L8)", () => {
+  it.each([1.005, 1.01, 1.015, 2.675, 10.235, 800.004, 800.005, 820.5, 123456.785, 1234567.125, 4000])(
+    "%s: num(shownPaise(v) / 100) reads exactly what num(v) reads",
+    (v) => {
+      // Measured 2026-09-15 (node): Math.round(v * 100) reads 100 / 101 for 1.005 /
+      // 1.015 while num() shows "1.01" / "1.02" — those two rows go red on revert.
+      // The rest (half-paisa and en-IN-grouped values) guard the read-back itself.
+      expect(Number.isInteger(shownPaise(v))).toBe(true);
+      expect(num(shownPaise(v) / 100, 2)).toBe(num(v, 2));
+    },
+  );
+
+  it("a mark of 1.005 against a close of 1.01 raises no notice — both read ₹1.01", () => {
+    // The recheck's reproduction, verbatim (was "Official close 2026-09-11: ₹1.01 — differs from your mark ₹1.01").
+    const edge: SpotRef = { value: 1.005, source: "mark", asOf: "2026-09-08", close: { price: 1.01, asOf: "2026-09-11" } };
+    expect(spotCloseNotice("X", edge)).toBeNull();
+  });
+
+  it("a genuine paisa difference as displayed still raises it, and the sentence prints the compared paise", () => {
+    const apart: SpotRef = { value: 1.015, source: "mark", asOf: "2026-09-08", close: { price: 1.01, asOf: "2026-09-11" } };
+    expect(spotCloseNotice("X", apart)?.text).toBe("Official close 2026-09-11: ₹1.01 — differs from your mark ₹1.02");
+    const below: SpotRef = { value: 1.005, source: "mark", asOf: "2026-09-11", close: { price: 1, asOf: "2026-09-11" } };
+    expect(spotCloseNotice("X", below)?.text).toBe("Official close 2026-09-11: ₹1.00 — differs from your mark ₹1.01");
+  });
+
+  it("the 'Keep my mark' fingerprint keys on the close's DISPLAYED paise — 1.005 and 1.01 are one close", () => {
+    expect(spotCloseFingerprint("X", { price: 1.005, asOf: "2026-09-11" })).toBe("X|2026-09-11|101");
+    expect(spotCloseFingerprint("X", { price: 1.01, asOf: "2026-09-11" })).toBe("X|2026-09-11|101");
   });
 });
 

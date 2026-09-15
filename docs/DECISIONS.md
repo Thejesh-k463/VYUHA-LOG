@@ -6617,3 +6617,84 @@ The build brief for the next wave: `18-FIX-WORK-4.3.0/wave2g-brief.md`.
 tokens. The scoped re-check trend: wave 1 43 / 3 partial / 6 unverifiable → wave 2 47 / 1 / 0 → 2R + 2F 34 / 0 / 0. The
 new findings shrink each round in both severity and count (wave 1: 16 product including 6 medium; 2R + 2F: 3 medium +
 10 low / cosmetic).
+
+## 2026-09-15 — v4.3.0 fix wave 2G built (sixth session): M1–M3 and L1–L9 as decided; the seam pass found L5 unbuilt → G5b
+
+**How.** Six `vyuha-builder` Opus builders on disjoint files (G1 → G2 in sequence; G3–G6 in parallel), one phase check
+(tsc 0; the whole unit suite 397 files / 8,455 passed / 35 skipped; no probe; nothing outside ownership), the seam tester
+(`tests/seams-v43-fixD.test.ts`, 12 cases), then micro builder G5b. Reports and red-on-revert quotes:
+`LIVE-DESK-RESEARCH/18-FIX-WORK-4.3.0/wave2g.json`. Every fix below is pinned by a test proven red by reverting it.
+
+- **M1 (G1, `lib/import/commit.ts` planSnapshot only).** N3's narrowing is reversed as decided. An incoming snapshot row
+  with nothing on its supersede key is ASKED when today's pull file holds a row of the same tradingsymbol in any segment
+  or exchange (both callers already scope to account and broker). The ask uses the existing earlier-snapshot path, so the
+  collision always carries `sameSnapshot: true`. Its `kind` is the relation found (a 10 → 20 conversion is
+  `partial-quantity`; 10 → 25 is `earlier-snapshot`), and it is not forced to `earlier-snapshot`, because then M1 would
+  differ from the path's other same-snapshot collisions. N3's TWOPROD test re-pinned with before / after.
+  OVERRIDE-DOUBLE's by-symbol candidates are now measurably redundant (reverting them alone keeps its test green). They
+  stay, as decided, and its single-candidate guard is still load-bearing. The commit.ts change is 4 hunks, all inside
+  planSnapshot: no auto-close, staged-close or cross-source wiring moved.
+- **M2 (G2, `lib/analytics/data-quality.ts`).** A lot is recognised as closed by Data Quality's own join when its
+  `import_notes` carry BOTH the stale-close note and a `dedup-alias:`. Such a lot never counts toward ambiguity. The
+  constants come from `lib/import/close-open-lots.ts`, the one writer. `closeStaleLot` needed no change: it re-derives
+  through `staleOpenPairs` and refuses on `pair.ambiguous` (commit.ts ~:2058 / :2082). Rejected: counting any alias as a
+  Data Quality join. An alias of unknown provenance still reads as merged elsewhere, and a control test pins that. Also
+  pinned: the FILLS guard's legs-only half (a sale with fills and `staged` false gets 409 FILLS), proven on a mutant. That
+  recorded test low is DISCHARGED.
+- **M3 (G3, `components/import/broker-connect.tsx`).** The same-snapshot badge, lead and footer follow
+  `sameSnapshot === true || kind === 'earlier-snapshot'` for any kind. The kind half is a fallback for the optional field:
+  the one producer (cross-source.ts ~:254) sets the flag on every earlier-snapshot row, re-checked after G1. The display
+  kind is rewritten by `dialogCollisions`, because `tests/broker-connect-ui.test.ts:233` pins the literal
+  `{collisionBadge(c.kind)}`.
+- **L1 (G3, `lib/import/dhan-unfetched.ts`).** A kept notice's identity is (connection, from, to, reason). A pull's clear
+  row carries `scope: 'connection'` and clears only its own connection's record. The user's Clear (the route, no scope)
+  clears the span on every connection of the account, so one click still removes the one visible line, and GET lists
+  one line per span. Rejected: connection-keyed clears for every row, which would leave a carried span (`connId` null)
+  impossible to clear from the card.
+- **L2 (G3).** The kept range-cap fact reads "The pull before it ran on <day>". Six pinned strings in four test files
+  were re-pinned.
+- **L3 (G4, `app/api/ipos/route.ts`).** The exit date is validated only on a create or an edit that changes it, and
+  clearing is always accepted. Measured before: a notes-only edit of such an IPO answered 400. The edit-path check now
+  runs after the account 404 (an out-of-account id with a bad date answers 404, which tells the caller less). Recorded,
+  not built: the form shows a stored unreadable date as a blank date input that cannot be cleared from the form.
+- **L4 (G4, `components/ipo/ipo-client.tsx`).** With a broker chosen, Net P&L, the STCG / LTCG estimate, Post-tax net and
+  a SOLD IPO's Return say "before broker charges" (`previewCellLabel`). A held IPO's Return stays plain, because no
+  charges enter it on either side, and the loss cell carries no figure.
+- **L5 (G5b, `lib/queries/trades.ts` + `app/strategies/page.tsx`).** G5 STOPPED correctly: the option-leg projection had
+  no `accountId`, and no 2G builder owned the query. The seam tester then confirmed the defect (D6, pinned `it.fails`).
+  G5b added `accountId` to `STRATEGY_LEG_FIELDS` (8 → 9 columns; same WHERE, account scope and ORDER BY). The page builds
+  N17's admitting lookup once per account and once over the scope, and a holding is matched against its own account's
+  option symbols first. Legs are still built field by field, so `accountId` reaches no leg, group or RSC payload (free
+  withholding unaffected). Measured before, on All accounts: A's IBULHSGFIN call read naked while B's SAMMAANCAP call read
+  covered by A's shares, and the stored-ticker branch had the same cross-account join (MINDAIND / UNOMINDA). After: each
+  account's cards equal its single-account view, and D6 is a plain `it`. Deliberate: a row that none of its own account's
+  legs matches still falls back to the in-scope map. Rejected: no fallback, which would show a stock-only card no
+  single-account view shows.
+- **L6 (G5).** The collar is out of the N19 list in the note, the help sentence and the `lib/license.ts` comment. The test
+  now requires the listed shapes to EQUAL the engine-derived set, so an extra shape fails as well as a missing one.
+- **L7 (G5, `lib/domain/help-content.ts`).** The Settings help entry states N25's rule, the card's `CHARGE_ROWS_RULE` word
+  for word, read from the card's source. `docs/client/README.md:445` still carries the old promise and is updated with
+  the client package at the bump.
+- **L8 (G6, `lib/risk/spot-ref.ts`).** `shownPaise(price)` derives the paise from `num(price, 2)`'s own output, so the
+  compared value, the displayed value and the Keep-my-mark fingerprint share one rounding. Measured:
+  `Math.round(1.005*100)` = 100 while `num(1.005)` = "1.01". A stored dismissal of a close quoted to 3+ decimals shows
+  its notice once more. Rejected: `Math.round(Number(\`${p}e2\`))` (imitates Intl, breaks on exponent strings) and a
+  second `Intl.NumberFormat` (could drift from `num`).
+- **L9 (G6).** `docs/owner/VIDEO_SCRIPT.md`: OpenAlgo is documented (setup guide in the client package) and still ships
+  switched off. `tests/demo-video-copy.test.ts:19-20` carries the same stale word in a COMMENT and is left as is.
+
+**Recorded, not built (the stopping rule):**
+- **The identity lows.** A setup-tag-only re-tag widens OVERRIDE-DOUBLE's scope, and override hashes carry no account.
+  After M1 both produce asks, never doubles.
+- **Test lows.** N11's UI wiring; the popup's use of `realisedNetScope`.
+- **Seam-pass note (pre-existing, already deferred to 4.3.1 as product-keyed snapshot identity).** A conversion that
+  changes ONLY the product (INTRADAY 10 @ 200 → CNC 10 @ 200 between two same-day pulls) is an exact dedup-hash duplicate:
+  `lib/import/dedup.ts:49` hashes neither product nor segment. It is skipped before planSnapshot can ask, and the book keeps
+  `eq_intraday`.
+- **Process note.** G2 cleaned its probes with `rm -f tests/zzprobe-*.test.ts`, which could also have removed a
+  concurrent builder's probe. Every builder reported its red-on-revert quote, and the scoped re-check re-proves each one
+  independently.
+
+**Gate on the wave-2G tree:** `npm run verify` EXIT 0, raw line **398 files / 8,470 passed / 35 skipped**, `next build`
+compiled. The first run was red only on `readme-claims` (the file count 397 vs 398 on disk). Because `verify` stops at the
+first failure, it was re-run whole after the README's six test figures and its file count moved.

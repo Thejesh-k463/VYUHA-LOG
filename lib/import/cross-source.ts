@@ -60,9 +60,11 @@ export interface IncomingRow {
    * today's earlier snapshot on the SUPERSEDE KEY (account + broker + file +
    * day + tradingsymbol + symbol + segment + exchange), as the commit's plan
    * found them, plus any row of that snapshot and tradingsymbol whose segment
-   * or exchange the user re-classified (W2F OVERRIDE-DOUBLE). Only those rows
-   * stop being hidden as "a second trade in the same file" (W2R N3: a same-file row of another segment is another
-   * position), and each one is reported — risky whatever its kind, and even
+   * or exchange the user re-classified (W2F OVERRIDE-DOUBLE); when NOTHING is on
+   * the key, every row of that snapshot and tradingsymbol in any segment or
+   * exchange (W2G M1, reversing W2R N3 — a broker-side product conversion). Only
+   * those rows stop being hidden as "a second trade in the same file", and each
+   * one is reported — risky whatever its kind, and even
    * when no quantity or value relation exists (W2R N2) — so the user is asked
    * instead of the pull silently adding a second row.
    */
@@ -71,8 +73,10 @@ export interface IncomingRow {
 
 /**
  * `earlier-snapshot` (W2R N2): the row restates a position today's earlier
- * pull recorded on the same key, with no quantity or value relation to it — a
- * position that grew, or one of two positions the key cannot tell apart.
+ * pull recorded on the same key (or, W2G M1, in another segment or exchange
+ * when nothing is on the key), with no quantity or value relation to it — a
+ * position that grew or changed product, or one of two positions the key
+ * cannot tell apart.
  */
 export type OverlapKind = "same-quantity" | "same-value" | "partial-quantity" | "earlier-snapshot";
 

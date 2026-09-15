@@ -106,6 +106,95 @@ describe("N4 · a merge-carried notice (no connection) is removed by no pull —
   });
 });
 
+/**
+ * L1 (v4.3.0 fix wave 2G). The outstanding / idempotency key was the account's
+ * from|to|reason, across every connection. When the merge TARGET already held a
+ * span with the same from / to / reason from its OWN Dhan client (the auto-pull
+ * sweep stamps every connection together), writeSpans skipped the carried span
+ * as "already outstanding" (carry returned 0), and the target client's own
+ * untruncated read then cleared the only row — so the source client's unread
+ * fills were named nowhere. The key now includes the connection: a carried span
+ * (connId null) is distinct, a pull's clear names its own connection's span,
+ * and GET still lists one line per from / to / reason.
+ */
+describe("L1 · a carried notice is distinct from the target client's identical one", () => {
+  /** The user's Clear exactly as app/api/import/broker/route.ts writes it:
+   *  entity_id = the account's current Dhan connection, source "ui". */
+  const userClear = (accountId: number, connId: number, s: { from: string; to: string; reason: string }) => {
+    const snap = { notice: "dhan-unfetched", broker: "dhan", accountId, from: s.from, to: s.to, reason: s.reason };
+    t.db
+      .insert(t.schema.auditLog)
+      .values({
+        entity: "settings",
+        entityId: connId,
+        action: "update",
+        summary: `Dhan notice cleared by the user: fills from ${s.from} to ${s.to} were not fetched by a pull.`,
+        beforeJson: { ...snap, clearedAt: null },
+        afterJson: { ...snap, clearedAt: new Date().toISOString() },
+        source: "ui",
+      })
+      .run();
+  };
+
+  it("the recheck's reproduce: the carry is written, and the target client's read clears only its own row", () => {
+    const [X, Y, X_CONN, Y_CONN] = [601, 602, 61, 62];
+    const spans = spansOf("2026-09-07", "2026-09-11", true);
+    expect(spans.map((s) => [s.from, s.to, s.reason])).toEqual([["2026-09-07", "2026-09-10", "page-cap"]]);
+    un.keepUnfetched(spans, { connId: X_CONN, accountId: X, source: "import" });
+    un.keepUnfetched(spans, { connId: Y_CONN, accountId: Y, source: "import" });
+    // THE assertion (0 on revert: the carried span was skipped as Y's own).
+    expect(carry(X, Y)).toBe(1);
+    // GET lists the book's notice once, however many connections hold it.
+    expect(open(Y)).toEqual([["2026-09-07", "2026-09-10", "page-cap"]]);
+
+    un.keepUnfetchedAndStamp([], { connId: Y_CONN, accountId: Y, source: "import" }, "2026-09-12T05:00:00.000Z", {
+      from: "2026-09-07",
+      to: "2026-09-12",
+    });
+    // THE assertion ([] on revert: Y's own client's read cleared the only notice).
+    expect(open(Y)).toEqual([["2026-09-07", "2026-09-10", "page-cap"]]);
+    expect(trail(Y).map((r) => [r.conn, r.action])).toEqual([
+      [Y_CONN, "create"],
+      [null, "create"],
+      [Y_CONN, "update"],
+    ]);
+  });
+
+  it("the other order: carried first, then the target's own pull keeps the same span — its read clears its own, the carried stays", () => {
+    const [X, Y, X_CONN, Y_CONN] = [603, 604, 63, 64];
+    const spans = spansOf("2026-09-07", "2026-09-11", true);
+    un.keepUnfetched(spans, { connId: X_CONN, accountId: X, source: "import" });
+    expect(carry(X, Y)).toBe(1);
+    un.keepUnfetched(spans, { connId: Y_CONN, accountId: Y, source: "import" });
+    // Idempotent per connection: a repeated carry, or the same pull's retry, adds nothing.
+    expect(carry(X, Y)).toBe(0);
+    un.keepUnfetched(spans, { connId: Y_CONN, accountId: Y, source: "import" });
+    expect(trail(Y).map((r) => [r.conn, r.action])).toEqual([
+      [null, "create"],
+      [Y_CONN, "create"],
+    ]);
+    un.keepUnfetchedAndStamp([], { connId: Y_CONN, accountId: Y, source: "import" }, "2026-09-12T05:00:00.000Z", {
+      from: "2026-09-07",
+      to: "2026-09-12",
+    });
+    // THE assertion ([] on revert of the connection-scoped clear: Y's read cleared the carried span too).
+    expect(open(Y)).toEqual([["2026-09-07", "2026-09-10", "page-cap"]]);
+  });
+
+  it("the user's Clear still removes the line in one click — every connection's row with that from / to / reason", () => {
+    const [X, Y, X_CONN, Y_CONN] = [605, 606, 65, 66];
+    const spans = spansOf("2026-09-07", "2026-09-11", true);
+    un.keepUnfetched(spans, { connId: X_CONN, accountId: X, source: "import" });
+    un.keepUnfetched(spans, { connId: Y_CONN, accountId: Y, source: "import" });
+    expect(carry(X, Y)).toBe(1);
+    // THE assertion (two identical lines on revert of GET's one-line-per-span listing).
+    expect(open(Y)).toEqual([["2026-09-07", "2026-09-10", "page-cap"]]);
+    userClear(Y, Y_CONN, spans[0]!);
+    // THE assertion (the carried row still listed on revert: a clear naming Y's connection cleared only Y's own row).
+    expect(open(Y)).toEqual([]);
+  });
+});
+
 describe("N5 · a clamped page-cap span is cleared by an untruncated retry on a later day", () => {
   it("commit threw on 2026-09-10; the untruncated retry on 2026-09-11 leaves ONE notice — the range-cap span that still names 2026-06-12", () => {
     const [A, CONN] = [501, 51];

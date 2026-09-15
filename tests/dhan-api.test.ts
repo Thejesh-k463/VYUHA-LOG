@@ -1214,12 +1214,13 @@ describe("C-6 — a clamped pull names the dates it did not fetch, and the remed
     // F-L1-3a (fix wave 1): the remedy starts the day AFTER the last pull's own
     // day, which is stated as a fact and never named as something to import.
     // RANGE-CAP COPY (wave 2F, as N6): the kept fact names the pull by its IST day. Before: "so this one started at 2026-06-11".
+    // L2 (wave 2G): re-pinned. Before: "The last pull ran on <day>"; after: "The pull before it ran on <day>" — the kept line sat under the card's newer "last pull" stamp and contradicted it.
     const line =
-      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-09 started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
+      "Not fetched: fills from 2026-05-01 to 2026-06-10. The pull before it ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-09 started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
     expect(pf.warnings[1]).toBe(line);
     // P15 / P16 (fix wave 2): the warning's own sentences ride on the span.
     const fact =
-      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-09 started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it.";
+      "Not fetched: fills from 2026-05-01 to 2026-06-10. The pull before it ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-09 started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it.";
     const remedyText = "To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
     expect(`${fact} ${remedyText}`).toBe(line);
     expect(pf.unfetched).toEqual([

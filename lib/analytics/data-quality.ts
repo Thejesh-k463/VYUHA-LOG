@@ -1,3 +1,5 @@
+import { DEDUP_ALIAS_PREFIX, STALE_CLOSE_NOTE } from "@/lib/import/close-open-lots";
+
 export type QualitySeverity = "critical" | "warning" | "info";
 
 export interface QualityIssue {
@@ -43,6 +45,8 @@ export interface QualityTrade {
   /** SQLite `datetime('now')` — UTC, `YYYY-MM-DD HH:MM:SS`. */
   createdAt?: string | null;
   staged?: boolean;
+  /** M2 (wave 2G) — read only to tell a lot the Data Quality join closed (`closedByStaleJoin`). */
+  importNotes?: string | null;
 }
 
 /**
@@ -501,6 +505,19 @@ function closedLotExit(r: BookRow, side: "long" | "short"): string | null {
   return isoDay(side === "long" ? r.sellDate : r.buyDate);
 }
 
+/**
+ * M2 (wave 2G) — was this row closed by the Data Quality join itself? It then
+ * carries `STALE_CLOSE_NOTE` and its sale's alias (`withStaleCloseNote`): the
+ * join takes one whole sale row on one whole lot, so the sale it consumed is
+ * recorded and it cannot have taken any other. Such a lot never counts toward
+ * ambiguity; a close made elsewhere (the ladder exit, the manual close), or an
+ * alias of any other provenance, still does.
+ */
+function closedByStaleJoin(r: BookRow): boolean {
+  const parts = (r.importNotes ?? "").split("|").map((s) => s.trim());
+  return parts.includes(STALE_CLOSE_NOTE) && parts.some((s) => s.startsWith(DEDUP_ALIAS_PREFIX));
+}
+
 /** Group rows into books: accountId + broker + tradingsymbol + segment + exchange. */
 function booksOf(trades: readonly QualityTrade[]): BookRow[][] {
   const books = new Map<string, BookRow[]>();
@@ -545,7 +562,7 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
     const closed: { row: BookRow; date: string; exit: string | null }[] = [];
     for (const r of rows) {
       const date = closedLotEntry(r, side, "possible");
-      if (date) closed.push({ row: r, date, exit: closedLotExit(r, side) });
+      if (date && !closedByStaleJoin(r)) closed.push({ row: r, date, exit: closedLotExit(r, side) });
     }
     closed.sort(byDateThenId);
 
@@ -630,7 +647,9 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
  *    CLOSED lot of the same side entered on or before the sale and exited on
  *    or after the linked lot's entry (or with no stated exit) is `ambiguous` —
  *    listed for review, never one-click. A lot closed before the linked lot
- *    was entered cannot have taken the sale, and does not count.
+ *    was entered cannot have taken the sale, and does not count. Nor does a
+ *    lot the Data Quality join itself closed (M2, `closedByStaleJoin`): its
+ *    close is the one sale row recorded as its alias.
  *
  * Linear in the book: rows are grouped once, and only a group holding both a
  * lot and a sale does any work.

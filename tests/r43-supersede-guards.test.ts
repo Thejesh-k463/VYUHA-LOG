@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { normalizeAngelTrades, toParsedFile, type AngelTradeRow } from "@/lib/import/api/angelone";
+import { normalizeDhanPositions, toParsedFile as dhanParsedFile, type DhanPositionRow } from "@/lib/import/api/dhan";
 
 /**
  * v4.3.0 fix wave 2R (W2R-IDENTITY) — the three limits of R43's same-day
@@ -18,6 +19,11 @@ import { normalizeAngelTrades, toParsedFile, type AngelTradeRow } from "@/lib/im
  * N3: the same-snapshot comparison uses the supersede key. Measured before: a
  *     new INTRADAY round trip met the morning DELIVERY buy of the same symbol
  *     as a partial overlap and the whole pull was refused.
+ *     REVERSED by W2G M1 (DECISIONS 2026-09-15): that narrowing also silenced a
+ *     BROKER-side product conversion (intraday 10 → CNC 20 between two same-day
+ *     /positions pulls landed as a second position, 30 against the broker's
+ *     20). A row with nothing on its key but a same-symbol row in today's
+ *     snapshot is asked about again; N3's false ask is the accepted cost.
  *
  * ONE temp database for this file (AGENTS.md); nothing imported statically
  * reaches `@/lib/db`. Each scenario owns its account id. The snapshot day comes
@@ -46,6 +52,8 @@ const ACC_RETAG = 937;
 const ACC_RETAG_SAMEKEY = 938;
 const ACC_RETAG_CONTROL = 939;
 const ACC_COLUMN = 940; // + index, one per annotated column below
+const ACC_CONV = 962;
+const ACC_CONV_NOREL = 963;
 
 const COLUMNS: [string, string, unknown][] = [
   ["acquisition 'bonus'", "acquisition", "bonus"],
@@ -69,7 +77,7 @@ beforeAll(async () => {
   t.db
     .insert(t.schema.accounts)
     .values(
-      [ACC_BASIS, ACC_JOURNAL, ACC_GROWN, ACC_TWOPROD, ACC_TWOCAND, ACC_UNKNOWN, ACC_RETAG, ACC_RETAG_SAMEKEY, ACC_RETAG_CONTROL, ...COLUMNS.map((_, i) => ACC_COLUMN + i)].map((id) => ({
+      [ACC_BASIS, ACC_JOURNAL, ACC_GROWN, ACC_TWOPROD, ACC_TWOCAND, ACC_UNKNOWN, ACC_RETAG, ACC_RETAG_SAMEKEY, ACC_RETAG_CONTROL, ACC_CONV, ACC_CONV_NOREL, ...COLUMNS.map((_, i) => ACC_COLUMN + i)].map((id) => ({
         id,
         name: `r43 guard ${id}`,
         isDefault: false,
@@ -246,11 +254,11 @@ describe("N2 · a laddered row that grew with no quantity or value relation is a
 });
 
 // ===========================================================================
-// N3 — the same-snapshot comparison uses the supersede key
+// N3 (REVERSED by W2G M1) — a same-symbol row of another segment is asked about
 // ===========================================================================
 
-describe("N3 · a new position that only shares a tradingsymbol with today's row of another segment is a new position", () => {
-  it("morning DELIVERY BUY 20; evening the same fill + an INTRADAY round trip 10/10: no collision, 'commit', and the round trip lands beside the held buy", () => {
+describe("N3 → W2G M1 · a new position that only shares a tradingsymbol with today's row of another segment is asked about (the accepted false ask)", () => {
+  it("morning DELIVERY BUY 20; evening the same fill + an INTRADAY round trip 10/10: a sameSnapshot collision, 'collision', and a forced commit lands the round trip beside the held buy", () => {
     const delivery = fill({ tradingsymbol: "TWOPROD-EQ", fillsize: "20", fillprice: "100", filltime: "09:30:00" });
     expect(commit.commitParsedFile(parsedOf([delivery]), FILE, null, ACC_TWOPROD, snap).added).toBe(1);
     const held = rowsOf(ACC_TWOPROD);
@@ -262,11 +270,19 @@ describe("N3 · a new position that only shares a tradingsymbol with today's row
     ]);
     const pre = commit.previewParsedFile(pull2, null, ACC_TWOPROD, FILE, snap);
     expect([pre.summary.total, pre.summary.newCount, pre.summary.dupCount, pre.summary.supersededCount]).toEqual([2, 1, 1, 0]);
-    // THE assertions (a partial-quantity sameSnapshot collision, risky true and 'collision' on revert).
-    expect(pre.crossSource?.collisions).toEqual([]);
-    expect(pre.crossSource?.risky).toBe(false);
-    expect(job.classifyPreview(pre)).toBe("commit");
+    // RE-PINNED deliberately (DECISIONS 2026-09-15, W2G M1: N3's narrowing is
+    // reversed; a question beats a confident wrong answer, and this false ask is
+    // the accepted cost). Measured at ec89bbd: collisions [], risky false,
+    // 'commit'. After M1: one partial-quantity sameSnapshot collision against
+    // the morning row, risky true, 'collision' — what a7e9288 said.
+    expect(pre.crossSource?.collisions).toMatchObject([
+      { symbol: "TWOPROD", kind: "partial-quantity", sameSnapshot: true, existing: { id: held[0]!.id, buyQty: 20, sellQty: 0 } },
+    ]);
+    expect(pre.crossSource?.risky).toBe(true);
+    expect(job.classifyPreview(pre)).toBe("collision");
+    expect(rowsOf(ACC_TWOPROD)).toEqual(held);
 
+    // A commit forced past the question: the round trip lands beside the held buy, which is never rewritten.
     expect(commit.commitParsedFile(pull2, FILE, null, ACC_TWOPROD, snap).added).toBe(1);
     const rows = rowsOf(ACC_TWOPROD);
     expect(rows[0]).toEqual(held[0]);
@@ -274,6 +290,102 @@ describe("N3 · a new position that only shares a tradingsymbol with today's row
       ["eq_delivery", 20, 0],
       ["eq_intraday", 10, 10],
     ]);
+  });
+});
+
+// ===========================================================================
+// W2G M1 — a broker-side product conversion between two same-day pulls
+// ===========================================================================
+
+describe("W2G M1 · a position the BROKER re-classified between two same-day /positions pulls is asked about, never a silent second position", () => {
+  const DHAN_FILE = `dhan-api-${TODAY}`;
+  const dhanSnap = { supersedeSnapshot: { fileName: DHAN_FILE } };
+  const position = (over: Partial<DhanPositionRow> = {}): DhanPositionRow => ({
+    tradingSymbol: "CONV",
+    exchangeSegment: "NSE_EQ",
+    productType: "INTRADAY",
+    positionType: "LONG",
+    buyAvg: 100,
+    buyQty: 10,
+    sellAvg: 0,
+    sellQty: 0,
+    netQty: 10,
+    ...over,
+  });
+  const pullOf = (rows: DhanPositionRow[]) => dhanParsedFile(normalizeDhanPositions(rows, TODAY));
+  /** The fields the existing earlier-snapshot collision carries (cross-source.ts), and nothing else. */
+  const COLLISION_FIELDS = ["detail", "existing", "incoming", "kind", "sameSnapshot", "symbol"];
+
+  it("noon INTRADAY BUY 10, evening the same position converted to CNC and grown to 20: asked (sameSnapshot, risky, 'collision'), the preview writes nothing, and only a forced commit adds a row", () => {
+    expect(commit.commitParsedFile(pullOf([position()]), DHAN_FILE, null, ACC_CONV, dhanSnap).added).toBe(1);
+    const noon = rowsOf(ACC_CONV);
+    expect(noon.map((r) => [r.segment, r.buy_qty, r.sell_qty])).toEqual([["eq_intraday", 10, 0]]);
+
+    const pull2 = pullOf([position({ productType: "CNC", buyQty: 20, netQty: 20, buyAvg: 100.5 })]);
+    const pre = commit.previewParsedFile(pull2, null, ACC_CONV, DHAN_FILE, dhanSnap);
+    expect([pre.summary.newCount, pre.summary.dupCount, pre.summary.supersededCount]).toEqual([1, 0, 0]);
+    // THE assertions (collisions [], risky false and 'commit' on revert of M1:
+    // the eq_delivery row had no candidate on its key and the book held 30 against the broker's 20).
+    expect(pre.crossSource?.collisions).toEqual([
+      {
+        symbol: "CONV",
+        incoming: { buyQty: 20, sellQty: 0, buyValue: 2010, sellValue: 0 },
+        existing: { id: noon[0]!.id, buyQty: 10, sellQty: 0, sourceFile: DHAN_FILE },
+        kind: "partial-quantity",
+        detail: `20 shares here against 10 already recorded from ${DHAN_FILE} — one may be part of the other.`,
+        sameSnapshot: true,
+      },
+    ]);
+    expect(Object.keys(pre.crossSource!.collisions[0]!).sort()).toEqual(COLLISION_FIELDS);
+    expect(pre.crossSource?.risky).toBe(true);
+    expect(job.classifyPreview(pre)).toBe("collision");
+    expect(pre.crossSource?.message).toContain("1 row in this pull (CONV) restates a position today's earlier pull already recorded");
+    // The question comes before any row lands.
+    expect(rowsOf(ACC_CONV)).toEqual(noon);
+
+    // Forced past the question (the user's choice), the evening row lands beside the noon row; nothing is rewritten.
+    const res = commit.commitParsedFile(pull2, DHAN_FILE, null, ACC_CONV, dhanSnap);
+    expect(res.added).toBe(1);
+    expect((res.warnings ?? []).some((w) => w.includes("updated from today's earlier pull"))).toBe(false);
+    const after = rowsOf(ACC_CONV);
+    expect(after[0]).toEqual(noon[0]);
+    expect(after.map((r) => [r.segment, r.buy_qty, r.sell_qty])).toEqual([
+      ["eq_intraday", 10, 0],
+      ["eq_delivery", 20, 0],
+    ]);
+  });
+
+  it("a conversion that grew by no whole multiple (10 → 25) is asked too, as kind 'earlier-snapshot' with the same fields", () => {
+    expect(commit.commitParsedFile(pullOf([position({ tradingSymbol: "CONVX" })]), DHAN_FILE, null, ACC_CONV_NOREL, dhanSnap).added).toBe(1);
+    const [noon] = rowsOf(ACC_CONV_NOREL);
+
+    const pull2 = pullOf([position({ tradingSymbol: "CONVX", productType: "CNC", buyQty: 25, netQty: 25, buyAvg: 101 })]);
+    const pre = commit.previewParsedFile(pull2, null, ACC_CONV_NOREL, DHAN_FILE, dhanSnap);
+    // THE assertions (collisions [], risky false and 'commit' on revert of M1 — silent on every earlier version).
+    expect(pre.crossSource?.collisions).toEqual([
+      {
+        symbol: "CONVX",
+        incoming: { buyQty: 25, sellQty: 0, buyValue: 2525, sellValue: 0 },
+        existing: { id: noon!.id, buyQty: 10, sellQty: 0, sourceFile: DHAN_FILE },
+        kind: "earlier-snapshot",
+        detail: `Today's earlier pull recorded 10 bought and 0 sold in ${DHAN_FILE}; this pull states 25 bought and 0 sold.`,
+        sameSnapshot: true,
+      },
+    ]);
+    expect(Object.keys(pre.crossSource!.collisions[0]!).sort()).toEqual(COLLISION_FIELDS);
+    expect(job.classifyPreview(pre)).toBe("collision");
+    expect(rowsOf(ACC_CONV_NOREL)).toEqual([noon]);
+  });
+
+  it("control: the same INTRADAY position grown on its own key (10 → 20) is still replaced in place (R43) — the same-symbol ask applies only when nothing is on the key", () => {
+    expect(commit.commitParsedFile(pullOf([position({ tradingSymbol: "CONVKEY" })]), DHAN_FILE, null, ACC_CONV, dhanSnap).added).toBe(1);
+    const [noon] = rowsOf(ACC_CONV).filter((r) => r.tradingsymbol === "CONVKEY");
+    const pull2 = pullOf([position({ tradingSymbol: "CONVKEY", buyQty: 20, netQty: 20, buyAvg: 100.5 })]);
+    const pre = commit.previewParsedFile(pull2, null, ACC_CONV, DHAN_FILE, dhanSnap);
+    // THE assertion (supersededCount 0, a collision and 'collision' under a mutant that asks about every row with a same-symbol stored row).
+    expect([pre.summary.newCount, pre.summary.supersededCount, pre.crossSource?.collisions, job.classifyPreview(pre)]).toEqual([0, 1, [], "commit"]);
+    commit.commitParsedFile(pull2, DHAN_FILE, null, ACC_CONV, dhanSnap);
+    expect(rowsOf(ACC_CONV).filter((r) => r.tradingsymbol === "CONVKEY").map((r) => [r.id, r.segment, r.buy_qty])).toEqual([[noon!.id, "eq_intraday", 20]]);
   });
 });
 
@@ -304,8 +416,11 @@ describe("W2F OVERRIDE-DOUBLE · today's snapshot row the user re-tagged is aske
     const pull2 = parsedOf([buy, fill({ tradingsymbol: "RETAG-EQ", transactiontype: "SELL", fillprice: "160", filltime: "14:00:00" })]);
     const pre = commit.previewParsedFile(pull2, null, ACC_RETAG, FILE, snap);
     expect([pre.summary.newCount, pre.summary.dupCount, pre.summary.supersededCount]).toEqual([1, 0, 0]);
-    // THE assertions (collisions [], risky false and 'commit' on revert: the
-    // evening eq_delivery row's key missed the eq_mtf row, and the book held 20 bought against 10).
+    // THE assertions (collisions [], risky false and 'commit' on revert at
+    // ec89bbd: the evening eq_delivery row's key missed the eq_mtf row, and the
+    // book held 20 bought against 10). Since W2G M1 the same-symbol ask also
+    // covers this row, so reverting OVERRIDE-DOUBLE's by-symbol candidates alone
+    // keeps it green (measured); the code stays, as decided.
     expect(pre.crossSource?.collisions).toMatchObject([{ symbol: "RETAG", existing: { id: morning!.id }, sameSnapshot: true }]);
     expect(pre.crossSource?.risky).toBe(true);
     expect(job.classifyPreview(pre)).toBe("collision");

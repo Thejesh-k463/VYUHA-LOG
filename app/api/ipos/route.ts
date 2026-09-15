@@ -104,14 +104,17 @@ export async function POST(req: Request) {
   // YYYY-MM-DD day from 1875 on — the same rule computeIpo reads it by (N13).
   // A half-typed date input ('0002-06-15') or a day-first date ('15-03-2011')
   // used to be saved as typed and then read as "not yet priced"; it is refused
-  // here, on both the create and the edit path, while the user can still fix it.
+  // while the user can still fix it: on a create, and on an edit that CHANGES
+  // the exit date (L3, wave 2G). An edit that sends back the value already
+  // stored passes it through — a row written unreadable before 4.3.0 would
+  // otherwise refuse every edit, notes included — and clearing is always allowed.
   const exitDate = strOrNull(body.exitDate);
-  if (exitDate != null && !isPriceableExitDate(exitDate)) {
-    return NextResponse.json(
+  const exitDateRefused = (): boolean => exitDate != null && !isPriceableExitDate(exitDate);
+  const refuseExitDate = () =>
+    NextResponse.json(
       { ok: false, message: "The exit date must be a real calendar day written year-month-day, such as 2026-06-15, with a year from 1875 on. Nothing was saved." },
       { status: 400 },
     );
-  }
 
   const allotted = Boolean(body.allotted);
   const values = {
@@ -150,6 +153,7 @@ export async function POST(req: Request) {
     if (!before || (viewing > 0 && before.accountId !== viewing)) {
       return NextResponse.json({ ok: false, message: "That IPO is not in the account you are viewing." }, { status: 404 });
     }
+    if (exitDate !== strOrNull(before.exitDate) && exitDateRefused()) return refuseExitDate();
     db.update(ipos)
       .set({
         ...values,
@@ -171,6 +175,9 @@ export async function POST(req: Request) {
         : "IPO updated.",
     });
   }
+
+  // A create has no stored value to pass through: any unreadable exit date is refused.
+  if (exitDateRefused()) return refuseExitDate();
 
   // Invariant 9: 0 is a view, not a place. Defect D9 (2026-08-12) swapped
   // `getSelectedAccountId() || 1` for getWriteAccountId() and the comment here

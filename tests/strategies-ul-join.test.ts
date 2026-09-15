@@ -81,6 +81,9 @@ const NET_B = 5;
 const NAMES = 6;
 /** N17: both tickers of one ISIN carry an option leg — the listing's own ticker takes the holding. */
 const NAMES_BOTH = 7;
+/** L5 (fix wave 2G): two tickers of one ISIN, each in its OWN account — the admitting map is per account. */
+const ADMIT_A = 8;
+const ADMIT_B = 9;
 
 let t: TempDb;
 let trades: typeof import("@/lib/queries/trades");
@@ -149,6 +152,8 @@ beforeAll(async () => {
       { id: NET_B, name: "Net B", isDefault: false },
       { id: NAMES, name: "Names", isDefault: false },
       { id: NAMES_BOTH, name: "Names both", isDefault: false },
+      { id: ADMIT_A, name: "Admit A", isDefault: false },
+      { id: ADMIT_B, name: "Admit B", isDefault: false },
     ])
     .run();
   t.db
@@ -186,6 +191,30 @@ beforeAll(async () => {
         buyQty: 100,
         avgBuyPrice: 1000,
       }),
+      // L5 — IBULHSGFIN / SAMMAANCAP (one ISIN): A holds the company name under its own IBULHSGFIN call, B only a SAMMAANCAP call.
+      shortCall(ADMIT_A, "IBULHSGFIN", 150, 100, 5),
+      tradeRow({
+        accountId: ADMIT_A,
+        symbol: "Indiabulls Housing Finance Ltd",
+        tradingsymbol: "Indiabulls Housing Finance Ltd",
+        isin: bundledIsinBySymbol("IBULHSGFIN"),
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 140,
+      }),
+      shortCall(ADMIT_B, "SAMMAANCAP", 150, 100, 5),
+      // L5 — the STORED-ticker branch: A holds "MINDAIND" (its ISIN) under its own UNOMINDA call, B only a MINDAIND call.
+      shortCall(ADMIT_A, "UNOMINDA", 900, 100, 12),
+      tradeRow({
+        accountId: ADMIT_A,
+        symbol: "MINDAIND",
+        tradingsymbol: "MINDAIND",
+        isin: bundledIsinBySymbol("MINDAIND"),
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 850,
+      }),
+      shortCall(ADMIT_B, "MINDAIND", 900, 100, 12),
       // D3 (W2-FIXB) — one delivery holding of 100 under 100 short calls per symbol, and a sale beside it.
       // ITC: a v4.2.0 Angel One / Upstox sale, acquisition NULL, no price — basis NOT recorded: nets.
       shortCall(BASIS, "ITC", 450, 100, 5),
@@ -580,6 +609,62 @@ describe("P13 — the stored ticker wins when an option leg already wears it", (
     select(PRIMARY);
     // Alphabetical first alone would hand it to AMARAJABAT.
     expect(ul).toEqual([["ARE&M", [100]]]);
+  });
+});
+
+/**
+ * L5 (v4.3.0 fix wave 2G, orchestrator decision: a per-account admitting map).
+ * N17's admitting-symbol map was built over EVERY option leg in scope, so in the
+ * All-accounts view (0 is a view, invariant 9) account B's ticker for the same
+ * ISIN decided where account A's holding went: A's shares covered B's call and
+ * A's own call read naked. Each account's cards in All accounts must be the cards
+ * that account shows alone.
+ */
+describe("L5 — in All accounts, a holding resolves against its OWN account's option symbols", () => {
+  /** [symbol, strategyId, ul legs] per card, for the symbols given, in the view selected. */
+  const cardsIn = (id: number, symbols: string[]) => {
+    select(id);
+    // The page's own buildStrategies call is recorded when the page function
+    // runs; the markup is not needed here (measured 2026-09-15: 189-242 ms per
+    // `it` with renderToStaticMarkup, 13-21 ms without).
+    page.default();
+    const out = seen.groups
+      .filter((g) => symbols.includes(g.symbol))
+      .map((g) => [g.symbol, g.strategyId, g.ulLegs.map((l) => [l.side, l.qty, l.premium])])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    select(PRIMARY);
+    return out;
+  };
+
+  it("the fixtures are the trap: each pair is ONE ISIN under two tickers — asserted, not skipped", () => {
+    expect(bundledIsinBySymbol("IBULHSGFIN")).toBe(bundledIsinBySymbol("SAMMAANCAP"));
+    expect(bundledSymbolByIsin(bundledIsinBySymbol("IBULHSGFIN") as string)).toBe("SAMMAANCAP");
+    expect(bundledIsinBySymbol("MINDAIND")).toMatch(/^INE/);
+    expect(bundledIsinBySymbol("MINDAIND")).toBe(bundledIsinBySymbol("UNOMINDA"));
+  });
+
+  it("A's company-name holding covers A's own IBULHSGFIN call in All accounts; B's SAMMAANCAP call stays naked", () => {
+    const syms = ["IBULHSGFIN", "SAMMAANCAP"];
+    const alone = [...cardsIn(ADMIT_A, syms), ...cardsIn(ADMIT_B, syms)];
+    expect(alone).toEqual([
+      ["IBULHSGFIN", "covered-call", [["long", 100, 140]]],
+      ["SAMMAANCAP", "short-call", []],
+    ]);
+    // Measured before (one in-scope map): IBULHSGFIN short-call with no UL, and
+    // SAMMAANCAP covered-call with A's 100 — the listing ticker took A's shares.
+    expect(cardsIn(ALL, syms), "B's option symbol changed A's routing").toEqual(alone);
+  });
+
+  it("the stored-ticker branch is per account too: A's MINDAIND shares go to A's UNOMINDA call, not B's MINDAIND call", () => {
+    const syms = ["MINDAIND", "UNOMINDA"];
+    const alone = [...cardsIn(ADMIT_B, syms), ...cardsIn(ADMIT_A, syms)];
+    expect(alone).toEqual([
+      ["MINDAIND", "short-call", []],
+      ["UNOMINDA", "covered-call", [["long", 100, 850]]],
+    ]);
+    // Measured before: MINDAIND covered-call with A's 100 (B's call wore the
+    // stored ticker), UNOMINDA short-call with no UL.
+    expect(cardsIn(ALL, syms), "B's option symbol changed A's routing").toEqual(alone);
   });
 });
 

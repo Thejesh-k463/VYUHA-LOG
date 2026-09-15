@@ -237,6 +237,8 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
   it("without snapshotIds the same-file row stays hidden, and a same-file row NOT on the key stays hidden too (W2R N3)", () => {
     expect(detectCrossSourceDuplicates([evening()], [morning()], FILE).collisions).toEqual([]);
     // Today's row of the same tradingsymbol in another segment, while the plan named only the key's row 7.
+    // (Since W2G M1 the plan itself names such a row when nothing is on the key — tests/r43-supersede-guards.test.ts;
+    // this pure function still reports only the ids it is handed.)
     expect(detectCrossSourceDuplicates([evening({ snapshotIds: [7] })], [morning({ id: 1 })], FILE).collisions).toEqual([]);
   });
 

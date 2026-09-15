@@ -1346,7 +1346,7 @@ export function toParsedFile(
       const u = range.unfetched;
       const restFrom = addDaysIso(u.from, 1);
       const remedy = restFrom <= u.to ? { from: restFrom, to: u.to } : null;
-      const fact = `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so the pull on ${range.to} started at ${range.from}. ${partialDay(u.from)}`;
+      const fact = `Not fetched: fills from ${u.from} to ${u.to}. The pull before it ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so the pull on ${range.to} started at ${range.from}. ${partialDay(u.from)}`;
       const remedyText = remedy ? `To bring the rest in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.` : null;
       const message = remedyText ? `${fact} ${remedyText}` : fact;
       warnings.push(message);

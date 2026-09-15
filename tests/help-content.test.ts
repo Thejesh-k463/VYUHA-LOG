@@ -974,4 +974,44 @@ describe("the /strategies entry says which books lose a pre-4.3 name on the free
       /a long call, a short call, a long put or a short put/,
     );
   });
+
+  /**
+   * L6 (wave-2R/2F re-check, cosmetic). The list named the collar, which no
+   * legacy-named book reaches by those routes: a collar's two option legs on
+   * their own (a long put and a short call) are already the Pro shape
+   * split-strike-combo, so the underlying never takes a pre-4.3 name away. The
+   * engine half is pinned in tests/strategies-copy.test.ts.
+   */
+  it("the free-name sentence does not name the collar (L6)", () => {
+    const body = HELP_ENTRIES.find((e) => e.href === "/strategies")!.body.join(" ");
+    const [sentence] = body.split(/(?<=\.)\s+/).filter((s) => /\bsixteen\b/.test(s));
+    expect(sentence, "the collar is not reachable from a pre-4.3 name").not.toMatch(/\bcollar\b/i);
+    expect(sentence).toMatch(/into a covered call, a covered put, a protective put, a protective call, a calendar or a diagonal, /);
+  });
+});
+
+/**
+ * L7 (wave-2R/2F re-check, low, pre-existing). The Settings entry promised that
+ * "one click brings the whole configuration back to your baseline". After R7 and
+ * N25 that is false for charge rows: a row edited after the defaults were saved
+ * comes back unedited and follows this version's rate card. The card states the
+ * rule from ONE constant (CHARGE_ROWS_RULE, read here from the card's source —
+ * `components/settings/default-settings-card.tsx` is a client component owned
+ * by another builder, and the constant is not exported); help states the same.
+ */
+describe("the Settings entry states N25's restore rule for My Default Settings (L7)", () => {
+  const card = fs.readFileSync(path.join(process.cwd(), "components/settings/default-settings-card.tsx"), "utf8");
+  const rule = card.match(/const CHARGE_ROWS_RULE = "([^"]+)";/)?.[1];
+  const body = HELP_ENTRIES.find((e) => e.href === "/settings")!.body.join(" ");
+
+  it("prints the card's own charge-row rule, verbatim", () => {
+    expect(rule, "the card no longer declares CHARGE_ROWS_RULE as a literal").toMatch(/^Charge rows you had edited /);
+    expect(body, "help does not state the card's charge-row rule").toContain(rule!);
+  });
+
+  it("no longer promises the whole configuration back, and names what one click does return", () => {
+    expect(body).not.toMatch(/whole configuration back/);
+    expect(body).toMatch(/one click returns your preferences and the margin and risk tables to that baseline\./);
+    expect(body).toMatch(/Trades and journal data are never part of that restore\./);
+  });
 });

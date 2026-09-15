@@ -430,8 +430,9 @@ describe("S4 · catchUpFrom crosses to pullGapNotice at the exact 90-day edge, 0
     // F-L1-3a: the one-day span is the last pull's own day — stated as a
     // fact, with no tradebook remedy (there is no day left to name).
     // RANGE-CAP COPY (wave 2F, as N6): the kept fact names the pull by its IST day. Before: "so this one started at 2026-06-13".
+    // L2 (wave 2G): re-pinned. Before: "The last pull ran on <day>"; after: "The pull before it ran on <day>" — the kept line sat under the card's newer "last pull" stamp and contradicted it.
     const ONE_DAY =
-      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-06-12 after 00:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.";
+      "Not fetched: fills from 2026-06-12 to 2026-06-12. The pull before it ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-06-12 after 00:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.";
     expect(json.warnings as string[]).toContain(ONE_DAY);
 
     const after = await connOf(EDGE_OUT);

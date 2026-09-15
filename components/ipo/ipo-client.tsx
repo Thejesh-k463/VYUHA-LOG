@@ -370,6 +370,17 @@ function KpiRow({ summary }: { summary: import("@/lib/analytics/ipo").IpoSummary
   );
 }
 
+/**
+ * L4 (v4.3.0 wave 2G): the form preview prices the sale from the bundled
+ * statutory rates only, so with a broker chosen every cell computed from those
+ * charges (Charges, Net P&L, the STCG/LTCG estimate, Post-tax net, Return) differs
+ * from the saved row by the broker's brokerage and DP, and says so. With no broker
+ * there is nothing omitted and the label stays plain.
+ */
+export function previewCellLabel(label: string, broker: string | null | undefined): string {
+  return broker ? `${label} before broker charges` : label;
+}
+
 export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => void }) {
   const [name, setName] = React.useState(existing?.name ?? "");
   const [broker, setBroker] = React.useState(existing?.broker ?? "");
@@ -491,13 +502,14 @@ export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: 
             <>
               <Cell k="Gross P&L" v={inr(preview.grossPnl)} cls={pnl(preview.grossPnl)} />
               {/* N15: the preview prices from the bundled statutory rates only; the saved
-                  figure adds the broker's brokerage and DP from charge_config. */}
-              <Cell k={broker ? "Charges before broker charges" : "Charges"} v={preview.unpriced ? "—" : inr(preview.charges)} />
-              <Cell k="Net P&L" v={preview.unpriced ? "—" : inr(preview.netPnl)} cls={preview.unpriced ? "" : pnl(preview.netPnl)} strong />
+                  figure adds the broker's brokerage and DP from charge_config. L4: so does
+                  every cell derived from those charges (net, tax, post-tax, return). */}
+              <Cell k={previewCellLabel("Charges", broker)} v={preview.unpriced ? "—" : inr(preview.charges)} />
+              <Cell k={previewCellLabel("Net P&L", broker)} v={preview.unpriced ? "—" : inr(preview.netPnl)} cls={preview.unpriced ? "" : pnl(preview.netPnl)} strong />
               {preview.tax && !preview.tax.isLoss && (
                 <>
-                  <Cell k={`${preview.tax.term === "ST" ? "STCG" : "LTCG"} @${preview.tax.ratePct}%`} v={inr(preview.tax.estTax)} cls="text-warning" />
-                  <Cell k="Post-tax net" v={inr(preview.tax.postTaxNet)} cls={pnl(preview.tax.postTaxNet)} strong />
+                  <Cell k={previewCellLabel(`${preview.tax.term === "ST" ? "STCG" : "LTCG"} @${preview.tax.ratePct}%`, broker)} v={inr(preview.tax.estTax)} cls="text-warning" />
+                  <Cell k={previewCellLabel("Post-tax net", broker)} v={inr(preview.tax.postTaxNet)} cls={pnl(preview.tax.postTaxNet)} strong />
                 </>
               )}
               {preview.tax?.isLoss && <Cell k="Tax" v="loss — set-off" cls="text-muted-foreground" />}
@@ -505,7 +517,8 @@ export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: 
           ) : (
             <Cell k="Unrealised" v={inr(preview.unrealised)} cls={pnl(preview.unrealised)} strong />
           )}
-          {preview.returnPct != null && <Cell k="Return" v={`${preview.returnPct.toFixed(2)}%`} cls={pnl(preview.returnPct)} />}
+          {/* A held IPO's return is marked at listing with no charges, so only a sold one's is qualified. */}
+          {preview.returnPct != null && <Cell k={preview.realised ? previewCellLabel("Return", broker) : "Return"} v={`${preview.returnPct.toFixed(2)}%`} cls={pnl(preview.returnPct)} />}
         </div>
       </div>
 

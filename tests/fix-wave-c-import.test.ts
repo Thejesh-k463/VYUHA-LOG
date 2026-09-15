@@ -237,7 +237,8 @@ const RANGE_CAP_120 = () => ({
   to: istDay(-91),
   reason: "range-cap",
   // RANGE-CAP COPY (wave 2F, as N6): the kept fact names the pull by its IST day. Before: "so this one started at ${istDay(-90)}".
-  fact: `Not fetched: fills from ${istDay(-120)} to ${istDay(-91)}. The last pull ran on ${istDay(-120)}, and a pull reads at most 90 days of Dhan's trade history, so the pull on ${istDay(0)} started at ${istDay(-90)}. Fills on ${istDay(-120)} after 10:30 IST were not fetched; a tradebook for ${istDay(-120)} would repeat the fills already imported from it.`,
+  // L2 (wave 2G): re-pinned. Before: "The last pull ran on <day>"; after: "The pull before it ran on <day>" — the kept line sat under the card's newer "last pull" stamp and contradicted it.
+  fact: `Not fetched: fills from ${istDay(-120)} to ${istDay(-91)}. The pull before it ran on ${istDay(-120)}, and a pull reads at most 90 days of Dhan's trade history, so the pull on ${istDay(0)} started at ${istDay(-90)}. Fills on ${istDay(-120)} after 10:30 IST were not fetched; a tradebook for ${istDay(-120)} would repeat the fills already imported from it.`,
   remedy: `To bring the rest in, import a Dhan tradebook for ${istDay(-119)} to ${istDay(-91)}.`,
 });
 

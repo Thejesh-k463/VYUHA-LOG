@@ -334,12 +334,15 @@ function supersededByBookNow(tx: TxLike, parsed: ParsedFile, accountId: number):
  * carries a ladder (trade_legs), an identity alias, or a basis or journal entry
  * the user recorded (W2R N1) — nothing is replaced and the earlier snapshot ON
  * THAT KEY stops being hidden from the collision check, so the user is asked,
- * whether or not the two rows relate by quantity or value (W2R N2). A row with
- * nothing stored on its key is a new position (W2R N3) — except that a row of
+ * whether or not the two rows relate by quantity or value (W2R N2). A row of
  * today's snapshot the user re-classified (a classification_overrides row on
  * its hash) counts as on the key of every incoming row of its tradingsymbol,
- * and is asked about, never replaced (W2F OVERRIDE-DOUBLE). A product-keyed
- * snapshot identity is 4.3.1 work.
+ * and is asked about, never replaced (W2F OVERRIDE-DOUBLE). A row with nothing
+ * stored on its key, while today's snapshot holds its tradingsymbol in another
+ * segment or exchange, is asked about against those rows (W2G M1, reversing
+ * W2R N3): the broker may have converted the position's product between the two
+ * pulls. Only a row with no same-symbol row in today's snapshot is a plain new
+ * position. A product-keyed snapshot identity is 4.3.1 work.
  */
 export interface SupersedeSnapshot {
   fileName: string;
@@ -352,8 +355,9 @@ interface SnapshotPlan {
   supersede: Map<number, { id: number }>;
   /**
    * incoming row index → the ids of today's earlier snapshot rows on its key,
-   * for a snapshot row with a new hash that is NOT replaced. Never empty: a row
-   * with no stored row on its key is a new position, not a question (W2R N3).
+   * for a snapshot row with a new hash that is NOT replaced — or, when nothing
+   * is on its key, of every row of that snapshot with its tradingsymbol (W2G
+   * M1). Never empty: a row with no such stored row is a new position.
    */
   ask: Map<number, number[]>;
 }
@@ -454,10 +458,15 @@ function planSnapshot(
   // W2F: today's snapshot rows the user re-classified, by tradingsymbol alone —
   // a key candidate for any incoming row of that tradingsymbol.
   const reclassifiedBySymbol = new Map<string, SnapshotStoredRow[]>();
+  // W2G M1: every row of today's snapshot, by tradingsymbol alone (any segment or exchange).
+  const storedBySymbol = new Map<string, SnapshotStoredRow[]>();
   for (const r of stored) {
     if (r.sourceFile !== snap.fileName || (r.buyDate !== day && r.sellDate !== day)) continue;
     const k = snapshotKey(r.tradingsymbol, r.symbol, r.segment, r.exchange);
     storedByKey.set(k, [...(storedByKey.get(k) ?? []), r]);
+    const bySymbol = storedBySymbol.get(tradingsymbolKey(r.tradingsymbol));
+    if (bySymbol) bySymbol.push(r);
+    else storedBySymbol.set(tradingsymbolKey(r.tradingsymbol), [r]);
     if (isReclassified(r.dedupHash)) {
       const s = tradingsymbolKey(r.tradingsymbol);
       reclassifiedBySymbol.set(s, [...(reclassifiedBySymbol.get(s) ?? []), r]);
@@ -487,9 +496,18 @@ function planSnapshot(
       (r) => !onKey.includes(r),
     );
     const candidates = [...onKey, ...reclassified];
-    // W2R N3: nothing stored on the key is a NEW position — no question, even
-    // when today's snapshot holds the same tradingsymbol in another segment.
-    if (candidates.length === 0) continue;
+    if (candidates.length === 0) {
+      // W2G M1 (reverses W2R N3's narrowing): nothing on the key, but today's
+      // snapshot holds this tradingsymbol in another segment or exchange. The
+      // broker may have converted the position's product between two pulls
+      // (intraday 10 → CNC 20 read as a new position held 30 against the
+      // broker's 20), so the row is ASKED about against those rows, never added
+      // silently. A genuinely new position of another product is asked too: a
+      // question is always better than a confident wrong answer.
+      const sameSymbol = storedBySymbol.get(tradingsymbolKey(row.t.tradingsymbol)) ?? [];
+      if (sameSymbol.length > 0) ask.set(i, sameSymbol.map((r) => r.id));
+      continue;
+    }
     if (
       candidates.length === 1 &&
       incomingPerKey.get(k) === 1 &&

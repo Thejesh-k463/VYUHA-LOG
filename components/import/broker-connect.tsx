@@ -80,6 +80,8 @@ interface ConnStatus {
 interface CollisionLite {
   symbol: string;
   kind: string;
+  /** The existing row is today's earlier snapshot from this same pull (M3). */
+  sameSnapshot?: boolean;
   detail: string;
   incoming: { buyQty: number; sellQty: number; buyValue: number; sellValue: number };
   existing: { id: number; buyQty: number; sellQty: number; sourceFile: string | null };
@@ -165,15 +167,39 @@ export interface CollisionDialogCopy {
 }
 
 /**
- * The blocked-commit dialog's words for a needsForce 409 (seam D1). A report
- * whose every collision is 'earlier-snapshot' met today's earlier pull of this
- * same pull, not another source: the "Different sources … a paisa" lead and the
- * other-source footer do not apply to it, and the route's sentence says what
- * committing anyway does. Any other report keeps both, and the route's
- * sentence is shown too.
+ * M3 (v4.3.0 fix wave 2G): did this collision meet today's earlier pull of this
+ * same pull? `sameSnapshot: true` on ANY kind — a same-day Dhan re-pull over a
+ * noted snapshot row arrives as 'same-quantity' with the flag set, because a
+ * relation kind wins over 'earlier-snapshot' in lib/import/cross-source.ts. The
+ * kind test stays beside it: cross-source.ts sets 'earlier-snapshot' only on a
+ * snapshot row today, but the field is optional in the type, so a row of that
+ * kind without the flag keeps seam D1's words rather than regressing to the
+ * other-source copy.
  */
-export function collisionDialogCopy(p: { collisions: readonly { kind: string }[]; message?: string | null }): CollisionDialogCopy {
-  const earlierOnly = p.collisions.length > 0 && p.collisions.every((c) => c.kind === "earlier-snapshot");
+export function metEarlierPull(c: { kind: string; sameSnapshot?: boolean }): boolean {
+  return c.sameSnapshot === true || c.kind === "earlier-snapshot";
+}
+
+/**
+ * The collisions as the blocked-commit dialog lists them (M3): a row that met
+ * today's earlier pull is badged as 'earlier-snapshot' whatever relation kind
+ * it also carries, so `collisionBadge(c.kind)` names today's earlier pull. Only
+ * `kind` changes; the row's symbol, detail and quantities are the server's.
+ */
+export function dialogCollisions<C extends { kind: string; sameSnapshot?: boolean }>(collisions: readonly C[]): C[] {
+  return collisions.map((c) => (metEarlierPull(c) ? ({ ...c, kind: "earlier-snapshot" } as C) : c));
+}
+
+/**
+ * The blocked-commit dialog's words for a needsForce 409 (seam D1). A report
+ * whose every collision met today's earlier pull of this same pull
+ * (metEarlierPull, M3) is not from another source: the "Different sources … a
+ * paisa" lead and the other-source footer do not apply to it, and the route's
+ * sentence says what committing anyway does. Any other report keeps both, and
+ * the route's sentence is shown too.
+ */
+export function collisionDialogCopy(p: { collisions: readonly { kind: string; sameSnapshot?: boolean }[]; message?: string | null }): CollisionDialogCopy {
+  const earlierOnly = p.collisions.length > 0 && p.collisions.every(metEarlierPull);
   const raw = p.message ?? "";
   const kept = (raw.endsWith(PULL_FORCE_ROUTE_TAIL) ? raw.slice(0, -PULL_FORCE_ROUTE_TAIL.length) : raw).trim();
   const serverMessage = kept === "" ? null : kept;
@@ -1468,7 +1494,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
               </div>
             )}
             <div className="space-y-2">
-              {(collisionPrompt?.collisions ?? []).map((c, i) => (
+              {dialogCollisions(collisionPrompt?.collisions ?? []).map((c, i) => (
                 <div key={i} className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="text-sm font-medium">{c.symbol}</span>

@@ -57,7 +57,8 @@ export default function StrategiesPage() {
 
   // The open/option/strike/CE-PE filter lives in SQL (getOpenOptionPositions):
   // the whole-book read mapped 25k rows to keep 673 on the 25k perf tier.
-  const optionLegs: PositionedLeg[] = getOpenOptionPositions().map((t) => {
+  const optionRows = getOpenOptionPositions();
+  const optionLegs: PositionedLeg[] = optionRows.map((t) => {
     const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
     const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
     return {
@@ -86,15 +87,34 @@ export default function StrategiesPage() {
   // own ticker for the ISIN, which for TATAMOTORS is TMPV and split a
   // "Tata Motors Ltd" holding off its calls. Two option symbols with one ISIN:
   // the listing's ticker if it is one of them, else the first alphabetically.
-  const optionSymbols = new Set(optionLegs.map((l) => l.symbol.toUpperCase()));
-  const optionSymbolByIsin = new Map<string, string>();
-  for (const s of [...optionSymbols].sort()) {
-    const isin = bundledIsinBySymbol(s);
-    if (isin && (!optionSymbolByIsin.has(isin) || bundledSymbolByIsin(isin) === s)) optionSymbolByIsin.set(isin, s);
+  // L5 (fix wave 2G): the map is built PER ACCOUNT and a row reads its OWN
+  // account's first, so in All accounts (0 is a view, invariant 9) account B's
+  // ticker for the same ISIN never takes account A's shares off A's calls — each
+  // account's cards equal its single-account view. The in-scope map is reached
+  // only by a row its own account's option legs did not admit (no single-account
+  // view holds it), and keeps today's All-accounts grouping for it. A single
+  // account has one entry, equal to the in-scope map: unchanged there.
+  const admittingOf = (symbols: Iterable<string>) => {
+    const own = new Set([...symbols].map((s) => s.toUpperCase()));
+    const byIsin = new Map<string, string>();
+    for (const s of [...own].sort()) {
+      const isin = bundledIsinBySymbol(s);
+      if (isin && (!byIsin.has(isin) || bundledSymbolByIsin(isin) === s)) byIsin.set(isin, s);
+    }
+    return (upper: string, isin: string | null): string | null =>
+      own.has(upper) ? upper : (isin && byIsin.get(isin.trim().toUpperCase())) || null;
+  };
+  const symbolsByAccount = new Map<number, string[]>();
+  for (const r of optionRows) {
+    const list = symbolsByAccount.get(r.accountId);
+    if (list) list.push(r.symbol);
+    else symbolsByAccount.set(r.accountId, [r.symbol]);
   }
-  const legSymbol = (stored: string, isin: string | null): string => {
+  const admittedByAccount = new Map([...symbolsByAccount].map(([id, symbols]) => [id, admittingOf(symbols)] as const));
+  const admittedInScope = admittingOf(optionRows.map((r) => r.symbol));
+  const legSymbol = (stored: string, isin: string | null, accountId: number): string => {
     const upper = stored.toUpperCase();
-    return optionSymbols.has(upper) ? upper : (isin && optionSymbolByIsin.get(isin.trim().toUpperCase())) || upper;
+    return admittedByAccount.get(accountId)?.(upper, isin) ?? admittedInScope(upper, isin) ?? upper;
   };
 
   // P5: a basis-unknown sale is never a leg. It NETS against the same
@@ -115,7 +135,7 @@ export default function StrategiesPage() {
   const unknownSold = new Map<string, number>();
   const held: { key: string; leg: PositionedLeg }[] = [];
   for (const t of getOpenUnderlyingPositions()) {
-    const symbol = legSymbol(t.symbol, t.isin);
+    const symbol = legSymbol(t.symbol, t.isin, t.accountId);
     const isFuture = t.instrumentType === "future";
     const key = `${t.accountId}|${symbol}|${t.instrumentType}|${isFuture ? (t.expiry ?? t.tradingsymbol.toUpperCase()) : ""}`;
     const deliverySale = DELIVERY_SEGMENTS.has(t.segment) && t.buyQty === 0 && t.sellQty > 0;

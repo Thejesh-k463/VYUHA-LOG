@@ -216,6 +216,36 @@ describe("N15 · the charges label names only heads this IPO carries; the previe
     expect(nb).not.toContain("before broker charges");
     expect(nb).toMatch(/>Charges<\/span>/);
   });
+
+  /**
+   * L4 (v4.3.0 wave 2G). The Net P&L, Return, STCG/LTCG estimate and Post-tax net
+   * cells are computed from the same broker-less charges as the Charges cell, so
+   * they differ from the saved row too (measured, zerodha, exit 120: preview net
+   * 1987551.13, saved 1987535.79). Before this fix only the Charges cell said so.
+   */
+  it("L4 · with a broker chosen, every preview cell derived from those charges says 'before broker charges'", () => {
+    const gain = (b: string | null, p: Partial<IpoInput> = { exitPrice: 120, allotmentDate: "2026-06-10", exitDate: "2026-06-15" }) =>
+      renderToStaticMarkup(React.createElement(Dialog, null, React.createElement(ui.IpoForm, {
+        existing: computeIpo(crore({ broker: b, ...p }), q.sellChargerFor(b, "NSE", p.exitDate ?? null, seed)), onDone: () => {},
+      })));
+    const z = gain("zerodha");
+    for (const label of ["Charges", "Net P&amp;L", "Post-tax net", "Return"]) {
+      expect(z, label).toContain(`>${label} before broker charges</span>`);
+    }
+    expect(z).toMatch(/>STCG @[\d.]+% before broker charges<\/span>/);
+
+    const nb = gain(null);
+    expect(nb).not.toContain("before broker charges");
+    for (const label of ["Charges", "Net P&amp;L", "Post-tax net", "Return"]) expect(nb, label).toContain(`>${label}</span>`);
+
+    // A holding not yet sold is marked at listing with no charges at all: its Return is not qualified.
+    const held = gain("zerodha", { exitPrice: null, listingPrice: 130, allotmentDate: "2026-06-10", exitDate: null });
+    expect(held).toContain(">Return</span>");
+    expect(held).not.toContain("before broker charges");
+
+    expect(ui.previewCellLabel("Net P&L", "zerodha")).toBe("Net P&L before broker charges");
+    expect(ui.previewCellLabel("Net P&L", "")).toBe("Net P&L");
+  });
 });
 
 /**
@@ -298,5 +328,49 @@ describe("IPO-EXITDATE · an unreadable exit date is refused on the way in and s
     // THE assertions: the Feb-30 sale is not folded into FY 2025-26, and year 2 gets no "2-03".
     expect(sales.find((f) => f.fy === "2025-26")?.journal).toBe(333);
     expect(sales.map((f) => f.fy).filter((fy) => !/^\d{4}-\d{2}$/.test(fy))).toEqual([]);
+  });
+
+  /**
+   * L3 (v4.3.0 wave 2G). The refusal above ran on EVERY request, so an IPO whose
+   * exit date was stored unreadable before 4.3.0 (a restore, the API, any path
+   * but the date input) could not be edited at all, not even its notes: the form
+   * sends the stored value back, and a not-allotted IPO has no exit-date input to
+   * fix it in. Measured before this fix: the notes-only edit below answered 400.
+   * Now only an exit date the request CHANGES is checked; clearing is allowed.
+   */
+  const legacy = (name: string, exitDate: string, over: Record<string, unknown> = {}) =>
+    t.db.insert(t.schema.ipos).values({
+      accountId: 1, name, appliedPrice: 100, lotSize: 10, allotted: true, allottedQty: 10, exitPrice: 120, exitDate, ...over,
+    }).returning({ id: t.schema.ipos.id }).get()!.id;
+
+  it("L3 · a notes-only edit of an IPO with a stored unreadable exit date is saved, the stored date passing through", async () => {
+    const id = legacy("LEGACY-DMY", "15-03-2011");
+    const res = await post(app("15-03-2011", { id, name: "LEGACY-DMY", notes: "only a note changed" }));
+    expect(res.status).toBe(200);
+    const [after] = named("LEGACY-DMY");
+    expect([after.notes, after.exitDate]).toEqual(["only a note changed", "15-03-2011"]);
+
+    // A not-allotted IPO renders no exit-date input, yet its form still sends the stored value.
+    const na = legacy("LEGACY-NA", "2026-02-30", { allotted: false, allottedQty: 0, exitPrice: null });
+    const naRes = await post(app("2026-02-30", { id: na, name: "LEGACY-NA", allotted: false, allottedQty: 0, exitPrice: "", notes: "noted" }));
+    expect(naRes.status).toBe(200);
+    expect(named("LEGACY-NA").map((r) => [r.notes, r.exitDate])).toEqual([["noted", "2026-02-30"]]);
+  });
+
+  it("L3 · changing that stored date to another unreadable value is still refused; clearing it is saved", async () => {
+    const [row] = named("LEGACY-DMY");
+    const res = await post(app("0002-06-15", { id: row.id, name: "LEGACY-DMY", notes: "tried a new date" }));
+    expect(res.status).toBe(400);
+    expect(named("LEGACY-DMY").map((r) => [r.notes, r.exitDate])).toEqual([["only a note changed", "15-03-2011"]]);
+
+    const cleared = await post(app("", { id: row.id, name: "LEGACY-DMY", notes: "date cleared" }));
+    expect(cleared.status).toBe(200);
+    expect(named("LEGACY-DMY").map((r) => [r.notes, r.exitDate])).toEqual([["date cleared", null]]);
+  });
+
+  it("L3 · a create carrying the same unreadable value is still refused (only an unchanged STORED value passes)", async () => {
+    const res = await post(app("15-03-2011", { name: "LEGACY-CREATE" }));
+    expect(res.status).toBe(400);
+    expect(named("LEGACY-CREATE")).toHaveLength(0);
   });
 });

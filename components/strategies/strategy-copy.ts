@@ -110,7 +110,7 @@ export const STRATEGY_COPY = {
    * engine in the test. N20: the relative clause had lost its pronoun.
    */
   proWithheldNote:
-    "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro. A position in the underlying, long or short, or a second expiry can turn legs once named a long call, a short call, a long put or a short put into a covered call, a covered put, a protective put, a protective call, a collar, a calendar or a diagonal — a short call over a holding of the underlying, for instance, is a covered call. Your legs, the four figures and the payoff curve stay free.",
+    "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro. A position in the underlying, long or short, or a second expiry can turn legs once named a long call, a short call, a long put or a short put into a covered call, a covered put, a protective put, a protective call, a calendar or a diagonal — a short call over a holding of the underlying, for instance, is a covered call. Your legs, the four figures and the payoff curve stay free.",
 
   /**
    * The shelf, for a free build: a locked strip and one line. The picker's

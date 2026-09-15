@@ -14,6 +14,7 @@ import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
+import { withStaleCloseNote } from "@/lib/import/close-open-lots";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 /**
@@ -409,6 +410,39 @@ describe("R2F-DQ — a closed lot makes the book ambiguous ONLY if its exit is o
     expect(staleOpenPairs([coveredAfter, L, S]).map((p) => [p.lotId, p.side, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([
       [L.id, "short", true, false, [coveredAfter.id]],
     ]);
+  });
+});
+
+describe("M2 (wave 2G) — a lot closed by the Data Quality join itself never makes the book ambiguous", () => {
+  // Stacked lots L1 100 (08-20) and L2 50 (08-21), each with v4.2.0's sale row: S1 100 (08-25), S2 50 (08-26).
+  const SALE_HASH = "a".repeat(40);
+  const joined = (p: Partial<QualityTrade>) => lot({ isOpen: false, sellQty: 100, avgSellPrice: 250, importNotes: withStaleCloseNote(null, SALE_HASH), ...p });
+
+  it("L1 joined with S1 from Data Quality: [L2, S2] stays one-click and critical, with no review", () => {
+    const L1 = joined({ buyDate: "2026-08-20", sellDate: "2026-08-25" });
+    const L2 = lot({ buyQty: 50, avgBuyPrice: 210, buyDate: "2026-08-21" });
+    const S2 = sale({ sellQty: 50, avgSellPrice: 260, sellDate: "2026-08-26" });
+    expect(staleOpenPairs([L1, L2, S2]).map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([
+      [L2.id, S2.id, false, true, []],
+    ]);
+    expect(staleIssues([L1, L2, S2])[0].ids).toEqual([L2.id]);
+    expect(reviewIssues([L1, L2, S2])).toEqual([]);
+  });
+
+  it("either join order: L2 joined with S2 first leaves [L1, S1] one-click", () => {
+    const L1 = lot({ buyDate: "2026-08-20" });
+    const L2 = joined({ buyQty: 50, sellQty: 50, avgBuyPrice: 210, buyDate: "2026-08-21", sellDate: "2026-08-26" });
+    const S1 = sale({ sellDate: "2026-08-25" });
+    expect(staleOpenPairs([L1, L2, S1]).map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick])).toEqual([[L1.id, S1.id, false, true]]);
+  });
+
+  it("controls: the same close made elsewhere (no note), or an alias with no Data Quality note, still counts", () => {
+    const L2 = lot({ buyQty: 50, avgBuyPrice: 210, buyDate: "2026-08-21" });
+    const S2 = sale({ sellQty: 50, avgSellPrice: 260, sellDate: "2026-08-26" });
+    const elsewhere = joined({ buyDate: "2026-08-20", sellDate: "2026-08-25", importNotes: null });
+    expect(staleOpenPairs([elsewhere, L2, S2]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L2.id, true, false, [elsewhere.id]]]);
+    const aliasOnly = joined({ buyDate: "2026-08-20", sellDate: "2026-08-25", importNotes: `dedup-alias:${SALE_HASH}` });
+    expect(staleOpenPairs([aliasOnly, L2, S2]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L2.id, true, false, [aliasOnly.id]]]);
   });
 });
 
@@ -1048,5 +1082,70 @@ describe("R2-DQ N9 / N10 — a sale recorded in two fills: named as its fills, r
     expect(report.issues.filter((i) => i.code === "stale_open")).toEqual([]);
     expect(report.issues.find((i) => i.code === "stale_sale")).toMatchObject({ severity: "warning", ids: [S.id] });
     expect(dq.getStaleOpenSection().sales.map((s) => [s.saleId, s.closedLotIds])).toEqual([[S.id, [L.id]]]);
+  });
+});
+
+describe("M2 (wave 2G) — after the card's own join of [L1, S1], the sibling [L2, S2] is still joined in one step", () => {
+  const ACC = 817;
+  const SYM = "STACKX";
+
+  it("stacked L1 100 (08-20) + L2 50 (08-21), S1 100 (08-25) + S2 50 (08-26): POST {L1, S1}, then {L2, S2} is one-click and the route joins it", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-m2" }).run();
+    const buy = (qty: number, price: number, day: string) =>
+      parsed([trade({ tradingsymbol: SYM, buyQty: qty, avgBuyPrice: price, buyValue: qty * price, buyDate: day })]);
+    const sell = (qty: number, price: number, day: string) =>
+      parsed([trade({ tradingsymbol: SYM, sellQty: qty, avgSellPrice: price, sellValue: qty * price, sellDate: day })]);
+    expect(commit.commitParsedFile(buy(100, 200, "2026-08-20"), "m2-l1", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(buy(50, 210, "2026-08-21"), "m2-l2", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell(100, 250, "2026-08-25"), "m2-s1", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell(50, 260, "2026-08-26"), "m2-s2", null, ACC).added).toBe(1);
+    const [L1, L2, S1, S2] = rowsOf(ACC);
+    selectAccount(ACC);
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.oneClick])).toEqual([
+      [L1.id, S1.id, true],
+      [L2.id, S2.id, true],
+    ]);
+
+    const first = await post({ lotId: L1.id, saleId: S1.id, exitDate: "2026-08-25" });
+    expect([first.status, first.json.ok], first.json.message).toEqual([200, true]);
+    expect(row(L1.id)!.importNotes ?? "").toContain(`dedup-alias:${S1.dedupHash}`);
+
+    // L1's exit (08-25) is on or after L2's entry (08-21), but its close IS S1, recorded as its alias: it cannot have taken S2.
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L2.id, S2.id, false, true, []]]);
+    const report = dq.getDataQualityReport();
+    expect(report.issues.find((i) => i.code === "stale_open")?.ids).toEqual([L2.id]);
+    expect(report.issues.find((i) => i.code === "stale_review")).toBeUndefined();
+
+    const second = await post({ lotId: L2.id, saleId: S2.id, exitDate: "2026-08-26" });
+    expect([second.status, second.json.ok, second.json.code ?? null], second.json.message).toEqual([200, true, null]);
+    expect(rowsOf(ACC).map((r) => [r.id, r.isOpen, r.buyQty, r.sellQty])).toEqual([
+      [L1.id, false, 100, 100],
+      [L2.id, false, 50, 50],
+    ]);
+    expect(dq.getStaleOpenSection()).toMatchObject({ pairs: [], sales: [] });
+  });
+});
+
+describe("R2-DQ N10 — the FILLS guard reads the sale's trade_legs, not only its staged flag", () => {
+  const ACC = 818;
+  const SYM = "WIPRO";
+
+  it("a sale holding two fills whose staged flag is false: the pure rule offers one-click, POST refuses it with FILLS and changes nothing", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-fills-legs" }).run();
+    const exec = (qty: number, time: string) => ({ side: "sell" as const, qty, price: 250, date: "2026-08-28", time });
+    const sale2 = parsed([trade({ tradingsymbol: SYM, sellQty: 100, avgSellPrice: 250, sellValue: 25000, sellDate: "2026-08-28", executions: [exec(40, "10:00:00"), exec(60, "10:05:00")] })]);
+    expect(commit.commitParsedFile(buyFile(SYM), "fl-buy", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sale2, "fl-sale", null, ACC).added).toBe(1);
+    const [L, S] = rowsOf(ACC);
+    t.db.update(t.schema.trades).set({ staged: false }).where(eq(t.schema.trades.id, S.id)).run();
+    expect([row(S.id)!.staged, legsOfTrade(S.id).length]).toEqual([false, 2]);
+    selectAccount(ACC);
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.saleStaged, p.oneClick])).toEqual([[L.id, S.id, false, true]]);
+
+    const before = rowsOf(ACC);
+    const { status, json } = await post({ lotId: L.id, saleId: S.id, exitDate: "2026-08-28" });
+    expect([status, json.ok, json.code]).toEqual([409, false, "FILLS"]);
+    expect(rowsOf(ACC)).toEqual(before);
+    expect(legsOfTrade(S.id)).toHaveLength(2);
   });
 });

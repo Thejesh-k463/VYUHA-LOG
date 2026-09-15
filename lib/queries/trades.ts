@@ -204,6 +204,10 @@ export const getOptionTrades = cache((): OptionJournalRow[] => {
 const STRATEGY_LEG_FIELDS = [
   "symbol", "expiry", "optionType", "strike",
   "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice",
+  // L5 (fix wave 2G): the page builds N17's admitting-symbol map PER ACCOUNT, so
+  // in All accounts another account's ticker for one ISIN never routes a holding.
+  // Read on the server only — the page never copies it onto a leg or a group.
+  "accountId",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type StrategyLegRow = Pick<Trade, (typeof STRATEGY_LEG_FIELDS)[number]>;
@@ -225,7 +229,7 @@ const openOptionLegWhere = (accountId: number) => {
 
 export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
   const accountId = getSelectedAccountId();
-  // Projected to the 8 columns /strategies reads, of 75. Same WHERE, same
+  // Projected to the 9 columns /strategies reads, of 75. Same WHERE, same
   // ORDER BY, so leg order inside each group is unchanged.
   return db.select(pickCols(STRATEGY_LEG_FIELDS)).from(trades)
     .where(openOptionLegWhere(accountId))

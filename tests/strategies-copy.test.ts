@@ -565,13 +565,17 @@ describe("a holding or a second expiry turns a legacy name into a withheld Pro s
         });
       }
     }
-    // The collar is a holding plus TWO options, so no single route above reaches it.
-    const [collar] = buildStrategies([ul("long"), single("PE", "long"), leg({ side: "short", strike: 1600 })]);
-    expect(collar.strategyId, "the collar fixture must be the Pro shape").toBe("collar");
-    expect(withholdForFree([collar], false)[0].proWithheld).toBe(true);
-    to.add("collar");
+    // L6: nothing is added by hand. The collar used to be (a holding plus TWO
+    // options), but its option pair alone is already a Pro shape — pinned below.
     return { from, to };
   }
+
+  /** The shapes a copy lists after "into", up to the dash (note) or ", and" (help). */
+  const listedShapes = (copy: string) => {
+    const m = copy.match(/ into (.+?)(?: —|, and )/);
+    expect(m, "the copy no longer lists the shapes after 'into'").not.toBeNull();
+    return m![1].split(/, | or /).map((s) => s.replace(/^an? /, "")).sort();
+  };
 
   it("a short underlying turns a short put into a covered put and a long call into a protective call, both withheld (N19)", () => {
     const [cp] = buildStrategies([ul("short"), single("PE", "short")]);
@@ -594,6 +598,29 @@ describe("a holding or a second expiry turns a legacy name into a withheld Pro s
       expect(copy, `${label}: a short underlying is not named`).toMatch(/\ba position in the underlying, long or short, or a second expiry/i);
       for (const shape of to) expect(copy, `${label} omits the ${shape}`).toMatch(new RegExp(`\\ba ${shape}\\b`));
       for (const name of from) expect(copy, `${label} omits the pre-4.3 name ${name}`).toMatch(new RegExp(`\\ba ${name}\\b`));
+    }
+  });
+
+  /**
+   * L6 (wave-2R/2F re-check, cosmetic). Both copies named the collar, but no
+   * pre-4.3-named book reaches one by those routes: a collar's two option legs
+   * alone (a long put and a short call) are split-strike-combo, which is not
+   * legacyFree, so the book was withheld before the underlying joined it.
+   */
+  it("the list in both copies is exactly the engine-derived set — no collar (L6)", () => {
+    const pair = buildStrategies([single("PE", "long"), leg({ side: "short", strike: 1600 })]);
+    expect(pair.map((g) => g.strategyId), "the collar's option pair alone").toEqual(["split-strike-combo"]);
+    expect(CATALOGUE.find((d) => d.id === "split-strike-combo")?.legacyFree, "its option pair has no pre-4.3 name").toBe(false);
+    const [collar] = buildStrategies([ul("long"), single("PE", "long"), leg({ side: "short", strike: 1600 })]);
+    expect(collar.strategyId, "adding the holding makes it the collar").toBe("collar");
+
+    const { to } = reachable();
+    expect([...to].sort()).toEqual(["calendar", "covered call", "covered put", "diagonal", "protective call", "protective put"]);
+    const help = HELP_ENTRIES.find((e) => e.href === "/strategies")!.body.join(" ");
+    const sentence = help.split(/(?<=\.)\s+/).find((s) => /\bsixteen\b/.test(s))!;
+    for (const [label, copy] of [["proWithheldNote", STRATEGY_COPY.proWithheldNote], ["/strategies help", sentence]] as const) {
+      expect(copy, `${label} names the collar`).not.toMatch(/\bcollar\b/i);
+      expect(listedShapes(copy), `${label}: the listed shapes are not the engine-derived set`).toEqual([...to].sort());
     }
   });
 
