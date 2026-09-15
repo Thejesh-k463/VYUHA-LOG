@@ -5946,7 +5946,7 @@ re-run with no code touched, and attempt 2 passed 6/6.
 
 ## 2026-09-11 — v4.3.0 fix wave 1 (fifth session): nine Opus builders on disjoint files, one follow-up builder, the seam tester
 
-**Fixed.** Each fix is red on revert, and the assertions are quoted in the builder reports (the session's `wave1.json`).
+**Fixed.** Each fix is red on revert, and the assertions are quoted in the builder reports (`LIVE-DESK-RESEARCH/18-FIX-WORK-4.3.0/wave1.json`).
 
 | Builder | Findings |
 |---|---|
