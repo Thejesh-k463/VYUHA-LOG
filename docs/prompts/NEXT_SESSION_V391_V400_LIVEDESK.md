@@ -167,8 +167,8 @@ formulas in a shipped product without the owner's ruling.
 
 - **Sector-mapping / deeper-analysis feature** from the owner's TRADE-SENTINAL + Chartink Atlas
   files: `classification-reconciliation-multisource.csv` (2,305 rows, in Sentinel),
-  `T:/Thejesh/CLAUDE-CODE/classifications-multisource-review.csv`,
-  `T:/Thejesh/CLAUDE-CODE/Screener - Industry mapping.xlsx`, `sentinel/NIFTY INDICES/*.csv` (also
+  `T:/Thejesh/CLAUDE-CODE/TESTING+RESEARCH/RESEARCH FILES/classifications-multisource-review.csv` (snapshot + sha256: `LIVE-DESK-RESEARCH/_data/owner-sector-inputs-2026-09-16/MANIFEST.md`),
+  `T:/Thejesh/CLAUDE-CODE/TESTING+RESEARCH/RESEARCH FILES/Screener - Industry mapping.xlsx`, `sentinel/NIFTY INDICES/*.csv` (also
   `T:/Thejesh/CLAUDE-CODE/NIFTY INDICES.zip`), `WATCHLISTWEEK20260828.xlsx` (ideas only). v3.8
   shipped the DATA LAYER only (`sector-map.json`, 2,229 rows, all rows with provenance). v4.0 =
   the analytics: stock-vs-own-cohort attribution ("stock pick or sector ride?"), cohort-minus-
