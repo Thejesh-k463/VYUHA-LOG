@@ -228,9 +228,13 @@ describe("the collision dialog renders the pure copy (seam D1)", () => {
     expect(branch).toContain("setCollisionPrompt({ brokerId, accountId, collisions: (data.collisions ?? []) as CollisionLite[], message: data.message });");
   });
 
-  it("the badge is collisionBadge(c.kind), and 'partial overlap' is written once — inside it", () => {
+  it("the badge is collisionBadge(…kind), and 'partial overlap' is written once — inside it", () => {
     const dialog = between("{/* Blocked-commit dialog", "{/* Zerodha daily-login dialog");
-    expect(dialog).toContain("{collisionBadge(c.kind)}");
+    // W2N (D8): one listed ROW can carry two blockers (today's earlier pull AND
+    // an older file), so the badge is written once per entry of the row — `e`,
+    // the row's own collision and each of its `also`, never a re-typed label.
+    expect(dialog).toContain("{collisionBadge(e.kind)}");
+    expect(dialog).toContain("{[c, ...(c.also ?? [])].map((e, j) => (");
     expect(SRC.match(/"partial overlap"/g) ?? []).toHaveLength(1);
     expect(SRC.match(/Different sources state the same trade/g) ?? []).toHaveLength(1);
   });

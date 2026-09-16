@@ -913,6 +913,16 @@ export interface IpoHoldingFacts {
   acquisitionDate?: string | null;
   buyDate?: string | null;
   sellDate?: string | null;
+  /**
+   * D1 (wave 2N, re-check finding counted-once#1) — does the holding record a
+   * SALE of its own? A record that states an exit is no candidate for a holding
+   * that never sold: attaching one wrote a link the book does not support, left
+   * the double count it was supposed to settle exactly where it was, and the
+   * next save of that record on /ipos would have closed the position with a sale
+   * it never had (`tradePatchFromIpo`). ABSENT is unstated, and unstated is not
+   * evidence either way — so `ipoRecordNamesHolding` REFUSES rather than assume.
+   */
+  sellQty?: number;
 }
 
 /** Same book — 0 is a view, never a book (invariant 9), and an absent account id never matches. */
@@ -989,6 +999,33 @@ function matchesByExit(record: IpoRecordFacts, trade: IpoHoldingFacts): boolean 
 }
 
 /**
+ * D1 (wave 2N) — the record NAMES this holding: what a Trash restore may WRITE.
+ *
+ * `matchesByExit` (tier B) carries no scrip fact — `ipos` has no symbol or ISIN
+ * column — so a record named after ANOTHER issue whose four allotment facts
+ * coincide claimed the holding, and the counted-once rule then dropped that
+ * record's OWN sale from the capital summary, the tax pack, the ITR export and
+ * both AIS sides (re-check finding counted-once#0, a silent wrong number). Two
+ * IPOs allotted on one day in the same lot size and sold on listing day is an
+ * ordinary retail pattern, so all four facts together are no identity.
+ *
+ * What a restore may write is therefore the NAME tier alone — the only clause
+ * that carries the scrip — plus an EXIT-SHAPE clause: a record that states an
+ * exit belongs to a holding that HAS a sale. Tier B is not demoted to nothing:
+ * it still MARKS a candidate in the question (`ipoRecordMatchesHolding`), where
+ * the user settles it.
+ */
+export function ipoRecordNamesHolding(record: IpoRecordFacts, trade: IpoHoldingFacts): boolean {
+  if (!sameBook(record, trade)) return false;
+  if (record.allotted === false) return false;
+  if (!matchesByName(record, trade)) return false;
+  // An exit is no allotment's record until that allotment sold. An ABSENT
+  // `sellQty` states nothing, and a link is not written on nothing.
+  if (statesAnExit(record) && !(typeof trade.sellQty === "number" && trade.sellQty > 0)) return false;
+  return true;
+}
+
+/**
  * Could this record be this holding's own allotment?
  *
  * Deliberately narrow, and every clause is a FACT both sides state. Two tiers,
@@ -996,8 +1033,9 @@ function matchesByExit(record: IpoRecordFacts, trade: IpoHoldingFacts): boolean 
  *   - A: the record's name IS the scrip (`matchesByName`);
  *   - B: the record is an exited allotment whose quantity and both dates are
  *     the holding's own (`matchesByExit`).
- * A match is still only a candidate: what is written from it is decided by
- * `uniqueIpoRelinks`, and everything else is a question (invariant 6).
+ * A match MARKS and orders a candidate in the question; since D1 (wave 2N) it is
+ * NOT what a restore may write — that is `ipoRecordNamesHolding`, read by
+ * `uniqueIpoRelinks`. Everything else is a question (invariant 6).
  */
 export function ipoRecordMatchesHolding(record: IpoRecordFacts, trade: IpoHoldingFacts): boolean {
   if (!sameBook(record, trade)) return false;
@@ -1020,9 +1058,16 @@ export interface IpoOrphanPair {
   symbol: string;
   recordIds: number[];
   recordNames: string[];
+  /** The book both sides are in — the match itself required the same account. */
+  accountId?: number;
+  /** D1 (wave 2N): does the holding record a sale? Absent = unstated. */
+  holdingSold?: boolean;
 }
 
-/** Every unlinked holding with at least one candidate record, candidates kept whole. */
+/**
+ * Every unlinked holding with at least one candidate record, candidates kept
+ * whole — what the report MARKS (tier A ∪ tier B).
+ */
 export function ipoOrphanPairs(
   trades: readonly IpoHoldingFacts[],
   records: readonly IpoRecordFacts[],
@@ -1036,6 +1081,8 @@ export function ipoOrphanPairs(
       symbol: t.tradingsymbol || t.symbol || "—",
       recordIds: cands.map((r) => r.id),
       recordNames: cands.map((r) => r.name),
+      accountId: t.accountId,
+      holdingSold: typeof t.sellQty === "number" ? t.sellQty > 0 : undefined,
     });
   }
   return out;
@@ -1044,10 +1091,26 @@ export function ipoOrphanPairs(
 /**
  * The pairs that can only be read one way — what a restore may write.
  *
- * Unique in BOTH directions: one candidate record for the holding, and one
- * holding claiming that record. Two holdings of the same scrip and quantity
- * reaching for one record is as ambiguous as one holding reaching for two, and
- * "whichever the loop met first" is not an answer.
+ * TWO conditions, and both are needed:
+ *
+ *   AMBIGUITY is judged on the MARK rule (`ipoRecordMatchesHolding`, tier A ∪
+ *   tier B), unique in BOTH directions: one candidate record for the holding,
+ *   and one holding claiming that record. Two holdings of the same scrip and
+ *   quantity reaching for one record is as ambiguous as one holding reaching for
+ *   two, and "whichever the loop met first" is not an answer. Judging it on the
+ *   narrower write rule instead would make a pairing the report calls ambiguous
+ *   writable — and a WRITE silences the question (`assessDataQuality` asks only
+ *   about UNLINKED holdings), which is the shape of the defect this wave fixed.
+ *
+ *   The one surviving candidate must then satisfy the WRITE rule
+ *   (`ipoRecordNamesHolding`, D1 wave 2N): the record's own NAME is the scrip,
+ *   and an exited record belongs to a holding that sold. Tier B carries no scrip
+ *   fact, so a unique tier-B match can still be another issue's record
+ *   (counted-once#0) — it is MARKED and asked about, never written.
+ *
+ * Both directions are counted over everything the caller hands in, which is why
+ * `lib/trash.ts` hands in the book's OTHER unlinked `acquisition:'ipo'` holdings
+ * of the affected accounts as well as the restored ones (counted-once#1).
  */
 export function uniqueIpoRelinks(
   trades: readonly IpoHoldingFacts[],
@@ -1056,9 +1119,18 @@ export function uniqueIpoRelinks(
   const pairs = ipoOrphanPairs(trades, records);
   const claims = new Map<number, number>();
   for (const p of pairs) for (const id of p.recordIds) claims.set(id, (claims.get(id) ?? 0) + 1);
-  return pairs
-    .filter((p) => p.recordIds.length === 1 && claims.get(p.recordIds[0]) === 1)
-    .map((p) => ({ tradeId: p.tradeId, ipoId: p.recordIds[0] }));
+  const recordById = new Map(records.map((r) => [r.id, r]));
+  const tradeById = new Map(trades.map((t) => [t.id, t]));
+  const out: { tradeId: number; ipoId: number }[] = [];
+  for (const p of pairs) {
+    const ipoId = p.recordIds[0];
+    if (p.recordIds.length !== 1 || claims.get(ipoId) !== 1) continue;
+    const record = recordById.get(ipoId);
+    const trade = tradeById.get(p.tradeId);
+    if (!record || !trade || !ipoRecordNamesHolding(record, trade)) continue;
+    out.push({ tradeId: p.tradeId, ipoId });
+  }
+  return out;
 }
 
 /**
@@ -1107,6 +1179,8 @@ export function ipoAskPairs(
       symbol: t.tradingsymbol || t.symbol || "—",
       recordIds: cands.map((r) => r.id),
       recordNames: cands.map((r) => r.name),
+      accountId: t.accountId,
+      holdingSold: typeof t.sellQty === "number" ? t.sellQty > 0 : undefined,
       matched: cands.map((_, k) => k < matching.length),
       exited: cands.map(statesAnExit),
     });
@@ -1124,6 +1198,13 @@ export function ipoAskPairs(
  * named in a sentence of its own, as a candidate a restore also weighed. A
  * caller that states no `exited` flags reads exactly as before (every candidate
  * an exited one), which is what `ipoOrphanPairs` hands it.
+ *
+ * D1 (wave 2N): the consequence sentence BRANCHES on the holding's own sale.
+ * A holding that records no sale states no second one, so claiming that "the
+ * sale is counted once in IPOs and again as the holding's own sale" is a figure
+ * the book does not hold (invariant 6) — and that is now the common case, since
+ * a restore no longer attaches an exited record to a holding that never sold.
+ * An UNSTATED `holdingSold` reads exactly as before.
  */
 export function ipoOrphanNote(p: IpoOrphanPair & { matched?: boolean[]; exited?: boolean[] }): string {
   const named = (k: number) => `#${p.recordIds[k]} ${p.recordNames[k]}${p.matched?.[k] ? " (matches this holding)" : ""}`;
@@ -1140,14 +1221,55 @@ export function ipoOrphanNote(p: IpoOrphanPair & { matched?: boolean[]; exited?:
       `with no holding attached and no exit stated (${list(unexited)}), which a restore reads as ` +
       `${unexited.length === 1 ? "a candidate" : "candidates"} for this holding too. `
     : "";
+  const consequence =
+    p.holdingSold === false
+      ? `${many ? "Those records state" : "The record states"} that exit under IPOs and this holding records no sale, ` +
+        `so the record's exit is the only one stated; linking them keeps one allotment in one place. `
+      : `${many ? "Those records state" : "The record states"} that exit under IPOs and the holding states its own sale ` +
+        `under Trades: if ${many ? "one of them is" : "this record is"} this holding's allotment, that sale is counted ` +
+        `once in IPOs and again as the holding's own sale — in the capital summary, the tax pack, the ITR export and ` +
+        `both AIS sides — until one names the other. `;
   return (
     `Trade #${p.tradeId} (${p.symbol}) is recorded as an IPO allotment and no IPO record points at it, while ` +
     `${many ? `${exited.length} exited IPO records` : "an exited IPO record"} in the same account ` +
     `${many ? "state" : "states"} an exit with no holding attached (${list(exited)}). ` +
-    `The record states that exit under IPOs and the holding states its own sale under Trades: if the two are the ` +
-    `same allotment, that sale is counted once in IPOs and again as the holding's own sale — ` +
-    `in the capital summary, the tax pack, the ITR export and both AIS sides — until one names the other. ` +
+    consequence +
     also +
+    `Open IPOs and set the holding on the record that is its own.`
+  );
+}
+
+/**
+ * D1 (wave 2N, re-check finding counted-once#3) — ONE question for the holdings
+ * of a book that NO record's own facts match.
+ *
+ * The 2M design raised the question for every unlinked `acquisition:'ipo'`
+ * holding that shares a book with an unlinked exited record. With six such
+ * holdings and one stray record that measured six identical warnings and a
+ * completeness score of 22, every detail naming the same single candidate. A
+ * holding a record actually matches still keeps its own issue — that pair is
+ * the unit the user settles; the rest say the same thing once.
+ */
+export function ipoOrphanGroupNote(pairs: readonly IpoAskPair[]): string {
+  const holdings = pairs.map((p) => `#${p.tradeId} (${p.symbol})`);
+  const shown = (xs: string[]) => xs.slice(0, 5).join(", ") + (xs.length > 5 ? ` and ${xs.length - 5} more` : "");
+  const seen = new Map<number, string>();
+  for (const p of pairs) {
+    p.recordIds.forEach((id, k) => {
+      if (p.exited[k] && !seen.has(id)) seen.set(id, `#${id} ${p.recordNames[k]}`);
+    });
+  }
+  const records = [...seen.values()];
+  const n = holdings.length;
+  const m = records.length;
+  return (
+    `${n} ${n === 1 ? "holding is" : "holdings are"} recorded as IPO allotments with no IPO record pointing at ` +
+    `${n === 1 ? "it" : "them"} (${shown(holdings)}), while ${m} exited IPO ${m === 1 ? "record" : "records"} in the ` +
+    `same account ${m === 1 ? "states" : "state"} an exit with no holding attached (${shown(records)}). No ` +
+    `${m === 1 ? "record's" : "records'"} own facts — the scrip's name, or the allotment's quantity and days — are ` +
+    `${n === 1 ? "this holding's" : "any of these holdings'"}, so nothing here can be paired without you naming it. ` +
+    `A holding that sold, beside a record that states an exit, is one sale counted twice — in the capital summary, ` +
+    `the tax pack, the ITR export and both AIS sides — until one names the other. ` +
     `Open IPOs and set the holding on the record that is its own.`
   );
 }
@@ -1210,7 +1332,10 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
   // had just set. Only a row that states NOTHING — null, absent or non-finite —
   // is listed, the same null-vs-0 rule every other reader now uses.
   const mtf = i.trades.filter((t) => t.segment === "eq_mtf" && !Number.isFinite(t.mtfFundedAmount ?? NaN));
-  add({ code: "mtf_funding", severity: "warning", title: "MTF positions without funded principal", detail: "Interest, leverage and own-capital return need the broker-funded amount.", count: mtf.length, href: "/equity?funding=mtf" }, mtf.map((t) => t.id));
+  // D7 (wave 2N) — the detail says what the missing amount COSTS the user, now
+  // that nothing estimates it: /equity, the leverage ratio and the /risk margin
+  // check all leave the row out rather than price it at the margin default.
+  add({ code: "mtf_funding", severity: "warning", title: "MTF positions without funded principal", detail: "Interest, leverage and own-capital return need the broker-funded amount — own capital, leverage and the margin check leave the row out until it is recorded.", count: mtf.length, href: "/equity?funding=mtf" }, mtf.map((t) => t.id));
 
   const options = i.trades.filter((t) => t.instrumentType === "option" && (!t.expiry || t.strike == null || !t.optionType));
   add({ code: "option_contract", severity: "warning", title: "Incomplete option contracts", detail: "Expiry, strike and CE/PE are required for Greeks, settlement and seller analytics.", count: options.length, href: "/trades" }, options.map((t) => t.id));
@@ -1233,8 +1358,30 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
   // exited record, matched or not. `ipoOrphanPairs` stays what a RESTORE may
   // act on (`uniqueIpoRelinks`); a question costs the user a look, a wrong link
   // costs them a number.
-  for (const p of ipoAskPairs(ipo, i.unlinkedIpoRecords ?? [])) {
-    add({ code: `ipo_record_link:${p.tradeId}`, severity: "warning", title: "IPO record not linked to its holding", detail: ipoOrphanNote(p), count: 1, href: IPO_LINK_HREF }, [p.tradeId]);
+  //
+  // D1 (wave 2N, counted-once#3): a holding with at least one MARKED candidate
+  // keeps its own issue — that pair is the unit the user settles. Holdings that
+  // no record's facts match are GROUPED into one issue per account: six such
+  // holdings beside one stray record raised six identical warnings and floored
+  // the completeness score at 22, every detail naming the same candidate.
+  const askPairs = ipoAskPairs(ipo, i.unlinkedIpoRecords ?? []);
+  const unmatchedByAccount = new Map<number, IpoAskPair[]>();
+  for (const p of askPairs) {
+    if (p.matched.some(Boolean)) {
+      add({ code: `ipo_record_link:${p.tradeId}`, severity: "warning", title: "IPO record not linked to its holding", detail: ipoOrphanNote(p), count: 1, href: IPO_LINK_HREF }, [p.tradeId]);
+      continue;
+    }
+    // `sameBook` made the pair, so the account is always a number here.
+    const key = p.accountId as number;
+    const list = unmatchedByAccount.get(key) ?? [];
+    list.push(p);
+    unmatchedByAccount.set(key, list);
+  }
+  for (const [accountId, pairs] of [...unmatchedByAccount.entries()].sort((a, b) => a[0] - b[0])) {
+    add(
+      { code: `ipo_record_link:account:${accountId}`, severity: "warning", title: "IPO records not linked to their holdings", detail: ipoOrphanGroupNote(pairs), count: 1, href: IPO_LINK_HREF },
+      pairs.map((p) => p.tradeId),
+    );
   }
 
   add({ code: "stale_mtm", severity: "info", title: "Stale MTM marks", detail: "Refresh or confirm prices before relying on unrealised P&L and breach alerts.", count: i.staleMtmCount, href: "/risk" });

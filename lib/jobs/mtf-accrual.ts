@@ -1,4 +1,4 @@
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate } from "@/lib/domain/trading-day";
 import "server-only";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
@@ -7,8 +7,6 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { epochSpans } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import type { Broker, Exchange } from "@/lib/domain/constants";
-import { getMarginRates } from "@/lib/queries/margin";
-import { defaultMtfFundedAmount, marginKey, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -29,35 +27,53 @@ export function accrueMtfInterest(today = todayIstIso()): {
   if (open.length === 0) return { updated: 0, totalAccrued: 0 };
 
   const rates = loadRatesMap();
-  const marginRates = getMarginRates(); // one query; per-broker eq_mtf own-margin %
+  // No margin_config read: nothing here estimates a funded amount any more (Q-A).
   let updated = 0;
   let totalAccrued = 0;
 
   for (const t of open) {
     if (!t.buyDate) continue;
-    // Broker-financed principal — reuse what a writer locked in (entry, editor,
-    // close); only fall back to the margin-based estimate for a row nobody has
-    // priced. NEVER the full position value:
-    // that assumes 100% broker financing and overstates interest (the bug fixed
-    // here — see also closePosition/commitManualTrade in lib/import/commit.ts).
-    // Own-margin % is looked up per THIS trade's broker — real leverage varies.
+    // D3 (v4.3.0 wave 2N, ipo#1) — the THIRD reader of a stored buy date, and the
+    // only one that writes on every render. `epochSpans` does not throw on a value
+    // it cannot read: measured, '9999-99-99' spans 0 days, so this job SET the
+    // row's interest to 0 and moved its stored charges and net with it — a stored
+    // P&L changing with no prompt and no audit row (DECISIONS 2026-08-30 decision
+    // 6) — and '2026-02-31' rolled forward to 3 March and billed 199 days /
+    // ₹636.80 from a day the row does not state. A date that states no day is
+    // skipped: nothing accrues until the editor corrects it (invariant 6).
+    const buyIso = normalizeDate(t.buyDate);
+    if (!buyIso) continue;
+    // Broker-financed principal — what a writer locked in (entry, editor,
+    // close). NEVER the full position value: that assumes 100% broker financing
+    // and overstates interest (the bug fixed here — see also
+    // closePosition/commitManualTrade in lib/import/commit.ts).
     // X2 (4.3.0) — a stored 0 is STATED (the whole position from own capital),
-    // not "never set": it is kept and accrues nothing. Only null is estimated —
-    // the rule closePosition/updateManualTrade use (V3), so a close keeps what
-    // this job leaves.
-    // M1 (4.3.0 wave 2L) — that estimate is used HERE and never written back.
-    // This job used to persist it (`fundedChanged = t.mtfFundedAmount == null`
-    // forced the UPDATE), and /equity runs on every render, so the first visit
-    // to the Equity Tracker turned a position the journal never priced into a
-    // STATED funded amount at the margin default — after which mtfDrift's
-    // `mtfFundedAmount == null` exclusion and `unpricedMtfPositions` could never
-    // fire for it, and the drift card compared the requirement against a margin
-    // nobody recorded (invariant 6: never state a fabricated figure as the
-    // journal's). Interest stays an estimate the UI labels; the funded column
-    // stays NULL until a writer the user drove (the editor, a close, an import)
-    // states one.
-    const ownMarginPct = marginRates.get(marginKey(t.broker, "eq_mtf")) ?? DEFAULT_MTF_OWN_MARGIN_PCT;
-    const funded = t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, ownMarginPct);
+    // not "never set": it is kept and accrues nothing.
+    //
+    // Q-A (OWNER RULING, v4.3.0 wave 2N — mtf-accrual#0/#1): A ROW WITH NO
+    // RECORDED FUNDED AMOUNT ACCRUES NOTHING. The job used to estimate it from
+    // `defaultMtfFundedAmount(buyValue, margin_config)` on every render (M1
+    // stopped it PERSISTING that estimate, not using it), so editing a broker's
+    // eq_mtf own-margin % retroactively restated the stored charges_total and
+    // net_pnl of every unpriced holding — a stored P&L moving with no prompt
+    // and no audit row, which is exactly what this job's per-epoch design
+    // exists to prevent (DECISIONS 2026-08-30 decision 6). Nothing accrues
+    // until a writer the user drove states the amount; an estimate ALREADY
+    // stored is released once, below.
+    const funded = t.mtfFundedAmount;
+    if (funded == null) {
+      if (t.mtfInterest !== 0) {
+        // The estimate left money in the row's stored columns. Take it back out
+        // ONCE — after this the row reads 0 interest and stays there.
+        const releasedCharges = r2(t.chargesTotal - t.mtfInterest);
+        db.update(trades)
+          .set({ mtfInterest: 0, chargesTotal: releasedCharges, netPnl: r2(t.grossPnl - releasedCharges) })
+          .where(eq(trades.id, t.id))
+          .run();
+        updated++;
+      }
+      continue;
+    }
     // T+1 settlement start through the day before sale proceeds settle = exactly
     // (today − buyDate) calendar days for a still-open position — confirmed
     // against Dhan's MTF docs. No extra "-1": that undercounted by one day.
@@ -75,7 +91,7 @@ export function accrueMtfInterest(today = todayIstIso()): {
      */
     let interest: number;
     try {
-      const spans = epochSpans(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange, t.buyDate, today);
+      const spans = epochSpans(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange, buyIso, today);
       let acc = 0;
       for (const s of spans) acc += (funded * mtfRateFor(funded, s.rates) * s.days) / 365;
       interest = r2(acc);

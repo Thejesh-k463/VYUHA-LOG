@@ -6,6 +6,7 @@ import {
   SYM,
   IPO_NAME,
   LOOKALIKE_IPO_NAME,
+  STRAY_IPO_NAME,
   VARIANTS,
   checkInvariants,
   describeViolations,
@@ -55,12 +56,15 @@ import {
  *
  * WHAT IT RUNS: 17 operations; every ordered pair of them — 289 less the 14 the
  * table marks incompatible = 275 — plus each op alone (17), 16 curated
- * sequences of three to five taken from this release's findings (three of them
- * G-G2-1's, fixed in wave 2M) and 6 tests that PLANT each invariant's own
- * violation so a green sweep is known to be able to go red. 316 `it`s.
+ * sequences of three to five taken from this release's findings (four of them
+ * the IPO-pairing cases waves 2M and 2N moved) and 6 tests that PLANT each
+ * invariant's own violation so a green sweep is known to be able to go red.
+ * 317 `it`s.
  *
- * `VARIANTS` (book-ops.ts) holds fixture shapes a named scenario needs but the
- * pair sweep does not compose — today just the second look-alike IPO record.
+ * `VARIANTS` (book-ops.ts) holds fixture shapes a named scenario needs, plus
+ * the one step that is an ANSWER rather than an operation on the book, none of
+ * which the pair sweep composes: the second look-alike IPO record, the stray
+ * record of another scrip (wave 2N) and the /ipos link the user makes.
  *
  * ONE temp database for this FILE (AGENTS.md Testing); one migrate, one seed,
  * one fixture build, and a template FILE ATTACHed to the live connection so
@@ -164,6 +168,29 @@ const expectClean = async (names: string[]) => {
   // the finding, and the array form is elided by the reporter.
   expect(violations.join("\n")).toBe("");
 };
+
+/**
+ * More steps on a context a scenario already built — for the one shape
+ * `runSequence` cannot express: a sequence that PASSES THROUGH a state the
+ * invariants call violated (a sale stated twice while the user has not answered
+ * the question yet) and is settled by a later step. `runSequence` stops at the
+ * first violation on purpose, because anything after the broken step is noise.
+ */
+async function applyMore(ctx: BookCtx, names: string[]): Promise<string[]> {
+  const violations: string[] = [];
+  for (const name of names) {
+    const op = OPS.find((o) => o.name === name) ?? VARIANTS.find((o) => o.name === name);
+    if (!op) throw new Error(`no such op: ${name}`);
+    await op.run(t.db, ctx);
+    const bad = await checkInvariants(t.db, ctx);
+    if (bad.length > 0) {
+      const done = ctx.log.map((l) => `${l.op}[${l.status}]`).join(" → ");
+      violations.push(...describeViolations(bad).map((s) => `after ${done}: ${s}`));
+      break;
+    }
+  }
+  return violations;
+}
 
 // ── the fixture itself ───────────────────────────────────────────────────────
 
@@ -357,7 +384,88 @@ describe("the sequences the v4.3.0 re-checks were written about", () => {
   });
 
   /**
-   * G-G2-1 FIXED (v4.3.0 fix wave 2M): these two were `it.fails`.
+   * MOVED by D1 (v4.3.0 fix wave 2N, re-check finding counted-once#0).
+   *
+   * These two were `expectClean` after wave 2M taught the restore to write a
+   * TIER-B pairing — the record's allotment quantity and its two days, with no
+   * name clause. `ipos` carries no scrip fact at all, so those four facts are no
+   * identity: two allotments of the same lot size on one day, both sold on
+   * listing day, is an ordinary retail pattern, and the restore then linked the
+   * WRONG issue's record to the holding. Its own, genuinely separate sale left
+   * the capital summary, the tax pack, the ITR export and both AIS sides, and
+   * the question that had named the pair disappeared with it — a silent wrong
+   * number, worse than the double count it was settling.
+   *
+   * So tier B MARKS the candidate and the restore writes nothing. The state
+   * below is the honest one, exactly as the ambiguous case at the end of this
+   * file: the sale IS stated twice, Data Quality names the holding and the
+   * record and says so, and the link the user makes on /ipos counts it once.
+   */
+  const g2Fixture = async () => {
+    const { ctx, violations } = await runSequence(["deleteIpoHolding", "legacifyLatestEnvelope", "restoreLatestSnapshot"]);
+    expect(violations).toEqual([
+      `after deleteIpoHolding[applied] → legacifyLatestEnvelope[applied] → restoreLatestSnapshot[applied]: ` +
+        `I2 the allotment is stated twice: holding #${ctx.ids.ipoTrade} is closed in the book and IPO #${ctx.ids.ipoId} realises its own exit`,
+    ]);
+    const { links, issue } = ipoAskState(ctx);
+    expect(links, "nothing is guessed onto the holding").toEqual([null]);
+    expect(issue?.title, "the pair is named").toBe("IPO record not linked to its holding");
+    expect(issue!.detail).toContain(`${IPO_NAME} (matches this holding)`);
+    expect(issue!.detail).toContain("counted once in IPOs and again as the holding's own sale");
+    return ctx;
+  };
+
+  it("G-G2-1 · delete the IPO holding → a 4.2.x envelope → restore: the question is raised, and the user's link counts it once", async () => {
+    const ctx = await g2Fixture();
+    expect(await applyMore(ctx, ["linkIpoRecordOnIpos"]), "the link the question asked for settles the book").toEqual([]);
+    expect(ipoAskState(ctx).links, "and the record names the holding again").toEqual([ctx.ids.ipoTrade]);
+  });
+
+  it("G-G2-1 · … and once linked it survives merge → un-merge", async () => {
+    const ctx = await g2Fixture();
+    expect(await applyMore(ctx, ["linkIpoRecordOnIpos", "mergeAccountBIntoA", "restoreSourceAccount"])).toEqual([]);
+  });
+
+  /**
+   * D1 (fix wave 2N, re-check finding counted-once#0) — THE BEE SHAPE, the
+   * guard case this wave owes the harness.
+   *
+   * A record of ANOTHER issue in the same book whose four allotment facts are
+   * the holding's own. Tier B has no scrip fact to tell them apart, so the wave
+   * 2M restore linked it — and the counted-once rule then excluded it, because
+   * its now-linked trade was counted. Its own, genuinely separate sale left the
+   * capital summary, the tax pack, the ITR export and both AIS sides, and the
+   * question that had named the pair disappeared with it. I2 cannot see that on
+   * its own (a record excluded because it is "counted through" a trade looks
+   * exactly like a correctly linked one), so the record's OWN row is asserted
+   * here: unlinked before, unlinked after, realised on its own row throughout.
+   */
+  it("D1 · a stray exited record of ANOTHER scrip is never written onto the restored holding, and its own sale is still counted", async () => {
+    const { ctx, violations } = await runSequence([
+      "addStrayExitedRecordOfAnotherScrip", "deleteIpoHolding", "legacifyLatestEnvelope", "restoreLatestSnapshot",
+    ]);
+    const strayState = () => {
+      t.db.update(t.schema.settings).set({ selectedAccountId: 0 }).run();
+      const row = t.db.select().from(t.schema.ipos).all().find((r) => r.name === STRAY_IPO_NAME)!;
+      const base = m.taxItr.getTaxBase();
+      return { link: row.tradeId ?? null, countedOnItsOwnRow: base.exitedIpos.some((r) => r.id === row.id) };
+    };
+    // THE assertion. Measured on the wave-2M module: `{link: <the holding>,
+    // countedOnItsOwnRow: false}` — a ₹482.61 realised net, an ITR row and the
+    // AIS consideration of a sale that has nothing to do with this holding.
+    expect(strayState()).toEqual({ link: null, countedOnItsOwnRow: true });
+    // The fixture's own allotment is the honest double count until the user
+    // answers the question — and the stray record survives that answer intact.
+    expect(violations).toEqual([
+      `after addStrayExitedRecordOfAnotherScrip[applied] → deleteIpoHolding[applied] → legacifyLatestEnvelope[applied] → restoreLatestSnapshot[applied]: ` +
+        `I2 the allotment is stated twice: holding #${ctx.ids.ipoTrade} is closed in the book and IPO #${ctx.ids.ipoId} realises its own exit`,
+    ]);
+    expect(await applyMore(ctx, ["linkIpoRecordOnIpos"])).toEqual([]);
+    expect(strayState(), "the user's answer names ONE record, and the other keeps its own sale").toEqual({ link: null, countedOnItsOwnRow: true });
+  });
+
+  /**
+   * G-G2-1 (v4.3.0 fix wave 2M): these two were `it.fails`.
    *
    * THE FINDING. An IPO record named after the ISSUE (not the scrip), whose
    * holding is restored from a pre-4.3.0 Trash envelope, came back UNLINKED and
@@ -384,15 +492,11 @@ describe("the sequences the v4.3.0 re-checks were written about", () => {
    * exited record, matched or not.
    *
    * Reproduce: `npx vitest run tests/harness-book-sequences.test.ts -t "G-G2-1"`.
+   *
+   * The two `it`s that pinned the WRITE are above, moved by wave 2N: tier B
+   * marks the candidate, the question is raised, and the user's own link on
+   * /ipos is what counts the allotment once.
    */
-  it("G-G2-1 · delete the IPO holding → a 4.2.x envelope → restore: the allotment is counted once", async () => {
-    await expectClean(["deleteIpoHolding", "legacifyLatestEnvelope", "restoreLatestSnapshot"]);
-  });
-
-  /** The same, through a merge and an un-merge of the book it lives in. */
-  it("G-G2-1 · … and it survives merge → un-merge", async () => {
-    await expectClean(["deleteIpoHolding", "legacifyLatestEnvelope", "restoreLatestSnapshot", "mergeAccountBIntoA", "restoreSourceAccount"]);
-  });
 
   /**
    * G-G2-1, the ambiguous half — a RECORDED limitation, pinned as what the app

@@ -442,9 +442,24 @@ const F33_ACC = 1750; //   F33: a legacy row whose stored sell date is not a day
 const F34_ACC = 1751; //   F34: a sale whose basis is typed on the acquisition panel
 const F35_ACC = 1752; //   F35: legacy rows converted to a ladder
 const F36_ACC = 1753; //   F36: an IPO record whose stored allotment day is legacy
+// -- wave 2N, the four builders' boundaries (F37..F45) ----------------------
+const F37_ACC = 1754; //   F37: a 4.3.0 delete of a never-linked IPO holding
+const F37_LEG = 1755; //   F37: the same shape, deleted the 4.2.x way
+const F38_BEE = 1756; //   F38: a record of ANOTHER scrip on the same four dates
+const F38_GOMIX = 1757; // F38: an issue-named exit beside a scrip-named application
+const F39_TGT = 1758; //   F39: the merge target, its survivor carrying a record
+const F39_SRC = 1759; //   F39: the merge source, its duplicate named twice
+const F39_OTHER = 1760; // F39: the THIRD book the second record is filed in
+const F40_ACC = 1761; //   F40: a legacy exit day across a rate correction
+const F41_ACC = 1762; //   F41: a stored date that states no day
+const F42_ACC = 1763; //   F42: the editor's charge-input predicate, both doors
+const F43_ACC = 1764; //   F43: a funded amount the journal never recorded
+const F44_ACC = 1765; //   F44: Q-A across the five writers of mtfInterest
+const F45_ACC = 1766; //   F45: two blockers of one incoming pull row
 const ACCOUNTS = [F1_ZERO, F1_UNSET, F2_ACC, F3_ACC, F4_TGT, F4_SRC, F5_ACC, F6_ACC, F7_SA, F7_SB, F7_TGT, F8_ACC, F9_ACC, F9_PURGE, F10_ACC, F11_ACC, F12_A, F12_B, F13_TGT, F13_SRC,
   F14_ARCH, F14_REC, F15_A, F15_B, F16_ACC, F17_ACC, F18_ACC, F19_ACC, F20_ACC, F21_ACC, F22_ACC, F22_TWO, F23_TGT, F23_SRC, F24_TGT, F24_SRC, F24_OTHER, F25_SA, F25_SB, F25_TGT, F26_ACC,
-  F23R_SRC, F23R_TGT, F27_ACC, F28_ACC, F29_ACC, F30_ACC, F31_ACC, F32_ACC, F33_ACC, F34_ACC, F35_ACC, F36_ACC];
+  F23R_SRC, F23R_TGT, F27_ACC, F28_ACC, F29_ACC, F30_ACC, F31_ACC, F32_ACC, F33_ACC, F34_ACC, F35_ACC, F36_ACC,
+  F37_ACC, F37_LEG, F38_BEE, F38_GOMIX, F39_TGT, F39_SRC, F39_OTHER, F40_ACC, F41_ACC, F42_ACC, F43_ACC, F44_ACC, F45_ACC];
 
 // ONE temp database for this file. Re-measured locally 2026-09-15 with F14..F26
 // added (vitest's own per-test times, 29 `it`s): the slowest `it` is 102 ms
@@ -1564,6 +1579,39 @@ describe("F13 · a merge that drops a source trade as a duplicate, its IPO linke
 // F14 — an ARCHIVED holding's book (data-fixes.ts, L3) ↔ the cross-account link
 //       it therefore LEAVES ↔ the counted-once rule's ONE home (ipos.ts, L5)
 //       ↔ capital / getTaxBase / the ITR export / both AIS sides
+// Each 2L describe loads the modules it reads itself (seams#1, the 2L re-check):
+// on HEAD they were assigned in EARLIER describes' beforeAll hooks, which vitest
+// skips when their cases are filtered out - so a `-t` run of any F14..F26 case died
+// inside the shared harness ("Cannot read properties of undefined (reading
+// 'getIposComputed')") instead of showing the seam's own red. Same shape as
+// `wave2mModules()` below.
+async function wave2lModules() {
+  importer = await import("@/lib/import/commit");
+  actions = await import("@/app/trades/actions");
+  tradeQueries = await import("@/lib/queries/trades");
+  slim = await import("@/lib/domain/slim-trade");
+  trash = await import("@/lib/trash");
+  dqQueries = await import("@/lib/queries/data-quality");
+  deleteQ = await import("@/lib/queries/delete");
+  accountDelete = await import("@/lib/queries/account-delete");
+  closeStaleRoute = await import("@/app/api/data-quality/close-stale/route");
+  ipoQueries = await import("@/lib/queries/ipos");
+  ipoRoute = await import("@/app/api/ipos/route");
+  brokerRoute = await import("@/app/api/import/broker/route");
+  unfetched = await import("@/lib/import/dhan-unfetched");
+  dhanApi = await import("@/lib/import/api/dhan");
+  dataFixes = await import("@/lib/db/data-fixes");
+  bc = (await import("@/components/import/broker-connect")) as typeof bc;
+  ipoUi = (await import("@/components/ipo/ipo-client")) as typeof ipoUi;
+  Dialog = (await import("@/components/ui/dialog")).Dialog;
+  EditTradeDialog = (await import("@/components/trades/edit-trade-dialog")).EditTradeDialog;
+  TrackerClient = (await import("@/components/trackers/tracker-client")).TrackerClient;
+  StrategiesClient = (await import("@/components/strategies/strategies-client")).StrategiesClient;
+  StrategyCard = (await import("@/components/strategies/strategy-card")).StrategyCard;
+  equityPage = (await import("@/app/equity/page")).default as () => unknown;
+  strategiesPage = (await import("@/app/strategies/page")).default as () => unknown;
+}
+
 // ============================================================================
 
 describe("F14 · an IPO record whose holding lives in an ARCHIVED account (runDataFixes → the link that stays → ipoIdsCountedThroughTrades → capital, tax, ITR, AIS)", () => {
@@ -1571,6 +1619,7 @@ describe("F14 · an IPO record whose holding lives in an ARCHIVED account (runDa
   let taxItr: typeof import("@/lib/queries/tax-itr");
   let aisRoute: typeof import("@/app/api/ais/route");
   beforeAll(async () => {
+    await wave2lModules();
     capital = await import("@/lib/queries/capital");
     taxItr = await import("@/lib/queries/tax-itr");
     aisRoute = await import("@/app/api/ais/route");
@@ -1677,6 +1726,10 @@ describe("F14 · an IPO record whose holding lives in an ARCHIVED account (runDa
 // ============================================================================
 
 describe("F15 · a holding whose stored ISIN carries a tab and a non-breaking space (canonicalIsin → getOpenUnderlyingPositions → page groups → StrategyCard)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   type Group = { key: string; symbol: string } & Record<string, unknown>;
   function cardsOf(accountId: number) {
     selectAccount(accountId);
@@ -1743,10 +1796,13 @@ describe("F16 · a partly sold MTF holding written by closePosition, beside one 
   let positionsLib: typeof import("@/lib/analytics/positions");
   let drift: typeof import("@/lib/risk/mtf-drift");
   let MtfDriftCard: typeof import("@/components/risk/mtf-drift-card").MtfDriftCard;
+  let riskPage: () => unknown;
   beforeAll(async () => {
+    await wave2lModules();
     positionsLib = await import("@/lib/analytics/positions");
     drift = await import("@/lib/risk/mtf-drift");
     MtfDriftCard = (await import("@/components/risk/mtf-drift-card")).MtfDriftCard;
+    riskPage = (await import("@/app/risk/page")).default as () => unknown;
   }, 60_000);
 
   it("the row states no own capital, no ROI, and the KPI total leaves it out and says so; the unpriced row is left out of the drift table and named", async () => {
@@ -1783,14 +1839,11 @@ describe("F16 · a partly sold MTF holding written by closePosition, beside one 
     const after = row(partly)!;
     expect([after.isOpen, after.buyQty, after.sellQty, after.mtfFundedAmount], "still open, and the stored funding is still the WHOLE buy leg's").toEqual([true, 100, 40, 15000]);
 
-    // CONSUMER 1 — the drift check and its card, wired as app/risk/page.tsx
-    // wires them (that file is in another builder's hands this wave, so the
-    // contract is asserted here: mtfDrift and unpricedMtfPositions over the
-    // SAME rows, the count handed to the card).
-    //
-    // Read BEFORE /equity: that page runs `accrueMtfInterest`, which fills a
-    // null funded amount with the broker default on the first visit — so an
-    // unpriced row is only unpriced until someone opens the Equity Tracker.
+    // CONSUMER 1 — the drift check and its card. The projection is read from
+    // app/risk/page.tsx ITSELF further down (seams#2, the 2L re-check: the
+    // hand-built wiring below would have stayed green if the page's filter, its
+    // five projected fields or the prop it passes had drifted); the pure halves
+    // are pinned here first, so a revert of either names its own module.
     selectAccount(F16_ACC);
     const openMtf = tradeQueries.getTrades()
       .filter((x) => x.isOpen && x.segment === "eq_mtf")
@@ -1810,6 +1863,18 @@ describe("F16 · a partly sold MTF holding written by closePosition, beside one 
     expect(text, "the card names what it is not showing").toContain("1 open MTF position is not priced");
     expect(text).not.toContain("F16-UNPRICED");
 
+    // …and the SAME contract through app/risk/page.tsx's OWN projection —
+    // seams#2: the page builds the rows, resolves the margins and hands the
+    // count to the card, and that edit shipped in wave 2L with no test of its
+    // own. Read from the element tree (the RSC payload's shape), never the
+    // string, so the prop's VALUE is what is asserted.
+    const cardEl = findElem(riskPage(), (e) => e.type === MtfDriftCard);
+    if (!cardEl) throw new Error("the risk page no longer renders <MtfDriftCard>");
+    expect(
+      [(cardEl.props.drift as { symbol: string }[]).map((r) => r.symbol), cardEl.props.unpriced],
+      "the page's own filter, projection and prop — not the test's copy of them",
+    ).toEqual([["F16-PART"], 1]);
+
     // CONSUMER 2 — /equity's own render.
     const el = findElem(equityPage(), (e) => e.type === TrackerClient);
     if (!el) throw new Error("the equity page no longer renders <TrackerClient>");
@@ -1824,14 +1889,34 @@ describe("F16 · a partly sold MTF holding written by closePosition, beside one 
     // tracker reads (tracker-client.tsx) — they cannot disagree again.
     expect(positionsLib.statesOwnCapital(p), "the cell refuses it").toBe(false);
     const other = positions.find((x) => x.id === unpriced)!;
-    expect([other.isMtf, positionsLib.statesOwnCapital(other), (other.ownCapital ?? 0) > 0], "the row beside it still states one").toEqual([true, true, true]);
+    // PIN MOVED (D7, wave 2N; close-readers#1): was `[true, true, true]` — the
+    // unpriced row STATED an own capital of 5,000 against a funded 15,000 the
+    // margin default invented for it. `deriveOpenPositions` no longer
+    // substitutes `defaultMtfFundedAmount` for a null, so the row that /risk
+    // calls "not priced" and /trades calls "funding not yet resolved" states
+    // nothing here either (invariant 6).
+    expect(
+      [other.isMtf, positionsLib.statesOwnCapital(other), (other.ownCapital ?? 0) > 0],
+      "the row beside it states none either — /equity no longer prices what the journal never recorded",
+    ).toEqual([true, false, false]);
+    expect([other.fundedAmount, other.ownCapital, other.roiOnCapitalPct], "null, not the 25% default").toEqual([null, null, null]);
     const totals = positionsLib.ownCapitalTotal(positions);
-    // THE assertion: the total is the OTHER row's own capital exactly — the
-    // partly sold leg is left out, not added as its negative (pre-fix:
-    // 1,000 + (60 × 200 − 15,000) = −2,000, with `unstated` 0).
-    expect([totals.total, totals.unstated, totals.funded], "the KPI leaves it out and counts it").toEqual([other.ownCapital, 1, other.fundedAmount]);
-    expect(positionsLib.ownCapitalNote(totals.unstated)).toBe("own capital not stated for 1 partly sold MTF row");
+    // THE assertion: BOTH rows are left out, and the total says so — not added
+    // as the partly sold leg's negative (pre-fix: 1,000 + (60 × 200 − 15,000)
+    // = −2,000, with `unstated` 0), and not filled in for the unpriced one.
+    expect([totals.total, totals.unstated, totals.funded], "the KPI leaves both out and counts them").toEqual([0, 2, 0]);
+    expect(totals.unstatedWhy, "and says which is which — two reasons, two remedies").toEqual({ partlySold: 1, overSold: 0, sellToOpen: 0, unpriced: 1 });
+    expect(positionsLib.ownCapitalNote(totals)).toBe("own capital not stated for 1 partly sold, 1 unpriced MTF rows");
     expect(Math.round((totals.total + (p.invested - 15000)) * 100) / 100, "the negative it used to subtract is a real one").not.toBe(totals.total);
+
+    // mtf-accrual#3: /equity is the ONE page that runs `accrueMtfInterest`
+    // (app/equity/page.tsx:27), and until M1 that job filled a null funded
+    // amount with the broker default on the first visit — so "unpriced" lasted
+    // until someone opened the Equity Tracker. Q-A (wave 2N) makes the job
+    // accrue NOTHING for such a row. Read AFTER the render, or the guard
+    // cannot see the job's write at all.
+    expect(row(unpriced)!.mtfFundedAmount, "the render did not price it").toBeNull();
+    expect([row(unpriced)!.mtfInterest, row(unpriced)!.chargesTotal], "and billed nothing against it").toEqual([0, 0]);
   });
 });
 
@@ -1841,6 +1926,10 @@ describe("F16 · a partly sold MTF holding written by closePosition, beside one 
 // ============================================================================
 
 describe("F17 · an IPO linked to a holding that has become a ladder (pushTradeToIpoAction → tradeLegs → POST /api/ipos: a link, a sync AND a notes-only save)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   const legged = (name: string) => {
     const id = t.db
       .insert(t.schema.trades)
@@ -1907,6 +1996,10 @@ describe("F17 · an IPO linked to a holding that has become a ladder (pushTradeT
 // ============================================================================
 
 describe("F18 · a rate correction between the sync's write and a later exit edit (syncLinkedTrade → import_notes → syncWroteCharges; the trade editor's own save drops it)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   it("the charges follow the new exit across a charge_config edit; after the user's own editor save they are the user's and are kept", async () => {
     const { IPO_SYNC_CHARGES_NOTE } = await import("@/lib/analytics/ipo-link");
     const settingsRoute = await import("@/app/api/settings/route");
@@ -1917,7 +2010,12 @@ describe("F18 · a rate correction between the sync's write and a later exit edi
       .get()!.id;
     t.db
       .insert(t.schema.ipos)
-      .values({ accountId: F18_ACC, name: "F18-IPO", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, allotmentDate: "2019-01-10", tradeId })
+      // The record names the user's own broker, so the exit prices off THAT
+      // broker's charge_config row — the row the charge editor edits below.
+      // (A record naming no broker prices statutorily, which is another
+      // broker's row entirely: the 2L fixture edited zerodha's and priced
+      // through the statutory one, a second reason its correction was inert.)
+      .values({ accountId: F18_ACC, name: "F18-IPO", broker: "zerodha", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, allotmentDate: "2019-01-10", tradeId })
       .run();
 
     // The sync writes the close AND says, on the row, that the charges are its own.
@@ -1929,18 +2027,32 @@ describe("F18 · a rate correction between the sync's write and a later exit edi
 
     // THE RATE CARD MOVES — through the real charge editor's own route, into
     // the real charge_config (invariant 3: the only rate source).
+    //
+    // seams#0 (the 2L re-check): this step used to set `brokeragePct: 0.25` on
+    // this row — and Zerodha's equity DELIVERY brokerage is FLAT 0, so
+    // `brokerageForSidePaise` (lib/engine/charges.ts:43) returns
+    // `brokerageFlat × orders` and never reads the pct at all. The edit could
+    // not move a paisa, and the assertion that claimed to prove it compared
+    // `reprice.brokerage` with itself. The correction is now made to a head
+    // this segment REALLY prices by percentage — sale STT — and the expected
+    // bill is a flat number.
+    // charge_config is EFFECTIVE-DATED (one row per epoch): the row that prices
+    // a 2026 exit is the newest one effective by then, not the first match.
     const rate = t.db
       .select()
       .from(t.schema.chargeConfig)
       .all()
-      .find((r) => r.broker === "zerodha" && r.segment === "eq_delivery" && r.exchange === "NSE")!;
+      .filter((r) => r.broker === "zerodha" && r.segment === "eq_delivery" && r.exchange === "NSE" && r.effectiveFrom <= "2026-03-02")
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
+      .at(-1)!;
+    expect([rate.brokerageFlat, rate.sttPct], "the fixture's own premise: flat brokerage, percentage STT").toEqual([0, 0.001]);
+    expect(afterFirst.sttCtt, "the ₹1,500 sale's STT at the old rate (0.1%, rounded to the rupee)").toBe(2);
     const saved = await settingsRoute.POST(json("/api/settings", {
-      type: "charge", id: rate.id, brokerageFlat: rate.brokerageFlat, brokeragePct: 0.25, brokerageCap: rate.brokerageCap, brokerageFloor: rate.brokerageFloor,
-      sttPct: rate.sttPct, exchangeTxnPct: rate.exchangeTxnPct, sebiPct: rate.sebiPct, stampPct: rate.stampPct, ipftPct: rate.ipftPct, gstPct: rate.gstPct,
+      type: "charge", id: rate.id, brokerageFlat: rate.brokerageFlat, brokeragePct: rate.brokeragePct, brokerageCap: rate.brokerageCap, brokerageFloor: rate.brokerageFloor,
+      sttPct: 0.002, exchangeTxnPct: rate.exchangeTxnPct, sebiPct: rate.sebiPct, stampPct: rate.stampPct, ipftPct: rate.ipftPct, gstPct: rate.gstPct,
       dpCharge: rate.dpCharge, mtfInterestAnnual: rate.mtfInterestAnnual,
     }));
     expect(saved.status, JSON.stringify(await saved.clone().json())).toBe(200);
-
     // The exit is re-priced. THE assertion (on revert of app/api/ipos/route.ts
     // to HEAD, whose `syncWroteCharges` re-priced the STORED exit against the
     // LIVE rate card: the correction above made that comparison fail, ownership
@@ -1953,7 +2065,11 @@ describe("F18 · a rate correction between the sync's write and a later exit edi
     expect([reprice.avgSellPrice, reprice.grossPnl], "the new exit").toEqual([500, 4000]);
     expect(reprice.chargesTotal, "priced at the rates now in charge_config, not frozen at the old bill").not.toBe(afterFirst.chargesTotal);
     expect([reprice.chargesTotal, reprice.netPnl], "/ipos and the Trades row state ONE figure").toEqual([shown.charges, shown.netPnl]);
-    expect(reprice.brokerage, "the corrected rate is the one that was billed").toBe(Math.round(0.25 * 50 * 100) / 100 > (rate.brokerageCap ?? Infinity) ? rate.brokerageCap! : reprice.brokerage);
+    // THE MONEY, flat: the ₹5,000 sale at the CORRECTED 0.2% is ₹10 of STT (the
+    // statutory rupee rounding, invariant 3). At the old 0.1% it would be ₹5 —
+    // which is what the row kept for ever when the re-price lost ownership.
+    expect(reprice.sttCtt, "the corrected rate is the one that was billed").toBe(10);
+    expect(reprice.sttCtt, "…and not the rate the FIRST bill was priced at").not.toBe(5);
 
     // THE USER TAKES THE CHARGES OVER — a save of their own through the real
     // editor that moves a charge head (the buy leg re-prices stamp duty and
@@ -1972,6 +2088,66 @@ describe("F18 · a rate correction between the sync's write and a later exit edi
     expect([kept.chargesTotal, kept.brokerage, kept.sttCtt], "a figure the user states is never rewritten (owner ruling F1)").toEqual([
       userRow.chargesTotal, userRow.brokerage, userRow.sttCtt,
     ]);
+
+    // The correction is put back through the same door, so the rate card the
+    // rest of this file prices against is the seeded one (this case owns the
+    // edit; nothing else in the file may inherit it).
+    const back = await settingsRoute.POST(json("/api/settings", {
+      type: "charge", id: rate.id, brokerageFlat: rate.brokerageFlat, brokeragePct: rate.brokeragePct, brokerageCap: rate.brokerageCap, brokerageFloor: rate.brokerageFloor,
+      sttPct: rate.sttPct, exchangeTxnPct: rate.exchangeTxnPct, sebiPct: rate.sebiPct, stampPct: rate.stampPct, ipftPct: rate.ipftPct, gstPct: rate.gstPct,
+      dpCharge: rate.dpCharge, mtfInterestAnnual: rate.mtfInterestAnnual,
+    }));
+    expect(back.status).toBe(200);
+  });
+
+  // D2 (wave 2N) — the FOLD and the FLAG, together. `linkInput` now resolves the
+  // three stored days through the shared calendar so a legacy day-first value
+  // compares like for like; that same fold makes a legacy exit date READABLE,
+  // which would silently withdraw Y2's ignore-date allowance from the rows it
+  // was written for. `exitDateWasReadable` is computed on the RAW value before
+  // the fold and is what `syncOwnsClose` reads.
+  it("a legacy day-first exit date keeps Y2's allowance after the fold: the sync still owns the close it wrote, so its own stale bill is the one that moves", async () => {
+    const { IPO_SYNC_CHARGES_NOTE } = await import("@/lib/analytics/ipo-link");
+    // The sale as Trades records it — the IPO's quantity and price, on a day the
+    // user corrected (the record says 2 March, the contract note says the 5th) —
+    // carrying a bill the SYNC wrote (the marker says so) and that is now stale.
+    const tradeId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F18_ACC, broker: "zerodha", symbol: "F18-LEGACY", tradingsymbol: "F18-LEGACY", acquisition: "ipo",
+          buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2019-01-10", acquisitionDate: "2019-01-10", buyOrderCount: 1,
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-05", sellOrderCount: 1,
+          grossPnl: 500, brokerage: 0, sttCtt: 99, chargesTotal: 99.99, netPnl: 400.01, isOpen: false,
+          importNotes: IPO_SYNC_CHARGES_NOTE,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    // …and the record, stored the 4.2.x way: a DAY-FIRST exit date, which no
+    // writer normalised before wave 2M and no reader could price.
+    t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F18_ACC, name: "F18-LEGACY", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "02-03-2026", allotmentDate: "10-01-2019", tradeId })
+      .run();
+
+    // The user puts the exit date right on /ipos — the sale's own day. The save
+    // writes nothing new to the holding's sale (same qty, same price, same day),
+    // so the ONLY question left is whose charges these are.
+    const e = ipoPage("F18-LEGACY", F18_ACC);
+    const saved = await ipoRoute.POST(json("/api/ipos", saveBody(e, formHtml(e), { exitPrice: "150", exitDate: "2026-03-05" })));
+    expect(saved.status, JSON.stringify(await saved.clone().json())).toBe(200);
+    const after = row(tradeId)!;
+    // THE assertion (on revert of `exitDateWasReadable` — the BARE D2 fold, with
+    // Y2's question re-derived from the FOLDED date: the stored exit then reads
+    // as the real day 2026-03-02, which is not the sale's 2026-03-05, so
+    // `syncOwnsClose` answers false, `writesCharges` (route :341) goes false and
+    // the sync's own stale ₹99.99 freezes on the row for ever — /ipos stating
+    // one net and the Trades row, capital, the tax base and the ITR export
+    // another).
+    expect([after.chargesTotal, after.netPnl], "the sync's own bill is the sync's to correct").toEqual([2.06, 497.94]);
+    expect([after.sellQty, after.avgSellPrice, after.sellDate], "and the sale itself is untouched").toEqual([10, 150, "2026-03-05"]);
+    expect(after.importNotes ?? "", "still the sync's charges").toContain(IPO_SYNC_CHARGES_NOTE);
   });
 });
 
@@ -1981,6 +2157,10 @@ describe("F18 · a rate correction between the sync's write and a later exit edi
 // ============================================================================
 
 describe("F19 · the exit cleared on /ipos for a sale recorded in Trades, and for one the sync itself wrote (POST /api/ipos → linkPatch → syncLinkedTrade)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   it("a close the user recorded is refused 409 with its charges intact; a close the sync wrote re-opens and its priced heads go", async () => {
     const { IPO_SYNC_CHARGES_NOTE } = await import("@/lib/analytics/ipo-link");
     // (a) the user's own sale, charges from their contract note.
@@ -2046,6 +2226,7 @@ describe("F19 · the exit cleared on /ipos for a sale recorded in Trades, and fo
 describe("F20 · '99-99-9999' and '31-02-2026' typed into the close dialog (resolveExitIso ↔ POST /api/positions/close → closePosition)", () => {
   let closeRoute: typeof import("@/app/api/positions/close/route");
   beforeAll(async () => {
+    await wave2lModules();
     closeRoute = await import("@/app/api/positions/close/route");
     closeDialog = (await import("@/components/trades/close-trade-dialog")) as typeof closeDialog;
   }, 60_000);
@@ -2101,6 +2282,10 @@ describe("F20 · '99-99-9999' and '31-02-2026' typed into the close dialog (reso
 // ============================================================================
 
 describe("F21 · one incoming pull row that matches BOTH an older import and today's own snapshot row (planSnapshot → detectCrossSourceDuplicates → route 409 → collisionDialogCopy)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   const clientOf = (accountId: number) => `40000${accountId}`;
   const alive = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
   const addDhan = (accountId: number) =>
@@ -2121,7 +2306,14 @@ describe("F21 · one incoming pull row that matches BOTH an older import and tod
     return { status: res.status, body: (await res.json()) as { needsForce?: boolean; message: string; collisions?: { symbol: string; kind: string; sameSnapshot?: boolean }[] } };
   };
 
-  it("the ask reports TODAY'S SNAPSHOT, not the older import met first — so one round of the remedy ends it", async () => {
+  // PIN MOVED (D8, wave 2N; ask#2): the old title was "the ask reports TODAY'S
+  // SNAPSHOT, not the older import met first — so one round of the remedy ends
+  // it". Its own fixture falsified it: the older BUY 15 @100 IS a risky
+  // cross-file blocker of the evening MTF 15 @100.5, so deleting the snapshot
+  // row left the next pull refused on the older import. The case now asserts
+  // what it always claimed — both blockers in one round, and a round 2 that
+  // really is unrefused.
+  it("BOTH blockers of the one incoming row are reported in ONE 409, and deleting the two rows it names ends the ask", async () => {
     freezeAt("2026-09-08T06:30:00.000Z"); // 12:00 IST
     addDhan(F21_ACC);
     // An OLDER import of the same scrip, on the SAME quantity this pull states:
@@ -2141,18 +2333,32 @@ describe("F21 · one incoming pull row that matches BOTH an older import and tod
     const shown = bc.collisionDialogCopy({ collisions: blocked.body.collisions ?? [], message: blocked.body.message });
     const msg = shown.serverMessage ?? "";
 
-    // THE assertion (on revert of lib/import/cross-source.ts, which broke on the
-    // FIRST risky candidate in rowid order: the ask read "1 row in this file
-    // (SEAML4) look like trades already recorded from a different file … Delete
-    // the earlier import first", so the user deleted an import that was not the
-    // blocker and met today's snapshot sentence on the next pull).
-    expect(msg, "today's snapshot IS the blocker, so it is what is reported").toContain(
+    // THE assertion (on revert of lib/import/cross-source.ts, which kept ONE
+    // pick per incoming row — `pick = risky ?? softer`, and a `break` at the
+    // first snapshot hit: ROUND 1 named today's snapshot row only, the user
+    // deleted it, and ROUND 2 met the older import's sentence instead. Both
+    // rows block this one incoming row, so one round must name both).
+    expect(msg, "today's snapshot blocks it").toContain(
       "restates an instrument today's earlier pull already recorded under another product, segment or exchange",
     );
-    expect(msg, "and the older import is not what the user is sent to delete").not.toContain("look like trades already recorded from a different file");
+    expect(msg, "and so does the older import — in the SAME round").toContain("look like trades already recorded from a different file");
+    expect(msg, "each blocker carries its own remedy").toContain("Delete the earlier import first if these are the same trades");
     expect(msg).toContain("the earlier row can be deleted from Trades and the pull run again");
-    expect(blocked.body.collisions?.map((c) => [c.symbol, c.sameSnapshot ?? false]), "one report per incoming row — the snapshot one").toEqual([["SEAML4", true]]);
+    // ONE incoming row, TWO blockers — the set the row's own scan holds.
+    expect(blocked.body.collisions?.map((c) => [c.symbol, c.sameSnapshot ?? false]), "the snapshot pick and the risky cross-file one").toEqual([
+      ["SEAML4", true],
+      ["SEAML4", false],
+    ]);
     expect(row(older.id), "and nothing was written").toEqual(older);
+
+    // ROUND 2 (ask#2 — the half the 2L title promised and never checked): the
+    // user follows BOTH sentences of that one 409 and deletes the two rows it
+    // named. The next pull is not refused, and it commits the row.
+    for (const id of [snapshotRow.id, older.id]) t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, id)).run();
+    stub([position(F21_ACC, "SEAML4", "MTF", "NSE_EQ", 15, 100.5)]);
+    const round2 = await pull(F21_ACC);
+    expect([round2.status, round2.body.needsForce ?? false], round2.body.message).toEqual([200, false]);
+    expect(rowsOf(F21_ACC).map((r) => [r.segment, r.buyQty, r.avgBuyPrice]), "one round of the remedy ended the ask").toEqual([["eq_mtf", 15, 100.5]]);
   });
 });
 
@@ -2167,6 +2373,7 @@ describe("F22 · a holding deleted the 4.2.x way and restored on 4.3.0 (writeTra
   let taxItr: typeof import("@/lib/queries/tax-itr");
   let aisRoute: typeof import("@/app/api/ais/route");
   beforeAll(async () => {
+    await wave2lModules();
     capital = await import("@/lib/queries/capital");
     taxItr = await import("@/lib/queries/tax-itr");
     aisRoute = await import("@/app/api/ais/route");
@@ -2269,6 +2476,10 @@ describe("F22 · a holding deleted the 4.2.x way and restored on 4.3.0 (writeTra
 // ============================================================================
 
 describe("F23 · a source CLOSED ROUND TRIP whose hash the target's lot holds as an alias (close-stale join → heldIdentityHashes → identityClash → preview ≡ refusal)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   const SYM = "SEAML7";
   it("the merge REFUSES rather than dropping the row and losing its purchase leg, and the preview warned in the refusal's own words", async () => {
     for (const acc of [F23_TGT]) {
@@ -2360,6 +2571,7 @@ describe("F23 · a source CLOSED ROUND TRIP whose hash the target's lot holds as
 describe("F24 · a merge whose surviving copy ALREADY carries an IPO, with a second record in a THIRD book (previewAccountDelete ≡ deleteAccount → ipoRefs → restoreTrashSnapshot → capital)", () => {
   let capital: typeof import("@/lib/queries/capital");
   beforeAll(async () => {
+    await wave2lModules();
     capital = await import("@/lib/queries/capital");
   }, 60_000);
 
@@ -2383,12 +2595,19 @@ describe("F24 · a merge whose surviving copy ALREADY carries an IPO, with a sec
       .returning({ id: t.schema.ipos.id })
       .get()!.id;
   const ipoRow = (id: number) => t.db.select().from(t.schema.ipos).all().find((r) => r.id === id)!;
+  const ipoRowOrNull = (id: number) => t.db.select().from(t.schema.ipos).all().find((r) => r.id === id) ?? null;
   const ipoRealisedAll = () => {
     selectAccount(0);
     return capital.getCapitalSummary().ipoRealised;
   };
 
-  it("exactly one ipos row names the surviving copy; the skipped records ride back — this book's inside the snapshot, the other book's through ipoRefs", () => {
+  // PIN MOVED (D5, wave 2N; identity#0): the old title and body ended with "the
+  // other book's record stays where it is, unlinked" and `ipoRefs` re-linking it
+  // on the un-merge. An unlinked EXITED record is realised on its own figure
+  // beside the survivor's equity sale — 490.25 → 972.85, two ITR rows for one
+  // sale — so EVERY skipped record now rides into the envelope's
+  // `accountRows.ipos` and comes back in its OWN book on an un-merge.
+  it("exactly one ipos row names the surviving copy; EVERY skipped record is removed with the duplicate it names — this book's and the third book's alike — and an un-merge brings both back where they were", () => {
     const targetTrade = sold(F24_TGT, "F24-IPO");
     const sourceTrade = sold(F24_SRC, "F24-IPO");
     const tgtRecord = record(F24_TGT, "F24-IPO", targetTrade); // the survivor's own
@@ -2399,30 +2618,44 @@ describe("F24 · a merge whose surviving copy ALREADY carries an IPO, with a sec
     const preview = accountDelete.previewAccountDelete({ accountId: F24_SRC, mode: "merge", targetId: F24_TGT });
     const warnings = (preview.ok ? preview.warnings : undefined) ?? [];
     expect(warnings.some((w) => w.includes("1 dropped trade carries 2 IPO records")), JSON.stringify(preview)).toBe(true);
-    expect(warnings.find((w) => w.includes("IPO record")), "the preview states the same split the execution takes").toContain(
-      "2 will be skipped, because one trade takes one IPO record",
+    expect(warnings.find((w) => w.includes("IPO record")), "the preview states the same split the execution takes, and NAMES the other book").toContain(
+      `2 will be removed with the duplicate they name, because one trade takes one IPO record — 1 filed in “fixF ${F24_OTHER}” (saved to Deleted items; an un-merge brings them back)`,
     );
 
     const res = accountDelete.deleteAccount({ accountId: F24_SRC, mode: "merge", targetId: F24_TGT, connections: "delete" });
     expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
-    expect(res.message).toContain("2 duplicate IPO records skipped");
+    expect(res.message, "the result message says the same thing in the same words").toContain(
+      `2 duplicate IPO records removed with the duplicate (“fixF ${F24_TGT}”'s own copy of that trade already carries one; 1 filed in “fixF ${F24_OTHER}”; saved to Deleted items, an un-merge brings them back)`,
+    );
     // THE assertion (on revert of lib/queries/account-delete.ts to HEAD, whose
     // re-point had no such check: BOTH records land on the surviving copy — two
     // `ipos` rows naming one trade, the state pushTradeToIpoAction refuses to
     // create, with getIpoTradeLinks() keeping only the last).
     expect(t.db.select().from(t.schema.ipos).all().filter((r) => r.tradeId === targetTrade).map((r) => r.id), "one trade, one record").toEqual([tgtRecord]);
     expect(t.db.select().from(t.schema.ipos).all().some((r) => r.id === srcRecord), "this book's own copy goes to Deleted items with its trade").toBe(false);
-    expect([ipoRow(otherRecord).accountId, ipoRow(otherRecord).tradeId], "the other book's record stays where it is, unlinked").toEqual([F24_OTHER, null]);
+    // THE assertion (on revert of `ipoSkipDeleteIds` in lib/queries/account-delete.ts
+    // to the account-filtered form: the third book's record was LEFT behind and
+    // the blanket unlink cut it loose — an exited record realised on its own
+    // figure beside the survivor's equity sale, 490.25 → 972.85 on All accounts
+    // and two ITR rows for one sale).
+    expect(ipoRowOrNull(otherRecord), "the third book's record is removed with the duplicate it names, not left unlinked").toBeNull();
     const afterMerge = ipoRealisedAll();
-    expect(afterMerge, "…and while unlinked it states its own sale beside the target's copy").toBeGreaterThan(allBefore);
+    expect(afterMerge, "…so the merged book states that sale exactly once").toBe(allBefore);
 
-    // THE assertion for J2's MERGE-side `ipoRefs` (the boundary F9 (b) could not
-    // reach, since a purge's own rows ride back with `trade_id` intact): the
-    // envelope names the OTHER book's row, so the restore re-links it.
+    // The un-merge: BOTH records ride back inside `accountRows.ipos`, in their
+    // OWN books, with `trade_id` intact (the envelope's `ipoRefs` still records
+    // the original pairs; the re-link loop is `isNull`-guarded, so nothing
+    // lands twice).
     const restored = trash.restoreTrashSnapshot(res.snapshotId!);
     expect(restored.ok, restored.message).toBe(true);
-    expect(ipoRow(otherRecord).tradeId, "the other book's link comes back from ipoRefs").toBe(sourceTrade);
-    expect(ipoRow(srcRecord).tradeId, "and this book's record rides back inside the snapshot, still linked").toBe(sourceTrade);
+    expect([ipoRow(otherRecord).accountId, ipoRow(otherRecord).tradeId], "the third book's record comes back where it was filed, still linked").toEqual([
+      F24_OTHER,
+      sourceTrade,
+    ]);
+    expect([ipoRow(srcRecord).accountId, ipoRow(srcRecord).tradeId], "and this book's record rides back inside the snapshot, still linked").toEqual([
+      F24_SRC,
+      sourceTrade,
+    ]);
     expect(ipoRealisedAll(), "the restored book counts its sale once again").toBe(allBefore);
   });
 });
@@ -2433,6 +2666,10 @@ describe("F24 · a merge whose surviving copy ALREADY carries an IPO, with a sec
 // ============================================================================
 
 describe("F25 · a Clear posted by an older client, naming no sentence (GET → two carried lines → POST without `fact` → the span's FIRST record)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   const alive = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
   const rangeCapAt = (stamp: string) =>
     dhanApi.toParsedFile([], dhanApi.catchUpRange(stamp, "2026-09-11"), { pages: 1, truncated: false, oldest: null, newest: null }, stamp).unfetched;
@@ -2483,6 +2720,10 @@ describe("F25 · a Clear posted by an older client, naming no sentence (GET → 
 // ============================================================================
 
 describe("F26 · an exit of 150.005 over an issue price of 99.995 on 3 shares (POST /api/ipos → syncLinkedTrade → the Trades row ≡ /ipos)", () => {
+  beforeAll(async () => {
+    await wave2lModules();
+  }, 60_000);
+
   it("both sides state 150.02 — the per-share form's 150.01 never reaches either", async () => {
     const tradeId = t.db
       .insert(t.schema.trades)
@@ -2563,7 +2804,16 @@ describe("F27 · an ISSUE-named IPO record and its holding, deleted the 4.2.x wa
   const ISSUE = "F27 Technologies Limited"; // what /ipos is typed with…
   const SCRIP = "F27TECH"; //                  …beside this holding
 
-  it("the envelope's own days re-link it, and the LIVE query states the SAME verdict about the same book", async () => {
+  // PIN MOVED (D1, wave 2N; counted-once#0 SWN): the old title was "the
+  // envelope's own days re-link it, and the LIVE query states the SAME verdict
+  // about the same book", and it asserted `linkOf() === tradeId`. Tier B
+  // (`matchesByExit`) carries NO scrip fact — `ipos` has no symbol or ISIN
+  // column — so four coinciding allotment facts let a restore write "Bee
+  // Industries Limited" onto another scrip's holding. Tier B now MARKS and
+  // never WRITES: the restore leaves the record where it is and the report
+  // asks, with the double count stated CONDITIONALLY ("if this record is this
+  // holding's allotment").
+  it("the restore writes nothing for a record that does not name the scrip; the LIVE query states the same verdict, and the question says what it would cost", async () => {
     const tradeId = t.db
       .insert(t.schema.trades)
       .values(
@@ -2593,19 +2843,17 @@ describe("F27 · an ISSUE-named IPO record and its holding, deleted the 4.2.x wa
 
     const restored = trash.restoreTrashSnapshot(snapshotId);
     expect([restored.ok, restored.restored], restored.message).toEqual([true, 1]);
-    // THE assertion (on revert of lib/trash.ts, which hands the pairing no dates
-    // at all, or of lib/analytics/data-quality.ts, which has no tier B: the
-    // record is named after the ISSUE, tier A sees nothing, the holding comes
-    // back UNLINKED and its one sale is counted twice).
+    // THE assertion (on revert of lib/analytics/data-quality.ts' write rule, or
+    // of lib/trash.ts' fallback: the ISSUE-named record is written onto this
+    // holding on tier B's four dates alone, a link the user never made — the
+    // same four dates another scrip's allotment can coincide on).
     const linkOf = () => t.db.select().from(t.schema.ipos).where(eq(t.schema.ipos.id, ipoId)).get()!.tradeId;
-    expect(linkOf(), "re-linked from facts both rows already state").toBe(tradeId);
-    expect(await countedOnce(F27_ACC), "and counted exactly once again").toEqual(before);
+    expect(linkOf(), "tier B marks; only a record that NAMES the scrip is written").toBeNull();
 
-    // THE SEAM: the OTHER producer of the same facts. Unlink by hand (what a
-    // user does on /ipos) and read the real report: the live query's columns
-    // must state the same verdict the envelope's did, or the restore writes a
-    // pairing the report will not name.
-    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, ipoId)).run();
+    // THE SEAM: the OTHER producer of the same facts. The record is already
+    // loose — the restore left it — so the live query's columns must state the
+    // same verdict the envelope's did, or the report would not name what the
+    // restore weighed.
     selectAccount(F27_ACC);
     const fromQuery = dqQueries.getUnlinkedExitedIpoRecords().filter((r) => r.id === ipoId);
     expect(fromQuery.map((r) => [r.allotted, r.exitPrice, r.exitDate, r.allotmentDate]), "the query states tier B's four facts").toEqual([[true, 150, "2026-03-02", "2026-02-20"]]);
@@ -2614,7 +2862,20 @@ describe("F27 · an ISSUE-named IPO record and its holding, deleted the 4.2.x wa
     // none of the four columns: the same record is listed as a candidate with
     // no verdict at all, so the note cannot say which one is the user's).
     expect(issue?.detail, "the live rows reach the same verdict the envelope's did").toContain(`#${ipoId} ${ISSUE} (matches this holding)`);
+    // …and the cost is stated as the CONDITION it is, not as a fact: this
+    // holding DID sell, so the double count is real the moment the pair is one.
+    expect(issue?.detail, "the question says what it would cost, without claiming the pairing").toContain(
+      "if this record is this holding's allotment, that sale is counted once in IPOs and again as the holding's own sale",
+    );
+    expect(issue?.detail).toContain("until one names the other");
+    // While it is loose the sale IS stated twice — that is what the question is
+    // about, and it is the user's answer that ends it.
+    const loose = await countedOnce(F27_ACC);
+    expect([loose.capital[1] > 0, loose.tax[0]], "the loose record states its own sale beside the holding's").toEqual([true, [ISSUE]]);
+    // The user answers on /ipos (the door the question points at).
     t.db.update(t.schema.ipos).set({ tradeId }).where(eq(t.schema.ipos.id, ipoId)).run();
+    expect(await countedOnce(F27_ACC), "and then it is counted exactly once again").toEqual(before);
+    expect(dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`), "and the question is gone").toBeUndefined();
   });
 });
 
@@ -2680,43 +2941,50 @@ describe("F28 · the application row /ipos keeps beside the allotment (lib/trash
     return { id: r.id, accountId: r.accountId, symbol: r.symbol, tradingsymbol: r.tradingsymbol, buyQty: r.buyQty, acquisitionDate: r.acquisitionDate, buyDate: r.buyDate, sellDate: r.sellDate };
   };
 
-  // RE-PINNED (seam round). Measured BEFORE D1: `[24]` — the report's set held
-  // only the exited record, so it named it a match while the restore, which read
-  // the application row too, called the holding ambiguous and wrote nothing.
-  // AFTER: `[]` — the restore linked the record, so nothing is unlinked and there
-  // is no question left to ask.
-  it("the application row is a candidate NOWHERE, and after the restore there is nothing left to ask", () => {
+  // PIN MOVED (D1, wave 2N; counted-once#0). Measured on 2M: `[]` — the restore
+  // linked the ISSUE-named record on tier B's dates, so nothing was unlinked and
+  // no question was left. F28's OWN point is untouched: the application row (no
+  // allotment, no exit) is a candidate in NEITHER set, so exactly one record is
+  // ever named. What moved is the restore's authority — a record that does not
+  // name the scrip is not this holding's by its own facts, so the pair is ASKED
+  // about rather than written.
+  it("the application row is a candidate NOWHERE, and the one record that is left is ASKED about, not written", () => {
     selectAccount(F28_ACC);
-    expect(dqQueries.getUnlinkedExitedIpoRecords().map((r) => r.id), "the link is written, so the report's set is empty").toEqual([]);
-    expect(dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`), "and no question is raised").toBeUndefined();
-    // The rule itself, over the WIDER set the restore reads (every unlinked row
-    // of the book): a record that states no allotment is no allotment's record,
-    // so the pairing answers the same whichever set it is handed.
+    expect(dqQueries.getUnlinkedExitedIpoRecords().map((r) => r.id), "the exited record is loose, and only it").toEqual([allotmentIpoId]);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`);
+    expect(issue?.title, "the question is raised for this holding").toBe("IPO record not linked to its holding");
+    expect(issue?.detail, "naming exactly one record — never the application row").toContain(`#${allotmentIpoId} ${ISSUE} (matches this holding)`);
+    expect(issue?.detail).not.toContain(`#${applicationIpoId}`);
+    // The two rules over the WIDER set the restore reads (every unlinked row of
+    // the book): the MARK rule and the WRITE rule answer the application row the
+    // same way — no. They differ only on the issue-named allotment.
     expect(dq.ipoRecordMatchesHolding(factsOf(applicationIpoId), holdingFacts()), "the application row claims nothing").toBe(false);
-    expect(dq.ipoRecordMatchesHolding(factsOf(allotmentIpoId), holdingFacts()), "the allotment does").toBe(true);
-    expect(dq.uniqueIpoRelinks([holdingFacts()], [factsOf(allotmentIpoId), factsOf(applicationIpoId)]), "one candidate, both sets").toEqual([{ tradeId, ipoId: allotmentIpoId }]);
+    expect(dq.ipoRecordNamesHolding(factsOf(applicationIpoId), holdingFacts()), "…on either rule").toBe(false);
+    expect(dq.ipoRecordMatchesHolding(factsOf(allotmentIpoId), holdingFacts()), "the allotment is MARKED").toBe(true);
+    expect(dq.ipoRecordNamesHolding(factsOf(allotmentIpoId), holdingFacts()), "…and is NOT what a restore may write").toBe(false);
+    expect(dq.uniqueIpoRelinks([holdingFacts()], [factsOf(allotmentIpoId), factsOf(applicationIpoId)]), "so the restore writes nothing at all").toEqual([]);
   });
 
-  // FIXED (v4.3.0 fix wave 2M, seam round — D1): this was an `it.fails`.
-  // lib/trash.ts:827 and lib/queries/data-quality.ts:104 now read ONE set (the
-  // book's unlinked rows that state an ALLOTMENT), and the rule is stated in
-  // `ipoRecordMatchesHolding` (lib/analytics/data-quality.ts:1012) as well, so a
-  // caller handing the pairing a wider set cannot get a wider answer. Measured
-  // before: `expected null to be <tradeId>` — the restore wrote nothing and the
-  // one sale stayed counted twice in capital, the tax pack, the ITR export and
-  // both AIS sides, after a restore whose own report called the pair unambiguous.
-  it("the restore writes the link its own report says is unambiguous", () => {
-    expect(linkOf(allotmentIpoId), "re-linked by the record the report names").toBe(tradeId);
+  // PIN MOVED (D1, wave 2N; counted-once#0): was "the restore writes the link
+  // its own report says is unambiguous" (`linkOf(allotmentIpoId) === tradeId`,
+  // itself a 2M `it.fails` flipped green). Unambiguous is not the same as
+  // NAMED: the record is "F28 Industries Limited" and the holding is F28IND, so
+  // the only thing pairing them is four allotment facts another scrip's
+  // allotment can carry too.
+  it("the restore writes NOTHING onto a record that does not name the scrip, however unambiguous it looks", () => {
+    expect(linkOf(allotmentIpoId), "the ask is the answer here, not a write").toBeNull();
   });
 
-  it("the report's own verdict, with the link taken away again: the allotment matches and the application is never named", () => {
+  it("the report's own verdict while it is loose: the allotment matches, the application is never named, and the user's answer ends the question", () => {
     t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, allotmentIpoId)).run();
     selectAccount(F28_ACC);
     const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`);
     expect(issue?.detail, "one record, and the two rows' own facts agree about it").toContain(`#${allotmentIpoId} ${ISSUE} (matches this holding)`);
     expect(issue?.detail, "the report never mentions the application row").not.toContain(`#${applicationIpoId}`);
     expect(issue?.detail).toContain("an exited IPO record");
+    // The answer the question asks for (set the holding on /ipos).
     t.db.update(t.schema.ipos).set({ tradeId }).where(eq(t.schema.ipos.id, allotmentIpoId)).run();
+    expect(dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${tradeId}`), "asked once, answered once").toBeUndefined();
   });
 
   it("nothing is written onto the application row either way (what IS still true)", () => {
@@ -3225,5 +3493,742 @@ describe("F36 · an IPO record whose stored allotment day is a LEGACY day-first 
     // such lot was labelled SHORT term — at 20% rather than 12.5%).
     expect([shown.tax?.term, shown.tax?.ratePct], "the day it names, and the rate that day earns").toEqual(["LT", 12.5]);
     expect(shown.realised, "and it really is a realised, priced exit").toBe(true);
+  });
+});
+
+// ============================================================================
+// WAVE 2N — the four builders' boundaries. B-IDENTITY (D1, D5, D6) ↔
+//           B-DATES-CHARGES (D2, D3, D4) ↔ B-MTF (D7, Q-A/Q-B) ↔ B-ASK (D8).
+//
+// THE CROSSING VALUES (producer file:line → consumer file:line, unit):
+//
+//  F37  envelope `ipoRefs: []`      lib/queries/delete.ts:171   → lib/trash.ts:797 `== null`
+//                                    (a list, never absent; `[]` = nothing to re-link)
+//  F38  ipoRecordNamesHolding ⊂     lib/analytics/data-quality.ts (write rule)
+//       ipoRecordMatchesHolding      → lib/trash.ts:829 (writes) / :1236 (marks, asks)
+//  F39  merge envelope accountRows.ipos  lib/queries/account-delete.ts:775 → lib/trash.ts:712
+//                                    (rows of FOREIGN accounts; ₹ counted once in 5 readers)
+//  F40  exitDateWasReadable (bool)  app/api/ipos/route.ts#linkInput → lib/analytics/ipo-link.ts:290
+//       × ipoExitCharges (₹)         app/api/ipos/route.ts:209 → lib/analytics/ipo.ts ipoHoldingCharges
+//  F41  storedDateProblem (string)  lib/domain/trading-day.ts:223 → commit.ts closePosition /
+//                                    applyOverride / the re-tag dialog / POST close 200 {ok:false}
+//  F42  chargeInputsChanged (bool)  lib/domain/trade-edit.ts:141 → commit.ts updateManualTrade
+//                                    AND app/api/charges/preview/route.ts (preview ≡ save)
+//  F43  fundedAmount: number|null   lib/analytics/positions.ts → tracker KPI, load-desk fundedP
+//       ownCapital: number|null      (paise), /targets MtfSummary.unstated, /equity's mtf block
+//  F44  mtfFundedAmount null (₹)    the five writers (accrual, close, editor, re-tag, one-click)
+//                                    → mtfInterest / pledgeCharges: 0 everywhere (Q-A)
+//  F45  the pick SET (≤2 per row)   lib/import/cross-source.ts:312 → route 409 →
+//                                    collisionDialogCopy / dialogCollisions / collisionsToList
+//
+// Every case builds the value where its producer builds it, hands it across as
+// the code does (the envelope's JSON, the RSC payload, the 409's body), and
+// asserts the CONSUMER's output.
+// ============================================================================
+
+/** Every module the 2N describes read, loaded per describe (as 2L/2M do). */
+async function wave2nModules() {
+  await wave2lModules();
+  dq = await import("@/lib/analytics/data-quality");
+  crossSource = await import("@/lib/import/cross-source");
+}
+
+/** A sold IPO allotment, as every 2N IPO case builds it. */
+function soldAllotment(accountId: number, sym: string, qty = 10) {
+  return t.db
+    .insert(t.schema.trades)
+    .values(
+      tradeRow({
+        accountId, broker: "zerodha", symbol: sym, tradingsymbol: sym, acquisition: "ipo",
+        buyQty: qty, avgBuyPrice: 100, buyValue: qty * 100, buyDate: "2026-02-20", acquisitionDate: "2026-02-20", buyOrderCount: 1,
+        sellQty: qty, avgSellPrice: 150, sellValue: qty * 150, sellDate: "2026-03-02", sellOrderCount: 1,
+        grossPnl: qty * 50, chargesTotal: 2.06, netPnl: qty * 50 - 2.06, isOpen: false,
+      }),
+    )
+    .returning({ id: t.schema.trades.id })
+    .get()!.id;
+}
+/** An allotted, EXITED IPO record — the shape both rules weigh. */
+function exitedRecord(accountId: number, name: string, tradeId: number | null = null, qty = 10) {
+  return t.db
+    .insert(t.schema.ipos)
+    .values({ accountId, name, appliedPrice: 100, lotSize: qty, lotsApplied: 1, allotted: true, allottedQty: qty, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20", tradeId })
+    .returning({ id: t.schema.ipos.id })
+    .get()!.id;
+}
+const ipoRowOf = (id: number) => t.db.select().from(t.schema.ipos).where(eq(t.schema.ipos.id, id)).get()!;
+const ipoLinkOf = (id: number) => ipoRowOf(id).tradeId;
+/** The record and the holding as the two rules read them, from what is STORED. */
+const recordFacts = (ipoId: number) => {
+  const r = ipoRowOf(ipoId);
+  return { id: r.id, accountId: r.accountId, name: r.name, allottedQty: r.allottedQty, allotted: r.allotted, exitPrice: r.exitPrice, exitDate: r.exitDate, allotmentDate: r.allotmentDate };
+};
+const holdingFactsOf = (tradeId: number) => {
+  const r = row(tradeId)!;
+  return { id: r.id, accountId: r.accountId, symbol: r.symbol, tradingsymbol: r.tradingsymbol, buyQty: r.buyQty, sellQty: r.sellQty, acquisitionDate: r.acquisitionDate, buyDate: r.buyDate, sellDate: r.sellDate };
+};
+
+describe("F37 · a 4.3.0 delete of a holding that was NEVER linked (lib/queries/delete.ts's ipoRefs ↔ lib/trash.ts's `env.ipoRefs == null` legacy gate → uniqueIpoRelinks → the Data Quality question)", () => {
+  beforeAll(async () => {
+    await wave2nModules();
+  }, 60_000);
+
+  it("the envelope STATES an empty list, so the holding comes back exactly as it was — unlinked, and asked about; a PRE-4.3.0 envelope still recovers the scrip-named link", async () => {
+    const { trashDir } = await import("@/lib/db");
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const envelopeOf = (id: string) =>
+      JSON.parse(fs.readFileSync(path.join(trashDir, id, "snapshot.json"), "utf8")) as { ipoRefs?: { ipoId: number; tradeId: number }[] };
+
+    // (1) THE 4.3.0 DOOR. A holding the user never linked, beside a record that
+    // NAMES its scrip — the one shape the legacy fallback would write.
+    const holding = soldAllotment(F37_ACC, "F37SCRIP");
+    const record = exitedRecord(F37_ACC, "F37SCRIP");
+    selectAccount(F37_ACC);
+    const del = deleteQ.deleteTradesByIds([holding], "F37: a routine delete");
+    expect([del.ok, del.deleted], del.message).toEqual([true, 1]);
+    // THE assertion (on revert of lib/queries/delete.ts:171 to
+    // `ipoRefRows.length ? ipoRefRows : undefined`: the field is DROPPED when the
+    // delete broke no link, so the restore below cannot tell a 4.3.0 envelope
+    // from a 4.2.x one and takes the legacy path).
+    expect(envelopeOf(del.snapshotId!).ipoRefs, "the writer states the empty list rather than dropping the field").toEqual([]);
+
+    const restored = trash.restoreTrashSnapshot(del.snapshotId!);
+    expect([restored.ok, restored.restored], restored.message).toEqual([true, 1]);
+    // THE assertion on the OTHER side of the same value (lib/trash.ts:797): `[]`
+    // means "nothing to re-link", so a delete + restore returns the book to what
+    // it was — never a link the user did not make.
+    expect(ipoLinkOf(record), "a routine delete and restore invents nothing").toBeNull();
+    expect(row(holding), "and the holding is back").toBeTruthy();
+    selectAccount(F37_ACC);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${holding}`);
+    expect(issue?.detail, "the book ASKS instead — with the candidate named").toContain(`#${record} F37SCRIP (matches this holding)`);
+
+    // (2) THE 4.2.x ENVELOPE — the one case the fallback still exists for: no
+    // `ipoRefs` key at all, and a record that names the scrip.
+    const legacyHolding = soldAllotment(F37_LEG, "F37LEGACY");
+    const legacyRecord = exitedRecord(F37_LEG, "F37LEGACY", legacyHolding);
+    const stored = row(legacyHolding)! as unknown as Record<string, unknown>;
+    const snapshotId = trash.writeTrashSnapshot({ trades: [stored], legs: [], attachments: [], reason: "F37: deleted by 4.2.x", accountId: F37_LEG });
+    expect(envelopeOf(snapshotId).ipoRefs, "the pre-4.3.0 shape, by construction").toBeUndefined();
+    t.db.update(t.schema.ipos).set({ tradeId: null }).where(eq(t.schema.ipos.id, legacyRecord)).run();
+    t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, legacyHolding)).run();
+    const back = trash.restoreTrashSnapshot(snapshotId);
+    expect([back.ok, back.restored], back.message).toEqual([true, 1]);
+    expect(ipoLinkOf(legacyRecord), "a record that NAMES the scrip is recovered, as it always was").toBe(legacyHolding);
+  });
+});
+
+describe("F38 · what a restore may WRITE is a subset of what the report MARKS (ipoRecordNamesHolding ⊂ ipoRecordMatchesHolding) — the Bee shape and the GOMIX shape", () => {
+  beforeAll(async () => {
+    await wave2nModules();
+  }, 60_000);
+
+  /** The 4.2.x door — the only one that may write a pairing at all. */
+  function deleteAndRestoreTheLegacyWay(accountId: number, tradeId: number, reason: string) {
+    const stored = row(tradeId)! as unknown as Record<string, unknown>;
+    const snapshotId = trash.writeTrashSnapshot({ trades: [stored], legs: [], attachments: [], reason, accountId });
+    t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, tradeId)).run();
+    const res = trash.restoreTrashSnapshot(snapshotId);
+    expect([res.ok, res.restored], res.message).toEqual([true, 1]);
+  }
+
+  it("a record of ANOTHER scrip whose four allotment facts coincide is MARKED and never WRITTEN, and the question says what it would cost", () => {
+    // THE BEE SHAPE (counted-once#0): "Bee Industries Limited" and a holding of
+    // AAAIPO share the four facts tier B compares — allotted, exit price, exit
+    // date, allotment date — because `ipos` carries no scrip fact at all.
+    const holding = soldAllotment(F38_BEE, "AAAIPO");
+    const bee = exitedRecord(F38_BEE, "Bee Industries Limited");
+    deleteAndRestoreTheLegacyWay(F38_BEE, holding, "F38: the Bee shape, deleted by 4.2.x");
+
+    // THE assertion (on revert of the write rule in lib/analytics/data-quality.ts:
+    // the restore links Bee to AAAIPO, and Bee's own sale then vanishes from
+    // capital, the tax pack, the ITR export and both AIS sides).
+    expect(ipoLinkOf(bee), "four coinciding dates are not a scrip").toBeNull();
+    // The two rules, over the same two rows: MARK ⊃ WRITE, always.
+    const marks = dq.ipoRecordMatchesHolding(recordFacts(bee), holdingFactsOf(holding));
+    const writes = dq.ipoRecordNamesHolding(recordFacts(bee), holdingFactsOf(holding));
+    expect([marks, writes], "tier B marks; only a name writes").toEqual([true, false]);
+    expect(!writes || marks, "the write rule is a SUBSET of the mark rule").toBe(true);
+    expect(dq.uniqueIpoRelinks([holdingFactsOf(holding)], [recordFacts(bee)]), "so nothing is writable").toEqual([]);
+    selectAccount(F38_BEE);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${holding}`);
+    expect(issue?.detail, "…and everything MARKED is asked about").toContain(`#${bee} Bee Industries Limited (matches this holding)`);
+    expect(issue?.detail).toContain("if this record is this holding's allotment, that sale is counted once in IPOs and again as the holding's own sale");
+  });
+
+  it("the GOMIX shape — an ISSUE-named exit beside a scrip-named record with no exit — writes nothing either, and the question survives", () => {
+    // Ambiguity is judged on the MARK rule, not the write rule: judged on the
+    // narrow rule, the exited record would stop being a candidate at all and the
+    // restore would link the UN-EXITED one — the exited record would stay loose,
+    // counting the sale twice, and the question would DISAPPEAR, because the
+    // report only asks about UNLINKED holdings.
+    const holding = soldAllotment(F38_GOMIX, "GOMIX");
+    const issueNamed = exitedRecord(F38_GOMIX, "Gomix Technologies Limited");
+    const scripNamed = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: F38_GOMIX, name: "GOMIX", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, allotmentDate: "2026-02-20" })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    deleteAndRestoreTheLegacyWay(F38_GOMIX, holding, "F38: the GOMIX shape, deleted by 4.2.x");
+
+    expect([ipoLinkOf(issueNamed), ipoLinkOf(scripNamed)], "two candidates, so neither is guessed").toEqual([null, null]);
+    expect(
+      dq.uniqueIpoRelinks([holdingFactsOf(holding)], [recordFacts(issueNamed), recordFacts(scripNamed)]),
+      "ambiguity is judged over everything the report MARKS",
+    ).toEqual([]);
+    selectAccount(F38_GOMIX);
+    const issue = dqQueries.getDataQualityReport().issues.find((i) => i.code === `ipo_record_link:${holding}`);
+    expect(issue?.title, "the question is still there to be answered").toBe("IPO record not linked to its holding");
+    expect(issue?.detail).toContain(`#${issueNamed} Gomix Technologies Limited (matches this holding)`);
+  });
+});
+
+describe("F39 · a merge whose dropped duplicate is named by a record in a THIRD book (account-delete.ts's skipped set → the envelope's accountRows.ipos → trash.ts's replay) read by capital, the tax base, the ITR export and both AIS sides", () => {
+  let capital3: typeof import("@/lib/queries/capital");
+  let taxItr3: typeof import("@/lib/queries/tax-itr");
+  let ais3: typeof import("@/app/api/ais/route");
+  beforeAll(async () => {
+    await wave2nModules();
+    capital3 = await import("@/lib/queries/capital");
+    taxItr3 = await import("@/lib/queries/tax-itr");
+    ais3 = await import("@/app/api/ais/route");
+  }, 60_000);
+
+  /** Every consumer that must state this ONE sale exactly once, in one view. */
+  async function counted(accountId: number) {
+    selectAccount(accountId);
+    const cap = capital3.getCapitalSummary();
+    const base = taxItr3.getTaxBase();
+    const res = await ais3.POST(json("/api/ais", { text: "nothing to parse" }));
+    const { recon } = (await res.json()) as { recon: { fyTotals: { fy: string; kind: string; journal: number | null }[] } };
+    const side = (kind: string) => recon.fyTotals.find((f) => f.fy === "2025-26" && f.kind === kind)?.journal ?? null;
+    return {
+      ipoRealised: cap.ipoRealised,
+      ipoNames: base.exitedIpos.map((r) => r.name),
+      itrScrips: taxItr3.getItrExportRows().map((r) => r.scrip),
+      aisSale: side("sale"),
+      aisPurchase: side("purchase"),
+    };
+  }
+
+  it("the foreign record is removed with the duplicate it names, counted once in every reader and in every view, and an un-merge puts it back in its own book", async () => {
+    const targetTrade = soldAllotment(F39_TGT, "F39IPO");
+    const sourceTrade = soldAllotment(F39_SRC, "F39IPO");
+    t.db.update(t.schema.trades).set({ dedupHash: "f39-shared-identity" }).where(eq(t.schema.trades.id, targetTrade)).run();
+    t.db.update(t.schema.trades).set({ dedupHash: "f39-shared-identity" }).where(eq(t.schema.trades.id, sourceTrade)).run();
+    exitedRecord(F39_TGT, "F39IPO", targetTrade); // the survivor's own
+    const foreign = exitedRecord(F39_OTHER, "F39-XBOOK", sourceTrade); // a THIRD book's
+
+    const beforeAll3 = await counted(0);
+    const beforeOther = await counted(F39_OTHER);
+    // The third book's OWN view states the record (its holding is in another
+    // book, so nothing else in this view states that sale — L5, one home);
+    // All accounts states the holding instead, and never both.
+    expect([beforeOther.ipoRealised, beforeOther.ipoNames], "the baseline is counted-once, not merely stable").toEqual([497.94, ["F39-XBOOK"]]);
+    expect(beforeAll3.ipoNames, "All accounts counts the holding, so the record is left out").not.toContain("F39-XBOOK");
+
+    const res = accountDelete.deleteAccount({ accountId: F39_SRC, mode: "merge", targetId: F39_TGT, connections: "delete" });
+    expect(res.ok, res.message).toBe(true);
+
+    // THE assertion (on revert of `ipoSkipDeleteIds` in lib/queries/account-delete.ts
+    // to the account-filtered form: the third book's record is left behind and
+    // the blanket unlink cuts it loose — an exited record realised on its own
+    // figure beside the survivor's equity sale, in EVERY one of these readers).
+    const afterAll3 = await counted(0);
+    expect([afterAll3.ipoRealised, afterAll3.ipoNames], "All accounts: no second statement of that sale").toEqual([beforeAll3.ipoRealised, beforeAll3.ipoNames]);
+    expect(afterAll3.itrScrips.filter((s) => s === "F39-XBOOK (IPO)"), "no second ITR row for one sale").toEqual([]);
+    // Both AIS sides move by exactly ONE holding — the duplicate the merge
+    // dropped (₹1,000 of purchase value, ₹1,500 of sale consideration) — and
+    // nothing puts it back: a record left unlinked would state that same
+    // allotment and that same sale again, so the delta would be 0.
+    expect([afterAll3.aisPurchase, afterAll3.aisSale], "the duplicate goes, and no record restates it").toEqual([
+      (beforeAll3.aisPurchase ?? 0) - 1000,
+      (beforeAll3.aisSale ?? 0) - 1500,
+    ]);
+    const afterOther = await counted(F39_OTHER);
+    expect([afterOther.ipoRealised, afterOther.ipoNames, afterOther.itrScrips], "the record went with the duplicate, so its own book states nothing").toEqual([0, [], []]);
+
+    // The un-merge replays `accountRows.ipos` verbatim: the record is back in its
+    // own book, still naming its own trade, and still counted once.
+    const restored = trash.restoreTrashSnapshot(res.snapshotId!);
+    expect(restored.ok, restored.message).toBe(true);
+    expect([ipoRowOf(foreign).accountId, ipoRowOf(foreign).tradeId], "back where it was filed, linked as it was").toEqual([F39_OTHER, sourceTrade]);
+    const undone = await counted(0);
+    expect([undone.ipoRealised, undone.aisPurchase, undone.aisSale], "…and counted once after the un-merge").toEqual([
+      beforeAll3.ipoRealised, beforeAll3.aisPurchase, beforeAll3.aisSale,
+    ]);
+    const undoneOther = await counted(F39_OTHER);
+    expect([undoneOther.ipoRealised, undoneOther.ipoNames, undoneOther.itrScrips], "the third book is exactly as it was").toEqual([
+      beforeOther.ipoRealised, beforeOther.ipoNames, beforeOther.itrScrips,
+    ]);
+  });
+});
+
+describe("F40 · a LEGACY day-first exit date and a rate correction between two /ipos saves (linkInput's exitDateWasReadable → syncOwnsClose → route :341 writesCharges → ipoExitCharges ≡ ipoHoldingCharges)", () => {
+  beforeAll(async () => {
+    await wave2nModules();
+  }, 60_000);
+
+  it("the sync keeps the close it wrote, prices the allotment's exit with NO purchase STT, and the second bill follows the corrected rate", async () => {
+    const { IPO_SYNC_CHARGES_NOTE } = await import("@/lib/analytics/ipo-link");
+    const settingsRoute = await import("@/app/api/settings/route");
+    // A sale the sync wrote (its marker says so), whose day the user corrected in
+    // Trades, carrying a bill that is now stale.
+    const tradeId = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F40_ACC, broker: "zerodha", symbol: "F40-IPO", tradingsymbol: "F40-IPO", acquisition: "ipo",
+          buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2019-01-10", acquisitionDate: "2019-01-10", buyOrderCount: 1,
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-05", sellOrderCount: 1,
+          grossPnl: 500, sttCtt: 99, chargesTotal: 99.99, netPnl: 400.01, isOpen: false,
+          importNotes: IPO_SYNC_CHARGES_NOTE,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.ipos)
+      // The record's own exit day is stored the 4.2.x way — DAY-FIRST, and two
+      // days off the sale the user corrected in Trades. Its raw readability is
+      // what keeps Y2's allowance alive after wave 2N's fold.
+      .values({ accountId: F40_ACC, name: "F40-IPO", broker: "zerodha", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "02-03-2026", allotmentDate: "10-01-2019", tradeId })
+      .run();
+
+    // SAVE 1 — the user puts the exit date right (the day the sale really is).
+    const first = ipoPage("F40-IPO", F40_ACC);
+    const one = await ipoRoute.POST(json("/api/ipos", saveBody(first, formHtml(first), { exitPrice: "150", exitDate: "2026-03-05" })));
+    expect(one.status, JSON.stringify(await one.clone().json())).toBe(200);
+    const afterOne = row(tradeId)!;
+    // THE assertion (on revert of `exitDateWasReadable`: the FOLDED legacy date
+    // reads as a real day, `syncOwnsClose` answers false, and the stale ₹99.99
+    // freezes on the row for ever) — and D4(b)'s own: the allotment is not a
+    // purchase on an exchange, so the sale's STT is the only STT
+    // (0.1% × ₹1,500 → ₹2, never 0.1% × ₹2,500 → ₹3).
+    expect([afterOne.sttCtt, afterOne.grossPnl], "the sell side alone, at the rate then in force").toEqual([2, 500]);
+    expect(afterOne.chargesTotal, "and the stale bill is gone").not.toBe(99.99);
+    expect(afterOne.importNotes ?? "", "still the sync's charges").toContain(IPO_SYNC_CHARGES_NOTE);
+
+    // THE RATE CARD MOVES between the two saves, through the real charge editor.
+    const rate = t.db
+      .select()
+      .from(t.schema.chargeConfig)
+      .all()
+      .filter((r) => r.broker === "zerodha" && r.segment === "eq_delivery" && r.exchange === "NSE" && r.effectiveFrom <= "2026-03-05")
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
+      .at(-1)!;
+    const rateBody = (sttPct: number) => ({
+      type: "charge", id: rate.id, brokerageFlat: rate.brokerageFlat, brokeragePct: rate.brokeragePct, brokerageCap: rate.brokerageCap, brokerageFloor: rate.brokerageFloor,
+      sttPct, exchangeTxnPct: rate.exchangeTxnPct, sebiPct: rate.sebiPct, stampPct: rate.stampPct, ipftPct: rate.ipftPct, gstPct: rate.gstPct,
+      dpCharge: rate.dpCharge, mtfInterestAnnual: rate.mtfInterestAnnual,
+    });
+    expect((await settingsRoute.POST(json("/api/settings", rateBody(0.002)))).status).toBe(200);
+
+    // SAVE 2 — a new exit price. The close is still the sync's, so the bill is
+    // re-priced at the rate the book now states.
+    const second = ipoPage("F40-IPO", F40_ACC);
+    const two = await ipoRoute.POST(json("/api/ipos", saveBody(second, formHtml(second), { exitPrice: "200", exitDate: "2026-03-05" })));
+    expect(two.status, JSON.stringify(await two.clone().json())).toBe(200);
+    const afterTwo = row(tradeId)!;
+    const shown = ipoPage("F40-IPO", F40_ACC);
+    expect([afterTwo.avgSellPrice, afterTwo.grossPnl], "the new exit").toEqual([200, 1000]);
+    // 0.2% of the ₹2,000 sale, rounded to the rupee — and never 0.2% of
+    // ₹1,000 + ₹2,000, which is what a delivery round trip would bill.
+    expect(afterTwo.sttCtt, "the corrected rate, on the sell side only").toBe(4);
+    expect([afterTwo.chargesTotal, afterTwo.netPnl], "/ipos and the Trades row state ONE figure").toEqual([shown.charges, shown.netPnl]);
+
+    expect((await settingsRoute.POST(json("/api/settings", rateBody(rate.sttPct)))).status).toBe(200);
+  });
+});
+
+describe("F41 · a STORED date that states no day (lib/domain/trading-day storedDateProblem → commit.ts closePosition / applyOverride → POST /api/positions/close's 200 {ok:false} → the re-tag dialog's own sentence)", () => {
+  beforeAll(async () => {
+    await wave2nModules();
+    closeDialog = (await import("@/components/trades/close-trade-dialog")) as typeof closeDialog;
+  }, 60_000);
+
+  it("one rule, four readers: the save refuses before writing, the route answers rather than throwing, and the dialog states the same sentence off the same wire row", async () => {
+    const { storedDateProblem } = await import("@/lib/domain/trading-day");
+    const closeRoute = await import("@/app/api/positions/close/route");
+    const bad = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F41_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F41-MTF", tradingsymbol: "F41-MTF",
+          buyQty: 100, avgBuyPrice: 160, buyValue: 16000, buyDate: "9999-99-99", buyOrderCount: 1, mtfFundedAmount: 12000, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = row(bad)!;
+    const sentence = storedDateProblem(before)!;
+    expect(sentence, "the rule names the COLUMN and where to fix it").toBe(
+      "This trade's stored buy date “9999-99-99” is not a real calendar day, so nothing can be priced from it. Correct the date in Edit trade first. Nothing was changed.",
+    );
+
+    // READER 1 — the close route. THE assertion (on revert of the refusal in
+    // lib/import/commit.ts closePosition: the MTF day count goes NaN and the
+    // UPDATE dies with `NOT NULL constraint failed: trades.charges_total_paise`,
+    // so the action 500s instead of answering).
+    selectAccount(F41_ACC);
+    const res = await closeRoute.POST(json("/api/positions/close", { tradeId: bad, exitPrice: 200, exitDate: "2026-09-05" }));
+    const body = (await res.json()) as { ok: boolean; code?: string; message: string };
+    expect([res.status, body.ok, body.code], body.message).toEqual([200, false, "BAD_DATE"]);
+    expect(body.message, "the route's answer IS the rule's sentence").toBe(sentence);
+    expect(row(bad), "nothing was written").toEqual(before);
+
+    // READER 2 — the re-tag / override door, which returns a bare boolean.
+    expect(importer.applyOverride(bad, { segment: "eq_intraday", isMtf: false }), "refused, not written").toBe(false);
+    expect(row(bad), "still nothing was written").toEqual(before);
+
+    // READER 3 — the dialog, off the WIRE row (/trades' RSC payload is JSON).
+    const w = wireTrade(F41_ACC, bad);
+    expect([w.buyDate, w.sellDate], "the wire carries the stored value as stored").toEqual(["9999-99-99", null]);
+    expect(storedDateProblem(w), "the dialog states what the save would refuse, before it is pressed").toBe(sentence);
+
+    // …and the close DIALOG's own half of the same rule is unchanged (F20): a
+    // date the SAVE would refuse previews nothing.
+    expect([closeDialog.resolveExitIso("31-02-2026"), closeDialog.resolveExitIso("2026-09-05")]).toEqual([null, "2026-09-05"]);
+
+    // The row is priced normally once the stored date states a day.
+    t.db.update(t.schema.trades).set({ buyDate: "2026-08-01" }).where(eq(t.schema.trades.id, bad)).run();
+    const ok = await closeRoute.POST(json("/api/positions/close", { tradeId: bad, exitPrice: 200, exitDate: "2026-09-05" }));
+    expect([ok.status, ((await ok.json()) as { ok: boolean }).ok]).toEqual([200, true]);
+    expect([row(bad)!.isOpen, row(bad)!.mtfInterest > 0], "a real day bills the real days").toEqual([false, true]);
+  });
+});
+
+describe("F42 · one charge-input predicate, two doors (lib/domain/trade-edit chargeInputsChanged → commit.ts updateManualTrade ≡ POST /api/charges/preview)", () => {
+  beforeAll(async () => {
+    await wave2nModules();
+    editDialog = (await import("@/components/trades/edit-trade-dialog")) as typeof editDialog;
+    chargesPreview = await import("@/app/api/charges/preview/route");
+    EditTradeDialog = editDialog.EditTradeDialog;
+  }, 60_000);
+
+  /** The dialog's own body over the real route: [gross, charges, net, keptCharges]. */
+  async function preview(w: WireTrade, f: Record<string, unknown>) {
+    const build = exported(editDialog, "editPreviewBody") as ((t: WireTrade, f: unknown) => unknown) | undefined;
+    const body = typeof build === "function" ? build(w, f) : null;
+    if (body == null) throw new Error("the editor builds no preview body for this row");
+    const res = await chargesPreview.POST(json("/api/charges/preview", JSON.parse(JSON.stringify(body))));
+    const p = (await res.json()) as { grossPnl: number; netPnl: number; breakdown: { total: number }; keptCharges?: boolean };
+    expect(res.status, JSON.stringify(p)).toBe(200);
+    return [p.grossPnl, p.breakdown.total, p.netPnl, p.keptCharges ?? false];
+  }
+  const fieldsOf = (id: number) => {
+    const r = row(id)!;
+    return { buyQty: r.buyQty, avgBuyPrice: r.avgBuyPrice, sellQty: r.sellQty, avgSellPrice: r.avgSellPrice, buyDate: r.buyDate ?? "", sellDate: r.sellDate ?? "", ownCapitalUsed: null };
+  };
+  const money = (id: number) => {
+    const r = row(id)!;
+    return [r.chargesTotal, r.brokerage, r.sttCtt, r.netPnl];
+  };
+
+  it("(a) an IMPORTED row with the broker's own charges: a notes-only save keeps every head, and the preview says so first", async () => {
+    const imported = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F42_ACC, broker: "zerodha", symbol: "F42-IMP", tradingsymbol: "F42-IMP", sourceFile: "tradebook-2026.csv",
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", buyOrderCount: 1,
+          sellQty: 100, avgSellPrice: 105, sellValue: 10500, sellDate: "2026-08-20", sellOrderCount: 1,
+          grossPnl: 500, brokerage: 20, sttCtt: 11, dpCharges: 13.5, gst: 3.6, chargesTotal: 48.1, netPnl: 451.9, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = money(imported);
+    const shown = await preview(wireTrade(F42_ACC, imported), fieldsOf(imported));
+    const saved = await actions.updateTradeAction(NO_STATE, editorForm(F42_ACC, imported, { notes: "brought forward from the broker's file" }));
+    expect([saved.ok, saved.message]).toEqual([true, "Trade updated."]);
+    // THE assertion (on revert of the predicate in lib/import/commit.ts: the
+    // engine's bill replaces the broker's on a save that changed a note —
+    // ₹48.10 of the user's own record becoming the engine's ₹18.43).
+    expect(money(imported), "a notes save moves no money").toEqual(before);
+    expect(shown, "and the preview said the same, from the same predicate").toEqual([500, 48.1, 451.9, true]);
+  });
+
+  it("(b) an acquisition:'ipo' holding priced by the sync: a notes-only save keeps the bill AND the marker", async () => {
+    const { IPO_SYNC_CHARGES_NOTE } = await import("@/lib/analytics/ipo-link");
+    const ipoHolding = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F42_ACC, broker: "zerodha", symbol: "F42-IPO", tradingsymbol: "F42-IPO", acquisition: "ipo",
+          buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20", acquisitionDate: "2026-02-20", buyOrderCount: 1,
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", sellOrderCount: 1,
+          grossPnl: 500, sttCtt: 2, gst: 0.03, chargesTotal: 2.06, netPnl: 497.94, isOpen: false,
+          importNotes: IPO_SYNC_CHARGES_NOTE,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = money(ipoHolding);
+    const shown = await preview(wireTrade(F42_ACC, ipoHolding), fieldsOf(ipoHolding));
+    const saved = await actions.updateTradeAction(NO_STATE, editorForm(F42_ACC, ipoHolding, { notes: "ASBA block, SBI" }));
+    expect([saved.ok, saved.message]).toEqual([true, "Trade updated."]);
+    // THE assertion: the editor used to price an allotment as a delivery ROUND
+    // TRIP (purchase STT on shares nobody bought on an exchange, sttCtt 2 → 3)
+    // on every save, and stripped the provenance marker with it — after which
+    // the next /ipos exit edit kept the old bill for ever.
+    expect(money(ipoHolding), "the sync's own bill stands").toEqual(before);
+    expect(row(ipoHolding)!.importNotes ?? "", "and so does the claim on it").toContain(IPO_SYNC_CHARGES_NOTE);
+    expect(shown, "the preview is the save").toEqual([500, 2.06, 497.94, true]);
+  });
+
+  it("(c) a RISK-only edit changes no charge input either, and a price change re-prices both sides alike", async () => {
+    const r = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F42_ACC, broker: "zerodha", symbol: "F42-RISK", tradingsymbol: "F42-RISK",
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", buyOrderCount: 1,
+          sellQty: 100, avgSellPrice: 105, sellValue: 10500, sellDate: "2026-08-20", sellOrderCount: 1,
+          grossPnl: 500, brokerage: 20, sttCtt: 11, dpCharges: 13.5, gst: 3.6, chargesTotal: 48.1, netPnl: 451.9, isOpen: false,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = money(r);
+    const savedRisk = await actions.updateTradeAction(NO_STATE, editorForm(F42_ACC, r, { slPlanned: "95", targetPlanned: "115" }));
+    expect([savedRisk.ok, savedRisk.message]).toEqual([true, "Trade updated."]);
+    expect(money(r), "levels are not charge inputs").toEqual(before);
+    expect([row(r)!.slPlanned, row(r)!.targetPlanned], "…and the levels really were saved").toEqual([95, 115]);
+
+    // The other half of the predicate: a price change IS a charge input, and the
+    // two doors move together.
+    const fields = { ...fieldsOf(r), avgSellPrice: 120, sellQty: 100 };
+    const shown = await preview(wireTrade(F42_ACC, r), fields);
+    const savedPrice = await actions.updateTradeAction(NO_STATE, editorForm(F42_ACC, r, { avgSellPrice: "120" }));
+    expect(savedPrice.ok, savedPrice.message).toBe(true);
+    const after = row(r)!;
+    expect(after.chargesTotal, "a price move re-prices the row").not.toBe(before[0]);
+    expect(shown.slice(0, 3), "and the preview is still the save").toEqual([after.grossPnl, after.chargesTotal, after.netPnl]);
+    expect(shown[3], "priced fresh, not kept").toBe(false);
+  });
+});
+
+describe("F43 · a funded amount the journal never recorded (positions.ts fundedAmount: number | null) read by the KPI total, the Live Desk's paise, /targets' MtfSummary and /equity's own block", () => {
+  let positionsLib2: typeof import("@/lib/analytics/positions");
+  let targetsPage: () => unknown;
+  beforeAll(async () => {
+    await wave2nModules();
+    positionsLib2 = await import("@/lib/analytics/positions");
+    targetsPage = (await import("@/app/targets/equity/page")).default as () => unknown;
+  }, 60_000);
+
+  it("null crosses every boundary as null: no own capital, no leverage denominator, a dash on the desk, a stated omission on /targets", async () => {
+    freezeAt("2026-09-08T09:30:00.000Z");
+    const stated = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F43_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F43-STATED", tradingsymbol: "F43-STATED",
+          buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-01", buyOrderCount: 1, mtfFundedAmount: 15000, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const unpriced = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F43_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F43-UNPRICED", tradingsymbol: "F43-UNPRICED",
+          buyQty: 50, avgBuyPrice: 100, buyValue: 5000, buyDate: "2026-08-01", buyOrderCount: 1, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    expect(row(unpriced)!.mtfFundedAmount, "unstated, not 0").toBeNull();
+    selectAccount(F43_ACC);
+
+    // CONSUMER 1 — /equity's own render (the page builds the positions and hands
+    // them to the tracker; this is the RSC payload's own shape).
+    const el = findElem(equityPage(), (e) => e.type === TrackerClient);
+    if (!el) throw new Error("the equity page no longer renders <TrackerClient>");
+    const positions = (el.props.positions as import("@/lib/analytics/positions").OpenPosition[]).filter((p) => p.id === stated || p.id === unpriced);
+    const one = positions.find((p) => p.id === unpriced)!;
+    const two = positions.find((p) => p.id === stated)!;
+    // THE assertion (on revert of lib/analytics/positions.ts' `?? defaultMtfFundedAmount`:
+    // the row states own capital 1,250 against a funded 3,750 nothing recorded —
+    // money in a KPI, on the same screen /risk calls "not priced").
+    expect([one.fundedAmount, one.ownCapital, one.roiOnCapitalPct, one.ownCapitalUnstated], "the journal never priced it, so nothing is stated").toEqual([
+      null, null, null, "unpriced",
+    ]);
+    expect([two.fundedAmount, two.ownCapital], "…while the row beside it states both").toEqual([15000, 5000]);
+    // /equity's own mtf block: no financing, so no breakeven price is built from it.
+    expect([one.breakevenPrice, two.breakevenPrice != null], "a breakeven price is never built on financing nobody recorded").toEqual([null, true]);
+
+    // CONSUMER 2 — the KPI dialog's three money rows, which are ONE set: own and
+    // funded summed over the SAME rows, so the leverage a reader computes from
+    // them describes one book.
+    const totals = positionsLib2.ownCapitalTotal(positions);
+    expect([totals.total, totals.funded, totals.unstated], "one set: the stating row alone").toEqual([5000, 15000, 1]);
+    expect(totals.unstatedWhy.unpriced, "and the reason rides with it").toBe(1);
+    expect(positionsLib2.ownCapitalNote(totals)).toBe("own capital not stated for 1 unpriced MTF row");
+    expect(positionsLib2.fundingSide(one), "a row the journal never priced belongs to neither bucket").toBeNull();
+    expect([positionsLib2.fundingSide(two), positionsLib2.statesOwnCapital(one)]).toEqual(["broker", false]);
+
+    // CONSUMER 3 — the Live Desk, where the same value crosses into PAISE.
+    const desk = await (await import("@/components/live/load-desk")).loadLiveDesk({ pro: true });
+    const deskRows = desk.rows.filter((r) => r.symbol === "F43-UNPRICED" || r.symbol === "F43-STATED");
+    const deskOne = deskRows.find((r) => r.symbol === "F43-UNPRICED")!;
+    const deskTwo = deskRows.find((r) => r.symbol === "F43-STATED")!;
+    // THE assertion (on revert of components/live/load-desk.ts' `toPaise`: a null
+    // renders as ₹0 — a STATED zero — on the desk's MTF block).
+    expect([deskOne.mtf?.fundedP, deskOne.mtf?.ownCapitalP, deskOne.mtf?.unstated], "paise or nothing, with the reason").toEqual([null, null, "unpriced"]);
+    expect([deskTwo.mtf?.fundedP, deskTwo.mtf?.ownCapitalP], "and a stated amount is exact paise").toEqual([1500000, 500000]);
+
+    // CONSUMER 4 — /targets' MTF card: the figures are the stated rows', and the
+    // omission is COUNTED beside them (invariant 6's disclosure half).
+    const card = findElem(targetsPage(), (e) => !!(e.props as { mtf?: { unstated?: number } }).mtf);
+    const mtf = (card?.props as { mtf: { count: number; funded: number; unstated: number } }).mtf;
+    expect([mtf.count, mtf.funded, mtf.unstated], "two rows, one funded figure, one omission stated").toEqual([2, 15000, 1]);
+  });
+});
+
+describe("F44 · Q-A, across every writer of mtfInterest (accrual job, closePosition, updateManualTrade, applyOverride, closeStaleLot): an unpriced row bills nothing, anywhere", () => {
+  beforeAll(async () => {
+    await wave2nModules();
+  }, 60_000);
+
+  const mtfRow44 = (sym: string, funded: number | null, over: Record<string, unknown> = {}) =>
+    t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F44_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: sym, tradingsymbol: sym,
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", buyOrderCount: 1, mtfFundedAmount: funded, isOpen: true,
+          ...over,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+  /** What the row states about its financing, after a writer has run. */
+  const billed = (id: number) => {
+    const r = row(id)!;
+    return [r.mtfFundedAmount, r.mtfInterest, r.pledgeCharges];
+  };
+
+  it("the five writers answer a null the same way — 0 interest AND 0 pledge — while a stated 0 bills nothing and a stated amount accrues", async () => {
+    const accrual = await import("@/lib/jobs/mtf-accrual");
+    const closeRoute = await import("@/app/api/positions/close/route");
+    selectAccount(F44_ACC);
+
+    // WRITER 1 — the daily accrual job /equity runs on open.
+    const jobNull = mtfRow44("F44-JOB-N", null);
+    const jobZero = mtfRow44("F44-JOB-0", 0);
+    const jobAmt = mtfRow44("F44-JOB-A", 8000);
+    accrual.accrueMtfInterest("2026-08-20");
+    // THE assertion (on revert of lib/jobs/mtf-accrual.ts: the job estimates the
+    // funded amount from TODAY's margin config and bills ₹60.80 against a row
+    // the journal never priced — restating stored money on every margin edit,
+    // with no audit row).
+    expect(billed(jobNull), "nothing to accrue on, so nothing accrues").toEqual([null, 0, 0]);
+    expect(billed(jobZero), "a stated 0 is a figure, and it bills nothing").toEqual([0, 0, 0]);
+    expect([billed(jobAmt)[0], (billed(jobAmt)[1] as number) > 0], "a stated amount accrues").toEqual([8000, true]);
+
+    // WRITER 2 — closePosition, through its own route.
+    const closeNull = mtfRow44("F44-CLOSE-N", null);
+    const res = await closeRoute.POST(json("/api/positions/close", { tradeId: closeNull, exitPrice: 110, exitDate: "2026-09-01" }));
+    expect([res.status, ((await res.json()) as { ok: boolean }).ok]).toEqual([200, true]);
+    // THE assertion (on revert of closePosition's `mtfFundedAmount = funded`
+    // write: the close PERSISTS the estimate, so a row nobody priced acquires a
+    // funded amount of 8,000 and a ₹99.20 bill at the moment it is closed).
+    expect(billed(closeNull), "the close keeps the null and bills nothing for it").toEqual([null, 0, 0]);
+
+    // WRITER 3 — the trade editor, with "Own capital used" left blank.
+    const editNull = mtfRow44("F44-EDIT-N", null, { sellQty: 100, avgSellPrice: 110, sellValue: 11000, sellDate: "2026-09-01", sellOrderCount: 1, isOpen: false });
+    const saved = await actions.updateTradeAction(NO_STATE, editorForm(F44_ACC, editNull, { notes: "left blank on purpose" }));
+    expect([saved.ok, saved.message]).toEqual([true, "Trade updated."]);
+    expect(billed(editNull), "a blank field states nothing, and nothing is billed").toEqual([null, 0, 0]);
+
+    // WRITER 4 — the re-tag door: delivery → MTF on a row with no funding recorded.
+    const tagNull = mtfRow44("F44-TAG-N", null, { segment: "eq_delivery", sellQty: 100, avgSellPrice: 110, sellValue: 11000, sellDate: "2026-09-01", sellOrderCount: 1, isOpen: false });
+    expect(importer.applyOverride(tagNull, { segment: "eq_mtf", isMtf: true }), "the re-tag runs").toBe(true);
+    expect(billed(tagNull), "…and states no financing it was never told about").toEqual([null, 0, 0]);
+
+    // WRITER 5 — the Data Quality one-click close (a stale lot joined to its sale).
+    const lot = mtfRow44("F44-STALE", null);
+    const sale = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: F44_ACC, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "F44-STALE", tradingsymbol: "F44-STALE",
+          sellQty: 100, avgSellPrice: 110, sellValue: 11000, sellDate: "2026-09-01", sellOrderCount: 1, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const oneClick = importer.closeStaleLot(lot, sale, "2026-09-01");
+    expect(oneClick.ok, oneClick.message).toBe(true);
+    // THE assertion: two doors, one row — the one-click used to bill ₹209.69 of
+    // interest against a lot the manual close beside it left null with 0.
+    expect(billed(lot), "the one-click answers as the manual close does").toEqual([null, 0, 0]);
+  });
+});
+
+describe("F45 · the pick SET for one incoming row (cross-source.ts → the pull route's 409 → dialogCollisions / collisionDialogCopy / collisionsToList)", () => {
+  beforeAll(async () => {
+    await wave2nModules();
+  }, 60_000);
+
+  const clientOf = (accountId: number) => `45000${accountId}`;
+  const alive = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
+  const position = (accountId: number, symbol: string, productType: string, buyQty: number, buyAvg: number) => ({
+    dhanClientId: clientOf(accountId), tradingSymbol: symbol, positionType: "LONG", exchangeSegment: "NSE_EQ", productType, buyAvg, buyQty, sellAvg: 0, sellQty: 0, netQty: buyQty,
+  });
+  const stub = (positions: unknown[]) =>
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      const body = u.host === "auth.dhan.co" ? { accessToken: alive() } : u.pathname === "/v2/positions" ? positions : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+  const pull = async (accountId: number) => {
+    const res = await brokerRoute.POST(json("/api/import/broker", { action: "pull", broker: "dhan", accountId, mode: "commit" }));
+    return { status: res.status, body: (await res.json()) as { needsForce?: boolean; message: string; collisions?: ({ symbol: string; kind: string; sameSnapshot?: boolean } & Record<string, unknown>)[] } };
+  };
+
+  it("two blockers of ONE row make ONE card with both sentences, the copy counts rows and the preview list counts SYMBOLS", async () => {
+    freezeAt("2026-09-08T06:30:00.000Z"); // 12:00 IST
+    t.sqlite
+      .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json, last_pull_at) VALUES (?, 'dhan', ?, ?, NULL, NULL)")
+      .run(F45_ACC, clientOf(F45_ACC), alive());
+    const older = commitFill(F45_ACC, "SEAM2N", "BUY", 15, 100, "2026-09-01");
+    stub([position(F45_ACC, "SEAM2N", "INTRADAY", 10, 100)]);
+    expect((await pull(F45_ACC)).status, "the older row is no ask on its own").toBe(200);
+
+    freezeAt("2026-09-08T10:30:00.000Z"); // 16:00 IST, the same IST day
+    stub([position(F45_ACC, "SEAM2N", "MTF", 15, 100.5)]);
+    const blocked = await pull(F45_ACC);
+    expect([blocked.status, blocked.body.needsForce]).toEqual([409, true]);
+    const collisions = blocked.body.collisions ?? [];
+    expect(collisions.map((c) => [c.symbol, c.sameSnapshot ?? false]), "one row, two blockers").toEqual([["SEAM2N", true], ["SEAM2N", false]]);
+    expect(row(older.id), "and nothing was written").toEqual(older);
+
+    // CONSUMER 1 — the dialog's list. THE assertion (on revert of
+    // components/import/broker-connect.tsx' `dialogCollisions`: two entries, so
+    // one incoming row is shown as two trades the user must go and find).
+    const listed = bc.dialogCollisions(collisions);
+    expect(listed.length, "ONE card for ONE incoming row").toBe(1);
+    expect((listed[0]!.also ?? []).length, "…with the second blocker beside the first, inside it").toBe(1);
+    expect([listed[0]!.kind, listed[0]!.also![0]!.kind], "each blocker keeps its own badge").toEqual(["earlier-snapshot", "same-quantity"]);
+
+    // CONSUMER 2 — the copy, which counts ROWS.
+    const copy = bc.collisionDialogCopy({ collisions, message: blocked.body.message });
+    expect(copy.description.endsWith("cannot vouch for this row."), copy.description).toBe(true);
+    expect(copy.otherSourceFooter, "a cross-file blocker brings the other-source words").toBe(true);
+
+    // CONSUMER 3 — the import preview's overlap list, which caps by SYMBOL: six
+    // symbols with every blocker of each, and a tail that counts the symbols
+    // left — never six collisions that might be three rows.
+    const many = [
+      ...collisions,
+      ...["B", "C", "D", "E", "F", "G"].map((s) => ({ ...collisions[0]!, symbol: `SEAM2N${s}` })),
+    ];
+    const { rows: shown, more } = crossSource.collisionsToList(many);
+    expect([new Set(shown.map((c) => c.symbol)).size, shown.length, more], "6 symbols listed (both entries of the first), 1 symbol left over").toEqual([6, 7, 1]);
   });
 });

@@ -164,11 +164,16 @@ export function deleteTradesByIds(
       legs: legRows as unknown as Record<string, unknown>[],
       attachments: attachRows as unknown as Record<string, unknown>[],
       ledgerRefs: ledgerRefRows,
-      // Undefined, not [], when there are none: JSON.stringify drops an
-      // undefined field, so an ordinary delete keeps writing the EXACT shape
-      // it always did (tests/trash-roundtrip.test.ts pins that). `ipoRefs`
-      // follows the same rule.
-      ipoRefs: ipoRefRows.length ? ipoRefRows : undefined,
+      // D1 (v4.3.0 wave 2N, re-check findings counted-once#0/#1) — ALWAYS
+      // stated, `[]` when this delete broke no link. It was `undefined` when
+      // empty so an ordinary delete kept writing the exact shape it always did;
+      // but `lib/trash.ts` keys its legacy fallback on the field being ABSENT,
+      // so a routine delete + restore of a holding that was NEVER linked took
+      // the 4.2.x path and came back LINKED — a link the user never made, and
+      // through tier B a link to another issue's record whose own sale then
+      // vanished from every consumer. `env.ipoRefs == null` now means a
+      // pre-4.3.0 envelope and nothing else; `[]` means "nothing to re-link".
+      ipoRefs: ipoRefRows,
       referenceRows: referenceRows.length ? (referenceRows as unknown as Record<string, unknown>[]) : undefined,
       reason,
       accountId,

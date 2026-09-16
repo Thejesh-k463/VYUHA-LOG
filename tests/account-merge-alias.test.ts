@@ -242,3 +242,76 @@ describe("Y2 — a plain same-hash collision is unchanged", () => {
     expect(rowsOf(A).map((r) => r.id)).toEqual([buyA.id, otherB.id].sort((a, b) => a - b));
   });
 });
+
+/**
+ * D6 (v4.3.0 fix wave 2N, re-check finding "identity#1", data loss) — the
+ * SAME-HASH half of the U1-MERGE class.
+ *
+ * The module comment justified dropping a same-hash source row as "the WHOLE
+ * row twice over". That is false for the reachable shape: the TARGET's row can
+ * be a naked sell-only row while the SOURCE's row is that same sale given its
+ * own buy leg in the trade editor — which does not re-hash, the very reason the
+ * alias variant wave 2L fixed exists at all. The merge then deleted the round
+ * trip and kept the naked sale: 1,000 of cost basis and 490.25 of realised P&L
+ * out of the merged journal, reported as "1 duplicate skipped".
+ *
+ * The refusal now covers the same-hash half: a two-legged source row is refused
+ * when its partner — same hash OR alias — carries fewer legs than it does.
+ */
+describe("U1-MERGE (wave 2N) — a same-hash partner that records only ONE leg", () => {
+  const A = 8209;
+  const B = 8210;
+  const SYM = "MRGV";
+
+  it("a two-legged source row against a sell-only same-hash target refuses the merge, in the preview and in the execution", () => {
+    account(A, "leg-target");
+    account(B, "leg-source");
+    // The same sale in both books, from the same file kind: one dedup identity.
+    expect(commit.commitParsedFile(sell(SYM, 10, 150, "2026-08-25"), "mv-s-a", null, A).added).toBe(1);
+    expect(commit.commitParsedFile(sell(SYM, 10, 150, "2026-08-25"), "mv-s-b", null, B).added).toBe(1);
+    const [saleA] = rowsOf(A);
+    const [saleB] = rowsOf(B);
+    expect(saleB.dedupHash).toBe(saleA.dedupHash);
+    // The source's copy is given its own buy leg in the trade editor.
+    t.db
+      .update(t.schema.trades)
+      .set({ buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-08-20", isOpen: false, grossPnl: 500, netPnl: 490.25 })
+      .where(eq(t.schema.trades.id, saleB.id))
+      .run();
+
+    const beforeA = rowsOf(A);
+    const beforeB = rowsOf(B);
+    const fact =
+      `Trade #${saleB.id} (${SYM}) records a sale that “leg-target” already holds ` +
+      `(trade #${saleA.id}, ${SYM}, the same broker and dedup identity), and the target records only one leg of ` +
+      `this trade — moving it would count that sale twice`;
+
+    // THE assertion: on HEAD this merged, left `[[id, A, 0, 10, 0]]` and
+    // reported "1 duplicate skipped (saved to Deleted items)".
+    const res = acct.deleteAccount({ accountId: B, mode: "merge", targetId: A, connections: "delete" });
+    expect([res.ok, res.snapshotId, res.skippedTrades], res.message).toEqual([false, null, 0]);
+    expect(res.message).toBe(`${fact}. Nothing was merged; both accounts are unchanged.`);
+    expect(rowsOf(A)).toEqual(beforeA);
+    expect(rowsOf(B)).toEqual(beforeB);
+
+    const preview = acct.previewAccountDelete({ accountId: B, mode: "merge", targetId: A });
+    expect(preview.dedupCollisions, "no 'will be skipped' promise the merge will not keep").toBe(0);
+    expect(preview.warnings).toContain(
+      `${fact}, and skipping it would drop the other leg it records. The merge will not run until those two rows are resolved.`,
+    );
+  });
+
+  it("a two-legged source against a two-legged same-hash partner still drops — the whole row twice over", () => {
+    const A2 = 8211;
+    const B2 = 8212;
+    const SYM2 = "MRGU";
+    account(A2, "both-legs-target");
+    account(B2, "both-legs-source");
+    for (const acc of [A2, B2]) {
+      expect(commit.commitParsedFile(buy(SYM2, 10, 100, "2026-08-20"), `mu-b-${acc}`, null, acc).added).toBe(1);
+      expect(commit.commitParsedFile(sell(SYM2, 10, 150, "2026-08-25"), `mu-s-${acc}`, null, acc).added).toBe(1);
+    }
+    const res = acct.deleteAccount({ accountId: B2, mode: "merge", targetId: A2, connections: "delete" });
+    expect([res.ok, res.skippedTrades], res.message).toEqual([true, 2]);
+  });
+});

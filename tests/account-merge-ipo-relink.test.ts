@@ -111,6 +111,19 @@ function taxIn(accountId: number) {
   return { ipoNames: base.exitedIpos.map((r) => r.name), cgNets: base.cgTrades.map((r) => r.netPnl), itrRows: taxItr.countItrRows() };
 }
 
+/**
+ * The ITR export's scrip column, narrowed to the names ONE scenario owns.
+ *
+ * The All-accounts view reads every book in this file's single temp database
+ * (AGENTS.md: one temp database per FILE), so an absolute total there would be
+ * every scenario's. A scrip filter is still absolute about the one thing under
+ * test: how many rows the export emits for THIS sale.
+ */
+function itrScripsIn(accountId: number, names: string[]): string[] {
+  select(accountId);
+  return taxItr.getItrExportRows().map((r) => r.scrip).filter((s) => names.includes(s)).sort();
+}
+
 /** POST /api/ais with nothing to parse: every journal FY total surfaces as its own figure. */
 async function aisIn(accountId: number): Promise<Record<string, number | null>> {
   select(accountId);
@@ -140,6 +153,10 @@ beforeAll(async () => {
     [15, "K1 plain target"], [16, "K1 plain source"],
     [17, "L7 claimed target"], [18, "L7 claimed source"],
     [19, "L7 two target"], [20, "L7 two source"],
+    // D5 (fix wave 2N, re-check finding identity#0): a skipped record filed
+    // OUTSIDE the book being merged — in a third account, and in the target's.
+    [31, "D5 legacy holder"], [32, "D5 third target"], [33, "D5 third source"],
+    [34, "D5 own-book target"], [35, "D5 own-book source"],
   ] as [number, string][]) {
     t.db.insert(t.schema.accounts).values({ id, name }).run();
   }
@@ -272,9 +289,14 @@ describe("L7 · a duplicate IPO record is skipped, never re-pointed onto a trade
     // Reported in the same breath as the duplicate trade, and recoverable the
     // same way — a record that just vanished would be the silent drop the merge
     // counts exist to prevent.
+    // MOVED by D5 (wave 2N, identity#0): "skipped … saved to Deleted items" was
+    // true only of the source's OWN copies; a skipped record in any other book
+    // was left unlinked, which is a silent double count. Every skipped record is
+    // now removed with the duplicate it names, and the message says so.
     expect(res.message).toBe(
       "Merged “L7 claimed source” into “L7 claimed target” — 0 trades moved, 1 duplicate skipped (saved to Deleted items), " +
-        "1 duplicate IPO record skipped (“L7 claimed target”'s own copy of that trade already carries one; saved to Deleted items).",
+        "1 duplicate IPO record removed with the duplicate (“L7 claimed target”'s own copy of that trade already carries one; " +
+        "saved to Deleted items, an un-merge brings it back).",
     );
     expect(res.message).not.toContain("IPO link re-pointed");
   });
@@ -311,11 +333,14 @@ describe("L7 · the preview counts dropped TRADES, and a second record on one dr
     // THE assertion: the count that pluralises is the dropped TRADES, not the
     // records they carry — one dropped trade reading as "2 … are linked to those
     // trades" described a blast radius twice the size of the real one.
+    // The skipped half MOVED by D5 (wave 2N, identity#0): it promised "a record
+    // filed in another account is left unlinked", which was the silent double
+    // count itself. Every skipped record is removed with the duplicate it names.
     expect(pv.warnings?.find((w) => w.includes("IPO record"))).toBe(
       "1 dropped trade carries 2 IPO records — 1 will be re-pointed to “L7 two target”'s own copy of that trade, " +
         "never left unlinked (an unlinked exited IPO beside the target's copy counts that sale twice); " +
-        "1 will be skipped, because one trade takes one IPO record (this account's own copy is saved to Deleted items; " +
-        "a record filed in another account is left unlinked).",
+        "1 will be removed with the duplicate it names, because one trade takes one IPO record " +
+        "(saved to Deleted items; an un-merge brings it back).",
     );
 
     const res = mod.deleteAccount({ accountId: 20, mode: "merge", targetId: 19, connections: "delete" });
@@ -326,7 +351,7 @@ describe("L7 · the preview counts dropped TRADES, and a second record on one dr
     ).toEqual([first]);
     expect(t.db.select().from(t.schema.ipos).all().map((r) => r.id)).not.toContain(second);
     expect(res.message).toContain("1 IPO link re-pointed");
-    expect(res.message).toContain("1 duplicate IPO record skipped");
+    expect(res.message).toContain("1 duplicate IPO record removed with the duplicate");
   });
 });
 
@@ -336,7 +361,7 @@ describe("a dropped trade with no IPO changes nothing", () => {
   let linkedIpo = 0;
   let looseIpo = 0;
 
-  it("the moving trade keeps its own link and an unlinked IPO stays unlinked; the snapshot carries no ipoRefs", () => {
+  it("the moving trade keeps its own link and an unlinked IPO stays unlinked; the snapshot states an EMPTY ipoRefs", () => {
     closedTrade(15, "K1PLAIN", { dedupHash: HASH });
     closedTrade(16, "K1PLAIN", { dedupHash: HASH });
     movingTrade = closedTrade(16, "K1MOVES");
@@ -349,6 +374,137 @@ describe("a dropped trade with no IPO changes nothing", () => {
     expect(res.message).not.toContain("IPO link re-pointed");
     expect(linkOf(linkedIpo)).toEqual([15, movingTrade]);
     expect(linkOf(looseIpo)).toEqual([15, null]);
-    expect(ipoRefsOf(res.snapshotId!)).toBeUndefined();
+    // MOVED by D1 (wave 2N, counted-once#0/#1): every delete writer STATES
+    // `ipoRefs`, `[]` when it broke no link. Omitting the empty list made this
+    // envelope byte-identical to a 4.2.x one, so `lib/trash.ts` took the legacy
+    // fallback on it and the restore invented a link the user never made.
+    expect(ipoRefsOf(res.snapshotId!), "stated, and empty — not absent").toEqual([]);
+  });
+});
+
+/**
+ * D5 (v4.3.0 fix wave 2N, re-check finding "identity#0", silent wrong number) —
+ * L7's SKIP re-creates the double count wave 2K exists to prevent whenever the
+ * skipped record is NOT filed in the book being merged.
+ *
+ * A dropped duplicate's record is skipped when the target's survivor already
+ * carries one. The source's own copy was deleted into the envelope (harmless);
+ * a record in ANY OTHER account was left where it stood and UNLINKED by the
+ * blanket unlink — and an unlinked exited IPO is realised on its own figure
+ * beside the survivor's equity sale. The same sale, counted twice: measured
+ * {equity 490.25, ipo 482.60, total 972.85} on All accounts, two ITR rows for
+ * one sale, and the merge message only said the record was "left unlinked in
+ * its own account".
+ *
+ * So the skipped set is no longer filtered by account: EVERY skipped record is
+ * snapshotted into the merge envelope with its OWN accountId and deleted inside
+ * the transaction. `restoreTrashSnapshot` replays `accountRows.ipos` verbatim,
+ * so an un-merge puts it back in its own book with `trade_id` intact.
+ */
+describe("D5 · a skipped IPO record filed in a THIRD account is removed with its duplicate", () => {
+  const HASH = "d5-merge-ipo-third";
+  const SCRIPS = ["D5THIRD", "D5-THIRD-LEG (IPO)", "D5-THIRD-TGT (IPO)"];
+  let targetTrade = 0;
+  let sourceTrade = 0;
+  let targetIpo = 0;
+  let strayIpo = 0;
+  let snapshotId = "";
+  let mergeMessage = "";
+  let aisBefore: Record<string, number | null> = {};
+
+  it("baseline: one sale, one ITR row, and the stray record is counted through the source's copy", async () => {
+    targetTrade = closedTrade(32, "D5THIRD", { dedupHash: HASH });
+    sourceTrade = closedTrade(33, "D5THIRD", { dedupHash: HASH });
+    targetIpo = exitedIpo(32, "D5-THIRD-TGT", targetTrade);
+    // The legacy cross-account shape lib/queries/ipos.ts names in its own
+    // header: the record in one book, the holding it names in another.
+    strayIpo = exitedIpo(31, "D5-THIRD-LEG", sourceTrade);
+    expect(itrScripsIn(0, SCRIPS), "two copies of the sale, each counted once").toEqual(["D5THIRD", "D5THIRD"]);
+    aisBefore = await aisIn(0);
+  });
+
+  it("the merge removes it with the duplicate, so All accounts counts that sale ONCE", async () => {
+    select(1);
+    const res = mod.deleteAccount({ accountId: 33, mode: "merge", targetId: 32, connections: "delete" });
+    expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
+    snapshotId = res.snapshotId!;
+    mergeMessage = res.message;
+
+    // THE assertion. On HEAD: ["D5THIRD", "D5-THIRD-LEG (IPO)"] — the dropped
+    // duplicate's sale re-stated by a record nobody unlinked on purpose.
+    expect(itrScripsIn(0, SCRIPS), "the stray record is not a second statement of the survivor's sale").toEqual(["D5THIRD"]);
+    expect(taxIn(0).ipoNames).not.toContain("D5-THIRD-LEG");
+    expect(ipoRow(strayIpo), "it is removed with the duplicate it named").toBeUndefined();
+    // Both AIS sides fall by exactly the dropped duplicate — on HEAD they did
+    // not move at all, because the unlinked record put the same sale back.
+    expect(await aisIn(0)).toEqual({
+      ...aisBefore,
+      [`${FY} purchase`]: (aisBefore[`${FY} purchase`] ?? 0) - 1000,
+      [`${FY} sale`]: (aisBefore[`${FY} sale`] ?? 0) - 1500,
+    });
+    // The target's own record is untouched and still names its own copy.
+    expect(linkOf(targetIpo)).toEqual([32, targetTrade]);
+  });
+
+  it("the message NAMES the other book it was filed in, and says an un-merge brings it back", () => {
+    // Invariant 6 and the wave's own lesson: a row removed from a book the user
+    // never named is a fact they are entitled to before and after the press.
+    expect(mergeMessage).toContain("1 filed in “D5 legacy holder”");
+    expect(mergeMessage).toContain("an un-merge brings it back");
+  });
+
+  it("an un-merge brings it back, in its own account, still naming its own holding", async () => {
+    const back = trash.restoreTrashSnapshot(snapshotId, "D5 probe");
+    expect([back.ok, back.restored], back.message).toEqual([true, 1]);
+    expect(linkOf(strayIpo), "its own book, its own holding — replayed verbatim").toEqual([31, sourceTrade]);
+    expect(itrScripsIn(0, SCRIPS), "and the book reads exactly as it did before the merge").toEqual(["D5THIRD", "D5THIRD"]);
+    expect(await aisIn(0)).toEqual(aisBefore);
+  });
+});
+
+/**
+ * D5, the variant that reaches a SINGLE-account view: the skipped record is
+ * filed in the TARGET's own book. Nothing here needs the All-accounts lens —
+ * the target's own page read 972.85 for one sale of 10 shares.
+ */
+describe("D5 · a skipped IPO record filed in the TARGET's own book is removed with its duplicate", () => {
+  const HASH = "d5-merge-ipo-own";
+  let targetTrade = 0;
+  let sourceTrade = 0;
+  let ownIpo = 0;
+  let strayIpo = 0;
+  let snapshotId = "";
+
+  it("the target's own view counts that sale ONCE after the merge", async () => {
+    targetTrade = closedTrade(34, "D5OWN", { dedupHash: HASH });
+    sourceTrade = closedTrade(35, "D5OWN", { dedupHash: HASH });
+    ownIpo = exitedIpo(34, "D5-OWN-TGT", targetTrade);
+    // Filed in the TARGET, naming the SOURCE's copy — the shape a Trash restore
+    // or an earlier merge can leave behind (lib/queries/ipos.ts:163-177).
+    strayIpo = exitedIpo(34, "D5-OWN-LEG", sourceTrade);
+    expect(realisedIn(34), "before the merge the record's holding is not in this view").toEqual({
+      equityRealised: NET, ipoRealised: 482.6, totalRealised: 972.85,
+    });
+
+    select(1);
+    const res = mod.deleteAccount({ accountId: 35, mode: "merge", targetId: 34, connections: "delete" });
+    expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
+    snapshotId = res.snapshotId!;
+
+    // THE assertion. On HEAD: {equity 490.25, ipo 482.6, total 972.85} — the
+    // same figure wave 2K quoted as the defect it fixed.
+    expect(realisedIn(34)).toEqual({ equityRealised: NET, ipoRealised: 0, totalRealised: NET });
+    expect(taxIn(34)).toEqual({ ipoNames: [], cgNets: [NET], itrRows: 1 });
+    expect(await aisIn(34)).toEqual({ [`${FY} purchase`]: 1000, [`${FY} sale`]: 1500 });
+    expect(linkOf(ownIpo), "the target's own record is untouched").toEqual([34, targetTrade]);
+  });
+
+  it("an un-merge brings it back to the target's book, still naming its own holding", () => {
+    const back = trash.restoreTrashSnapshot(snapshotId, "D5 probe");
+    expect([back.ok, back.restored], back.message).toEqual([true, 1]);
+    expect(linkOf(strayIpo), "its own account and its own trade_id, replayed verbatim").toEqual([34, sourceTrade]);
+    expect(realisedIn(34), "and the target reads what it read before the merge").toEqual({
+      equityRealised: NET, ipoRealised: 482.6, totalRealised: 972.85,
+    });
   });
 });

@@ -179,16 +179,27 @@ describe("merge: the snapshot records the pre-merge links the merge re-points", 
     // 2H's counted-once rule keys on `ipos.trade_id`). See
     // tests/account-merge-ipo-relink.test.ts for the figures.
     expect([ipoAccountId(ownIpo), ipoTradeId(ownIpo)]).toEqual([4, targetTrade]);
-    // MOVED by L7 (wave 2L), deliberately: ONE trade takes ONE IPO record —
-    // `pushTradeToIpoAction` refuses to create a second, and two rows both
-    // marked linked to one holding each sync onto it when edited while
-    // `getIpoTradeLinks()` keeps only the last. `ownIpo` (the book being merged,
-    // and the record that travels with the trade) takes the survivor; account
-    // 1's legacy row is SKIPPED — left where it stands, unlinked, which is
-    // numerically neutral in its own book because the trade it named was never
-    // in it. The envelope states the pre-merge link (asserted above) and the
-    // restore below puts it back.
-    expect([ipoAccountId(legacyIpo), ipoTradeId(legacyIpo)]).toEqual([1, null]);
+    // MOVED by D5 (wave 2N, re-check finding identity#0). L7 (wave 2L) bounded
+    // K1's re-point — ONE trade takes ONE IPO record, because
+    // `pushTradeToIpoAction` refuses to create a second and two rows marked
+    // linked to one holding each sync onto it when edited. `ownIpo` (the book
+    // being merged, and the record that travels with the trade) takes the
+    // survivor; account 1's legacy row is SKIPPED. This line then pinned the
+    // skipped state as `[1, null]` — left where it stands, unlinked — with the
+    // comment "numerically neutral in its own book because the trade it named
+    // was never in it". True of account 1's own view, and FALSE of every view
+    // that can see both rows: an unlinked exited IPO is realised on its own
+    // figure beside the survivor's equity sale, so All accounts read 972.85 for
+    // one sale of 10 shares and the ITR export emitted two rows for it. The
+    // pin now reads the MONEY, which is what the state was ever about.
+    expect(ipoTradeId(ownIpo), "the survivor takes the record that travelled with the trade").toBe(targetTrade);
+    expect(t.db.select().from(t.schema.ipos).all().map((r) => r.id), "and the skipped one is removed with the duplicate it named")
+      .not.toContain(legacyIpo);
+    // All accounts holds the purge describe's restored book too, so its equity
+    // total is both scenarios'; what this pin is about is the IPO side, which
+    // read 482.60 for a sale the surviving trade already states.
+    expect(realisedIn(0).ipoRealised, "no unlinked exited IPO is realised beside the survivor's sale").toBe(0);
+    expect(realisedIn(4), "and the target's own view counts that sale ONCE").toEqual({ equityRealised: NET, ipoRealised: 0, totalRealised: NET });
   });
 
   it("restored: the duplicate comes back and the merge's re-point is left alone", () => {

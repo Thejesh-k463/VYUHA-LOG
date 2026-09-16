@@ -49,6 +49,24 @@ export interface IpoLinkInput {
   allotmentDate?: string | null;
   listingDate?: string | null;
   exitDate?: string | null;
+  /**
+   * D2 (v4.3.0 wave 2N): was the exit date READABLE as a day in the form the caller
+   * read it — before any normalisation it applied?
+   *
+   * The caller (`app/api/ipos/route.ts#linkInput`) folds the three typed days through
+   * the shared calendar so both sides of every comparison are like for like (a legacy
+   * day-first '20-02-2026' stored before wave 2M against the '2026-02-20' the save
+   * stores). That fold also makes a legacy exit date READABLE, which would silently
+   * withdraw Y2's ignore-date allowance from exactly the rows it was written for:
+   * measured by the design reviewer, `syncOwnsClose` flips true → false for a legacy
+   * row whose Trades sale was corrected to another day, so the sync's own charges
+   * freeze on the next re-price and a clear-exit save answers 409 CLOSE_IN_TRADES.
+   *
+   * So the READABILITY is carried as data, computed on the RAW value, and the three
+   * functions below read it instead of re-deriving it from the folded date. Undefined
+   * (every other caller, and every stored shape) keeps the original derivation.
+   */
+  exitDateWasReadable?: boolean;
 }
 
 export interface DerivedHolding {
@@ -216,6 +234,14 @@ function samePatch(a: TradePatch | null, b: TradePatch | null, ignoreSellDate = 
 const unreadableExitDate = (d: string | null | undefined) => (d ?? "").trim() !== "" && !isPriceableExitDate((d ?? "").trim());
 
 /**
+ * Y2's question, asked of the input rather than of the date it now carries: the
+ * caller states the raw value's readability when it normalised the date it hands in
+ * (`exitDateWasReadable`, D2 wave 2N), and only otherwise is it derived here.
+ */
+const storedExitUnreadable = (i: IpoLinkInput): boolean =>
+  i.exitDateWasReadable === undefined ? unreadableExitDate(i.exitDate) : !i.exitDateWasReadable;
+
+/**
  * What a save of an IPO record may do to the holding it is linked to.
  *   sync   — write the IPO's patch onto the holding (the IPO is its source of truth);
  *   leave  — write nothing to the holding, and save the IPO record;
@@ -257,7 +283,7 @@ export function linkedSyncFor(args: {
   const { stored, next, trade } = args;
   if (!trade || !(Number(trade.sellQty) > 0)) return "sync";
   if (sellLegIsIpoExit(next, trade) || (stored != null && sellLegIsIpoExit(stored, trade))) return "sync";
-  if (stored != null && samePatch(tradePatchFromIpo(stored), tradePatchFromIpo(next), unreadableExitDate(stored.exitDate))) return "leave";
+  if (stored != null && samePatch(tradePatchFromIpo(stored), tradePatchFromIpo(next), storedExitUnreadable(stored))) return "leave";
   return "refuse";
 }
 
@@ -292,7 +318,7 @@ export function syncOwnsClose(args: { stored: IpoLinkInput | null; trade: Linked
   const { stored, trade } = args;
   if (!trade || !(Number(trade.sellQty) > 0)) return true; // no sale: the sync writes this close
   if (!stored) return false; // a create or a new link: the sale predates the link
-  return sellLegIsIpoExit(stored, trade, unreadableExitDate(stored.exitDate));
+  return sellLegIsIpoExit(stored, trade, storedExitUnreadable(stored));
 }
 
 /**
@@ -313,7 +339,7 @@ export function syncOwnsClose(args: { stored: IpoLinkInput | null; trade: Linked
 export function syncWouldWrite(args: { stored: IpoLinkInput | null; next: IpoLinkInput }): boolean {
   const { stored, next } = args;
   if (!stored) return true;
-  return !samePatch(tradePatchFromIpo(stored), tradePatchFromIpo(next), unreadableExitDate(stored.exitDate));
+  return !samePatch(tradePatchFromIpo(stored), tradePatchFromIpo(next), storedExitUnreadable(stored));
 }
 
 /**

@@ -223,6 +223,35 @@ export function body(exitDate: string) {
 }`;
     expect(scanSource("fixture-date-guard.ts", guardedEarly, ["raw-date"])).toEqual([]);
   });
+
+  /**
+   * FINDING ipo#1 (wave-2L re-check, fixed in wave 2N) — the DAY-COUNTER half.
+   * `accrueMtfInterest` handed the stored `t.buyDate` straight to `epochSpans`,
+   * which does not throw on a value it cannot read: measured, '9999-99-99' spans
+   * 0 days, so the job SET the row's interest to 0 and moved its stored charges
+   * and net with it, and '2026-02-31' billed 199 days / ₹636.80. An emptiness
+   * guard (`if (!t.buyDate) continue`) is what the job already had — which is why
+   * a resolver, not a guard, is what this half of the rule requires.
+   */
+  it("a raw date handed to a DAY COUNTER is reported even under an emptiness guard; resolving it is not", () => {
+    const bad = `declare function epochSpans(a: unknown, b: string, c: string, d: string, from: string, to: string): { days: number }[];
+export function accrue(t: { buyDate: string | null; broker: string; exchange: string }, rates: unknown, today: string) {
+  if (!t.buyDate) return 0;
+  return epochSpans(rates, t.broker, "eq_mtf", t.exchange, t.buyDate, today).length;
+}`;
+    const hits = scanSource("fixture-daycount.ts", bad, ["raw-date"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].expr).toBe("t.buyDate");
+    expect(hits[0].why).toContain("0 days");
+
+    const resolved = bad
+      .replace("if (!t.buyDate) return 0;", "const buyIso = normalizeDate(t.buyDate);\n  if (!buyIso) return 0;")
+      .replace("t.buyDate, today", "buyIso, today");
+    expect(scanSource("fixture-daycount-ok.ts", `declare function normalizeDate(s: string | null): string | null;\n${resolved}`, ["raw-date"])).toEqual([]);
+
+    // …and the real file at HEAD reads it the resolved way.
+    expect(scanSource("lib/jobs/mtf-accrual.ts", fs.readFileSync("lib/jobs/mtf-accrual.ts", "utf8"), ["raw-date"])).toEqual([]);
+  });
 });
 
 describe("G3 — the counted-once link rule (ipos.tradeId)", () => {
@@ -272,6 +301,57 @@ describe("G3 — HEAD under every rule", () => {
     full = scanTree();
   });
   const hits = (id: RuleId) => full.violations.filter((v) => v.rule === id).map(format);
+
+  /**
+   * D7 (v4.3.0 wave 2N) — the two fields the wave made nullable. `fundedAmount`
+   * and `ownCapital` (with their paise twins on the Live Desk wire) are read on
+   * four surfaces, and the wave-2L re-check found the silent shapes on three of
+   * them: `p.fundedAmount <= 0` filed a row the journal never priced under
+   * "user funded", `> 0` hid it from both, and `ownCapitalP` had no test at all,
+   * so `toPaise(p.ownCapital ?? 0)` would have printed a STATED ₹0 on the desk
+   * with nothing red anywhere (close-readers#1, #4).
+   */
+  it("open-position-funded / own-capital-null: no consumer collapses a null onto 0", () => {
+    expect(hits("open-position-funded"), RULE["open-position-funded"].forbidden).toEqual([]);
+    expect(hits("own-capital-null"), RULE["own-capital-null"].forbidden).toEqual([]);
+
+    // NOT EMPTY-SATISFIABLE — the scanner is shown the class it is silent about.
+    const bad = `interface P { isMtf: boolean; fundedAmount: number | null; ownCapital: number | null }
+declare function toPaise(n: number): number;
+export function reads(p: P, list: P[]) {
+  const user = list.filter((x) => x.fundedAmount <= 0);
+  const broker = list.filter((x) => x.fundedAmount > 0);
+  const own = toPaise(p.ownCapital ?? 0);
+  const total = list.reduce((s, x) => s + (x.fundedAmount ?? 0), 0);
+  return [user, broker, own, total];
+}`;
+    const seen = scanSource("fixture-nullable-money.ts", bad, ["open-position-funded", "own-capital-null"]);
+    expect(seen.map((v) => v.expr)).toEqual([
+      // Sorted by line: the filter, the filter, the desk's paise read, the reduce.
+      "x.fundedAmount <= 0",
+      "x.fundedAmount > 0",
+      "toPaise(p.ownCapital ?? 0)",
+      "s + (x.fundedAmount ?? 0)",
+    ]);
+    expect(seen.filter((v) => v.rule === "own-capital-null")).toHaveLength(1);
+
+    // …and the CORRECT reads the four surfaces actually use stay silent.
+    const good = `interface P { isMtf: boolean; fundedAmount: number | null; ownCapital: number | null }
+declare function toPaiseOrNull(n: number | null): number | null;
+declare function statesOwnCapital(p: P): boolean;
+export function reads(p: P, list: P[]) {
+  const funded = p.fundedAmount;
+  if (funded == null) return null;
+  let sum = 0;
+  for (const x of list) {
+    const row = x.fundedAmount;
+    if (row == null) continue;
+    sum += row;
+  }
+  return { sum, own: statesOwnCapital(p) ? p.ownCapital : null, wire: toPaiseOrNull(p.ownCapital), fundedP: toPaiseOrNull(p.fundedAmount) };
+}`;
+    expect(scanSource("fixture-nullable-money-ok.ts", good, ["open-position-funded", "own-capital-null"])).toEqual([]);
+  });
 
   it("mtf-funded-0: no reader in lib/, app/ or components/ treats a stated funded 0 as never set", () => {
     // THE assertion. Each violation prints as `file:line <expression>`, the
@@ -366,6 +446,10 @@ describe("G3 — HEAD under every rule", () => {
       "components/trades/close-trade-dialog.tsx",
       "components/trades/edit-trade-dialog.tsx",
       "components/live/load-desk.ts",
+      "components/live/tracker-client.tsx",
+      "components/trackers/tracker-client.tsx",
+      "app/targets/equity/page.tsx",
+      "app/equity/page.tsx",
     ]) {
       expect(files.some((f) => f.endsWith(must)), `${must} is inside the walk`).toBe(true);
     }
@@ -382,7 +466,7 @@ describe("G3 — HEAD under every rule", () => {
   });
 
   it("the registry states a rule, its forbidden shapes and its provenance for every field it guards", () => {
-    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "raw-date", "ipo-link-scope"]);
+    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope"]);
     for (const r of REGISTRY) {
       expect(r.rule.length, r.id).toBeGreaterThan(40);
       expect(r.forbidden.length, r.id).toBeGreaterThan(20);

@@ -316,9 +316,17 @@ describe("L2 [0] — a partly sold MTF leg states no own capital, and the total 
     expect(p.fundedAmount).toBe(0); // the stated 0 itself is kept (wave 2I, I1)
   });
 
-  it("a fully held row whose funding was never resolved still reads the estimate", () => {
+  // PIN MOVED, deliberately (wave 2N D7, close-readers#1): a fully held row the
+  // journal never priced no longer reads the margin estimate. M1 stopped the
+  // accrual job persisting that estimate, so "a row predating the column and its
+  // first accrual pass" became the normal, permanent state of every imported MTF
+  // buy — and /equity stated funded 15,000 / own 5,000 as money for a row /risk
+  // calls "not priced" (invariant 6).
+  it("a fully held row whose funding was never resolved states NOTHING, not the estimate", () => {
     const [p] = deriveOpenPositions([mtf({ mtfFundedAmount: null })], MTM, "2026-09-19");
-    expect([p.fundedAmount, p.ownCapital]).toEqual([15000, 5000]); // 25% own margin default
+    // On revert: [15000, 5000] — the 25% own-margin default, as money.
+    expect([p.fundedAmount, p.ownCapital]).toEqual([null, null]);
+    expect(p.ownCapitalUnstated).toBe("unpriced");
   });
 
   it("a NON-MTF row is untouched: ownCapital stays 0, not null", () => {
@@ -340,7 +348,8 @@ describe("L2 [0] — a partly sold MTF leg states no own capital, and the total 
     expect(t.total).not.toBe(2000);
     // Leverage reads the SAME subset, so the ratio is one book, not two.
     expect(t.funded).toBe(15000);
-    expect(ownCapitalNote(t.unstated)).toBe("own capital not stated for 1 partly sold MTF row");
+    // The note is read from the TOTAL now, so it can name the reason (D7).
+    expect(ownCapitalNote(t)).toBe("own capital not stated for 1 partly sold MTF row");
   });
 
   it("with nothing partly sold the total and the note are exactly what they were", () => {
@@ -364,7 +373,7 @@ describe("L2 [0] — a partly sold MTF leg states no own capital, and the total 
     );
     const t = ownCapitalTotal(ps);
     expect([t.total, t.funded, t.unstated]).toEqual([0, 0, 2]);
-    expect(ownCapitalNote(t.unstated)).toBe("own capital not stated for 2 partly sold MTF rows");
+    expect(ownCapitalNote(t)).toBe("own capital not stated for 2 partly sold MTF rows");
   });
 
   it("statesOwnCapital is the ONE predicate, and it agrees with the derived value", () => {
@@ -408,9 +417,12 @@ describe("L2 [0] — the tracker reads the shared predicate, not its own reduce"
   });
 
   it("the note travels with the total wherever it is rendered", () => {
-    // The const plus the three rows that render a figure derived from it.
-    expect(lines(/ownCapNote/), "a total is rendered without saying what it left out").toBe(4);
-    expect(src).toContain("ownCapitalNote(ownCap.unstated)");
+    // The const, the four money rows that render a figure derived from it
+    // (Own capital in MTF, Broker-funded, Your own capital, Effective leverage —
+    // Broker-funded joined them in wave 2N, close-readers#2) and the line that
+    // states what those figures left out.
+    expect(lines(/ownCapNote/), "a total is rendered without saying what it left out").toBe(6);
+    expect(src).toContain("ownCapitalNote(ownCap)");
   });
 
   it("the per-row cell reads the same predicate the total does", () => {

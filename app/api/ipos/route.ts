@@ -14,7 +14,7 @@ import {
   type IpoLinkInput,
   type LinkedSync,
 } from "@/lib/analytics/ipo-link";
-import { computeIpo, isPriceableExitDate, type IpoInput } from "@/lib/analytics/ipo";
+import { ipoChargeFactsOf, ipoHoldingCharges, isPriceableExitDate, type IpoInput } from "@/lib/analytics/ipo";
 import { normalizeDate } from "@/lib/domain/trading-day";
 import type { ChargeBreakdown } from "@/lib/engine/types";
 import { loadRatesMap } from "@/lib/engine/rates-db";
@@ -45,6 +45,22 @@ function revalidate() {
 }
 
 /**
+ * D2 (v4.3.0 wave 2N) — the ISO day a stored or typed value states, or the value
+ * itself when it states none.
+ *
+ * `values` stores each typed day as `normalizeDate(raw) ?? raw` (wave 2M), so a
+ * legacy day-first '20-02-2026' written before that wave is compared against the
+ * '2026-02-20' this save stores — and the two differ on `acquisitionDate`, which
+ * made a notes-only save of a laddered link 409 STAGED and of a sold holding 409
+ * "has a sale recorded in Trades" (ipo#0, the exact no-way-out L3 removed). ONE
+ * fold, applied to BOTH sides, so a pure re-normalisation is no change at all.
+ */
+const day = (v: unknown): string | null => {
+  const s = (v ?? null) as string | null;
+  return s == null ? null : normalizeDate(s) ?? s;
+};
+
+/**
  * Push the IPO's numbers onto the holding it is linked to.
  *
  * Once linked, the IPO record is the SOURCE OF TRUTH for the two facts an
@@ -56,6 +72,7 @@ function revalidate() {
  * the trade and are never overwritten from here.
  */
 function linkInput(values: Record<string, unknown>): IpoLinkInput {
+  const exitDate = (values.exitDate ?? null) as string | null;
   return {
     appliedPrice: Number(values.appliedPrice) || 0,
     discountPerShare: Number(values.discountPerShare) || 0,
@@ -63,9 +80,13 @@ function linkInput(values: Record<string, unknown>): IpoLinkInput {
     allotted: Boolean(values.allotted),
     listingPrice: (values.listingPrice ?? null) as number | null,
     exitPrice: (values.exitPrice ?? null) as number | null,
-    allotmentDate: (values.allotmentDate ?? null) as string | null,
-    listingDate: (values.listingDate ?? null) as string | null,
-    exitDate: (values.exitDate ?? null) as string | null,
+    allotmentDate: day(values.allotmentDate),
+    listingDate: day(values.listingDate),
+    exitDate: day(exitDate),
+    // Computed on the RAW value, BEFORE the fold above: a date the row never held
+    // readably cannot be the date the sync wrote (Y2), and the fold must not take
+    // that allowance away from the very rows it exists for.
+    exitDateWasReadable: !((exitDate ?? "").trim() !== "" && !isPriceableExitDate((exitDate ?? "").trim())),
   };
 }
 function linkPatch(values: Record<string, unknown>) {
@@ -209,8 +230,13 @@ const refuseUndatedClose = () =>
 function ipoExitCharges(values: Record<string, unknown>): ChargeBreakdown | number | null {
   try {
     const input = { id: 0, ...values } as IpoInput;
-    const c = computeIpo(input, sellChargerFor(input.broker, input.exchange, input.exitDate ?? null, loadRatesMap()));
-    return c.realised ? (c.chargeBreakdown ?? c.charges) : null;
+    // D4 (wave 2N): the SAME pure helper `computeIpo` prices the listing through
+    // and the trade editor re-prices an `acquisition:'ipo'` holding through, fed
+    // the record's own facts — so the sync, the page and the editor can never
+    // state three different bills for one sale.
+    const facts = ipoChargeFactsOf(input);
+    if (!facts) return null;
+    return ipoHoldingCharges(facts, sellChargerFor(input.broker, input.exchange, input.exitDate ?? null, loadRatesMap()));
   } catch {
     return null;
   }

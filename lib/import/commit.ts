@@ -16,7 +16,7 @@ import { eq, and, ne, or, sql, isNull, inArray, notInArray } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
-import { todayIstIso, normalizeDate } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate, storedDateProblem } from "@/lib/domain/trading-day";
 import { closingAggregate } from "@/lib/domain/close-aggregate";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
@@ -32,6 +32,9 @@ import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
+import { ipoHoldingCharges } from "@/lib/analytics/ipo";
+import { sellChargerFor } from "@/lib/queries/ipos";
+import { chargeInputsChanged, chargeInputsOf, statesNoCharges, storedCharges } from "@/lib/domain/trade-edit";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
 import { heldIdentityHashes, isLotIdentityFrozen, STALE_CLOSE_NOTE, withStaleCloseNote } from "./close-open-lots";
@@ -1883,6 +1886,16 @@ export function closePosition(
   const badDate = unreadableDate("exit date", exitDate);
   if (badDate) return { ok: false, code: "BAD_DATE", message: badDate };
 
+  // D3 (v4.3.0 wave 2N, ipo#1) — the wave validated the date the user TYPES and
+  // not the one the row STORES, so the same crash was still reachable on exactly
+  // the legacy rows L3 was written for: `new Date(t.buyDate)` below is an Invalid
+  // Date for a stored '9999-99-99' (NaN days → NaN charges → the NOT NULL write
+  // failure, a 500 rather than {ok:false}), and rolls a stored '2026-02-31'
+  // forward to 3 March and bills MTF interest for a day the row does not state.
+  // Refused before anything is computed or written, like every other bad day.
+  const badStored = storedDateProblem(t);
+  if (badStored) return { ok: false, code: "BAD_DATE", message: badStored };
+
   // R2-DQ N11 — a STAGED position (or any row holding trade_legs) is never
   // closed here. This writes the parent row only: no exit leg lands in
   // trade_legs, so the ladder still reads the position open beside a closed
@@ -1935,20 +1948,32 @@ export function closePosition(
   // recompute from the full buyValue, which would assume 100% broker financing and
   // overstate interest (a real bug fixed here: it previously did exactly that).
   let mtf: { fundedAmount: number; daysHeld: number; pledgeScrips: number } | null = null;
-  let mtfFundedAmount: number | null = t.mtfFundedAmount;
+  // Q-A: what the close STORES back — the row keeps what it states, null included.
+  const mtfFundedAmount: number | null = t.mtfFundedAmount;
   if (t.segment === "eq_mtf") {
-    // V3 — a stored 0 is a STATED amount (all own capital) and is kept; only a
-    // null (never set) is estimated. The close dialog's preview reads it the same way.
-    const funded = t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker));
+    // V3 — a stored 0 is a STATED amount (all own capital) and is kept.
+    // Q-A (owner ruling, wave 2N) — a NULL stays null: the close used to
+    // PERSIST `defaultMtfFundedAmount(buyValue, margin_config)` into
+    // `mtf_funded_amount`, so closing a row the journal never priced stated a
+    // margin-default figure as the trade's own and billed interest on it for
+    // the whole holding period. Nothing is estimated; the column keeps its
+    // null, and the close bills NO interest for it (the engine is handed 0
+    // below). The close dialog's preview reads it the same way.
+    const funded = t.mtfFundedAmount;
     // Interest accrues from T+1 settlement (day after buy) through the day
     // BEFORE sale proceeds settle — which works out to exactly (sellDate −
     // buyDate) calendar days, confirmed against Dhan's own MTF documentation.
     // No extra "-1": that undercounted every position by one day of interest.
-    const days = t.buyDate
-      ? Math.max(0, Math.floor((new Date(exitDateIso).getTime() - new Date(t.buyDate).getTime()) / 86400000))
+    // D3 — through the same calendar the refusal above read it by: a day-first
+    // '15-07-2026' is a real day the row states, and `new Date` cannot read it.
+    const buyIso = normalizeDate(t.buyDate);
+    const days = buyIso
+      ? Math.max(0, Math.floor((new Date(exitDateIso).getTime() - new Date(buyIso).getTime()) / 86400000))
       : 0;
-    mtf = { fundedAmount: funded, daysHeld: days, pledgeScrips: 1 };
-    mtfFundedAmount = funded;
+    // Q-A: interest 0 on an unstated principal, and the PLEDGE charge still
+    // billed — pledging the scrip is a fact of the MTF product, independent of
+    // how the position was split between the trader and the broker.
+    mtf = { fundedAmount: funded ?? 0, daysHeld: days, pledgeScrips: 1 };
   }
 
   const charges = computeCharges(
@@ -2219,15 +2244,21 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       // closePosition's funded amount and day count. It REPLACES what either
       // side carried (the daily accrual writes interest-to-today onto an open
       // lot), and so does the pledge fee with the GST levied on it.
-      let mtfFundedAmount = lot.mtfFundedAmount;
+      // Q-A: the one-click close stores what the lot states, null included.
+      const mtfFundedAmount = lot.mtfFundedAmount;
       if (lot.segment === "eq_mtf") {
         const r = ratesOn(exitDate);
-        const funded = lot.mtfFundedAmount ?? defaultMtfFundedAmount(lot.buyValue, mtfOwnMarginPct(lot.broker)); // V3: a stored 0 is kept
+        // V3: a stored 0 is kept. Q-A (wave 2N): so is a NULL — the FOURTH copy
+        // of this rule. Left estimating, the Data Quality one-click close would
+        // write a margin-default amount and bill interest on it for a row the
+        // manual close beside it leaves null and bills 0 for: two doors, one
+        // row, two answers.
+        const funded = lot.mtfFundedAmount;
         const days = lot.buyDate
           ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(lot.buyDate).getTime()) / 86400000))
           : 0;
         const m = computeCharges(
-          { segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, buyOrderCount: 0, sellOrderCount: 0, mtf: { fundedAmount: funded, daysHeld: days, pledgeScrips: 1 } },
+          { segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, buyOrderCount: 0, sellOrderCount: 0, mtf: { fundedAmount: funded ?? 0, daysHeld: days, pledgeScrips: 1 } },
           r,
         );
         const carriedPledge = r2(lotSide.parts.pledgeCharges + saleSide.parts.pledgeCharges);
@@ -2236,7 +2267,6 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
         parts.gst = r2(parts.gst - carriedPledgeGst + m.gst);
         parts.mtfInterest = m.mtfInterest;
         parts.pledgeCharges = m.pledgeCharges;
-        mtfFundedAmount = funded;
       }
 
       const grossPnl = r2(sellValue - buyValue);
@@ -2297,6 +2327,48 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
     if (e instanceof StaleCloseAbort) return { ok: false, code: "DELETE_FAILED", message: e.message };
     throw e;
   }
+}
+
+/**
+ * D4(b) (wave 2N) — an `acquisition: 'ipo'` holding's charges, priced the way
+ * /ipos prices the record it came from: the sale's own charges plus the
+ * allotment's stamp (N14), and NO purchase STT — an allotment is not a purchase on
+ * a recognised exchange, so none is due (06-ANSWERS "v4.3.0 fix-work rulings" row
+ * (1)). ONE helper (`ipoHoldingCharges`, lib/analytics/ipo.ts) for the listing,
+ * the sync and this editor, so no two of them state a different bill for one sale.
+ *
+ * `mtfInterest` and `pledgeCharges` are carried VERBATIM, as the sync's KEPT_HEADS
+ * rule does: the IPO model prices neither, and a figure in those columns is money
+ * that really moved.
+ *
+ * Null when this is not an allotment-derived holding, or when the IPO model prices
+ * nothing for it (no sale yet, an exit date that states no day, no rate row) — the
+ * caller then falls back to the engine, or keeps what the row states.
+ */
+function ipoEditCharges(
+  t: { acquisition: string | null; acquisitionDate: string | null; broker: string; exchange: string; mtfInterest: number; pledgeCharges: number },
+  v: { buyValue: number; sellValue: number; sellQty: number; buyDate: string | null; sellDate: string | null },
+  rates: RatesMap,
+): ChargeBreakdown | null {
+  if (t.acquisition !== "ipo") return null;
+  const priced = ipoHoldingCharges(
+    {
+      allotmentValue: v.buyValue,
+      allotmentDays: [t.acquisitionDate, v.buyDate],
+      sellValue: v.sellValue,
+      sellQty: v.sellQty,
+      exitDate: v.sellDate,
+    },
+    sellChargerFor(t.broker, t.exchange, v.sellDate, rates),
+  );
+  if (priced == null || typeof priced === "number") return null;
+  const kept = Math.round((t.mtfInterest + t.pledgeCharges) * 100) / 100;
+  return {
+    ...priced,
+    mtfInterest: t.mtfInterest,
+    pledgeCharges: t.pledgeCharges,
+    total: Math.round((priced.total + kept) * 100) / 100,
+  };
 }
 
 export interface UpdateTradeFields {
@@ -2376,9 +2448,12 @@ export function updateManualTrade(
     if (fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0) {
       fundedAmount = Math.max(0, Math.round((buyValue - fields.ownCapitalUsed) * 100) / 100);
     } else {
-      // V3 — a stored 0 (the whole position from own capital) is kept, as the
-      // editor's preview reads it (`trade.mtfFundedAmount ??`); only null is estimated.
-      fundedAmount = t.mtfFundedAmount ?? defaultMtfFundedAmount(buyValue, mtfOwnMarginPct(t.broker));
+      // V3 — a stored 0 (the whole position from own capital) is kept.
+      // Q-A (wave 2N) — and a NULL stays null: a save with nothing typed in
+      // "Own capital used" no longer turns a row the journal never priced into
+      // a stated margin-default amount. The editor's preview reads it the same
+      // way (`editPreviewBody` sends no own-capital figure for such a row).
+      fundedAmount = t.mtfFundedAmount;
     }
   }
   // Same T+1-through-day-before-settlement convention as close/accrual; open
@@ -2387,21 +2462,53 @@ export function updateManualTrade(
     ? Math.max(0, Math.floor((new Date(sellDate).getTime() - new Date(buyDate).getTime()) / 86400000))
     : 0;
 
-  const charges = computeCharges(
-    {
-      segment: t.segment as Segment,
-      buyValue,
-      sellValue,
-      buyQty,
-      sellQty,
-      buyOrderCount,
-      sellOrderCount,
-      mtf: isMtf ? { fundedAmount: fundedAmount!, daysHeld, pledgeScrips: 1 } : null,
-    },
-    r,
+  // D4 (v4.3.0 wave 2N, ipo#2) — DOES THIS SAVE CHANGE ANYTHING THE ENGINE IS FED?
+  //
+  // It used to re-price on every save and compare the result against the stored
+  // heads only to decide the marker. So a notes / tags / levels / setup save
+  // replaced an IMPORTED row's broker-stated bill with the engine's estimate
+  // (owner ruling F1, in the one door that had not applied it), and replaced an
+  // IPO-synced holding's charges with a delivery ROUND TRIP's — purchase STT on an
+  // allotment, which is not due — while stripping the sync's provenance marker, so
+  // /ipos could never re-price that row again. Both sides of the comparison are
+  // built by ONE pure rule (lib/domain/trade-edit.ts), which the preview's server
+  // half reads too, so the dialog cannot show a figure this save will not store.
+  const storedInputs = chargeInputsOf(t, { buyOrders: defaults.buyOrders, sellOrders: defaults.sellOrders });
+  const nextInputs = chargeInputsOf(
+    { buyQty, avgBuyPrice, buyValue, buyDate, sellQty, avgSellPrice, sellValue, sellDate, isOpen, buyOrderCount, sellOrderCount, mtfFundedAmount: fundedAmount },
+    { buyOrders: defaults.buyOrders, sellOrders: defaults.sellOrders },
   );
+  // A row that states NO charge at all is priced whatever this save changed:
+  // nothing stated is destroyed by it (the /ipos sync's own `statesNoCharges`
+  // rule), so a manual row, an import whose file carried no charge columns and a
+  // fixture are all priced on their first editor save, exactly as before.
+  const repriced = chargeInputsChanged(storedInputs, nextInputs) || statesNoCharges(t);
+
+  const charges = repriced
+    ? // D4(b): a holding that came from an allotment is priced the way the IPO
+      // model prices it — the sale plus the allotment's stamp, no purchase STT
+      // (06-ANSWERS row (1)) — through the SAME helper /ipos prices it by.
+      ipoEditCharges(t, { buyValue, sellValue, sellQty, buyDate, sellDate }, rates) ??
+      computeCharges(
+        {
+          segment: t.segment as Segment,
+          buyValue,
+          sellValue,
+          buyQty,
+          sellQty,
+          buyOrderCount,
+          sellOrderCount,
+          // Q-A: an unstated principal bills 0 interest; the pledge charge stands.
+          mtf: isMtf ? { fundedAmount: fundedAmount ?? 0, daysHeld, pledgeScrips: 1 } : null,
+        },
+        r,
+      )
+    : storedCharges(t);
   const grossPnl = !isOpen ? Math.round((sellValue - buyValue) * 100) / 100 : 0;
-  const netPnl = Math.round((grossPnl - charges.total) * 100) / 100;
+  // A save that changes no charge input changes no money: the net stands as
+  // stored, and R and realised % are recomputed FROM it (a risk-amount-only edit
+  // still updates R).
+  const netPnl = repriced ? Math.round((grossPnl - charges.total) * 100) / 100 : t.netPnl;
   const realisedPct = buyValue > 0 && !isOpen ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
   const riskAmount = fields.riskAmount !== undefined ? fields.riskAmount : t.riskAmount;
   const rMultiple = riskAmount && riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null;
@@ -2418,18 +2525,18 @@ export function updateManualTrade(
   const buyLegChanged = buyQty !== t.buyQty || avgBuyPrice !== t.avgBuyPrice || buyDate !== t.buyDate;
   const exitLegChanged = isOpen !== t.isOpen || sellLegChanged || (!readsLong && buyLegChanged);
 
-  // L3 (v4.3.0 wave 2L) — a save that changes a charge head or the total makes the
-  // charges this row states THIS save's, so the IPO sync's provenance marker goes with
-  // them (it claims the eight heads it priced) and the next exit edit on /ipos keeps
-  // what is here (owner ruling F1). Every other note is kept in order, the way the Data
-  // Quality join sentence is dropped on an exit-leg change just above. `closePosition`
-  // and `applyOverride` do not touch it.
-  const chargesChanged =
-    charges.total !== t.chargesTotal ||
-    (["brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty", "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges"] as const).some(
-      (k) => charges[k] !== t[k],
-    );
-  const keptNotes = chargesChanged ? withoutSyncChargesNote(t.importNotes) : t.importNotes;
+  // L3 (v4.3.0 wave 2L) — a save that PRICES the row makes the charges on it THIS
+  // save's, so the IPO sync's provenance marker goes with them (it claims the eight
+  // heads it priced) and the next exit edit on /ipos keeps what is here (owner
+  // ruling F1). Every other note is kept in order, the way the Data Quality join
+  // sentence is dropped on an exit-leg change just above. `closePosition` and
+  // `applyOverride` do not touch it.
+  //
+  // D4 (wave 2N) — asked of the INPUTS, not of the output: the old comparison
+  // re-priced first and then noticed the figures had moved, which for an IPO-synced
+  // holding they always had (two different pricings of one sale), so every save
+  // dropped the marker.
+  const keptNotes = repriced ? withoutSyncChargesNote(t.importNotes) : t.importNotes;
   const nextNotes = exitLegChanged ? withoutStaleCloseNote(keptNotes) : keptNotes;
 
   db.update(tradesTable)
@@ -2509,6 +2616,13 @@ export function applyOverride(
 ): boolean {
   const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
   if (!t) return false;
+  // D3 (v4.3.0 wave 2N, ipo#1) — the same refusal `closePosition` makes: a stored
+  // date that states no day prices nothing, and `new Date` on it took the re-tag
+  // down with `NOT NULL constraint failed: trades.charges_total_paise`. Nothing is
+  // written (the override row included); the re-tag dialog states the sentence
+  // itself (`storedDateProblem`, lib/domain/trading-day) rather than submitting a
+  // save that can only refuse.
+  if (storedDateProblem(t)) return false;
 
   const segment = ov.segment ?? (ov.isMtf ? "eq_mtf" : (t.segment as Segment));
   const exchange = ov.exchange ?? (t.exchange as Exchange);
@@ -2545,13 +2659,18 @@ export function applyOverride(
   // kept its OLD segment's figure while chargesTotal was recomputed without
   // it, so the breakdown no longer summed to the total (B4).
   const isMtf = segment === "eq_mtf";
-  const fundedAmount = isMtf
-    ? t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker)) // V3: a stored 0 is kept
-    : null;
+  // V3: a stored 0 is kept. Q-A (wave 2N): a null stays null — a re-tag TO
+  // eq_mtf no longer invents a funded principal for a row nobody priced, and
+  // bills no interest for it (the pledge charge below still applies).
+  const fundedAmount = isMtf ? t.mtfFundedAmount : null;
   // Open positions accrue nothing here — the daily job (lib/jobs/mtf-accrual.ts)
   // takes over from its next run, per-epoch.
-  const daysHeld = isMtf && !t.isOpen && t.buyDate && t.sellDate
-    ? Math.max(0, Math.floor((new Date(t.sellDate).getTime() - new Date(t.buyDate).getTime()) / 86400000))
+  // D3 — both ends through the shared calendar (the guard above refused a stored
+  // value it cannot read, so these resolve or the row states no date at all).
+  const buyIso = normalizeDate(t.buyDate);
+  const sellIso = normalizeDate(t.sellDate);
+  const daysHeld = isMtf && !t.isOpen && buyIso && sellIso
+    ? Math.max(0, Math.floor((new Date(sellIso).getTime() - new Date(buyIso).getTime()) / 86400000))
     : 0;
   const charges = computeCharges(
     {
@@ -2562,7 +2681,8 @@ export function applyOverride(
       sellQty: t.sellQty,
       buyOrderCount: t.buyOrderCount,
       sellOrderCount: t.sellOrderCount,
-      mtf: isMtf ? { fundedAmount: fundedAmount!, daysHeld, pledgeScrips: 1 } : null,
+      // Q-A: an unstated principal bills 0 interest; the pledge charge stands.
+      mtf: isMtf ? { fundedAmount: fundedAmount ?? 0, daysHeld, pledgeScrips: 1 } : null,
     },
     r,
   );

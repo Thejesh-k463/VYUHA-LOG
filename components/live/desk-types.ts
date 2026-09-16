@@ -11,6 +11,7 @@
  * render edge. Percentages are ppm integers. Nothing here is a float rupee.
  */
 
+import type { OwnCapitalUnstated } from "@/lib/analytics/positions";
 import type { ConcentrationRow, HeatView } from "@/lib/live/heat";
 import type { StopResult } from "@/lib/live/stop";
 import type { Exchange, ProviderId, Staleness } from "@/lib/quotes/types";
@@ -30,9 +31,12 @@ export type DeskBar = Bar;
 
 /** MTF drag, present ONLY on rows whose product is MTF (owner ruling Q41). */
 export interface MtfBlock {
-  fundedP: number;
-  ownCapitalP: number | null; // null on a partly sold MTF leg: the stored funded amount covers the whole buy leg, so no own-capital figure is stated (wave 2L L2, invariant 6)
+  fundedP: number | null; // null when the journal never recorded what the broker funded — NEVER the margin estimate (wave 2N D7, invariant 6)
+  ownCapitalP: number | null; // null unless the row is a plain held buy leg with a stated funded amount (wave 2L L2 + wave 2N D7)
   accruedInterestP: number;
+  /** WHY the two above are null, so the desk states the reason next to the dash
+   *  rather than a bare em dash (invariant 6). Null when the row states them. */
+  unstated: OwnCapitalUnstated;
 }
 
 /**

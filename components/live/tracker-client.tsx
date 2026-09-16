@@ -18,6 +18,7 @@ import { LIVE_FEED_COPY } from "@/components/settings/live-feed-card";
 // reference. Merging the two specifiers rewrites the line that guard reads and
 // reddens a seam this change has nothing to do with.
 import { ANGELONE_FEED_COPY } from "@/components/settings/live-feed-card";
+import { MTF_INTEREST_WHOLE_LEG_NOTE } from "@/lib/analytics/positions";
 import { applyTicks, mergeTicks, type TickMap } from "@/lib/live/apply-ticks";
 import { connectPromptDismissal, connectPromptKey, showConnectPrompt } from "@/lib/live/connect-prompt";
 import { isMarketOpenIst, istParts } from "@/lib/live/market-hours";
@@ -113,6 +114,20 @@ const THEAD_HEIGHT_FALLBACK = 40;
  * render would make the memo below re-run on every commit.
  */
 const NO_TICKS: TickMap = new Map();
+
+/**
+ * D7 (v4.3.0 wave 2N) — WHY an MTF money block shows a dash.
+ *
+ * `desk-format.money(null)` is the em dash, and invariant 6's other half is
+ * that the reason is shown beside it. Four reasons, four remedies: only the
+ * first is something the user can fix by recording a number.
+ */
+const MTF_UNSTATED_NOTE: Record<NonNullable<DeskRow["mtf"]>["unstated"] & string, string> = {
+  unpriced: "Not recorded — open the trade (Edit → Own capital used) to state what you put in.",
+  partlySold: "Partly sold — the stored funding covers the whole original leg, so no own-capital figure is stated for what is left.",
+  overSold: "More sold than bought on this row — the remaining leg states no own capital.",
+  sellToOpen: "Sold to open — there is no entry leg on this row to state own capital against.",
+};
 
 const PositionChartPanel = dynamic(
   // W2's real panel. `ssr:false` because it measures its own box and reads a
@@ -1308,9 +1323,23 @@ function DetailPane({
 
       {row.mtf && (
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          <Block title="MTF funded" value={fmt.money(row.mtf.fundedP)} />
-          <Block title="Your own capital" value={fmt.money(row.mtf.ownCapitalP)} note={row.mtf.ownCapitalP === null ? "Partly sold — own capital not stated for this leg." : undefined} />
-          <Block title="Interest accrued" value={fmt.money(row.mtf.accruedInterestP)} />
+          {/* D7 — both money blocks are nullable, and a dash on its own says
+              nothing: each states WHY (close-readers#1/#4, invariant 6). */}
+          <Block
+            title="MTF funded"
+            value={fmt.money(row.mtf.fundedP)}
+            note={row.mtf.fundedP === null ? MTF_UNSTATED_NOTE[row.mtf.unstated ?? "unpriced"] : undefined}
+          />
+          <Block
+            title="Your own capital"
+            value={fmt.money(row.mtf.ownCapitalP)}
+            note={row.mtf.ownCapitalP === null ? MTF_UNSTATED_NOTE[row.mtf.unstated ?? "unpriced"] : undefined}
+          />
+          <Block
+            title="Interest accrued"
+            value={fmt.money(row.mtf.accruedInterestP)}
+            note={row.mtf.unstated === "partlySold" || row.mtf.unstated === "overSold" ? MTF_INTEREST_WHOLE_LEG_NOTE : undefined}
+          />
         </div>
       )}
 

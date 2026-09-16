@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import { eq } from "drizzle-orm";
-import { openTempDb, type TempDb } from "./helpers/temp-db";
+import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import {
-  ORACLE_A1, ORACLE_A2, ORACLE_ALIAS, ORACLE_FY, ORACLE_SELL_DATE,
+  ORACLE_A1, ORACLE_A2, ORACLE_ALIAS, ORACLE_BUY_DATE, ORACLE_FY, ORACLE_SELL_DATE,
   assertLiveFixture, loadOracleConsumers, oracleParsedFile, oracleReimportTrade,
   oracleIpoPrice, readOracle, resetOracleBook, seedOracleBook, selectOracleAccount,
   type OracleBook, type OracleSnapshot, type OracleView,
@@ -578,6 +580,72 @@ const OPS: Op[] = [
           ipoBookNet: r2(priced.netPnl + b.ipoNet.loose + b.ipoNet.legacy),
         },
       });
+    },
+  },
+  {
+    /**
+     * D1 (v4.3.0 fix wave 2N, re-check finding counted-once#1) — AN EXITED
+     * RECORD BESIDE AN OPEN UNLINKED IPO HOLDING.
+     *
+     * A 4.2.x Trash envelope carries no `ipoRefs`, so the restore falls back to
+     * the book's own records. Tier A compared the record's name and quantity and
+     * never asked whether the holding SOLD, so an exited record was attached to
+     * a position that is still held: the double count it was meant to settle
+     * survived untouched, both Data Quality warnings that had named it were
+     * silenced, and the next save of that record on /ipos would have closed the
+     * position with a sale it never had (`tradePatchFromIpo` writes sellQty /
+     * avgSellPrice / sellValue / sellDate / isOpen:false).
+     *
+     * ORACLE-LOOSE states an exit of its own and is realised on its own row.
+     * The open holding beside it realises nothing. The restore must write
+     * nothing and the ask must not claim a second sale — and all eighteen
+     * readings must be the baseline plus exactly one open purchase.
+     */
+    name: "restore an OPEN unlinked IPO holding from a 4.2.x envelope, beside an exited record",
+    run: async (b, base) => {
+      selectOracleAccount(t, ORACLE_A2);
+      const held = t.db
+        .insert(t.schema.trades)
+        .values(
+          tradeRow({
+            accountId: ORACLE_A2, broker: "zerodha", segment: "eq_delivery",
+            symbol: "ORACLE-LOOSE", tradingsymbol: "ORACLE-LOOSE",
+            buyQty: 20, avgBuyPrice: 50, buyValue: 1000, buyDate: ORACLE_BUY_DATE,
+            sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null,
+            grossPnl: 0, chargesTotal: 0, netPnl: 0, isOpen: true,
+            acquisition: "ipo", acquisitionPrice: 50, acquisitionDate: ORACLE_BUY_DATE,
+          }),
+        )
+        .returning({ id: t.schema.trades.id })
+        .get()!.id;
+      const snapshotId = await deleteTrades([held]);
+      // The 4.2.x shape: the field did not exist, so it is DELETED, not emptied.
+      const p = path.join((await import("@/lib/db")).trashDir, snapshotId, "snapshot.json");
+      const env = JSON.parse(fs.readFileSync(p, "utf8")) as Record<string, unknown>;
+      expect(env.ipoRefs, "a 4.3 delete that broke no link STATES the empty list (D1)").toEqual([]);
+      delete env.ipoRefs;
+      fs.writeFileSync(p, JSON.stringify(env));
+      expect(restore(snapshotId).restored).toBe(1);
+
+      // THE assertion. Measured on the wave-2L/2M module: the record was linked
+      // to `held`, so it stopped being realised on its own row — a ₹1,381.xx
+      // realised net, an ITR row and 1,400 of AIS sale consideration gone, with
+      // both questions that named it silenced.
+      expect(ipoRowOf(b.ids.looseIpo)!.tradeId, "an exit is no allotment's record until that allotment sold").toBeNull();
+      const dq = await import("@/lib/queries/data-quality");
+      const issue = dq.getDataQualityReport().issues.find((x) => x.code === `ipo_record_link:${held}`);
+      expect(issue?.title, "the pair is named").toBe("IPO record not linked to its holding");
+      expect(issue!.detail).toContain("this holding records no sale, so the record's exit is the only one stated");
+      expect(issue!.detail, "and no second sale is claimed").not.toContain("counted once in IPOs and again");
+
+      // The book gains one OPEN purchase of 1,000 and nothing else: no realised
+      // figure moves, the KPI strip counts every row so it gains one open row
+      // with a stated net of 0, and the AIS purchase side counts every purchase.
+      const openPurchase = (v: OracleView): Partial<OracleView> => ({
+        ais: { ...v.ais, [`${ORACLE_FY} purchase`]: (v.ais[`${ORACLE_FY} purchase`] ?? 0) + 1000 },
+        kpi: { count: v.kpi.count + 1, open: v.kpi.open + 1, net: v.kpi.net },
+      });
+      return patch(base, { a2: openPurchase(base.a2), all: openPurchase(base.all) });
     },
   },
   {

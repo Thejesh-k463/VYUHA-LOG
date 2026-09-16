@@ -49,8 +49,14 @@ export function MtfDriftCard({
           <p className="text-xs text-muted-foreground">
             {unpriced} open MTF {unpriced === 1 ? "position is" : "positions are"} not priced — this journal holds no
             broker-funded amount for {unpriced === 1 ? "it" : "them"}, so there is no entry margin to compare
-            today&apos;s requirement against and {unpriced === 1 ? "it is" : "they are"} left out of the table below.
-            Record what you put in on the trade (Edit → Own capital used) to include {unpriced === 1 ? "it" : "them"}.
+            today&apos;s requirement against and {unpriced === 1 ? "it is" : "they are"} left out of the margin check
+            {/* close-readers#3 — the table is named only when there IS one. With
+                every open MTF row unpriced (the common case for an imported
+                book) `drift` is empty, no table renders, and the sentence
+                pointed at nothing. */}
+            {drift.length > 0 ? " and the table below" : ""}. Own capital, leverage and this check leave{" "}
+            {unpriced === 1 ? "it" : "them"} out until the amount is recorded — record what you put in on the trade
+            (Edit → Own capital used) to include {unpriced === 1 ? "it" : "them"}.
           </p>
         )}
         {drift.length > 0 && (

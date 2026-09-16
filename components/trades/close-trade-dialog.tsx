@@ -87,6 +87,10 @@ export function closePreviewBody(
     sellOrders: isShort ? trade.sellOrderCount : closeOrders,
     grossPnl: Math.round((sellValue - buyValue) * 100) / 100,
     ownCapitalUsed: trade.mtfFundedAmount != null ? Math.max(0, buyValue - trade.mtfFundedAmount) : null,
+    // Q-A (wave 2N) — `closePosition` keeps an unrecorded funded amount NULL and
+    // bills 0 interest on it (the pledge charge stands). Said out loud so the
+    // route prices this preview the way the save will store it.
+    mtfFundingUnstated: trade.segment === "eq_mtf" && trade.mtfFundedAmount == null,
     // The RESOLVED exit date, the same one `dates` carries and `closePosition`
     // stores — never the raw field (I1 [1]). A date the save would refuse (L3)
     // bills no holding period; the dialog shows no preview for it at all.

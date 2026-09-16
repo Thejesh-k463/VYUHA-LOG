@@ -44,15 +44,13 @@ let closePreviewBody: typeof import("@/components/trades/close-trade-dialog").cl
 let resolveExitIso: typeof import("@/components/trades/close-trade-dialog").resolveExitIso;
 let editPreviewBody: typeof import("@/components/trades/edit-trade-dialog").editPreviewBody;
 let toSlimTrade: typeof import("@/lib/domain/slim-trade").toSlimTrade;
-let getMtfMarginByBroker: typeof import("@/lib/queries/margin").getMtfMarginByBroker;
-let defaultMtfFundedAmount: typeof import("@/lib/risk/margin").defaultMtfFundedAmount;
-let DEFAULT_MTF_OWN_MARGIN_PCT: number;
+// No margin-estimate imports: since Q-A neither half of the matrix estimates a
+// funded amount, so the broker own-margin table is not a dimension of it.
 let findRates: typeof import("@/lib/engine/rates").findRates;
 let loadRatesMap: typeof import("@/lib/engine/rates-db").loadRatesMap;
 
 /** (broker, plan) as charge_config actually holds them. */
 let BROKER_PLANS: { broker: string; plan: string }[] = [];
-let mtfPct: Record<string, number> = {};
 
 // Measured locally 2026-09-15: migrate + seed + the commit, route and dialog
 // imports ~1.5 s, inside the 3 s local hook budget. The raised timeout is for
@@ -64,15 +62,12 @@ beforeAll(async () => {
   ({ closePreviewBody, resolveExitIso } = await import("@/components/trades/close-trade-dialog"));
   ({ editPreviewBody } = await import("@/components/trades/edit-trade-dialog"));
   ({ toSlimTrade } = await import("@/lib/domain/slim-trade"));
-  ({ getMtfMarginByBroker } = await import("@/lib/queries/margin"));
-  ({ defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } = await import("@/lib/risk/margin"));
   ({ findRates } = await import("@/lib/engine/rates"));
   ({ loadRatesMap } = await import("@/lib/engine/rates-db"));
 
   // THE broker dimension, from the table itself (invariant 3: rates come only
   // from charge_config, so the list of rate cards does too).
   BROKER_PLANS = t.sqlite.prepare("SELECT DISTINCT broker, plan FROM charge_config ORDER BY broker, plan").all() as typeof BROKER_PLANS;
-  mtfPct = getMtfMarginByBroker();
   // Defaults that are NOT 1, so an omitted order count is distinguishable from
   // the route's old hard default (V4).
   t.db.update(t.schema.settings).set({ defaultBuyOrders: 3, defaultSellOrders: 2 }).run();
@@ -219,11 +214,12 @@ async function editSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft: 
       const id = openRow(seg, broker, FUNDED[ft], counts === "sent" ? 2 : 0);
       const w = wire(id);
       // EditTradeDialog's own call site: an untouched "Own capital used" field
-      // sends the guess it displays — the stored funded amount if there is
-      // one, else the broker's own-margin estimate (never a generic guess).
+      // sends what the row STATES — buy value minus the stored funded amount —
+      // and NOTHING for a row the journal never priced (Q-A, wave 2N: the
+      // broker's own-margin estimate it used to send back is what turned an
+      // unpriced row into a stated margin-default amount on a notes-only save).
       const positionValue = seg.qty * seg.entry;
-      const brokerPct = mtfPct[broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
-      const fundedGuess = w.mtfFundedAmount ?? (positionValue > 0 ? defaultMtfFundedAmount(positionValue, brokerPct) : 0);
+      const stated = w.mtfFundedAmount;
       const fields = {
         buyQty: seg.qty,
         avgBuyPrice: seg.entry,
@@ -231,7 +227,7 @@ async function editSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft: 
         avgSellPrice: seg.exit,
         buyDate: buyRaw,
         sellDate: exitRaw === "" ? null : exitRaw,
-        ownCapitalUsed: seg.segment === "eq_mtf" ? Math.max(0, Math.round((positionValue - fundedGuess) * 100) / 100) : null,
+        ownCapitalUsed: seg.segment === "eq_mtf" && stated != null ? Math.max(0, Math.round((positionValue - stated) * 100) / 100) : null,
       };
       const body = editPreviewBody(w, fields);
       const shown = body == null ? null : await preview(body);
@@ -247,7 +243,8 @@ async function editSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft: 
  * slice states what it billed: one cell per rate card × order-count variant,
  * every save succeeded, every save stored a real charge total — and, on MTF,
  * that the funded dimension is LIVE (a stated 0 accrues nothing and is never
- * re-estimated, V3/X2; a null accrues on the estimate; ₹16,000 accrues on every
+ * re-estimated, V3/X2; a NULL accrues nothing either since Q-A — neither half
+ * estimates a principal the journal does not state; ₹16,000 accrues on every
  * card that quotes a rate).
  */
 function notVacuous(cells: CellResult[], seg: SegFixture, ft: FundedTag, datedExit: boolean) {
@@ -259,7 +256,11 @@ function notVacuous(cells: CellResult[], seg: SegFixture, ft: FundedTag, datedEx
   // A stated 0 accrues nothing; so does a row the save closes with NO exit date
   // (the editor's cleared field clears `sellDate`, and neither half will date a
   // holding period it does not have — they agree on 0, which is the point).
-  if (ft === "stated-0" || !datedExit) expect(interest.every((v) => v === 0), "nothing to accrue on").toBe(true);
+  // PIN MOVED (Q-A, owner ruling, wave 2N): `funded=null` joins `stated-0`.
+  // Both halves keep the null and bill 0 — on revert of either, this slice goes
+  // red as a DIVERGENCE (one half estimating and the other not), which is the
+  // matrix's own point.
+  if (ft === "stated-0" || ft === "null" || !datedExit) expect(interest.every((v) => v === 0), "nothing to accrue on").toBe(true);
   else expect(interest.filter((v) => v > 0).length, "the cards that quote an MTF rate billed interest").toBeGreaterThan(5);
 }
 
@@ -384,6 +385,71 @@ describe("G3 — the editor's preview equals what updateManualTrade stores", () 
       expect(row(id)).toEqual(before);
     },
   );
+});
+
+/**
+ * D4 (v4.3.0 wave 2N, `ipo` new_defects[2]) — THE OTHER HALF OF "the preview is the
+ * save": an edit that changes NO charge input.
+ *
+ * `updateManualTrade` used to re-price on every save, so a notes-only save replaced
+ * an IMPORTED row's broker-stated bill with the engine's estimate and an IPO-synced
+ * holding's charges with a delivery round trip's (purchase STT on an allotment,
+ * which is not due), stripping the sync's provenance marker with them. It now keeps
+ * every stored head — and so must the preview, or the dialog states ₹52.72 beside a
+ * row that keeps ₹37.97.
+ */
+describe("G3 — an edit that changes no charge input: the preview shows what the save keeps", () => {
+  /** A CLOSED row whose ten heads are figures no engine would produce. */
+  const statedRow = (over: Record<string, unknown>) =>
+    t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", symbol: `KEPT${++seq}`, tradingsymbol: `KEPT${seq}`,
+          buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: BUY_ISO, buyOrderCount: 1,
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-08-14", sellOrderCount: 1,
+          isOpen: false, grossPnl: 500,
+          chargesTotal: 41.25, brokerage: 20, sttCtt: 15, exchangeTxn: 0.5, sebi: 0.15, stampDuty: 1, ipft: 0.1, gst: 4.5,
+          dpCharges: 0, mtfInterest: 0, pledgeCharges: 0, netPnl: 458.75,
+          ...over,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+
+  /** The dialog's own fields for a row it has not changed a number on. */
+  const untouched = (id: number) => {
+    const w = wire(id);
+    return { buyQty: w.buyQty, avgBuyPrice: w.avgBuyPrice, sellQty: w.sellQty, avgSellPrice: w.avgSellPrice, buyDate: w.buyDate, sellDate: w.sellDate, ownCapitalUsed: null };
+  };
+
+  const cells: [label: string, over: Record<string, unknown>, edit: Record<string, unknown>][] = [
+    ["an acquisition:'ipo' holding × notes-only", { acquisition: "ipo", acquisitionPrice: 100, acquisitionDate: BUY_ISO, chargesTotal: 2.06, brokerage: 0, sttCtt: 2, exchangeTxn: 0.05, sebi: 0, stampDuty: 0, ipft: 0, gst: 0.01, netPnl: 497.94 }, { notes: "journal only" }],
+    ["an imported row with the broker's own charges × notes-only", { importNotes: "dedup-alias:abc" }, { notes: "journal only" }],
+    ["a risk-amount-only edit", { riskAmount: 200, rMultiple: 2.29 }, { riskAmount: 100 }],
+  ];
+
+  it.each(cells)("%s: preview and save agree, and both keep the stored bill", async (label, over, edit) => {
+    const id = statedRow(over);
+    const before = saved(id);
+    const fields = untouched(id);
+
+    const shown = await preview(editPreviewBody(wire(id), fields));
+    const res = commit.updateManualTrade(id, { ...fields, ...edit });
+    expect(res.ok, label).toBe(true);
+
+    // THE assertions: the row keeps what it stated, and the dialog showed it.
+    expect(saved(id), `${label}: the save re-priced a row it should have kept`).toEqual(before);
+    expect(shown, `${label}: preview ≠ save`).toEqual(saved(id));
+  });
+
+  it("the marker and the risk figure follow the same rule: nothing priced, R from the KEPT net", () => {
+    const id = statedRow({ acquisition: "ipo", importNotes: "Exit charges computed from the linked IPO record's exit price and date; not stated by a broker.", riskAmount: 200 });
+    expect(commit.updateManualTrade(id, { ...untouched(id), riskAmount: 100 }).ok).toBe(true);
+    const r = row(id);
+    expect(r.importNotes).toContain("Exit charges computed from the linked IPO record");
+    expect([r.chargesTotal, r.netPnl, r.rMultiple]).toEqual([41.25, 458.75, 4.59]);
+  });
 });
 
 describe("G3 — the dimensions of the matrix are the real ones", () => {

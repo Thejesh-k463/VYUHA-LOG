@@ -72,6 +72,14 @@ describe("a delete leaves a snapshot behind", () => {
     // An ordinary trade delete carries no reference rows, so the field is
     // absent exactly as it was before the bump — the v4 field is additive.
     expect("referenceRows" in env).toBe(false);
+    // D1 (v4.3.0 fix wave 2N, re-check findings counted-once#0/#1) — `ipoRefs`
+    // does NOT follow that rule, deliberately: it is ALWAYS stated, `[]` when
+    // the delete broke no link. `lib/trash.ts` keys its 4.2.x fallback on the
+    // field being ABSENT, so omitting the empty list made every ordinary
+    // envelope byte-identical to a legacy one and the restore invented a link
+    // the user never made. `env.ipoRefs == null` now means pre-4.3.0 and
+    // nothing else.
+    expect([("ipoRefs" in env), env.ipoRefs], "always stated, empty when nothing was unlinked").toEqual([true, []]);
     const summary = trash.listTrashSnapshots().find((s) => s.id === res.snapshotId)!;
     expect("kind" in summary).toBe(false);
     // Additive bump: a v3 (and v2, v1) envelope is still readable.

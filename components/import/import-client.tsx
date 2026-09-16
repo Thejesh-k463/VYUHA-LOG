@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { inr, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { Upload, FileCheck2, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { collisionsToList } from "@/lib/import/cross-source"; // pure leaf: no parser, no DB
 import { dropzoneHint } from "@/lib/import/registry-meta"; // client-safe leaf — detect.ts drags every parser (incl. 399 KB xlsx) into the bundle
 import { ColumnMapper } from "./column-mapper";
 import type { ColumnMapping } from "@/lib/import/generic-map";
@@ -279,6 +280,11 @@ export function ImportClient({
     : 0;
 
   const p = preview?.preview;
+  // W2N (D8): the overlap list is capped by SYMBOL, not by collision — one
+  // incoming row can now carry two blockers (today's earlier pull AND an older
+  // file), and a flat slice listed one of them while counting the other as
+  // "more", against a headline that counts symbols.
+  const crossList = collisionsToList(p?.crossSource?.collisions ?? []);
   /**
    * A file with nothing NEW to import can still have something to write: a
    * broker's stated figures, or fill times for trades already in the book.
@@ -402,11 +408,15 @@ export function ImportClient({
           <div className="space-y-1.5">
             <p className="font-semibold">{p.crossSource.risky ? "These trades may already be in your journal" : "Possible overlap with an earlier import"}</p>
             <p>{p.crossSource.message}</p>
+            {/* W2N (D8): six SYMBOLS, with every blocker of each — an incoming
+                row can carry two (today's earlier pull AND an older file), and
+                a flat slice listed one of them and counted the other as "more",
+                against a headline that counts symbols. */}
             <ul className="space-y-0.5 text-muted-foreground">
-              {p.crossSource.collisions.slice(0, 6).map((c, i) => (
+              {crossList.rows.map((c, i) => (
                 <li key={i}>▸ <b>{c.symbol}</b> — {c.detail}</li>
               ))}
-              {p.crossSource.collisions.length > 6 && <li>…and {p.crossSource.collisions.length - 6} more.</li>}
+              {crossList.more > 0 && <li>…and {crossList.more} more.</li>}
             </ul>
           </div>
         </div>

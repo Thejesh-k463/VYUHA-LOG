@@ -14,7 +14,6 @@ import { quoteKeyId, type Exchange, type ProviderHealth, type Quote, type QuoteK
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { getResultsDateMap, getSectorResolution } from "@/lib/queries/instruments";
-import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getTrades } from "@/lib/queries/trades";
 import type { BarsCap, DeskBar, DeskRow, FeedInfo, LiveDeskData } from "./desk-types";
@@ -165,7 +164,8 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
   const today = todayIstIso();
   const trades = getTrades();
   const mtm = getMtmMap();
-  const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker());
+  // No margin map: nothing estimates a funded amount any more (D7).
+  const positions = deriveOpenPositions(trades, mtm, today);
 
   const byId = new Map(trades.map((t) => [t.id, t]));
   const accountNames = new Map(getAccounts().map((a) => [a.id, a.name]));
@@ -424,9 +424,14 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
       resultsDate: resultsDates.get(p.symbol.toUpperCase()) ?? null,
       mtf: p.isMtf
         ? {
-            fundedP: toPaise(p.fundedAmount),
+            // BOTH money fields are nullable now (D7): `toPaise(p.fundedAmount)`
+            // would render "₹0" — a STATED zero — for a row the journal never
+            // priced. `desk-format.money(null)` is the em dash, and the block
+            // states the reason beside it.
+            fundedP: toPaiseOrNull(p.fundedAmount),
             ownCapitalP: toPaiseOrNull(p.ownCapital),
             accruedInterestP: toPaise(p.accruedInterest),
+            unstated: p.ownCapitalUnstated,
           }
         : null,
       // The SAME boundary as the four scalars above, and for the same reason:

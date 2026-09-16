@@ -776,18 +776,27 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
       // block: a link someone made by hand since the delete is their decision,
       // not this restore's to overwrite.
       //
-      // NOTE, deliberately: the writers omit `ipoRefs` when a delete broke NO
-      // link (`ipoRefRows.length ? ipoRefRows : undefined`), so a 4.3 envelope
-      // for an unlinked holding is byte-identical to a 4.2.x one and takes this
-      // path too. Where that holding has exactly one candidate record it comes
-      // back linked. Writing `ipoRefs: []` from the two delete writers would
-      // confine this to genuinely legacy envelopes with no change here.
+      // D1 (wave 2N) closes three holes the 2L re-check measured:
+      //   - EVERY 4.3 delete writer now states `ipoRefs`, `[]` included, so
+      //     `== null` is a pre-4.3.0 envelope and nothing else. A routine
+      //     delete + restore of a never-linked holding used to take this path;
+      //   - what may be WRITTEN is `ipoRecordNamesHolding` (the scrip's name,
+      //     plus the exit shape), never tier B — a record named after another
+      //     ISSUE whose four allotment facts coincide claimed the holding, and
+      //     its own sale then left capital, tax, ITR and both AIS sides;
+      //   - uniqueness is judged over the BOOK's unlinked `acquisition:'ipo'`
+      //     holdings of the affected accounts, not just the restored ones. It
+      //     was the restored rows alone, so a holding already in the book that
+      //     claims the same record was invisible and the record was written onto
+      //     whichever holding happened to be in the envelope.
+      // The WRITE is still confined to restored rows: a link onto a row this
+      // restore did not bring back is not this restore's to make.
       //
       // Runs LAST of the writes, so an account-deletion envelope's own restored
       // `ipos` rows are part of the picture it reads.
       if (env.ipoRefs == null && landed.size > 0) {
         const day = (v: unknown) => (typeof v === "string" ? v : null);
-        const holdings = rows
+        const restored = rows
           .filter((r) => landed.has(r.id) && r.acquisition === "ipo" && typeof r.accountId === "number")
           .map((r) => ({
             id: r.id,
@@ -802,8 +811,35 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
             acquisitionDate: day(r.acquisitionDate),
             buyDate: day(r.buyDate),
             sellDate: day(r.sellDate),
+            // D1 (wave 2N) — the exit-shape clause's side: an exited record is
+            // no candidate for a holding that never sold.
+            sellQty: typeof r.sellQty === "number" ? r.sellQty : 0,
           }));
-        if (holdings.length > 0) {
+        if (restored.length > 0) {
+          const landedIds = new Set(restored.map((h) => h.id));
+          // Invariant 8, applied to a write rather than a screen: the accounts
+          // this restore touched, never the SELECTED one — a restore is not a
+          // view, and 0 is a view (invariant 9), never a book.
+          const accountIds = [...new Set(restored.map((h) => h.accountId))];
+          const linked = new Set(
+            tx.select({ tradeId: ipos.tradeId }).from(ipos).all().map((x) => x.tradeId).filter((x): x is number => x != null),
+          );
+          const alsoInBook = tx
+            .select({
+              id: trades.id,
+              accountId: trades.accountId,
+              symbol: trades.symbol,
+              tradingsymbol: trades.tradingsymbol,
+              buyQty: trades.buyQty,
+              acquisitionDate: trades.acquisitionDate,
+              buyDate: trades.buyDate,
+              sellDate: trades.sellDate,
+              sellQty: trades.sellQty,
+            })
+            .from(trades)
+            .where(and(eq(trades.acquisition, "ipo"), inArray(trades.accountId, accountIds)))
+            .all()
+            .filter((r) => !landedIds.has(r.id) && !linked.has(r.id));
           const records = tx
             .select({
               id: ipos.id,
@@ -826,7 +862,8 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
             // and the one sale stayed counted twice.
             .where(and(isNull(ipos.tradeId), eq(ipos.allotted, true)))
             .all();
-          for (const link of uniqueIpoRelinks(holdings, records)) {
+          for (const link of uniqueIpoRelinks([...restored, ...alsoInBook], records)) {
+            if (!landedIds.has(link.tradeId)) continue;
             tx.update(ipos)
               .set({ tradeId: link.tradeId })
               .where(and(eq(ipos.id, link.ipoId), isNull(ipos.tradeId)))

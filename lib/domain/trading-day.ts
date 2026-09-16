@@ -194,3 +194,36 @@ export function normalizeDate(s: string | null): string | null {
 export function unreadableDateMessage(label: string, raw: string): string {
   return `The ${label} “${raw}” is not a real calendar day — enter it as a day that exists, for example 2026-06-15. Nothing was changed.`;
 }
+
+/**
+ * D3 (v4.3.0 wave 2N) — the refusal a writer states for a date the ROW ALREADY
+ * HOLDS and cannot read. A different sentence from the one above because there is
+ * no field in front of the user to fix: the value was written before the calendar
+ * check existed (a typed '99-99-9999' became the stored '9999-99-99'), and the
+ * remedy is the trade editor.
+ *
+ * `new Date('9999-99-99')` is an Invalid Date, so an eq_mtf close's day count went
+ * NaN and the write died with `NOT NULL constraint failed: trades.charges_total_paise`
+ * — the server action 500d instead of answering {ok:false}; `new Date('2026-02-31')`
+ * rolls forward to 3 March and bills days the row does not state.
+ */
+export function unreadableStoredDateMessage(label: string, raw: string): string {
+  return `This trade's stored ${label} “${raw}” is not a real calendar day, so nothing can be priced from it. Correct the date in Edit trade first. Nothing was changed.`;
+}
+
+/**
+ * The refusal a re-price states for a trade whose STORED buy or sell date is not a
+ * real day, or null when both are readable (or absent — a missing date is an
+ * unanswered field, not an unreadable one, and keeps its 0-day path).
+ *
+ * ONE implementation for the three writers that price from those columns
+ * (`closePosition`, `applyOverride`) and for the re-tag dialog, which states the
+ * same sentence rather than submitting a save that can only refuse.
+ */
+export function storedDateProblem(t: { buyDate?: string | null; sellDate?: string | null }): string | null {
+  for (const [label, value] of [["buy date", t.buyDate], ["sell date", t.sellDate]] as const) {
+    const raw = (value ?? "").trim();
+    if (raw !== "" && normalizeDate(raw) == null) return unreadableStoredDateMessage(label, raw);
+  }
+  return null;
+}

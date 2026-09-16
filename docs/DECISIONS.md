@@ -7025,6 +7025,10 @@ Reports: `18-FIX-WORK-4.3.0/wave2l.json`, `wave2h-reports/wave2l-*.md`. Every fi
   of /strategies; the query selects a superset (`byCase OR isin IS NOT NULL`, unchanged scope and order) and finishes the ISIN
   match in JS — 5.4 ms / 8.2 ms per call on a 5,000-row book, so no SQL pre-filter. Recorded, not built: the other ISIN folds
   in commit.ts / dedup.ts / isin-symbol.ts / the Paytm parsers still spell `.trim().toUpperCase()` (a separate assignment).
+  *Corrected 2026-09-16 (rc7 strategies#0, cosmetic): that list under-enumerates — five more product files spell their own
+  fold and belong to the same assignment: `lib/queries/instruments.ts:140,149,184`, `lib/queries/reference.ts:238,390`,
+  `lib/analytics/instruments.ts:133`, `app/api/instruments/route.ts:107`, `lib/quotes/upstox.ts:236` (31 hits repo-wide
+  outside tests/; none yields a fabricated figure — a missing label or quote key at worst).*
 - **L2** — a partly sold open MTF row states NO own capital and no ROI (null; the KPI total excludes it with a note; ONE
   predicate shared with the per-row column); a stated funded 0 that is partly sold is null too (no special case). A null
   funded amount is excluded from mtf-drift with an "n open MTF positions are not priced" line on the card.
@@ -7046,9 +7050,13 @@ Reports: `18-FIX-WORK-4.3.0/wave2l.json`, `wave2h-reports/wave2l-*.md`. Every fi
 - **L6** — an envelope with no `ipoRefs` re-links a restored trade whose acquisition is 'ipo' to the UNIQUE unlinked IPO record
   of its account and symbol; ambiguity writes nothing and Data Quality raises "IPO record not linked to its holding" (one issue
   per pair, the cross-account-duplicate precedent), also for any such orphan without a restore. Note: both delete writers omit
-  `ipoRefs` when a delete broke no link, so absence is not proof of a legacy envelope — the fallback then finds no candidate and
-  writes nothing; the optional narrowing (always write the array) is recorded, not built, because `tests/trash-roundtrip`
-  pins the envelope shape.
+  `ipoRefs` when a delete broke no link, so absence is not proof of a legacy envelope — ~~the fallback then finds no candidate and
+  writes nothing~~; the optional narrowing (always write the array) is recorded, not built, because `tests/trash-roundtrip`
+  pins the envelope shape. *Corrected 2026-09-16 (rc7 counted-once#2): the struck clause stated the OPPOSITE of what was
+  built and pinned — a 4.3 envelope for an unlinked holding is byte-identical to a 4.2.x one and takes the same path, and
+  with exactly one candidate the holding came back LINKED (`tests/trash-restore-ipo-legacy.test.ts:267-279`, the builder's
+  recorded deviation). That path is the one rc7 counted-once#0 (a silent wrong number) and #1 travelled on; fix wave 2N
+  builds the narrowing (every delete writer states `ipoRefs`, `[]` when no link broke) and demotes tier B to the ask.*
 - **L7** — the merge REFUSES (before any write, the preview in the same words) a source row that carries BOTH legs and whose hash
   the target holds only as an alias; a plain sell-only row still drops; a 0-qty row drops. A dropped duplicate's IPO is NOT
   re-pointed when the survivor already carries one: a record in the source account is skipped into the snapshot (ipoRefs), a
@@ -7321,3 +7329,109 @@ low / cosmetic test findings are recorded above and are not a wave of their own 
 **Designs for 2N are NOT decided in this entry** — the eighth session ended at ~400k context after persisting the JSON; the next
 session reads the findings whole in a fresh context, decides every design with its consumer set and sequences, runs
 `vyuha-design-reviewer` FIRST, then builds ONE builder at a time.
+
+## 2026-09-16 — v4.3.0 fix wave 2N built (ninth session): the 2L re-check's 19 product + 2 medium test findings, design-reviewed first, FOUR sequential builders
+
+**Designs.** Decided from `wave2l-recheck.json` read whole — `18-FIX-WORK-4.3.0/wave2n-designs.md` (D1–D8, each with its consumer
+set and sequences). The `vyuha-design-reviewer` (Opus) graded D6 BUILD and D1, D2, D3, D4, D5, D7, D8 REVISE, every revision
+adopted verbatim (`wave2n-design-review.md`; the "Adopted revisions" section of the designs file). What the review caught before a
+line was written: `IpoHoldingFacts` had no `sellQty`, so D1's exit-shape clause was unbuildable as written; the bare date fold in
+D2 flips `syncOwnsClose` true → false for a legacy row (measured by probe) — a flag on the RAW exit date keeps Y2's allowance;
+`epochSpans` never NaNs — a stored `'9999-99-99'` silently ZEROES a row's interest and `'2026-02-31'` bills 199 days (D3);
+`applyOverride` returns a boolean its one caller ignores (D3); the edit PREVIEW must share D4's predicate or preview ≠ save; a
+whole page of `fundedAmount` readers (`app/targets/equity/page.tsx`, five reads) and `app/equity/page.tsx:58` were absent from
+D7's set — the exact class that regressed 2L; D8's per-row `break` would never have seen a cross-file candidate. Owner rulings
+asked BEFORE code (06-ANSWERS "v4.3.0 fix-wave 2N rulings"): Q-A an MTF row with no recorded funded amount accrues NOTHING
+until it is recorded (the stored estimate leaves once; release notes); Q-B a partly sold row keeps accruing on the whole stated
+leg, LABELLED. Orchestrator-owned: the 2L entry's L6 sentence corrected in place (rc7 counted-once#2) and the L1 ISIN-fold list
+completed (rc7 strategies#0); seams#3 recorded, no work.
+
+**Built, ONE builder at a time (Opus), each red-first with the quote in its report (`wave2h-reports/wave2n-*.md`):**
+- **B-IDENTITY (D1, D5, D6).** Every delete writer states `ipoRefs` (`[]` when no link broke; `lib/trash.ts:1039` already did,
+  so two writers moved), so `== null` means a pre-4.3.0 envelope only; the legacy fallback writes only a pairing whose record
+  NAMES the scrip (`ipoRecordNamesHolding`: tier A + an exit-shape clause — an exited record never attaches to a holding with no
+  sale; an absent `sellQty` refuses), unique in both directions over the book's other unlinked IPO holdings of the affected
+  accounts, the write confined to restored rows; tier B (`matchesByExit`) MARKS candidates in the question and never writes.
+  Recorded narrowing, deliberate: `uniqueIpoRelinks` judges AMBIGUITY on the mark rule and WRITABILITY on the write rule — the
+  literal sentence made the GOMIX shape (an issue-named exited record beside a scrip-named un-exited one) writable, which would
+  have linked the un-exited record and made the question vanish. `ipoOrphanNote` is conditional and branches on the holding's
+  sale; holdings with no marked candidate are grouped into one `ipo_record_link:account:<id>` issue (counted-once#3). D5: EVERY
+  skipped IPO record rides into the merge envelope's `accountRows.ipos` with its own `accountId` and is deleted in the
+  transaction; the preview and the message name the other books; the replay puts it back verbatim on un-merge. D6: a two-legged
+  source row is refused against a one-legged same-hash partner, preview in the same words. 14 pins moved (harness :388/:393 →
+  the :412 "asked, not written" shape; trash-restore-ipo-legacy; account-merge-ipo-relink :352 `[]`), each citing its finding.
+- **B-DATES-CHARGES (D2, D3, D4).** `linkInput` folds the three days on both sides and carries `exitDateWasReadable` (reverting
+  the flag alone reproduced the reviewer's trap: `expected [5, 495] to deeply equal [2.06, 497.94]`); `closePosition` and
+  `applyOverride` refuse a stored date that states no day (`storedDateProblem` / `unreadableStoredDateMessage`), the accrual
+  resolves-or-skips; the re-tag dialog derives and states the refusal (the `editDateProblem` pattern) and disables Save —
+  `applyOverride` keeps its boolean (the `{ok,message}` + `useActionState` shape would have reddened four assertions in three
+  unowned files for no user-visible gain). D4: `updateManualTrade` re-prices only when a charge INPUT moved (`lib/domain/trade-edit.ts`,
+  read by the save AND `app/api/charges/preview/route.ts` — that route IS the edit preview's server half), keeps the ten heads /
+  total / net / marker otherwise, recomputes R from the kept net, and prices an `acquisition:'ipo'` row through ONE shared
+  `ipoHoldingCharges` (no purchase STT; `ipoExitCharges` calls the same helper). **Visible for every user: a notes-only editor
+  save no longer replaces a broker-stated bill with the engine's estimate (release notes).** Recorded narrowing: a row that
+  states NO charge at all is still priced (the /ipos sync's own `statesNoCharges` rule, now shared) — without it
+  `tests/mtf-funded-zero.test.ts` went red.
+- **B-MTF (D7).** ONE predicate: an open MTF row states own capital only as a plain held buy leg with a recorded funded amount;
+  `fundedAmount` is `number | null`, no estimate anywhere on screen, and each row carries WHY it states none (`sellToOpen |
+  overSold | partlySold | unpriced`), counted in `ownCapitalTotal.unstatedWhy` and read out by `ownCapitalNote`; the tracker's
+  funding filter reads `fundingSide`, the KPI dialog's three rows come from one set plus a fourth "not in these figures" line,
+  the drift card's sentence, the Live Desk (`fundedP` nullable, the reason beside each dash), `/equity` (no breakeven invented),
+  `/targets` (the row skipped from all five figures). Q-A applied in the accrual job AND in FOUR commit.ts writers —
+  `closePosition`, `updateManualTrade`, `applyOverride` and `closeStaleLot` (the design named three; the one-click close billed
+  ₹209.69 where the manual close billed 0). Preview equals save via a `mtfFundingUnstated` body flag from both dialogs. Q-B
+  labelled from one shared sentence. Recorded deviation: the pledge charge is NOT billed on a null-funded row — `computeCharges`
+  gates interest and pledge on the same `fundedAmount > 0`, so an unpriced row bills neither, identical to a stated 0 (an engine
+  change would be needed; not made). Owed outside its set → B-ASK: `MtfSummary.unstated` rendered in
+  `components/targets/target-equity-client.tsx`; `tests/import.test.ts:200-201` re-pinned under Q-A.
+- **B-ASK (D8 + the two owed edits)** — see the continuation of this entry below (written after the seam pass).
+
+**Seam reds left deliberately for the seam tester** (`tests/seams-v43-fixF.test.ts`, no builder edited it): F24 (D5), F27 and
+F28 ×2 (D1), F16 (D7's own consequence — the unpriced row now states nothing on /equity, the case's comment states M1's removed
+behaviour as current, and its post-render half asserts nothing about the funded column: rc7 mtf-accrual#3 / seams#2).
+
+**B-ASK (D8 + the two owed edits), as built.** `lib/import/cross-source.ts`: the per-row pick is a SET of at most two — today's
+snapshot candidate AND the most severe RISKY cross-file candidate; the scan breaks only when both are held, and an import with no
+`snapshotIds` keeps the old early break (pinned behaviourally: a getter counting inner-loop reads → 0). One 409 carries both
+sentences and both remedies; deleting the rows it names leaves the next pull unrefused. Readers followed: `collisionDialogCopy`
+counts incoming ROWS (`collisionRows`, keyed on symbol + the four incoming figures — a new id field would have broken the six-key
+pin in `tests/r43-supersede-guards.test.ts`), `dialogCollisions` returns one entry per row with the second blocker on `also`, the
+card renders every blocker inside one card, `import-client` lists via the pure `collisionsToList` (six SYMBOLS, all their entries);
+`app/api/import/broker/route.ts` passes the report through verbatim; `lib/jobs/auto-pull.ts` reads `risky` only. Red-first:
+`tests/wave2n-ask.test.ts` 11 failed | 3 passed before the fix, 15 passed after. The owed edits: `MtfSummary.unstated` rendered
+on the /targets MTF card (three lines in `app/targets/equity/page.tsx` outside its set — the `// BLOCKED` comment and
+`void unstatedFunding` removed, the count passed; a required field with no producer cannot typecheck, an optional one renders
+nothing); `tests/import.test.ts:200-205` re-pinned under Q-A with the citation.
+
+**The seam pass (ONE round to convergence — `wave2h-reports/wave2n-seams.md`).** `tests/seams-v43-fixF.test.ts` 47 → 60
+cases (+1 on F18, +12 new F37–F45 in nine describes: the `ipoRefs: []` envelope × the `== null` gate; the write rule ⊂ the mark
+rule on the Bee and GOMIX shapes; D5's foreign `ipos` rows × capital / tax base / ITR / both AIS sides before, after the merge and
+after un-merge in All accounts AND the third book; `exitDateWasReadable` × `ipoExitCharges` × `writesCharges` with a rate edit
+between two saves; the stored-date refusal × the re-tag dialog × the close route's 200 `{ok:false}`; `chargeInputsChanged` shared
+by the save and the preview route on an imported row, an IPO row and a risk-only edit; the null `fundedAmount` from
+`deriveOpenPositions` through the KPI dialog, `load-desk`, the /targets summary and /equity; Q-A across the accrual and the four
+writers; D8's two-pick set × the dialog copy × `collisionsToList`), every case red with one side reverted through a probe copy
+(quotes in §4, e.g. F39 `expected [ 497.94, [ 'F39-XBOOK' ] ] to deeply equal [ +0, [] ]`, F43 `expected [ 3750, 1250, +0, null ]
+to deeply equal [ null, null, null, 'unpriced' ]`). Seven pins flipped to the built behaviour (F24, F27, F28 ×2, F16, F21, fixE
+E-c X2), each citing its design. Discharged in the same pass: rc7 seams#1 (every 2L describe has `wave2lModules()`; F14–F26 run
+alone under `-t`), seams#0 (F18's rate correction moved to `sttPct` on the effective-dated row the exit prices at, a flat
+`expect(reprice.sttCtt).toBe(10)`; neutralising the edit now reddens `expected 5 to be 10`), seams#2 (F16 reads
+`app/risk/page.tsx`'s own `<MtfDriftCard>` props), ask#2 (F21 re-titled + ROUND 2), mtf-accrual#3 (the stale comment gone, the
+post-render `mtfFundedAmount` null + `[0, 0]` billed). **No seam defect found.** Two PRE-EXISTING observations recorded:
+`lib/analytics/ipo-link.ts:285` `linkedSyncFor` does not pass Y2's ignore-date allowance that `syncOwnsClose` (:321) does, so for
+a legacy day-first exit whose sale was corrected to another day a clear-exit save is refused 409 on a close the sync owns
+(usability, nothing wrong written, a way out exists — recorded, not built); and `lib/import/cross-source.ts` held two RAW `0x00`
+bytes as the `byKey` separator, so ripgrep skipped the file as binary and a grep-based consumer sweep returned nothing — the
+orchestrator replaced both with the identical `\u0000` escape (runtime string unchanged; `tests/cross-source.test.ts` green).
+Nine boundaries still have NO seam case (report §1: D6's refusal in the UI, the grouped `ipo_record_link:account:` render, Q-B's
+label on screen, the re-tag dialog's rendered panel, `overrideTrade` swallowing the refusal, the Add-form preview door,
+broker-compare's remaining estimate, `collisionsToList` on the file-import path, `e2e/z-live-desk.spec.ts`) — the 2N re-check's
+probe list.
+
+**The gate.** First `npm run verify` on the wave tree: EXIT 1 on two counts — `tests/live-tracker-copy.test.ts` (the Live Desk
+vocabulary gate: B-MTF's two reason notes said "buy leg"; reworded "original leg" / "entry leg" — the gate working as designed)
+and `tests/readme-claims.test.ts` (README's file count: three new test files); raw line `430 files (428 passed, 2 failed) /
+9,408 passed, 2 failed / 35 skipped`, no expected fail. README: 427 → 430 files, 9,323 → 9,410 tests (six mentions).
+Second `npm run verify` (after the two fixes and the `\u0000` escape): **EXIT 0 — raw line 430 files / 9,410 passed / 35 skipped**
+(no expected fail); `next build` compiled; the three lint warnings are the pre-existing ones. Introduced-regression grade for
+2N, as of the gate: the seam pass found NONE (the 2N scoped re-check is the measurement that counts — see the next entry).

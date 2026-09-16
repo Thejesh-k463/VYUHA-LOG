@@ -1,5 +1,4 @@
 import type { Trade } from "@/lib/db/schema";
-import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 
 /**
@@ -15,6 +14,25 @@ export type PositionTrade = Pick<
   | "buyDate" | "sellDate" | "mtfFundedAmount" | "mtfInterest"
   | "riskAmount" | "slPlanned" | "targetPlanned"
 >;
+
+/**
+ * The four shapes in which an open MTF row states NO own capital (D7, v4.3.0
+ * wave 2N). Each is a different fact about the row, and each has a different
+ * remedy, so the totals count them separately instead of calling them all
+ * "partly sold" (which three of the four are not).
+ *
+ *   partlySold  — part of the leg is sold; the stored funding covers the WHOLE
+ *                 buy leg, and how a broker releases it on a partial sale is
+ *                 the broker's rule, not ours.
+ *   overSold    — the sells exceed the buys (the import's own `stale_sale`
+ *                 shape): `invested` is the remainder priced off the SALE,
+ *                 against the whole buy leg's funding — it went −8,000.
+ *   sellToOpen  — no buy leg at all, so the difference describes nothing.
+ *   unpriced    — the journal never recorded what the broker funded. EVERY
+ *                 imported MTF buy starts here, and since M1 it stays here
+ *                 until a writer the user drove states the amount.
+ */
+export type OwnCapitalUnstated = "partlySold" | "overSold" | "sellToOpen" | "unpriced" | null;
 
 export interface OpenPosition {
   id: number;
@@ -37,13 +55,19 @@ export interface OpenPosition {
   daysHeld: number | null;
   dte: number | null; // days to expiry (derivatives)
   isMtf: boolean;
-  fundedAmount: number;
+  /** MTF only: what the broker financed, as the JOURNAL RECORDS IT.
+   *  NULL when the row was never priced — no estimate reaches a screen
+   *  (D7/wave 2N, close-readers#1). Non-MTF stays 0. */
+  fundedAmount: number | null;
   /** MTF only: invested − fundedAmount (what you actually put in).
-   *  NULL on a PARTLY SOLD leg — see the note at the computation below: the
-   *  stored funded amount covers the whole buy leg while `invested` is only
-   *  the remaining quantity, so there is no honest own-capital figure to
-   *  state (invariant 6). Non-MTF stays 0. */
+   *  NULL unless the row is a plain held buy leg with a stated funded amount —
+   *  see `ownCapitalUnstated` and the note at the computation below. Non-MTF
+   *  stays 0. */
   ownCapital: number | null;
+  /** WHY this row states no own capital, for the note beside every total that
+   *  had to leave it out (invariant 6: a count and a reason, never a fill-in).
+   *  Null when the row states one, and on every non-MTF row. */
+  ownCapitalUnstated: OwnCapitalUnstated;
   accruedInterest: number;
   riskAmount: number | null;
   rMultiple: number | null; // "Current R" — live: unrealised ÷ riskAmount (was a frozen creation-time value)
@@ -103,7 +127,6 @@ export function deriveOpenPositions(
   trades: PositionTrade[],
   mtm: Map<string, number>,
   today: string,
-  mtfMarginByBroker: Record<string, number> = {},
 ): OpenPosition[] {
   return trades
     .filter((t) => t.isOpen)
@@ -125,33 +148,52 @@ export function deriveOpenPositions(
       // of the long case (mtm − entry) × qty.
       const unrealised = Math.round((isShort ? invested - currentValue : currentValue - invested) * 100) / 100;
       const isMtf = t.segment === "eq_mtf";
-      // Reuse the persisted funded amount (set at entry, reused by accrual/close —
-      // never the full invested value, which assumes 100% broker financing).
-      // A STORED 0 IS A STATED AMOUNT — the position paid for in full out of own
-      // capital — and is kept, the same null-vs-0 rule every writer follows
-      // (V3/X2, lib/import/commit.ts and lib/jobs/mtf-accrual.ts) and the same
-      // one the Trades table's own cell already reads (`investedSummary` in
-      // lib/domain/trade-columns.ts). Substituting the estimate for a stated 0
-      // reported `ownCapital` and `roiOnCapitalPct` against a denominator the
-      // journal never recorded (invariant 6). Only a null — a row predating both
-      // the column and its first accrual pass — is estimated.
-      const fundedAmount = isMtf
-        ? t.mtfFundedAmount ?? defaultMtfFundedAmount(invested, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT)
-        : 0;
-      // A PARTLY SOLD MTF LEG STATES NO OWN CAPITAL (v4.3.0 wave 2L, L2[0]).
-      // `fundedAmount` above is the amount stored for the WHOLE buy leg, while
-      // `invested` is only the REMAINING quantity × avg price — so
-      // `invested − fundedAmount` goes NEGATIVE as soon as more than the
-      // own-capital share has been sold, and the /equity and Live Desk money
-      // totals silently subtracted that (100 @200 funded 15,000 with 40 sold
-      // read −3,000). How a broker releases funding on a partial sale is the
-      // broker's rule, not ours: pro-rating it (`funded × remaining ÷ bought`)
-      // would state a figure the journal never recorded, so the row reports
-      // null and every total says how many rows it left out (invariant 6).
-      // A STATED funded 0 is no exception — one predicate, no special case
-      // that invents a figure for a leg the journal only half describes.
-      const partlySold = isMtf && t.sellQty > 0 && t.sellQty < t.buyQty;
-      const ownCapital = !isMtf ? 0 : partlySold ? null : Math.round((invested - fundedAmount) * 100) / 100;
+      // WHAT THE BROKER FUNDED, AS THE JOURNAL RECORDS IT — never an estimate
+      // (D7, v4.3.0 wave 2N, close-readers#1). A STORED 0 IS A STATED AMOUNT —
+      // the position paid for in full out of own capital — and is kept, the same
+      // null-vs-0 rule every writer follows (V3/X2, lib/import/commit.ts and
+      // lib/jobs/mtf-accrual.ts) and the same one the Trades table's own cell
+      // already reads (`investedSummary` in lib/domain/trade-columns.ts).
+      //
+      // A NULL used to be replaced by `defaultMtfFundedAmount(invested, …)`,
+      // justified by "a row predating both the column and its first accrual
+      // pass". M1 removed that accrual write-back, so null is now the NORMAL,
+      // PERMANENT state of every imported MTF buy: /risk said "not priced" and
+      // /trades said "funding not yet resolved" about the same row /equity
+      // priced at the 25% margin default, as money, in a KPI (invariant 6).
+      const fundedAmount = isMtf ? t.mtfFundedAmount : 0;
+      // THE ONE PREDICATE: an open MTF row states own capital only when it is a
+      // PLAIN HELD BUY LEG whose funding the journal recorded. Everything else
+      // states none, and says which of the four things it is.
+      //
+      // `fundedAmount` is the amount stored for the WHOLE buy leg, while
+      // `invested` is only the REMAINING quantity × avg price, so
+      // `invested − fundedAmount` describes the row only while nothing has been
+      // sold: it read −3,000 on a 40-of-100 sale (L2[0]), −8,000 when the sells
+      // exceeded the buys, and on a sell-to-open row it was 25% of a SALE with
+      // no buy leg behind it at all. Pro-rating (`funded × remaining ÷ bought`)
+      // would state how the broker releases funding on a partial sale — the
+      // broker's rule, not ours. So the row reports null and every total says
+      // how many rows it left out, and why (invariant 6).
+      const ownCapitalUnstated: OwnCapitalUnstated = !isMtf
+        ? null
+        : t.buyQty <= 0
+          ? "sellToOpen"
+          : t.sellQty >= t.buyQty
+            ? "overSold"
+            : t.sellQty > 0
+              ? "partlySold"
+              : t.mtfFundedAmount == null
+                ? "unpriced"
+                : null;
+      // Exactly `isMtf && buyQty > 0 && sellQty === 0 && mtfFundedAmount != null`
+      // — the ladder above is its complement, stated as reasons.
+      const ownCapital =
+        !isMtf || ownCapitalUnstated != null
+          ? isMtf
+            ? null
+            : 0
+          : Math.round((invested - (fundedAmount ?? 0)) * 100) / 100;
       const riskAmount = t.riskAmount;
       return {
         id: t.id,
@@ -174,8 +216,9 @@ export function deriveOpenPositions(
         daysHeld: daysBetween(isShort ? t.sellDate : t.buyDate, today),
         dte: t.expiry ? daysBetween(today, t.expiry) : null,
         isMtf,
-        fundedAmount: Math.round(fundedAmount * 100) / 100,
+        fundedAmount: fundedAmount == null ? null : Math.round(fundedAmount * 100) / 100,
         ownCapital,
+        ownCapitalUnstated,
         accruedInterest: t.mtfInterest,
         riskAmount,
         // Live, not the frozen creation-time value: R should track the position
@@ -202,42 +245,104 @@ export function statesOwnCapital(p: Pick<OpenPosition, "isMtf" | "ownCapital">):
   return p.isMtf && p.ownCapital != null;
 }
 
+export interface UnstatedWhy {
+  partlySold: number;
+  overSold: number;
+  sellToOpen: number;
+  unpriced: number;
+}
+
 export interface OwnCapitalTotal {
   /** ₹ own capital, summed over the MTF rows that state one. */
   total: number;
   /** Broker-funded ₹ on those SAME rows, so a leverage ratio built from the
    *  two describes one book rather than two different sets of positions. */
   funded: number;
-  /** MTF rows that state none (a partly sold leg). Never folded into `total`
-   *  — it is a count to disclose, not a number to fill in. */
+  /** MTF rows that state none. Never folded into `total` — it is a count to
+   *  disclose, not a number to fill in. */
   unstated: number;
+  /** …broken down by reason, because the four have four different remedies and
+   *  calling them all "partly sold" described three of them wrongly (D7). */
+  unstatedWhy: UnstatedWhy;
 }
 
 /** The own-capital total as it may honestly be shown, with what it left out. */
 export function ownCapitalTotal(
-  positions: Pick<OpenPosition, "isMtf" | "ownCapital" | "fundedAmount">[],
+  positions: Pick<OpenPosition, "isMtf" | "ownCapital" | "fundedAmount" | "ownCapitalUnstated">[],
 ): OwnCapitalTotal {
   let total = 0;
   let funded = 0;
   let unstated = 0;
+  const why: UnstatedWhy = { partlySold: 0, overSold: 0, sellToOpen: 0, unpriced: 0 };
   for (const p of positions) {
     if (!p.isMtf) continue;
-    if (!statesOwnCapital(p)) {
+    const own = p.ownCapital;
+    const rowFunded = p.fundedAmount;
+    // Own AND funded from the SAME rows. A `?? 0` on either would put a row
+    // the journal cannot describe into a figure it is counted in.
+    if (own == null || rowFunded == null) {
       unstated += 1;
+      if (p.ownCapitalUnstated) why[p.ownCapitalUnstated] += 1;
       continue;
     }
-    total += p.ownCapital ?? 0;
-    funded += p.fundedAmount;
+    total += own;
+    funded += rowFunded;
   }
-  return { total: Math.round(total * 100) / 100, funded: Math.round(funded * 100) / 100, unstated };
+  return { total: Math.round(total * 100) / 100, funded: Math.round(funded * 100) / 100, unstated, unstatedWhy: why };
 }
+
+const UNSTATED_LABEL: Record<keyof UnstatedWhy, string> = {
+  partlySold: "partly sold",
+  overSold: "over-sold",
+  sellToOpen: "sell-to-open",
+  unpriced: "unpriced",
+};
 
 /**
  * The one sentence every surface shows beside an own-capital total it had to
- * leave rows out of. Descriptive: it states WHAT is missing, never an estimate
- * of it (invariant 6). Null when the total is the whole book.
+ * leave rows out of. Descriptive: it states WHAT is missing and WHY, never an
+ * estimate of it (invariant 6). Null when the total is the whole book.
+ *
+ * A bare COUNT is still accepted (older call sites), and then the sentence
+ * states the count without a reason rather than claiming one it was not told.
  */
-export function ownCapitalNote(unstated: number): string | null {
+export function ownCapitalNote(t: OwnCapitalTotal | number): string | null {
+  const unstated = typeof t === "number" ? t : t.unstated;
   if (unstated <= 0) return null;
-  return `own capital not stated for ${unstated} partly sold MTF ${unstated === 1 ? "row" : "rows"}`;
+  const noun = `MTF ${unstated === 1 ? "row" : "rows"}`;
+  if (typeof t === "number") return `own capital not stated for ${unstated} ${noun}`;
+  const parts = (Object.keys(UNSTATED_LABEL) as (keyof UnstatedWhy)[])
+    .filter((k) => t.unstatedWhy[k] > 0)
+    .map((k) => `${t.unstatedWhy[k]} ${UNSTATED_LABEL[k]}`);
+  if (parts.length === 0) return `own capital not stated for ${unstated} ${noun}`;
+  return `own capital not stated for ${parts.join(", ")} ${noun}`;
+}
+
+/**
+ * WHO FUNDED THIS POSITION, as the journal records it — the one rule behind the
+ * tracker's funding filter and its "MTF-funded positions" count.
+ *
+ * "user" is a STATED 0 (paid for in full, and every non-MTF row), "broker" is a
+ * stated positive amount, and NULL is neither: a row the journal never priced
+ * belongs in no bucket, where `fundedAmount <= 0` used to file it under "user
+ * funded" and `> 0` hid it from both (close-readers#1).
+ */
+export function fundingSide(p: Pick<OpenPosition, "fundedAmount">): "user" | "broker" | null {
+  const funded = p.fundedAmount;
+  if (funded == null) return null;
+  return funded > 0 ? "broker" : "user";
+}
+
+/**
+ * Q-B (owner ruling, wave 2N): a row with a sale on it keeps accruing interest
+ * on the WHOLE stated funded amount until it closes — no funding is treated as
+ * released for the units already sold, because how a broker releases it is the
+ * broker's rule. The figure is not changed; it is LABELLED, with this one
+ * sentence, wherever it is shown.
+ */
+export const MTF_INTEREST_WHOLE_LEG_NOTE = "interest estimated on the whole funded amount until the row closes";
+
+/** Does this row's accrued interest carry the Q-B caveat? */
+export function interestOnWholeLeg(p: Pick<OpenPosition, "isMtf" | "ownCapitalUnstated">): boolean {
+  return p.isMtf && (p.ownCapitalUnstated === "partlySold" || p.ownCapitalUnstated === "overSold");
 }

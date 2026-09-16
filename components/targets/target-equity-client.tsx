@@ -14,6 +14,15 @@ export interface MtfSummary {
   accrued: number;
   blendedRate: number;
   breakevenMovePct: number;
+  /**
+   * D7 (wave 2N): open MTF rows whose funded amount the journal never recorded.
+   * Every ₹ figure above is built from the STATED amounts only — the estimate
+   * that used to stand in for a null was money nothing recorded — so the count
+   * of what was left out rides beside them rather than the omission being
+   * silent (invariant 6: never fabricate a denominator, and say what is
+   * missing). `accrued` is stored money and still counts every row.
+   */
+  unstated: number;
 }
 
 export function TargetEquityClient({
@@ -110,6 +119,12 @@ export function TargetEquityClient({
               <KpiCard label="Daily interest" valueNum={mtf.dailyInterest} format="inr0" valueClassName="text-grad-gold" sub={`Accrued ${inrCompact(mtf.accrued)}`} />
               <KpiCard label="Break-even move" value={`${mtf.breakevenMovePct.toFixed(2)}%`} sub="to cover interest" />
             </div>
+          )}
+          {mtf.unstated > 0 && (
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              {mtf.unstated} MTF {mtf.unstated === 1 ? "row is" : "rows are"} not in these figures: funding not recorded.
+              Record the amount on the position in Trades and it joins them.
+            </p>
           )}
         </CardContent>
       </Card>

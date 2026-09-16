@@ -25,6 +25,7 @@ import { resolveDeleteScope, type DeletableTrade, type DeletePreview } from "@/l
 import { EditTradeDialog } from "./edit-trade-dialog";
 import { StagedPanel } from "./staged-panel";
 import { overrideTrade, deleteTrade } from "@/app/trades/actions";
+import { storedDateProblem } from "@/lib/domain/trading-day";
 import { num } from "@/lib/format";
 import {
   BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, BUCKETS, BUCKET_LABELS,
@@ -1076,6 +1077,19 @@ export function TradesClient({
           {editing && (
             <form action={overrideTrade} className="space-y-3">
               <input type="hidden" name="tradeId" value={editing.id} />
+              {/*
+                D3 (v4.3.0 wave 2N) — DERIVED at render time (AGENTS.md: derive, never
+                sync state in an effect): the sentence `applyOverride` answers for a row
+                whose STORED date states no day, from the same pure calendar the save
+                reads. Re-tagging such a row used to take the charge engine's NaN into
+                the write and 500 the server action; it now refuses, and this says so
+                where the user is rather than closing the dialog on a silent no-op.
+              */}
+              {storedDateProblem(editing) && (
+                <p className="rounded-md border border-border bg-card-hover/30 p-3 text-xs text-muted-foreground">
+                  {storedDateProblem(editing)}
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Segment</Label>
@@ -1103,7 +1117,7 @@ export function TradesClient({
               </div>
               <div className="flex justify-end gap-2">
                 <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
-                <DialogClose asChild><Button type="submit">Save & recompute</Button></DialogClose>
+                <DialogClose asChild><Button type="submit" disabled={!!storedDateProblem(editing)}>Save & recompute</Button></DialogClose>
               </div>
             </form>
           )}

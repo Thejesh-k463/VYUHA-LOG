@@ -196,9 +196,13 @@ describe("applyOverride — MTF accrual follows the segment (B4)", () => {
     expect(commit.applyOverride(res.id!, { segment: "eq_mtf" })).toBe(true);
     const mtf = db.select().from(trades).where(eq(trades.id, res.id!)).get()!;
     expect(mtf.segment).toBe("eq_mtf");
-    // Interest accrued for the 30 closed days on an estimated funded principal.
-    expect(mtf.mtfFundedAmount).toBeGreaterThan(0);
-    expect(mtf.mtfInterest).toBeGreaterThan(0);
+    // 06-ANSWERS "v4.3.0 fix-wave 2N rulings", Q-A: an unpriced MTF row accrues
+    // NOTHING. The re-tag records no funded amount of its own (the margin
+    // estimate was money nothing recorded — invariant 6), so the principal
+    // stays null and no interest is billed for the 30 closed days until a
+    // writer the user drove states the amount.
+    expect(mtf.mtfFundedAmount).toBeNull();
+    expect(mtf.mtfInterest).toBe(0);
     // The stored breakdown sums to the stored total, and net follows.
     expect(sum(mtf)).toBeCloseTo(mtf.chargesTotal, 1);
     expect(mtf.netPnl).toBeCloseTo(mtf.grossPnl - mtf.chargesTotal, 2);

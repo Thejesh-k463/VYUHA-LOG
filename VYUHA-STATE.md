@@ -1901,6 +1901,8 @@ why selling stopped.
 
 ## 8. Open work and future upgrades
 
+> ⛔ **BACKLOG AUDIT 2026-09-16** (`LIVE-DESK-RESEARCH/19-BACKLOG-RESEARCH-2026-09-16/99-STALE-DUPLICATE-CONTRADICTION-AUDIT.md`, every row with git evidence; the twelve research packs are indexed in that folder's `00-INDEX.md`): **18 lines in this section describe SHIPPED code** (six-sevenths of §8.0 shipped in v3.9.0 — the broker-truth reconciliation screen, the Paytm Realized P&L Detail parser, all six "parsers not built", /trades server pagination, short-sell + cross-exchange pairing, the floating search; onboarding v3.7.0; the Zerodha F&O grammar 2026-09-01; the eight size-index lists v4.0.0; collapse-to-icons; the demo tour filmed and voiced 2026-08-29, never published), **6 duplicate proposals, 13 stale lines, 3 live product defects** (`lib/analytics/metrics.ts:141-149` returns 0 where invariant 6 wants null on the dashboard's headline KPIs; `metrics.ts:229` a second win-rate denominator; `components/system/command-palette.tsx:155` no Shift guard, so Ctrl+Shift+K opens the panel AND the palette) awaiting the owner's release call (fix wave 2O in 4.3.0, or 4.3.1). **Read the audit's §5 corrected table BEFORE picking any item below**; the lines below are kept as written until that table is folded in.
+
 ### 8.00 Open Positions card redesign for `/live` (owner-driven, 2026-09-06; NOT built — awaiting the owner's "build" on the round-3 canvas; the same item as the continuation prompt's §3 and §0's pickup table — status lives THERE)
 
 Owner liked all four round-1 directions and asked for a blend on A's base (editorial ledger): the row gains
@@ -2148,7 +2150,7 @@ qualified legal read, which is an exposure rather than an open question.)*
 *(Closed 2026-08-20: ship v2.99.99 now for the Angel One fix, or wait on a live OpenAlgo pull? —
 **shipped now**, with OpenAlgo switched off and absent from every buyer-facing document.)*
 
-*(Left this list 2026-08-14: Pro annual pricing — ₹9,999; the `v2.99.0` tag — keep; the PDF
+*(Left this list 2026-08-14: Pro annual pricing — ₹9,999 [REPRICED to ₹7,999 on 2026-08-31; §0.4 item 7 and `lib/domain/pricing.ts` are the truth — backlog audit 2026-09-16]; the `v2.99.0` tag — keep; the PDF
 parser — by design. Left 2026-08-15: delivery link — mail/WhatsApp manual; v2.99.95 published;
 revocations prerelease exists; annual→lifetime — full credit within the year; intraday — not needed.)*
 

@@ -573,8 +573,15 @@ describe("Seam D1 · the pull dialog's words for a collision with today's earlie
     const copy = collisionDialogCopy({ collisions: report.collisions, message: routeMessage(report.message) });
     expect(copy).toEqual({ description: GENERIC_ONE, serverMessage: report.message, otherSourceFooter: true });
     // Two rows read "these rows" (the JSX used to print "these this row" for one).
-    expect(collisionDialogCopy({ collisions: [...report.collisions, ...report.collisions], message: null }).description).toMatch(
+    // W2N (D8): the count is of incoming ROWS, so the second one is a second
+    // row — the same collision twice is one row, and a row's two blockers
+    // (today's earlier pull AND an older file) are one row too.
+    const other = { ...report.collisions[0]!, symbol: "OTHEX" };
+    expect(collisionDialogCopy({ collisions: [...report.collisions, other], message: null }).description).toMatch(
       /cannot vouch for these rows\.$/,
+    );
+    expect(collisionDialogCopy({ collisions: [...report.collisions, ...report.collisions], message: null }).description).toMatch(
+      /cannot vouch for this row\.$/,
     );
   });
 

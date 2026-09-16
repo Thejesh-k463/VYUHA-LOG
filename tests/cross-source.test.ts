@@ -449,6 +449,19 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
    */
   const olderFile = (id: number, file: string, over: Partial<ExistingRow> = {}) =>
     stored2(id, { sourceFile: file, buyQty: 20, buyValue: 2010, buyDate: null, dedupHash: `p-${id}`, ...over });
+  /**
+   * W2N (D8, the wave-2L re-check's `ask` findings #0 and #1): the pick is a
+   * SET of at most two — today's snapshot blocker AND the most severe risky
+   * cross-FILE one — so ONE 409 names both remedies and one round of them ends
+   * the ask. The W2L property below is unchanged: the snapshot row is reported
+   * and its sentence is present whatever the rowid order. What is new is the
+   * second entry beside it, and the cross-file sentence that carries the
+   * conditional "Delete the earlier import first if these are the same trades".
+   */
+  const CROSS_FILE_TWOEX =
+    "1 row in this file (TWOEX) look like trades already recorded from a different file. " +
+    "The two file kinds state different facts — a transaction report has dates and both legs, a P&L export has neither — so the duplicate check cannot match them and importing both would record the same trade twice. " +
+    "Nothing is merged automatically: merging means choosing whose numbers to keep, and getting that wrong silently corrupts cost basis and holding period. Delete the earlier import first if these are the same trades.";
   const M1_ONE =
     "1 row in this pull (TWOEX) restates an instrument today's earlier pull already recorded under another product, segment or exchange, and is not written over that row. " +
     "If the broker converted the position between the two pulls, the earlier row can be deleted from Trades and the pull run again, " +
@@ -459,13 +472,16 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     const incoming = [conv2({ snapshotIds: [1] })];
     const old = olderFile(5, "dhan-pnl.csv");
     const before = detectCrossSourceDuplicates(incoming, [old, stored2(1)], FILE);
-    // THE assertions (on revert: existing.id 5, no sameSnapshot, 5 keys, and the cross-file sentence).
+    // THE assertions (on revert of W2L: existing.id 5 ALONE, no sameSnapshot, 5
+    // keys, and only the cross-file sentence). W2N: the snapshot row is still
+    // FIRST and still 6 keys; the older cross-file row rides beside it.
     expect(before.collisions.map((c) => [c.symbol, c.existing.id, c.sameSnapshot, Object.keys(c).length])).toEqual([
       ["TWOEX", 1, true, 6],
+      ["TWOEX", 5, undefined, 5],
     ]);
-    expect(before.message).toBe(M1_ONE);
-    expect(before.message).not.toContain("different file");
-    expect(before.message).not.toContain("Delete the earlier import");
+    expect(before.message).toContain(M1_ONE);
+    // W2N (ask#0): both blockers, both remedies, one round.
+    expect(before.message).toBe(`${CROSS_FILE_TWOEX} ${M1_ONE}`);
     expect(before.risky).toBe(true);
     // The snapshot row first: the same report, byte for byte.
     expect(detectCrossSourceDuplicates(incoming, [stored2(1), old], FILE)).toEqual(before);
@@ -479,7 +495,11 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     );
     // THE assertion (on revert: the cross-file sentence, which names no stored count).
     expect(r.message).toContain("the 2 earlier rows can be deleted from Trades and the pull run again");
-    expect(r.collisions.map((c) => [c.existing.id, c.sameSnapshot])).toEqual([[1, true]]);
+    // W2N: the snapshot pick first, the older cross-file blocker beside it.
+    expect(r.collisions.map((c) => [c.existing.id, c.sameSnapshot])).toEqual([
+      [1, true],
+      [5, undefined],
+    ]);
   });
 
   it("W2L: an ask ON the key behind an older cross-file row reads its own sentence too — the blocker is today's pull either way", () => {
@@ -488,13 +508,20 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
       [olderFile(5, "dhan-pnl.csv"), stored2(1)],
       FILE,
     );
-    // THE assertions (on revert: "…from a different file … Delete the earlier import first…").
-    expect(r.message).toBe(
+    // THE assertions (on revert of W2L: the cross-file sentence ALONE, and the
+    // on-key one absent). W2N (ask#1): the on-key sentence names no remedy, so
+    // the older cross-file blocker — which does — is named beside it instead of
+    // being dropped, and the user is not left with nothing to do.
+    const ON_KEY =
       "1 row in this pull (TWOEX) restates a position today's earlier pull already recorded, and is not written over it: " +
-        "the recorded row carries detail a replacement would lose (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. " +
-        "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.",
-    );
-    expect(r.collisions.map((c) => [c.existing.id, c.sameSnapshot])).toEqual([[1, true]]);
+      "the recorded row carries detail a replacement would lose (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. " +
+      "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.";
+    expect(r.message).toContain(ON_KEY);
+    expect(r.message).toBe(`${CROSS_FILE_TWOEX} ${ON_KEY}`);
+    expect(r.collisions.map((c) => [c.existing.id, c.sameSnapshot])).toEqual([
+      [1, true],
+      [5, undefined],
+    ]);
   });
 
   it("W2L: with no snapshot among the candidates nothing moves — the first risky cross-file row still wins, byte for byte", () => {

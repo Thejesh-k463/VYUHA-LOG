@@ -9,7 +9,6 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { computeTradeCalc } from "@/lib/analytics/trade-calc";
-import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +37,18 @@ export default function EquityTrackerPage() {
   const equityCapital = getBucketCapital().equityCapital;
 
   const rates = loadRatesMap();
-  const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker())
+  // No margin map: nothing estimates a funded amount any more (D7), so the
+  // per-broker own-margin % is read only by the /risk margin check.
+  const positions = deriveOpenPositions(trades, mtm, today)
     .filter((p) => p.bucket === "equity")
     .map((p) => {
-      if (!p.isMtf || p.qty <= 0) return p;
+      // D7 (close-readers#1) — a row whose funding the journal never recorded
+      // gets NO breakeven. The price is round-trip charges + interest on the
+      // funded principal; with no principal there is no honest figure, and the
+      // estimate that used to fill it in was money nothing recorded (invariant
+      // 6). The column renders "—", beside /risk's "not priced" and the Trades
+      // table's "funding not yet resolved" — one answer on three screens.
+      if (!p.isMtf || p.qty <= 0 || p.fundedAmount == null) return p;
       // Breakeven sell price: what you'd need to cover round-trip charges +
       // interest accrued so far — needs charge_config rates, which the pure
       // positions.ts module deliberately doesn't touch.

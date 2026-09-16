@@ -258,15 +258,87 @@ export const ISSUER_BEARS_ISSUE_STAMP_FROM = "2020-07-01";
  * date (the tax estimate's chain), then the exit date, then today IST.
  */
 export function ipoAllotmentStampBase(i: IpoInput, investedAllotted: number): number {
+  return ipoAllotmentStampBaseOn([i.allotmentDate, i.listingDate, i.appliedDate, i.exitDate], investedAllotted);
+}
+
+/**
+ * The same rule over a CHAIN of day candidates, so the record's chain (allotment →
+ * listing → applied → exit) and a linked HOLDING's (acquisition date → buy date →
+ * sell date) are one implementation (D4, wave 2N).
+ */
+export function ipoAllotmentStampBaseOn(days: (string | null | undefined)[], investedAllotted: number): number {
   // Each candidate is read through the calendar first (2M, seam D5): a LEGACY
   // day-first allotment day ("20-02-2019", stored raw until 2M) failed the ISO
   // shape test and the chain skipped to the exit date — an allottee's stamp base
   // silently became 0.
   const day =
-    [i.allotmentDate, i.listingDate, i.appliedDate, i.exitDate]
+    days
       .map((d) => (typeof d === "string" ? normalizeDate(d) : null))
       .find((d): d is string => d != null && isPriceableExitDate(d)) ?? todayIstIso();
   return day < ISSUER_BEARS_ISSUE_STAMP_FROM ? investedAllotted : 0;
+}
+
+/**
+ * The facts an IPO-derived holding's exit is priced from — the allotment (its value
+ * and the day it was credited, which decides whether the ALLOTTEE owes stamp, N14)
+ * and the sale (its value, quantity and day).
+ */
+export interface IpoHoldingChargeFacts {
+  /** The allotted shares' cost — the stamp base, when one is due. */
+  allotmentValue: number;
+  /** The day the shares were credited, most reliable first; each read through the calendar. */
+  allotmentDays: (string | null | undefined)[];
+  sellValue: number;
+  sellQty: number;
+  exitDate: string | null;
+}
+
+/**
+ * D4 (v4.3.0 wave 2N) — THE ONE PRICING of an IPO-derived holding's exit: the
+ * allotment's stamp (N14) plus the sell side, and NO purchase STT (06-ANSWERS
+ * "v4.3.0 fix-work rulings" row (1): none is due on an allotment, which is not a
+ * purchase on a recognised exchange).
+ *
+ * Read by `computeIpo` (so /ipos and the tax pack price through it), by the /ipos
+ * sync (`app/api/ipos/route.ts#ipoExitCharges`) and by the trade editor when it
+ * re-prices a row whose `acquisition` is 'ipo' (`lib/import/commit.ts`). Those
+ * three cannot disagree about a row they all price — which is exactly how the
+ * editor came to bill an allotment as a delivery round trip and take the sync's
+ * charges over on a save that changed nothing (ipo#2).
+ *
+ * Null when there is nothing to price (no allotted quantity), when the exit date
+ * states no priceable day (N13 — never handed to a charger) or when the charger
+ * itself prices none; the caller then keeps the figures already on the row rather
+ * than write a 0 it does not know (invariant 6).
+ */
+export function ipoHoldingCharges(f: IpoHoldingChargeFacts, sellCharger: IpoSellCharger): ChargeBreakdown | number | null {
+  if (!(f.sellQty > 0)) return null;
+  if (f.exitDate != null && !isPriceableExitDate(f.exitDate)) return null;
+  return sellCharger(f.sellValue, ipoAllotmentStampBaseOn([...f.allotmentDays, f.exitDate], f.allotmentValue));
+}
+
+/** The allotment as `computeIpo` reads it: what was credited, at what cost. */
+export function ipoAllotmentBasis(i: IpoInput): { qty: number; effectiveCost: number; investedAllotted: number } {
+  const discountPerShare = Math.max(0, i.discountPerShare ?? 0);
+  const effectiveCost = Math.max(0, r2(i.appliedPrice - discountPerShare));
+  const qty = i.allotted ? i.allottedQty : 0;
+  return { qty, effectiveCost, investedAllotted: r2(effectiveCost * qty) };
+}
+
+/**
+ * The charge facts of an IPO RECORD, for `ipoHoldingCharges`. Null when the record
+ * states no exit to price (not allotted, or no exit price).
+ */
+export function ipoChargeFactsOf(i: IpoInput): IpoHoldingChargeFacts | null {
+  const { qty, investedAllotted } = ipoAllotmentBasis(i);
+  if (qty <= 0 || i.exitPrice == null) return null;
+  return {
+    allotmentValue: investedAllotted,
+    allotmentDays: [i.allotmentDate, i.listingDate, i.appliedDate],
+    sellValue: i.exitPrice * qty,
+    sellQty: qty,
+    exitDate: i.exitDate ?? null,
+  };
 }
 
 /**
@@ -333,11 +405,9 @@ export function ipoTaxEstimate(
 export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = seedFallbackCharger(i)): IpoComputed {
   const board: IpoBoard = i.board === "sme" ? "sme" : "mainboard";
   const discountPerShare = Math.max(0, i.discountPerShare ?? 0);
-  const effectiveCost = Math.max(0, r2(i.appliedPrice - discountPerShare));
+  const { qty: allottedQty, effectiveCost, investedAllotted } = ipoAllotmentBasis(i);
 
   const applicationAmount = r2(effectiveCost * i.lotSize * i.lotsApplied);
-  const allottedQty = i.allotted ? i.allottedQty : 0;
-  const investedAllotted = r2(effectiveCost * allottedQty);
   const refundAmount = r2(applicationAmount - investedAllotted);
 
   let status: IpoStatus;
@@ -367,10 +437,10 @@ export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = seedFallba
     // (sellValue − buyValue), so the IPO adopts its form rather than the reverse.
     grossPnl = r2(r2(i.exitPrice * allottedQty) - investedAllotted);
     // N13: an unreadable exit date is never handed to a charger — not yet priced.
-    const priced =
-      !i.exitDate || isPriceableExitDate(i.exitDate)
-        ? sellCharger(i.exitPrice * allottedQty, ipoAllotmentStampBase(i, investedAllotted))
-        : null;
+    // D4 (wave 2N): through the ONE helper the /ipos sync and the trade editor
+    // price the same holding by, so no two of them can disagree about it.
+    const facts = ipoChargeFactsOf(i);
+    const priced = facts == null ? null : ipoHoldingCharges(facts, sellCharger);
     if (priced == null) {
       unpriced = true;
     } else {

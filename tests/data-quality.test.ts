@@ -8,6 +8,7 @@ import {
   ipoOrphanNote,
   ipoOrphanPairs,
   ipoRecordMatchesHolding,
+  ipoRecordNamesHolding,
   isPlainDuplicateCopy,
   uniqueIpoRelinks,
   NO_PLAIN_COPY_NOTE,
@@ -212,9 +213,15 @@ describe("data quality — warnings", () => {
   });
 
   it("asks about a holding no record MATCHES, and still guesses nothing (G-G2-1)", () => {
-    // Before this wave both of these were silent: `ipoOrphanPairs` found no
+    // Before wave 2M both of these were silent: `ipoOrphanPairs` found no
     // match, so no issue was raised at all and the record's exit and the
     // holding's sale were counted as two sales with nothing on screen saying so.
+    //
+    // MOVED by D1 (fix wave 2N, counted-once#3): the question is still raised,
+    // but a holding NO record's facts match is grouped with the rest of its
+    // book into ONE issue per account (`ipo_record_link:account:<id>`). Six such
+    // holdings beside one stray record raised six identical warnings and floored
+    // the completeness score at 22, every detail naming the same candidate.
     const held = trade({ id: 3, acquisition: "ipo", acquisitionPrice: 100, accountId: 7, symbol: "ASKAUTO", tradingsymbol: "ASKAUTO", buyQty: 10 });
     const record: IpoRecordFacts = { id: 12, accountId: 7, name: "ASKAUTO", allottedQty: 10, allotted: true, exitPrice: 150 };
     const unmatched: [string, IpoRecordFacts][] = [
@@ -222,13 +229,36 @@ describe("data quality — warnings", () => {
       ["a different allotted quantity, both stated", { ...record, allottedQty: 25 }],
     ];
     for (const [why, r] of unmatched) {
-      const issue = find(assessDataQuality(inputs({ trades: [held], unlinkedIpoRecords: [r] })), "ipo_record_link:3");
+      const report = assessDataQuality(inputs({ trades: [held], unlinkedIpoRecords: [r] }));
+      expect(find(report, "ipo_record_link:3"), `${why}: no per-holding issue`).toBeUndefined();
+      const issue = find(report, "ipo_record_link:account:7");
       expect(issue?.severity, why).toBe("warning");
+      expect(issue!.ids, why).toEqual([3]);
       expect(issue!.detail, why).toContain(`#12 ${r.name}`);
       // Named as a candidate, NOT presented as the holding's own (invariant 6).
       expect(issue!.detail, why).not.toContain("matches this holding");
       expect(uniqueIpoRelinks([held], [r]), `${why}: and nothing is written`).toEqual([]);
     }
+  });
+
+  /**
+   * D1 (fix wave 2N, counted-once#3) — the grouping itself: six unlinked IPO
+   * holdings and ONE stray record measured `{holdings: 6, records: 1, asks: 6,
+   * score: 22}`, six warnings of one title. One issue says the same thing once.
+   */
+  it("groups a book's unmatched holdings into ONE issue, naming every holding and every record", () => {
+    const held = (id: number, symbol: string) =>
+      trade({ id, acquisition: "ipo", acquisitionPrice: 100, accountId: 7, symbol, tradingsymbol: symbol, buyQty: 10 });
+    const holdings = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"].map((s, k) => held(k + 1, s));
+    const stray: IpoRecordFacts = { id: 12, accountId: 7, name: "Fan Industries Limited", allottedQty: 25, allotted: true, exitPrice: 150 };
+    const report = assessDataQuality(inputs({ trades: holdings, unlinkedIpoRecords: [stray] }));
+    const asks = report.issues.filter((x) => x.code.startsWith("ipo_record_link"));
+    expect(asks.map((x) => x.code), "one question, not six").toEqual(["ipo_record_link:account:7"]);
+    expect(asks[0].ids).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(asks[0].detail).toContain("6 holdings are recorded as IPO allotments");
+    expect(asks[0].detail).toContain("#12 Fan Industries Limited");
+    expect(asks[0].detail).toContain("#1 (AAA)");
+    for (const word of ["recommend", "suggest", "should", "consider"]) expect(asks[0].detail.toLowerCase(), word).not.toContain(word);
   });
 
   it("passes through externally-counted gaps", () => {
@@ -303,7 +333,43 @@ describe("ipoRecordMatchesHolding — tier B, the allotment's own facts", () => 
 
   it("matches a record named after the issue on quantity, allotment day and exit day", () => {
     expect(ipoRecordMatchesHolding(ISSUE, TATATECH)).toBe(true);
-    expect(uniqueIpoRelinks([TATATECH], [ISSUE])).toEqual([{ tradeId: 3, ipoId: 12 }]);
+  });
+
+  /**
+   * D1 (fix wave 2N, counted-once#0) — TIER B IS NEVER WHAT A RESTORE WRITES.
+   *
+   * MOVED: this line read `expect(uniqueIpoRelinks([TATATECH], [ISSUE]))
+   * .toEqual([{ tradeId: 3, ipoId: 12 }])`. `ipos` carries no scrip fact, so the
+   * four allotment facts are no identity: two IPOs allotted on one day in the
+   * same lot size and sold on listing day — an ordinary retail pattern — are
+   * indistinguishable to tier B, and the restore linked the wrong issue's
+   * record. Its own, genuinely separate sale then left the capital summary, the
+   * tax pack, the ITR export and both AIS sides, and the question that had named
+   * the pair disappeared with it. Tier B keeps MARKING the candidate.
+   */
+  it("tier B is never what a restore writes — it marks the candidate and the user settles it", () => {
+    expect(ipoRecordMatchesHolding(ISSUE, TATATECH), "still a candidate").toBe(true);
+    expect(ipoRecordNamesHolding(ISSUE, TATATECH), "but nothing on the record says it is THIS scrip's").toBe(false);
+    expect(uniqueIpoRelinks([TATATECH], [ISSUE]), "so nothing is written").toEqual([]);
+    // The scrip-named record beside it IS written: that clause carries the scrip.
+    const named = { ...ISSUE, id: 14, name: "TATATECH" };
+    expect(uniqueIpoRelinks([{ ...TATATECH, sellQty: 10 }], [named])).toEqual([{ tradeId: 3, ipoId: 14 }]);
+  });
+
+  /**
+   * D1 (fix wave 2N, counted-once#1) — an EXITED record is no candidate for a
+   * holding that records no sale, and an ABSENT `sellQty` refuses rather than
+   * assumes.
+   */
+  it("refuses to write an exited record onto a holding that never sold", () => {
+    const sold = { ...TATATECH, symbol: "TATATECH", sellQty: 10 };
+    const scripNamed = { ...ISSUE, name: "TATATECH" };
+    expect(uniqueIpoRelinks([sold], [scripNamed]), "a holding that sold").toEqual([{ tradeId: 3, ipoId: 12 }]);
+    expect(uniqueIpoRelinks([{ ...sold, sellQty: 0 }], [scripNamed]), "a holding still held").toEqual([]);
+    expect(uniqueIpoRelinks([{ ...sold, sellQty: undefined }], [scripNamed]), "a holding that states nothing").toEqual([]);
+    // A record that states NO exit is unchanged: it may pair with either.
+    const unexited = { ...scripNamed, exitPrice: null, exitDate: null };
+    expect(uniqueIpoRelinks([{ ...sold, sellQty: 0 }], [unexited]), "no exit stated, no sale needed").toEqual([{ tradeId: 3, ipoId: 12 }]);
   });
 
   it("refuses the match when any ONE of those facts stops being stated or stops agreeing", () => {
@@ -441,10 +507,14 @@ describe("the candidate set — a record that states no allotment is no allotmen
     expect(ipoAskPairs([held], [application]), "and it states no exit, so there is no second sale to ask about").toEqual([]);
   });
 
-  it("so the allotment beside it is the ONE candidate, and the restore may write it", () => {
-    // Measured before: `[]` — two candidates, so nothing was written, while the
-    // report (which never saw the application) named the allotment as matching.
-    expect(uniqueIpoRelinks([held], [allotment, application])).toEqual([{ tradeId: 3, ipoId: 12 }]);
+  it("so the allotment beside it is the ONE candidate the restore weighed", () => {
+    // Measured before wave 2M: `[]` — two candidates, so nothing was written,
+    // while the report (which never saw the application) named the allotment as
+    // matching. MOVED by D1 (wave 2N): this allotment carries the ISSUE's name,
+    // so tier B is what recognises it and tier B is never written
+    // (counted-once#0) — the set is still ONE, which is what F28 pins.
+    expect(ipoOrphanPairs([held], [allotment, application])[0].recordIds, "one candidate, not two").toEqual([12]);
+    expect(uniqueIpoRelinks([held], [allotment, application]), "and an issue-named record is asked about").toEqual([]);
     const [pair] = ipoAskPairs([held], [allotment, application]);
     expect([pair.recordIds, pair.matched, pair.exited]).toEqual([[12], [true], [true]]);
     expect(ipoOrphanNote(pair), "the note names the set the restore saw, and no other row").not.toContain("#13");

@@ -87,6 +87,13 @@ async function route(body: unknown): Promise<number[]> {
   return [j.breakdown.mtfInterest, j.grossPnl, j.breakdown.total, j.netPnl];
 }
 
+/** The editor reopened on a row the journal NEVER priced, nothing typed in "Own
+ *  capital used": the dialog sends no own-capital figure and says so (Q-A), and
+ *  the route prices it the way `updateManualTrade` stores it. */
+async function editorPreviewUnstated(id: number) {
+  return route(editPreviewBody(wire(id), { ...LEGS, ownCapitalUsed: null }));
+}
+
 /** The editor reopened on the stored row, nothing typed in "Own capital used": the dialog's preview. */
 async function editorPreview(id: number) {
   const w = wire(id);
@@ -115,11 +122,25 @@ describe("V3 — a stored MTF funded amount of 0 is kept (all own capital), a nu
     expect(row(id).notes).toBe("journal only");
   });
 
-  it("a never-set (null) funded amount is still estimated on a notes-only save", () => {
+  // PIN MOVED (Q-A, owner ruling, wave 2N): a notes-only save on a row nobody
+  // priced no longer turns it into a stated margin-default amount. The null
+  // survives, no interest is billed on a principal the journal does not state,
+  // and the pledge charge — a fact of the MTF product — still is.
+  it("a never-set (null) funded amount SURVIVES a notes-only save, and bills no interest", async () => {
     const id = mtfRow("MTFNULL", { ...LEGS, buyValue: 10000, sellValue: 11000, isOpen: false, mtfFundedAmount: null });
+    const shown = await editorPreviewUnstated(id);
     expect(commit.updateManualTrade(id, { ...LEGS, notes: "n", ownCapitalUsed: null }).ok).toBe(true);
-    // The probe's re-estimate for Zerodha (its bundled own-margin share of 10,000).
-    expect(stored(id)).toEqual([8000, 99.2, 1000, 220.92, 779.08]);
+    // On revert: [8000, 99.2, 1000, 220.92, 779.08] — Zerodha's own-margin share
+    // of 10,000 stated on the row, with 99.20 of interest on it.
+    expect(stored(id)).toEqual([null, 0, 1000, 86.32, 913.68]);
+    expect(stored(id).slice(1), "the editor's preview is the save (D7/Q-A)").toEqual(shown);
+    // DEVIATION FROM THE DESIGN, recorded: D7 asked for the PLEDGE charge to be
+    // billed while interest is 0. `computeCharges` (lib/engine/charges.ts:106)
+    // gates interest AND pledge on the same `mtf.fundedAmount > 0`, so a row
+    // with no stated principal bills neither — exactly as a STATED 0 does
+    // today. Changing that is an engine change (outside this file set) that
+    // would move every stated-0 row's bill as well.
+    expect(row(id).pledgeCharges, "no stated principal: no financing charges, as for a stated 0").toBe(0);
   });
 
   it("closePosition keeps a stored 0: an open MTF lot paid in full closes with no interest, as its close dialog previews", async () => {
@@ -137,6 +158,20 @@ describe("V3 — a stored MTF funded amount of 0 is kept (all own capital), a nu
     expect(commit.applyOverride(id, { segment: "eq_mtf" })).toBe(true);
     // On revert: funded 8000, interest 99.2.
     expect(stored(id)).toEqual([0, 0, 1000, 86.32, 913.68]);
+  });
+
+  /**
+   * Q-A (owner ruling, wave 2N) — the THIRD writer of the same rule. A re-tag TO
+   * eq_mtf used to invent the funded principal from margin_config and bill the
+   * whole holding period on it, so a row nobody priced acquired a stated amount
+   * and ₹99.20 of interest by being reclassified.
+   */
+  it("applyOverride keeps a NULL null when the row is re-tagged eq_mtf, and bills no interest on it", () => {
+    const id = mtfRow("MTFTAGNULL", { ...LEGS, segment: "eq_delivery", bucket: "equity", buyValue: 10000, sellValue: 11000, grossPnl: 1000, isOpen: false, mtfFundedAmount: null });
+    expect(commit.applyOverride(id, { segment: "eq_mtf" })).toBe(true);
+    expect(row(id).segment).toBe("eq_mtf");
+    // THE assertion (on revert: [8000, 99.2, 1000, 220.92, 779.08]).
+    expect(stored(id)).toEqual([null, 0, 1000, 86.32, 913.68]);
   });
 
   it("closeStaleLot keeps a stored 0, the same funded amount and interest as closePosition on a twin lot", () => {
@@ -207,7 +242,14 @@ describe("V3 — a stored MTF funded amount of 0 is kept (all own capital), a nu
       });
     }
     expect(hits, "a reader that treats a stated 0 as never set").toEqual([]);
-    expect(/const currentFundedGuess = trade\.mtfFundedAmount \?\?/.test(src("components/trades/edit-trade-dialog.tsx")), "the editor preview's null-vs-0 read").toBe(true);
+    // D7 — the dialog reads the STORED amount and nothing else: the `??`
+    // estimate that used to stand behind it is what made the editor send a
+    // fabricated own-capital figure back on every save (Q-A).
+    // CODE only: a comment quoting the old expression is the false positive the
+    // AST guard (tests/readers-follow-writers) exists to avoid.
+    const dialog = src("components/trades/edit-trade-dialog.tsx").replace(/^\s*(?:\/\/|\*|\/\*).*$/gm, "");
+    expect(/trade\.mtfFundedAmount == null \? null :/.test(dialog), "the editor preview's null-vs-0 read").toBe(true);
+    expect(/defaultMtfFundedAmount/.test(dialog), "no estimate is left in the editor").toBe(false);
   });
 });
 
@@ -244,14 +286,16 @@ describe("X2 (i) — the daily accrual job keeps a stated funded 0 and accrues n
    * NULL so every reader (mtfDrift, unpricedMtfPositions, the drift card) keeps
    * treating the row as one the journal never priced.
    */
-  it("a never-set (null) funded amount still accrues interest on the estimate, and stays unpriced — the job never states one", () => {
+  it("a never-set (null) funded amount stays unpriced and accrues NOTHING — the job never states one (Q-A)", () => {
     const id = mtfRow("ACCNULL", { buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", isOpen: true, sellOrderCount: 0, mtfFundedAmount: null });
     accrueMtfInterest("2026-08-20");
     const r = row(id);
     // Interest: Zerodha's bundled own-margin share of 10,000, 19 days (the
     // probe's 60.80) — the same figure as before M1. Funded: still null (on
     // revert of M1, 8000 written onto a row nobody priced).
-    expect([r.mtfFundedAmount, r.mtfInterest]).toEqual([null, 60.8]);
+    // PIN MOVED (Q-A): on revert, 60.80 of interest on the 8,000 estimate —
+    // re-billed at a different figure on the next margin-config edit.
+    expect([r.mtfFundedAmount, r.mtfInterest]).toEqual([null, 0]);
   });
 });
 
@@ -288,13 +332,14 @@ describe("X2 (ii) — own capital typed 0 is a stated figure (funded = the full 
     expect(stored(id).slice(1), "the preview is the save").toEqual(shown);
   });
 
-  it("the trade editor: blank or missing own capital is null — a stored amount is kept, a never-set one estimated", async () => {
+  it("the trade editor: blank or missing own capital is null — a stored amount is kept, a never-set one STAYS never-set", async () => {
     const kept = mtfRow("OWNBLANK0", { ...LEGS, buyValue: 10000, sellValue: 11000, isOpen: false, mtfFundedAmount: 0 });
     expect((await actions.updateTradeAction(NO_STATE, editForm(kept, ""))).ok).toBe(true);
     expect(stored(kept)).toEqual([0, 0, 1000, 86.32, 913.68]);
     const estimated = mtfRow("OWNBLANKN", { ...LEGS, buyValue: 10000, sellValue: 11000, isOpen: false, mtfFundedAmount: null });
     expect((await actions.updateTradeAction(NO_STATE, editForm(estimated, null))).ok).toBe(true);
-    expect(stored(estimated)).toEqual([8000, 99.2, 1000, 220.92, 779.08]);
+    // PIN MOVED (Q-A): on revert, [8000, 99.2, 1000, 220.92, 779.08].
+    expect(stored(estimated)).toEqual([null, 0, 1000, 86.32, 913.68]);
   });
 
   it("the Add-trade form: typed '0' stores funded 10,000 as its preview prices it; blank estimates", async () => {
@@ -360,9 +405,12 @@ describe("I1 [0] — deriveOpenPositions keeps a stated MTF funded 0 (all own ca
     expect([p.invested, p.unrealised, p.fundedAmount, p.ownCapital, p.roiOnCapitalPct]).toEqual([20000, 500, 0, 20000, 2.5]);
   });
 
-  it("a never-set (null) funded amount is still the margin estimate, unchanged", () => {
+  // PIN MOVED (wave 2N D7, close-readers#1): the null is no longer estimated.
+  it("a never-set (null) funded amount states NOTHING — the estimate is gone from every screen", () => {
     const [p] = deriveOpenPositions([openMtf(null)], new Map(), "2026-09-19");
-    // 25% own margin (DEFAULT_MTF_OWN_MARGIN_PCT) on 20,000.
-    expect([p.fundedAmount, p.ownCapital, p.roiOnCapitalPct]).toEqual([15000, 5000, 10]);
+    // On revert: [15000, 5000, 10] — 25% own margin (DEFAULT_MTF_OWN_MARGIN_PCT)
+    // on 20,000, shown as money beside /risk's "not priced" for the same row.
+    expect([p.fundedAmount, p.ownCapital, p.roiOnCapitalPct]).toEqual([null, null, null]);
+    expect(p.ownCapitalUnstated).toBe("unpriced");
   });
 });

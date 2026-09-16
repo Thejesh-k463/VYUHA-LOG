@@ -192,9 +192,10 @@ export function detectCrossSourceDuplicates(
   // W2H: the same-snapshot collisions of rows asked ONLY by W2G M1 (`snapshotOffKey`).
   const offKey = new Set<CrossSourceCollision>();
   // W2I: the STORED rows those asks named (`snapshotIds`, the plan's own list),
-  // deduplicated — two incoming rows of one tradingsymbol name the same set. One
-  // report is made per incoming row, but the ask stands until EVERY named row is
-  // gone, so the remedy's number is this, not the number of incoming rows.
+  // deduplicated — two incoming rows of one tradingsymbol name the same set. At
+  // most one snapshot report is made per incoming row (W2N), but the ask stands
+  // until EVERY named row is gone, so the remedy's number is this, not the
+  // number of incoming rows or of collisions.
   const offKeyStored = new Set<number>();
 
   /**
@@ -216,14 +217,14 @@ export function detectCrossSourceDuplicates(
    */
   const byKey = new Map<string, ExistingRow[]>();
   for (const e of existing) {
-    const key = `${e.broker} ${norm(e.tradingsymbol)}`;
+    const key = `${e.broker}\u0000${norm(e.tradingsymbol)}`;
     const bucket = byKey.get(key);
     if (bucket) bucket.push(e);
     else byKey.set(key, [e]);
   }
 
   for (const inc of incoming) {
-    const candidates = (byKey.get(`${inc.broker} ${norm(inc.tradingsymbol)}`) ?? []).filter(
+    const candidates = (byKey.get(`${inc.broker}\u0000${norm(inc.tradingsymbol)}`) ?? []).filter(
       (e) =>
         // An identical hash is an ordinary duplicate the existing dedup already
         // handles — this is only about rows that slip past it.
@@ -235,7 +236,8 @@ export function detectCrossSourceDuplicates(
     );
 
     let softer: CrossSourceCollision | null = null;
-    let risky: CrossSourceCollision | null = null;
+    let crossRisky: CrossSourceCollision | null = null;
+    let snapshotPick: CrossSourceCollision | null = null;
     // W2L: only a row the commit's plan NAMED can be today's snapshot, so an
     // ordinary import (no ids) keeps the old early break and scans no further
     // than it ever did — the priority below costs it nothing.
@@ -285,37 +287,45 @@ export function detectCrossSourceDuplicates(
           detail,
           ...(sameSnapshot ? { sameSnapshot: true } : {}),
         };
-        // One report per incoming row is enough to prompt a decision — but the
-        // MOST severe one: a partial overlap met first must not hide a risky
-        // one behind it (R43: two products of one contract, in either order).
+        // The MOST severe candidate of each kind: a partial overlap met first
+        // must not hide a risky one behind it (R43: two products of one
+        // contract, in either order).
         //
         // W2L: and by PRIORITY, not by order of arrival. `existing` arrives in
         // rowid order, so an OLDER cross-FILE row (an earlier P&L or tradebook
         // import) was met before today's snapshot rows and won the pick — the
         // pull then advised deleting that earlier IMPORT while the row actually
-        // blocking the commit was today's own snapshot row, so one round of the
-        // advice did not end the ask (the user deleted the import, pulled again
-        // and met the snapshot sentence). Today's snapshot IS the blocker, so it
-        // is what is reported; among cross-file candidates the first risky one
-        // still wins, and the collision object is unchanged.
+        // blocking the commit was today's own snapshot row.
+        //
+        // W2N (D8): one report per incoming row was the remaining half of that
+        // finding — with BOTH blockers real, whichever sentence was reported
+        // sent the user through a second round in either order, and the
+        // snapshot sentence promises "the pull run again … records the position
+        // as the broker now states it", which is FALSE while the cross-file row
+        // also blocks it. So the pick is a SET of at most two: today's snapshot
+        // candidate AND the most severe RISKY cross-file candidate. The scan
+        // therefore continues past a snapshot hit and ends only when both are
+        // held; an import that can meet no snapshot (no ids) keeps the old
+        // early break, so its cost is unchanged.
         if (isRisky(c)) {
-          if (c.sameSnapshot === true || !mayMeetSnapshot) {
-            risky = c;
-            break;
-          }
-          risky ??= c;
+          if (c.sameSnapshot === true) snapshotPick ??= c;
+          else crossRisky ??= c;
+          if (!mayMeetSnapshot || (snapshotPick !== null && crossRisky !== null)) break;
           continue;
         }
         softer ??= c;
       }
     }
-    const pick = risky ?? softer;
-    if (pick) {
+    // A softer cross-file candidate is not a blocker, so it is reported only
+    // when nothing risky was found — never beside a snapshot pick.
+    const picks = snapshotPick !== null ? [snapshotPick, ...(crossRisky ? [crossRisky] : [])] : [crossRisky ?? softer];
+    for (const pick of picks) {
+      if (!pick) continue;
       collisions.push(pick);
-      if (pick.sameSnapshot === true && inc.snapshotOffKey === true) {
-        offKey.add(pick);
-        for (const id of inc.snapshotIds ?? []) offKeyStored.add(id);
-      }
+    }
+    if (snapshotPick !== null && inc.snapshotOffKey === true) {
+      offKey.add(snapshotPick);
+      for (const id of inc.snapshotIds ?? []) offKeyStored.add(id);
     }
   }
 
@@ -381,4 +391,25 @@ export function detectCrossSourceDuplicates(
     risky,
     message: parts.length === 0 ? null : parts.join(" "),
   };
+}
+
+/**
+ * The collisions as a UI list, capped by SYMBOL rather than by collision (W2N,
+ * D8). One incoming row can now carry TWO entries — today's snapshot blocker
+ * and the older cross-FILE one — so a flat `slice(0, 6)` could list a symbol's
+ * first blocker and elide its second, and its "…and n more" counted collisions
+ * while the headline above it counts symbols. Every entry of a listed symbol is
+ * kept; `more` is the number of symbols not listed.
+ */
+export function collisionsToList<C extends { symbol: string }>(
+  collisions: readonly C[],
+  maxSymbols = 6,
+): { rows: C[]; more: number } {
+  const listed = new Set<string>();
+  const all = new Set<string>();
+  for (const c of collisions) {
+    all.add(c.symbol);
+    if (listed.size < maxSymbols) listed.add(c.symbol);
+  }
+  return { rows: collisions.filter((c) => listed.has(c.symbol)), more: all.size - listed.size };
 }

@@ -837,7 +837,11 @@ describe("an eq_mtf lot: interest runs to the CONFIRMED date, exactly as the man
     const joined = row(L.id)!;
     const manual = row(twin.id)!;
     expect(joined.sellDate).toBe("2026-09-05");
-    expect(manual.mtfInterest).toBeGreaterThan(0);
+    // PIN MOVED (Q-A, owner ruling, wave 2N): the imported lot states no funded
+    // amount (the import never writes the column), so NEITHER door bills
+    // interest on it — the point of the case is that the two agree, and they
+    // still do. On revert of closeStaleLot alone: joined 209.69 vs manual 0.
+    expect(manual.mtfInterest, "an imported lot states no funded principal").toBe(0);
     expect(joined.mtfInterest).toBe(manual.mtfInterest);
     expect(joined.pledgeCharges).toBe(manual.pledgeCharges);
     expect(joined.mtfFundedAmount).toBe(manual.mtfFundedAmount);

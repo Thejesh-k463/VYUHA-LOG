@@ -10,7 +10,6 @@ import { dailyPnl } from "@/lib/analytics/metrics";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
-import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { getGoalView } from "@/lib/queries/goals";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { goalProgress } from "@/lib/analytics/goal";
@@ -36,7 +35,8 @@ export default function TargetEquityPage() {
   // account-first — one page, two capital bases.
   const equityCapital = getBucketCapital().equityCapital;
 
-  const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker()).filter((p) => p.bucket === "equity");
+  // No margin map: nothing estimates a funded amount any more (D7).
+  const positions = deriveOpenPositions(trades, mtm, today).filter((p) => p.bucket === "equity");
   // Largest position by invested ₹ (same winner as largest % when capital is
   // known); its pct is null when no capital is configured — the client renders
   // "—" rather than a fake 0% concentration.
@@ -64,25 +64,40 @@ export default function TargetEquityPage() {
   // A guard per position: a broker with no rate epoch covering today must cost
   // that ONE position its interest line, not blank the entire Target Tracker.
   // `today` is already in scope above — no second clock read.
+  let unstatedFunding = 0;
   for (const p of mtfPos) {
+    // D7 (close-readers#1) — every ₹ figure below is built from the STATED
+    // funded amount. A row the journal never priced is left out of all of them
+    // (funded, daily interest, interest to date, the blended rate and the
+    // breakeven move's own denominator) rather than estimated into them: the
+    // estimate was money nothing recorded (invariant 6). `accrued` is stored
+    // money and still counts every row — an unpriced row now accrues 0 anyway
+    // (Q-A, lib/jobs/mtf-accrual.ts).
+    const fundedRow = p.fundedAmount;
+    accrued += p.accruedInterest;
+    if (fundedRow == null) {
+      unstatedFunding += 1;
+      continue;
+    }
     let r;
     try {
       r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, today);
     } catch {
-      funded += p.fundedAmount;
+      funded += fundedRow;
       value += p.currentValue;
-      accrued += p.accruedInterest;
       continue;
     }
-    const rate = mtfRateFor(p.fundedAmount, r);
-    funded += p.fundedAmount;
-    dailyInterest += (p.fundedAmount * rate) / 365;
-    accrued += p.accruedInterest;
-    interestToDate += (p.fundedAmount * rate * (p.daysHeld ?? 0)) / 365;
+    const rate = mtfRateFor(fundedRow, r);
+    funded += fundedRow;
+    dailyInterest += (fundedRow * rate) / 365;
+    interestToDate += (fundedRow * rate * (p.daysHeld ?? 0)) / 365;
     value += p.currentValue;
   }
+  // Wave 2N (B-ASK, D7's owed half): the count rides to the card, which states
+  // it beside the figures it is left out of (invariant 6).
   const mtf: MtfSummary = {
     count: mtfPos.length,
+    unstated: unstatedFunding,
     funded: Math.round(funded * 100) / 100,
     dailyInterest: Math.round(dailyInterest * 100) / 100,
     accrued: Math.round(accrued * 100) / 100,

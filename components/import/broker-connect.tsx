@@ -228,8 +228,57 @@ export function metEarlierPull(c: { kind: string; sameSnapshot?: boolean }): boo
  * it also carries, so `collisionBadge(c.kind)` names today's earlier pull. Only
  * `kind` changes; the row's symbol, detail and quantities are the server's.
  */
-export function dialogCollisions<C extends { kind: string; sameSnapshot?: boolean }>(collisions: readonly C[]): C[] {
-  return collisions.map((c) => (metEarlierPull(c) ? ({ ...c, kind: "earlier-snapshot" } as C) : c));
+/**
+ * W2N (D8): the facts that identify the INCOMING row a collision was raised
+ * for. cross-source.ts reports at most two per row — today's snapshot blocker
+ * AND the older cross-FILE one — and the dialog is a list of rows, not of
+ * blockers, so both must ride in one entry. The report carries no row id (its
+ * six keys are pinned across four suites), and two collisions of one row always
+ * agree on the symbol and all four incoming figures, so that is the key. Two
+ * incoming rows identical in all five are indistinguishable to a reader anyway;
+ * a collision that states neither (a bare `{kind}` in a copy test) is its own
+ * row.
+ */
+type CollisionRowFacts = {
+  symbol?: string;
+  incoming?: { buyQty: number; sellQty: number; buyValue: number; sellValue: number };
+};
+
+function collisionRowKey(c: CollisionRowFacts): string | null {
+  if (c.symbol === undefined || c.incoming === undefined) return null;
+  return [c.symbol, c.incoming.buyQty, c.incoming.sellQty, c.incoming.buyValue, c.incoming.sellValue].join("|");
+}
+
+/** The collisions grouped by incoming row, in the server's own order. */
+export function collisionRows<C extends CollisionRowFacts>(collisions: readonly C[]): C[][] {
+  const rows: C[][] = [];
+  const byRow = new Map<string, C[]>();
+  for (const c of collisions) {
+    const key = collisionRowKey(c);
+    const group = key === null ? undefined : byRow.get(key);
+    if (group) {
+      group.push(c);
+      continue;
+    }
+    const fresh = [c];
+    rows.push(fresh);
+    if (key !== null) byRow.set(key, fresh);
+  }
+  return rows;
+}
+
+/** A listed row: its first blocker, with any second one beside it (W2N). */
+export type DialogCollision<C> = C & { also?: C[] };
+
+export function dialogCollisions<C extends { kind: string; sameSnapshot?: boolean } & CollisionRowFacts>(
+  collisions: readonly C[],
+): DialogCollision<C>[] {
+  const badged = (c: C) => (metEarlierPull(c) ? ({ ...c, kind: "earlier-snapshot" } as C) : c);
+  return collisionRows(collisions).map((group) => {
+    const head = badged(group[0]!);
+    const rest = group.slice(1);
+    return rest.length === 0 ? head : { ...head, also: rest.map(badged) };
+  });
 }
 
 /**
@@ -240,13 +289,20 @@ export function dialogCollisions<C extends { kind: string; sameSnapshot?: boolea
  * sentence says what committing anyway does. Any other report keeps both, and
  * the route's sentence is shown too.
  */
-export function collisionDialogCopy(p: { collisions: readonly { kind: string; sameSnapshot?: boolean }[]; message?: string | null }): CollisionDialogCopy {
+export function collisionDialogCopy(p: {
+  collisions: readonly ({ kind: string; sameSnapshot?: boolean } & CollisionRowFacts)[];
+  message?: string | null;
+}): CollisionDialogCopy {
+  // ANY cross-file blocker brings the other-source words, whether it stands
+  // alone or beside today's snapshot blocker for the same row (W2N).
   const earlierOnly = p.collisions.length > 0 && p.collisions.every(metEarlierPull);
   const raw = p.message ?? "";
   const kept = (raw.endsWith(PULL_FORCE_ROUTE_TAIL) ? raw.slice(0, -PULL_FORCE_ROUTE_TAIL.length) : raw).trim();
   const serverMessage = kept === "" ? null : kept;
   if (earlierOnly) return { description: "Nothing has been committed.", serverMessage, otherSourceFooter: false };
-  const rows = p.collisions.length === 1 ? "this row" : "these rows";
+  // W2N: ROWS, not blockers — one incoming row can carry two, and "these rows"
+  // for a single row read as two trades the user had to go and look for.
+  const rows = collisionRows(p.collisions).length === 1 ? "this row" : "these rows";
   return {
     description: `Nothing has been committed. Different sources state the same trade slightly differently — a position aggregate and a fill-by-fill pull can differ by a paisa — so the exact duplicate check cannot vouch for ${rows}.`,
     serverMessage,
@@ -1537,16 +1593,27 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 <div key={i} className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="text-sm font-medium">{c.symbol}</span>
-                    <Badge variant="secondary" className="text-[10px]">
-                      {collisionBadge(c.kind)}
-                    </Badge>
+                    <span className="flex flex-wrap items-baseline gap-1">
+                      {[c, ...(c.also ?? [])].map((e, j) => (
+                        <Badge key={j} variant="secondary" className="text-[10px]">
+                          {collisionBadge(e.kind)}
+                        </Badge>
+                      ))}
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{c.detail}</p>
-                  <p className="mt-1 font-mono text-[0.6875rem] tabular-nums text-muted-foreground">
-                    incoming {c.incoming.buyQty || c.incoming.sellQty} qty · already recorded{" "}
-                    {c.existing.buyQty || c.existing.sellQty} qty
-                    {c.existing.sourceFile ? ` from ${c.existing.sourceFile}` : ""}
-                  </p>
+                  {/* W2N: one row, every blocker it has — today's earlier pull
+                      AND an older file both keep this pull refused, so both are
+                      named here and in the sentence above. */}
+                  {[c, ...(c.also ?? [])].map((e, j) => (
+                    <div key={j}>
+                      <p className="mt-1 text-xs text-muted-foreground">{e.detail}</p>
+                      <p className="mt-1 font-mono text-[0.6875rem] tabular-nums text-muted-foreground">
+                        incoming {e.incoming.buyQty || e.incoming.sellQty} qty · already recorded{" "}
+                        {e.existing.buyQty || e.existing.sellQty} qty
+                        {e.existing.sourceFile ? ` from ${e.existing.sourceFile}` : ""}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

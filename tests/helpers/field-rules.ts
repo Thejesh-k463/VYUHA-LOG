@@ -46,12 +46,16 @@ import path from "node:path";
  */
 const ts = createRequire(import.meta.url)("typescript") as typeof TS;
 
-export type RuleId = "mtf-funded-0" | "raw-date" | "ipo-link-scope";
+export type RuleId = "mtf-funded-0" | "open-position-funded" | "own-capital-null" | "raw-date" | "ipo-link-scope";
 
 export interface FieldRule {
   id: RuleId;
   /** The field (or link) the rule is about. */
   field: string;
+  /** Every property name that carries this same value, when one rule governs
+   *  more than one (a rupee field and its paise twin on the wire). Defaults to
+   *  `[field]`. */
+  fields?: string[];
   /** One line: what the stored value MEANS, and therefore how it must be read. */
   rule: string;
   /** The shapes that break it. */
@@ -86,19 +90,62 @@ export const REGISTRY: FieldRule[] = [
       "lib/analytics/positions.ts, app/reports/broker-compare/page.tsx, lib/analytics/data-quality.ts.",
   },
   {
+    id: "open-position-funded",
+    field: "fundedAmount",
+    // `fundedP` is the same money on the Live Desk wire, in paise (invariant 1).
+    fields: ["fundedAmount", "fundedP"],
+    rule:
+      "`OpenPosition.fundedAmount` (and its paise twin `fundedP`) is NULLABLE since v4.3.0 wave 2N: null means the " +
+      "journal never recorded what the broker funded, and 0 means the broker funded none of it. Neither may be " +
+      "collapsed onto the other, and null is never estimated on a screen.",
+    forbidden: "`?? 0`, `&&`, `||`, `> 0` / `>= 0` / `< 0` / `<= 0`, `!x`, `x ? :`, `Boolean(x)`, `if (x)`",
+    allowed: "`== null` / `!= null`, `toPaiseOrNull(x)`, `Number.isFinite(x ?? NaN)`, a null-checked local, passing it on unchanged",
+    triggers: ["fundedAmount", "fundedP"],
+    // The CONSUMER surfaces. lib/analytics/positions.ts is the writer — it is
+    // where the null is decided, and its own `invested - funded` construction
+    // and ROI denominator guard are not reads of someone else's value.
+    roots: ["components/trackers", "components/live", "app/equity", "app/targets"],
+    provenance:
+      "wave 2L re-check close-readers#1 and #4: `p.fundedAmount <= 0` filed an unpriced row under 'user funded', " +
+      "`> 0` hid it from both, `toPaise(p.fundedAmount)` would print a STATED ₹0 on the desk for a row nobody " +
+      "priced, and app/targets/equity/page.tsx summed the estimate into five figures.",
+  },
+  {
+    id: "own-capital-null",
+    field: "ownCapital",
+    fields: ["ownCapital", "ownCapitalP"],
+    rule:
+      "`OpenPosition.ownCapital` (and `ownCapitalP`) is null unless the row is a plain held MTF buy leg with a " +
+      "stated funded amount. A STATED 0 (the broker funded the whole position) is a figure; null is the absence " +
+      "of one, disclosed with a count and a reason (invariant 6).",
+    forbidden: "`?? 0`, `&&`, `||`, `> 0` / `>= 0` / `< 0` / `<= 0`, `!x`, `x ? :`, `Boolean(x)`, `if (x)`",
+    allowed: "`== null` / `!= null`, `statesOwnCapital(p)`, `toPaiseOrNull(x)`, a null-checked local, passing it on unchanged",
+    triggers: ["ownCapital", "ownCapitalP"],
+    roots: ["components/trackers", "components/live", "app/equity", "app/targets"],
+    provenance:
+      "wave 2L re-check close-readers#4: `ownCapitalP` appeared in no test at all, so `toPaise(p.ownCapital ?? 0)` " +
+      "would typecheck and make the desk print '₹0' for a leg that states none — and the per-row cell's extra " +
+      "`(p.ownCapital ?? 0) > 0` printed '—' for a STATED 0 the KPI counted (close-readers#0).",
+  },
+  {
     id: "raw-date",
     field: "exitDate / sellDate / buyDate",
     rule:
       "A RAW date string (a form field, a request body, a function parameter) must be RESOLVED before it is read as a day — " +
       "`normalizeDate` / `resolveExitIso` / `isRealDay` / a `Date.parse` validation — or guarded for emptiness where it is used.",
-    forbidden: "`new Date(rawDateField)` with neither a resolver in its provenance nor an emptiness guard over it",
-    allowed: "`new Date(exitIso)` after `resolveExitIso`, `new Date(t.buyDate)` under `if (!t.buyDate) return` or inside `t.buyDate ? … : 0`",
-    triggers: ["new Date("],
+    forbidden:
+      "`new Date(rawDateField)` with neither a resolver in its provenance nor an emptiness guard over it; " +
+      "a raw date field handed to a DAY COUNTER (`epochSpans`) with no resolver at all — it does not throw on a value it cannot read",
+    allowed: "`new Date(exitIso)` after `resolveExitIso`, `new Date(t.buyDate)` under `if (!t.buyDate) return` or inside `t.buyDate ? … : 0`, `epochSpans(…, buyIso, today)` after `normalizeDate`",
+    triggers: ["new Date(", "epochSpans("],
     roots: ["lib", "app", "components"],
     provenance:
       "wave 2H new_defects[1] / wave 2I I1[1]: closePreviewBody took the holding period off the RAW exit field, " +
       "`new Date(\"\")` is Invalid Date, daysHeld went NaN, JSON sent it as null and the route billed 0 days of " +
-      "MTF interest against a save that charged ₹205.15 of it.",
+      "MTF interest against a save that charged ₹205.15 of it. Wave 2N ipo#1 added the DAY-COUNTER half: " +
+      "`accrueMtfInterest` (lib/jobs/mtf-accrual.ts) handed `t.buyDate` raw to `epochSpans`, which does NOT throw — " +
+      "measured '9999-99-99' → 0 days (the job zeroed the row's stored interest, charges and net) and " +
+      "'2026-02-31' → 199 days / ₹636.80 billed from a day the row does not state.",
   },
   {
     id: "ipo-link-scope",
@@ -305,8 +352,43 @@ function fundedViolation(sf: TS.SourceFile, read: TS.Node): string | null {
   return null;
 }
 
-function scanFunded(sf: TS.SourceFile, file: string, field: string): Violation[] {
+/**
+ * `x ?? 0` where the 0 is NOT an estimate but a silent fill-in.
+ *
+ * For `mtfFundedAmount` the nullish default is a legitimate read (`?? <estimate>`)
+ * and only what SITS ON TOP of it can break the rule. For the two fields wave 2N
+ * made nullable it is the defect itself: `toPaise(p.ownCapital ?? 0)` prints a
+ * STATED ₹0 for a leg that states none, and nothing goes red.
+ */
+function collapsesNullOntoZero(sf: TS.SourceFile, read: TS.Node): boolean {
+  // The same walk `throughPassthrough` makes, stopping AT the `?? 0` step
+  // instead of walking through it — `s + (x.fundedAmount ?? 0)` wraps the
+  // nullish default in parentheses, so looking only at the end of the chain
+  // misses exactly the shape a reduce uses.
+  let cur: TS.Node = read;
+  for (;;) {
+    const p: TS.Node | undefined = cur.parent;
+    if (!p) return false;
+    if (ts.isParenthesizedExpression(p) || ts.isAsExpression(p) || ts.isNonNullExpression(p)) {
+      cur = p;
+      continue;
+    }
+    if (ts.isCallExpression(p) && p.expression.getText(sf) === "Number" && p.arguments[0] === cur) {
+      cur = p;
+      continue;
+    }
+    return (
+      ts.isBinaryExpression(p) &&
+      p.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken &&
+      p.left === cur &&
+      isZero(p.right)
+    );
+  }
+}
+
+function scanFunded(sf: TS.SourceFile, file: string, field: string, rule: RuleId = "mtf-funded-0"): Violation[] {
   const out: Violation[] = [];
+  const nullishZeroForbidden = rule !== "mtf-funded-0";
   const { names, fns } = carriersOf(sf, field);
   walk(sf, (n) => {
     const isCarrier =
@@ -316,8 +398,12 @@ function scanFunded(sf: TS.SourceFile, file: string, field: string): Violation[]
     if (!isCarrier) return;
     // A binding pattern element declares the alias; it is not a read of it.
     if (n.parent && ts.isBindingElement(n.parent)) return;
-    const why = fundedViolation(sf, n);
-    if (why) out.push({ rule: "mtf-funded-0", file, line: lineOf(sf, n), expr: oneLine(sf, throughPassthrough(sf, n).parent ?? n), why });
+    const why =
+      fundedViolation(sf, n) ??
+      (nullishZeroForbidden && collapsesNullOntoZero(sf, n)
+        ? "`?? 0` fills in a figure the journal does not state: null (never recorded) and a stated 0 become the same number"
+        : null);
+    if (why) out.push({ rule, file, line: lineOf(sf, n), expr: oneLine(sf, throughPassthrough(sf, n).parent ?? n), why });
   });
   return out;
 }
@@ -390,9 +476,32 @@ function guarded(sf: TS.SourceFile, node: TS.Node, key: string): boolean {
   return false;
 }
 
+/**
+ * Calls that COUNT DAYS from the string they are handed. Unlike `new Date`, they
+ * do not fail loudly on a value they cannot read — `epochSpans` → `daysBetween`
+ * (lib/engine/rates.ts) answers 0 — so an emptiness guard is not enough for them:
+ * the argument must have been RESOLVED (wave 2N, ipo#1).
+ */
+const DAY_COUNTERS = /^(epochSpans)$/;
+
 function scanRawDate(sf: TS.SourceFile, file: string): Violation[] {
   const out: Violation[] = [];
   walk(sf, (n) => {
+    if (ts.isCallExpression(n) && DAY_COUNTERS.test(trailingName(n.expression) ?? "")) {
+      for (const arg of n.arguments) {
+        const name = trailingName(arg);
+        if (!name || !RAW_DATE_NAMES.test(name)) continue;
+        if (RESOLVERS.test(arg.getText(sf))) continue;
+        if (ts.isIdentifier(arg) && resolvedLocally(sf, arg.text)) continue;
+        out.push({
+          rule: "raw-date",
+          file,
+          line: lineOf(sf, n),
+          expr: oneLine(sf, arg),
+          why: `a raw \`${name}\` is counted from by ${trailingName(n.expression)}, which answers 0 days for a value it cannot read rather than refusing — the row's stored interest, charges and net then move to a figure nothing states`,
+        });
+      }
+    }
     if (!ts.isNewExpression(n) || n.expression.getText(sf) !== "Date") return;
     const arg = n.arguments?.[0];
     if (!arg || n.arguments!.length !== 1) return; // `new Date(Date.UTC(y, m, d))` takes the parts, not a string
@@ -477,7 +586,11 @@ export function scanSource(fileName: string, text: string, only?: RuleId[]): Vio
   for (const r of REGISTRY) {
     if (!want(r.id)) continue;
     if (!r.triggers.some((t) => text.includes(t))) continue;
-    if (r.id === "mtf-funded-0") out.push(...scanFunded(parse(), file, r.field));
+    // The three null-vs-0 money rules share ONE scanner; each states its own
+    // fields and its own roots.
+    if (r.id === "mtf-funded-0" || r.id === "open-position-funded" || r.id === "own-capital-null") {
+      for (const f of r.fields ?? [r.field]) out.push(...scanFunded(parse(), file, f, r.id));
+    }
     if (r.id === "raw-date") out.push(...scanRawDate(parse(), file));
     if (r.id === "ipo-link-scope") out.push(...scanIpoLink(parse(), file));
   }

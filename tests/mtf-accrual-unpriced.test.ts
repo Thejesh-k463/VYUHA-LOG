@@ -15,12 +15,18 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
  * card compared the requirement against a margin the journal never recorded —
  * a fabricated figure stated as the journal's own (invariant 6).
  *
- * The job now NEVER writes mtf_funded_amount. Interest for a null-funded row is
- * still accrued on the estimate, exactly as before (the interest column is an
- * estimate the UI already labels), and chargesTotal/netPnl bookkeeping is
- * unchanged — the figures pinned below are the ones the job produced BEFORE the
- * change. A STATED amount (0 included, V3/X2) is read as today and never
- * overwritten.
+ * The job now NEVER writes mtf_funded_amount.
+ *
+ * Q-A (OWNER RULING, v4.3.0 wave 2N — mtf-accrual#0/#1) — AND IT NO LONGER
+ * ACCRUES ON THE ESTIMATE EITHER. Using `defaultMtfFundedAmount(buyValue,
+ * margin_config)` on every render meant a broker's own-margin % edit (POST
+ * /api/margin, a settings-baseline restore, a backup restore) retroactively
+ * restated the stored charges_total and net_pnl of every unpriced holding —
+ * measured [null, 60.8, 60.8, -60.8] -> [null, 38, 38, -38] on the same day, no
+ * prompt, no audit row, which is the very thing this job's per-epoch design
+ * exists to prevent (DECISIONS 2026-08-30 decision 6). A row with no recorded
+ * funded amount accrues NOTHING; an estimate already stored is released once.
+ * A STATED amount (0 included, V3/X2) is read as today and never overwritten.
  *
  * ONE temp database per FILE (AGENTS.md Testing); lib/jobs/mtf-accrual reaches
  * lib/db, so it is imported dynamically after the helper sets VYUHA_DB_PATH.
@@ -69,7 +75,7 @@ const openMtf = (symbol: string, qty: number, mtfFundedAmount: number | null) =>
     .get()!.id;
 
 describe("M1 — the daily accrual job accrues interest but never states a funded amount the journal never recorded", () => {
-  it("an unpriced (null) row: the same interest as before, and the funded amount is STILL null", () => {
+  it("an unpriced (null) row: the funded amount is STILL null, and NOTHING accrues on it (Q-A)", () => {
     const id = openMtf("ACCUNPRICED", 100, null);
     expect(row(id).mtfFundedAmount, "unstated, not 0").toBeNull();
 
@@ -79,9 +85,36 @@ describe("M1 — the daily accrual job accrues interest but never states a funde
     // of the 10,000 buy — is STATED on the row, and every reader that tests
     // `mtfFundedAmount == null` stops seeing it as unpriced).
     expect(row(id).mtfFundedAmount, "the job priced a position the journal never priced").toBeNull();
-    // The interest arithmetic and the charges/net bookkeeping are UNCHANGED:
-    // the estimate is still what interest accrues on (19 days on 8,000).
-    expect(funding(id)).toEqual([null, 60.8, 60.8, -60.8]);
+    // PIN MOVED (Q-A): on revert, [null, 60.8, 60.8, -60.8] — 19 days billed on
+    // an 8,000 principal nothing in the journal states, and re-billed at a
+    // different figure on the next margin-config edit.
+    expect(funding(id)).toEqual([null, 0, 0, 0]);
+  });
+
+  /**
+   * Q-A's release half. A row that already carries an estimate the job wrote
+   * under the old rule loses it ONCE, and its chargesTotal / netPnl come back
+   * with it — otherwise a permanent 60.80 of interest on an imaginary principal
+   * sits in the book with no writer that can ever remove it.
+   */
+  it("an estimate already in the row's stored money is released ONCE, then the row is left alone", () => {
+    const id = openMtf("ACCRELEASE", 100, null);
+    // The state the old job left behind: 19 days on the 8,000 estimate.
+    t.db
+      .update(t.schema.trades)
+      .set({ mtfInterest: 60.8, chargesTotal: 60.8, netPnl: -60.8 })
+      .where(eq(t.schema.trades.id, id))
+      .run();
+
+    const first = accrueMtfInterest("2026-08-20");
+    // THE assertion (on revert: the row keeps 60.8 and the job re-bills it).
+    expect(funding(id)).toEqual([null, 0, 0, 0]);
+    expect(first.updated, "the release is a write").toBeGreaterThan(0);
+
+    // …and only once: the second run has nothing to do.
+    const second = accrueMtfInterest("2026-08-20");
+    expect(funding(id)).toEqual([null, 0, 0, 0]);
+    expect(second.updated).toBe(0);
   });
 
   it("a stated 0 (the whole position from own capital) stays 0 and accrues nothing", () => {
@@ -106,7 +139,7 @@ describe("M1 — the daily accrual job accrues interest but never states a funde
     expect(second.updated, "nothing to write on a re-run").toBe(0);
     expect(ids.map(funding)).toEqual(before);
     expect(before).toEqual([
-      [null, 60.8, 60.8, -60.8],
+      [null, 0, 0, 0],
       [0, 0, 0, 0],
       [16000, 121.6, 121.6, -121.6],
     ]);

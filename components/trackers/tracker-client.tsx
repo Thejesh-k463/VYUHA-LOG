@@ -9,7 +9,15 @@ import { KpiCard } from "@/components/kpi-card";
 import { Select } from "@/components/ui/select";
 import { ExportButtons } from "@/components/ui/export-button";
 import { MtmForm } from "./mtm-form";
-import { ownCapitalNote, ownCapitalTotal, statesOwnCapital, type OpenPosition } from "@/lib/analytics/positions";
+import {
+  fundingSide,
+  interestOnWholeLeg,
+  MTF_INTEREST_WHOLE_LEG_NOTE,
+  ownCapitalNote,
+  ownCapitalTotal,
+  statesOwnCapital,
+  type OpenPosition,
+} from "@/lib/analytics/positions";
 import { inr, inrCompact, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 
@@ -42,8 +50,10 @@ export function TrackerClient({
   const data = React.useMemo(() => {
     let list = positions;
     if (seg) list = list.filter((p) => p.segment === seg);
-    if (funding === "user") list = list.filter((p) => p.fundedAmount <= 0);
-    if (funding === "broker") list = list.filter((p) => p.fundedAmount > 0);
+    // D7 — `fundedAmount <= 0` filed a row the journal never priced under "user
+    // funded", and `> 0` hid it from both. One rule, and a null is neither.
+    if (funding === "user") list = list.filter((p) => fundingSide(p) === "user");
+    if (funding === "broker") list = list.filter((p) => fundingSide(p) === "broker");
     return list;
   }, [positions, seg, funding]);
 
@@ -51,15 +61,26 @@ export function TrackerClient({
   const capitalKnown = bucketCapital > 0;
   const available = bucketCapital - deployed;
   const unrealised = positions.reduce((s, p) => s + p.unrealised, 0);
-  const mtfFunded = positions.reduce((s, p) => s + p.fundedAmount, 0);
   const mtfInterest = positions.reduce((s, p) => s + p.accruedInterest, 0);
   // L2[0]: the own-capital total is not a plain reduce. A partly sold MTF leg
   // states no own capital (the stored funded amount is the whole buy leg's),
   // and summing it straight across the book SUBTRACTED that row from the
   // trader's own money. `ownCapitalTotal` leaves those rows out and counts
   // them; `ownCapitalNote` is the sentence shown wherever the total is.
+  //
+  // D7 (close-readers#2): BROKER-FUNDED COMES FROM THE SAME SET. It used to be
+  // the whole-book `positions.reduce(p.fundedAmount)` while own capital and
+  // leverage were the stating subset, so the dialog read ₹32,000 funded beside
+  // ₹4,000 own and a 5.00× ratio the two rows above it make 9.00×. All three
+  // money rows now describe one set of rows, the note is on all three, and a
+  // fourth line states the financing left out of them.
   const ownCap = ownCapitalTotal(positions);
-  const ownCapNote = ownCapitalNote(ownCap.unstated);
+  const ownCapNote = ownCapitalNote(ownCap);
+  const mtfFunded = ownCap.funded;
+  const mtfRowsOut = positions.filter((p) => p.isMtf && !statesOwnCapital(p));
+  // Interest is stored money and is NOT subset-scoped: it is what the journal
+  // has already booked on every MTF row, including the ones left out above.
+  const outInterest = mtfRowsOut.reduce((s, p) => s + p.accruedInterest, 0);
 
   // Drill-down inputs for the KPI popups (click any card).
   const sortedByInvested = [...positions].sort((a, b) => b.invested - a.invested);
@@ -107,9 +128,22 @@ export function TrackerClient({
         // Reads the SAME predicate the KPI total does (L2[0]) — the cell and
         // the total held the rule separately, so the row showed "—" while the
         // total was quietly reduced by it.
-        { accessorKey: "ownCapital", header: "Own capital", meta: { align: "right" }, cell: ({ row }) => { const p = row.original; return statesOwnCapital(p) && (p.ownCapital ?? 0) > 0 ? num(p.ownCapital as number, 0) : "—"; } },
-        { accessorKey: "fundedAmount", header: "MTF funded", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
-        { accessorKey: "accruedInterest", header: "MTF int.", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
+        // D7 — the predicate ALONE. The extra `> 0` on top of it printed "—"
+        // for a STATED own capital of 0 (funded == invested) that the KPI total
+        // counted, which is the same cell-vs-total disagreement L2[0] ended.
+        { accessorKey: "ownCapital", header: "Own capital", meta: { align: "right" }, cell: ({ row }) => { const p = row.original; return statesOwnCapital(p) ? num(p.ownCapital as number, 0) : "—"; } },
+        // A null is "the journal never priced this row"; a stated 0 is "the
+        // broker funded none of it". Only the null renders a dash.
+        { accessorKey: "fundedAmount", header: "MTF funded", meta: { align: "right" }, cell: ({ row }) => { const p = row.original; return p.isMtf && p.fundedAmount != null ? num(p.fundedAmount, 0) : "—"; } },
+        {
+          accessorKey: "accruedInterest", header: "MTF int.", meta: { align: "right" },
+          cell: ({ row }) => {
+            const p = row.original;
+            if (!(p.accruedInterest > 0)) return "—";
+            // Q-B: the figure stands; the caveat is stated where it is read.
+            return <span title={interestOnWholeLeg(p) ? MTF_INTEREST_WHOLE_LEG_NOTE : undefined}>{num(p.accruedInterest, 0)}</span>;
+          },
+        },
         {
           accessorKey: "roiOnCapitalPct", header: "ROI on capital", meta: { align: "right" },
           cell: ({ getValue }) => { const v = getValue() as number | null; return v == null ? "—" : <span className={pnl(v)}>{v.toFixed(2)}%</span>; },
@@ -207,7 +241,13 @@ export function TrackerClient({
               { label: "Winners / losers", value: `${positions.filter((p) => p.unrealised > 0).length} / ${positions.filter((p) => p.unrealised < 0).length}` },
               { label: "Largest position", value: topPosition ? `${topPosition.symbol} · ${inr(topPosition.invested, { decimals: 0 })}` : "—", hint: topPosition && bucketCapital ? `${((topPosition.invested / bucketCapital) * 100).toFixed(1)}% of bucket capital` : undefined },
               { label: "Oldest holding", value: oldest ? `${oldest.symbol} · ${oldest.daysHeld ?? 0}d` : "—" },
-              ...(variant === "equity" ? [{ label: "MTF-funded positions", value: `${positions.filter((p) => p.fundedAmount > 0).length}` }] : []),
+              ...(variant === "equity"
+                ? [{
+                    label: "MTF-funded positions",
+                    value: `${positions.filter((p) => fundingSide(p) === "broker").length}`,
+                    hint: ownCap.unstatedWhy.unpriced > 0 ? `${ownCap.unstatedWhy.unpriced} MTF ${ownCap.unstatedWhy.unpriced === 1 ? "row states" : "rows state"} no funded amount yet` : undefined,
+                  }]
+                : []),
             ],
             note: "Concentration is risk: one position dominating the bucket is the most common way a good month becomes a bad one.",
           }}
@@ -259,13 +299,22 @@ export function TrackerClient({
               title: "MTF — what the broker is funding",
               summary: "Interest accrues only on the broker-funded portion, never on your own capital.",
               rows: [
-                { label: "Broker-funded", value: inr(mtfFunded, { decimals: 0 }), tone: "loss" },
+                // All three money rows read ONE set — `ownCapitalTotal`'s
+                // stating rows — so the ratio describes one book and the reader
+                // cannot compute a different leverage from the two rows above
+                // it (close-readers#2). The note rides on all three.
+                { label: "Broker-funded", value: inr(ownCap.funded, { decimals: 0 }), tone: "loss", hint: ownCapNote ?? undefined },
                 { label: "Your own capital", value: inr(ownCap.total, { decimals: 0 }), hint: ownCapNote ?? undefined },
-                // Own AND funded come from the SAME rows, so the ratio
-                // describes one book — mixing a subset's own capital with the
-                // whole book's financing would invent the leverage (invariant 6).
                 { label: "Effective leverage", value: ownCap.total > 0 ? `${((ownCap.total + ownCap.funded) / ownCap.total).toFixed(2)}×` : "—", hint: ownCapNote ?? undefined },
-                { label: "Interest accrued so far", value: `−${inr(mtfInterest, { decimals: 0 })}`, tone: "loss" },
+                // …and what those three left out is stated, never estimated.
+                ...(mtfRowsOut.length > 0
+                  ? [{
+                      label: "Not in these figures",
+                      value: `${mtfRowsOut.length} MTF ${mtfRowsOut.length === 1 ? "row" : "rows"}`,
+                      hint: `${ownCapNote ?? ""}${outInterest > 0 ? ` · ${inr(outInterest, { decimals: 0 })} of interest on them is still counted below` : ""}`,
+                    }]
+                  : []),
+                { label: "Interest accrued so far", value: `−${inr(mtfInterest, { decimals: 0 })}`, tone: "loss", hint: mtfRowsOut.some(interestOnWholeLeg) ? MTF_INTEREST_WHOLE_LEG_NOTE : undefined },
                 { label: "Interest vs unrealised gain", value: unrealised > 0 ? `${((mtfInterest / unrealised) * 100).toFixed(1)}%` : "—", hint: mtfInterest > 0 && unrealised > 0 && mtfInterest >= unrealised ? "interest has eaten the entire paper gain" : "share of your paper gain already spent on financing" },
               ],
               note: "MTF interest compounds daily whether the position moves or not — time is a cost here, not a free option.",

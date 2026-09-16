@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
 import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
-import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { toast } from "@/components/ui/toaster";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
@@ -83,6 +82,14 @@ export function editPreviewBody(trade: Trade, f: EditPreviewFields) {
     tradingsymbol: trade.tradingsymbol,
     segment: trade.segment,
     exchange: trade.exchange,
+    // D4 (v4.3.0 wave 2N) — WHICH row is being edited, and the two average prices,
+    // so the route can ask the save's own question: does this edit change anything
+    // the charge engine is fed? If not it answers the charges the row already
+    // states, because that is what the save will keep (owner ruling F1). Sent by
+    // this dialog only; the close dialog and the Add form price fresh, as before.
+    tradeId: trade.id,
+    avgBuyPrice: f.avgBuyPrice,
+    avgSellPrice: f.avgSellPrice,
     buyValue: f.buyQty * f.avgBuyPrice,
     sellValue: f.sellQty * f.avgSellPrice,
     buyQty: f.buyQty,
@@ -96,6 +103,11 @@ export function editPreviewBody(trade: Trade, f: EditPreviewFields) {
     sellOrders: f.sellQty > 0 ? trade.sellOrderCount || undefined : 0,
     grossPnl: !isOpen ? f.sellQty * f.avgSellPrice - f.buyQty * f.avgBuyPrice : 0,
     ownCapitalUsed: f.ownCapitalUsed,
+    // Q-A (wave 2N) — with nothing typed in "Own capital used", a row the
+    // journal never priced keeps its NULL through the save and bills 0 interest
+    // (the pledge charge stands). The route prices this preview the same way,
+    // so the dialog cannot show a figure the save will not store.
+    mtfFundingUnstated: trade.segment === "eq_mtf" && trade.mtfFundedAmount == null && f.ownCapitalUsed == null,
     daysHeld: !isOpen && buyIso && sellIso ? Math.max(0, Math.floor((new Date(sellIso).getTime() - new Date(buyIso).getTime()) / 86400000)) : 0,
     isOpen,
     // The dates the save will STORE (`normalizeDate` at both ends), so the route
@@ -112,10 +124,11 @@ export function editPreviewBody(trade: Trade, f: EditPreviewFields) {
 export function EditTradeDialog({
   trade,
   onDone,
-  mtfMarginByBroker = {},
 }: {
   trade: Trade;
   onDone: () => void;
+  /** Kept on the props so the caller compiles unchanged; nothing in this dialog
+   *  estimates a funded amount any more (Q-A). */
   mtfMarginByBroker?: Record<string, number>;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(updateTradeAction, { ok: false, message: "" });
@@ -168,9 +181,14 @@ export function EditTradeDialog({
   // doesn't retroactively re-derive it, it just changes what's left as "own
   // capital". Mirrors updateManualTrade's own fallback exactly (never the
   // generic margin-% guess) so the preview never drifts from what gets saved.
-  const brokerMtfPct = mtfMarginByBroker[trade.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
-  const currentFundedGuess = trade.mtfFundedAmount ?? (positionValue > 0 ? defaultMtfFundedAmount(positionValue, brokerMtfPct) : 0);
-  const currentOwnCapitalGuess = Math.max(0, Math.round((positionValue - currentFundedGuess) * 100) / 100);
+  // Q-A (wave 2N) — NULL when the journal never recorded what the broker
+  // funded. It used to be filled with `defaultMtfFundedAmount(positionValue,
+  // margin_config)`, and the dialog SENT that guess as the user's own capital,
+  // so re-saving a notes field turned an unpriced row into a stated
+  // margin-default amount. `updateManualTrade` keeps the null now, and this
+  // sends nothing rather than a figure nobody recorded.
+  const currentOwnCapital =
+    trade.mtfFundedAmount == null ? null : Math.max(0, Math.round((positionValue - trade.mtfFundedAmount) * 100) / 100);
 
   // DERIVED at render time, never stored in state (AGENTS.md: derive instead of
   // syncing state in an effect): the sentence the Save would answer for a date
@@ -235,7 +253,7 @@ export function EditTradeDialog({
               avgBuyPrice: bp,
               sellQty: sq,
               avgSellPrice: sp,
-              ownCapitalUsed: ownCapitalUsed !== "" ? Number(ownCapitalUsed) : isMtf ? currentOwnCapitalGuess : null,
+              ownCapitalUsed: ownCapitalUsed !== "" ? Number(ownCapitalUsed) : isMtf ? currentOwnCapital : null,
               // The save re-prices at pricingDate({ buyDate, sellDate }); so does the preview (R56).
               buyDate: buyDate || null,
               sellDate: sellDate || null,
@@ -246,7 +264,7 @@ export function EditTradeDialog({
       } catch { /* aborted */ }
     }, 300);
     return () => { clearTimeout(id); ctrl.abort(); };
-  }, [buyQty, avgBuyPrice, sellQty, avgSellPrice, buyDate, sellDate, ownCapitalUsed, isMtf, currentOwnCapitalGuess, trade]);
+  }, [buyQty, avgBuyPrice, sellQty, avgSellPrice, buyDate, sellDate, ownCapitalUsed, isMtf, currentOwnCapital, trade]);
 
   return (
     <form action={formAction} className="space-y-3">
@@ -286,7 +304,7 @@ export function EditTradeDialog({
               step="any"
               value={ownCapitalUsed}
               onChange={(e) => setOwnCapitalUsed(e.target.value)}
-              placeholder={currentOwnCapitalGuess > 0 ? `currently ≈ ${Math.round(currentOwnCapitalGuess).toLocaleString("en-IN")}` : "auto-estimated"}
+              placeholder={currentOwnCapital != null ? `currently ≈ ${Math.round(currentOwnCapital).toLocaleString("en-IN")}` : "not recorded"}
             />
           </Field>
         )}

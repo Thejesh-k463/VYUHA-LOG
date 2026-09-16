@@ -790,6 +790,8 @@ export const OPS: BookOp[] = [
 
 /** The look-alike's name — an ISSUE's name, as /ipos' own field is labelled. */
 export const LOOKALIKE_IPO_NAME = "Second G2 Sequence Issue Limited";
+/** The stray record's name — ANOTHER issue entirely (re-check counted-once#0). */
+export const STRAY_IPO_NAME = "Bee Industries Limited";
 
 /**
  * FIXTURE VARIANTS (G-G2-1, wave 2M) — a shape a named scenario needs, which is
@@ -835,6 +837,63 @@ export const VARIANTS: BookOp[] = [
         .returning({ id: ctx.t.schema.ipos.id })
         .get()!.id;
       record(ctx, "addLookalikeIpoRecord", "applied", `a second unlinked exited record #${id} stating the same allotment`);
+    },
+  },
+  {
+    // D1 (fix wave 2N, re-check finding counted-once#0) — THE BEE SHAPE.
+    //
+    // A record of ANOTHER issue the user keeps in the same book, whose four
+    // allotment facts happen to be the fixture holding's own: allotted with an
+    // exit price, the same quantity, the same allotment day, the same exit day.
+    // Two IPOs allotted on one day in the same lot size and both sold on listing
+    // day is an ordinary retail pattern — and `ipos` carries no symbol or ISIN,
+    // so nothing on this row can tell tier B it is a different scrip. Its own
+    // sale must go on being counted once, before and after any restore.
+    name: "addStrayExitedRecordOfAnotherScrip",
+    needs: "the fixture's own IPO record is still stored",
+    drives: "a second /ipos application in the same book, for a DIFFERENT issue",
+    run: async (_db, ctx) => {
+      const stored = ctx.t.db.select().from(ctx.t.schema.ipos).all().find((r) => r.id === ctx.ids.ipoId);
+      if (!stored) return record(ctx, "addStrayExitedRecordOfAnotherScrip", "skipped", "the fixture's IPO record is gone");
+      const id = ctx.t.db
+        .insert(ctx.t.schema.ipos)
+        .values({
+          accountId: stored.accountId,
+          name: STRAY_IPO_NAME,
+          broker: stored.broker,
+          exchange: stored.exchange,
+          appliedPrice: stored.appliedPrice,
+          lotSize: stored.lotSize,
+          lotsApplied: stored.lotsApplied,
+          allotted: true,
+          allottedQty: stored.allottedQty,
+          listingPrice: stored.listingPrice,
+          // A different issue, a different exit price — the same allotment FACTS.
+          exitPrice: (stored.exitPrice ?? 150) + 10,
+          appliedDate: stored.appliedDate,
+          allotmentDate: stored.allotmentDate,
+          listingDate: stored.listingDate,
+          exitDate: stored.exitDate,
+          tradeId: null,
+        })
+        .returning({ id: ctx.t.schema.ipos.id })
+        .get()!.id;
+      record(ctx, "addStrayExitedRecordOfAnotherScrip", "applied", `a stray exited record #${id} of another issue, same allotment facts`);
+    },
+  },
+  {
+    // D1 (fix wave 2N) — the user's own answer to the `ipo_record_link`
+    // question. A restore no longer writes a tier-B pairing (the record carries
+    // the ISSUE's name and `ipos` has no scrip fact, so it cannot prove it is
+    // this holding's — counted-once#0), so what settles the book is the link the
+    // user makes on /ipos. The moment they do, the allotment is counted once.
+    name: "linkIpoRecordOnIpos",
+    needs: "the fixture's IPO record is stored and its holding is in the journal",
+    drives: "POST /api/ipos with a tradeId — the form's own link write",
+    run: async (_db, ctx) => {
+      const holding = tradeById(ctx, ctx.ids.ipoTrade);
+      if (!holding) return record(ctx, "linkIpoRecordOnIpos", "skipped", "the IPO holding is gone");
+      await postIpo(ctx, "linkIpoRecordOnIpos", { tradeId: ctx.ids.ipoTrade });
     },
   },
 ];
