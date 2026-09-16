@@ -7614,3 +7614,128 @@ before the gate; the 2O scoped re-check is the measurement that counts.
 **Model.** Orchestrated on Fable by the owner's instruction; every agent Opus: 1 explorer, 1 drafter, 2 design reviewers, 4 builders
 (B-MTF and B-DATES resumed once at the 150-turn limit), 1 seam tester (resumed once), 2 seam-fix builders — ≈ 5.3 M subagent tokens
 for the wave, ≈ 2 M for the re-check before it.
+
+## 2026-09-17 — v4.3.0 fix wave 2O: the scoped re-check (eleventh session) → 42 CONFIRMED, 0 REFUTED, 0 UNVERIFIABLE; 16 unique findings (12 product, 4 test-low) → fix wave 2P absorbs all 12 product findings
+
+**Procedure.** `18-FIX-WORK-4.3.0/recheck-wave2o.js` (the 2N script copied: pre-wave `5e537b3` whose code is `f9a1a6b`, wave
+`b2af3d8`, tree HEAD `ef47e6f` whose code is `b2af3d8`, probe prefix `zzprobe-rc9-`), FIVE probe-capable Fable reviewers in one
+workflow — metrics-palette (D1–D3 + seam-fix defect 1), identity (D4, D5), mtf-staged (D6–D12 + D20 + seam-fix defect 2 + the
+S-FIX2 preview branch), dates-charges-ask (D13–D19 + D20's editor half), seams (fixH H1–H14, the flipped F1(a), F35's fixture,
+the two S-FIX pins, the ten boundaries of `wave2o-seams.md` §1) — every fix re-proved RED-ON-REVERT from `git show 5e537b3:<path>`
+copies wired through vi.mock, every probe deleted, no tracked file touched (all five reported `probes_deleted: true`,
+`tracked_files_untouched: true`; the tree was clean before and after). Verdicts persisted: `18-FIX-WORK-4.3.0/wave2o-recheck.json`
+(five units; 42 verdicts; 17 raw findings of which two are one defect reported by two units — mtf-staged#3 ≡ dates-charges-ask#0 —
+so 16 unique). Raw lines quoted by the reviewers: `seams-v43-fixH` 18 passed with NO expected fail (H2 591 / 432 ms and H8 335 /
+351 ms in two samples under five concurrent reviewers, against 304 / 296 ms recorded in the file); fixF 60; fixE 39; the four
+guards 18 / 319 / 20 / 67; `wave2o-metrics-palette` 11; `wave2o-mtf` 3; the eight metrics files in one run 149; identity's six
+files in one run 473; `preview-equals-save-matrix` 67 from three units. Entry gate on this tree re-run by the orchestrator first:
+EXIT 0, **433 files / 9,544 passed / 35 skipped**, no expected fail (22 above the 9,522 recorded at `b2af3d8` with NO test-file
+change since — `tests/helpers/owner-broker-files.ts` enumerates the owner's broker folder by filename pattern, and the six real
+exports filed on 2026-09-16/17 add cases that run only on this machine; CI skips them); CI 35125379974 re-read `success` 6/6 on
+`b2af3d8`.
+
+**Every 2O fix CONFIRMED** (D1 the four projections byte-identical `[2, null, null, null, null, 0.27]` on the all-unpriced book,
+the dashboard hero '—' with `valueNum` undefined taking the quiet path (never the empty card), the three raw template sites
+rendered on a gross-exactly-zero book, the members route `[2, null, null]`; D2 the dashboard hero = the edge book rate = the
+/lenses row = the share card = the members route on a mixed book, the BY m-effect through the RENDERED page, the export blank for a
+null rate AND a null avgR; D3 through the REAL handlers — no jsdom in the tree, so a `vi.mock('react')` hook store + a stub window
+ran both `onKey` closures and read `open` off `DialogPrimitive.Root`: Ctrl+K toggles, Ctrl+Shift+K opens only the panel, AltGr+K
+in an input opens nothing, red on the pre-wave palette for both; D4 a purge → restore keeps a live cross-account link, an
+envelope trade that cannot land nulls the reference with the message, twice-run restore idempotent; D5 the badge = affectedCount,
+the score unchanged; D6/D7 a null-funded ladder bills 0 interest and 0 pledge, stated 3,000 over 100@100 + 50@110 apportioned
+1,935.48 / 1,064.52 to the paisa, FIFO consumption to asOf; D8 face = rows = /targets = the desk's paise; D9 one reason per row;
+D10 the info code with a real href; D11 the omission stated once, `cheapest` / `maxSaving` without financing; D13 a day-first sale
+date saves 200; D14/D15 preview ≡ save on an allotment row, no purchase STT on an un-exited allotment; D16 `''` prices nothing;
+D17 `{ok:false}` never a throw; D18 two rows two cards; D19 12 rows and both tails; D20 + S-FIX the `[150, 103.33, 15500]` ladder
+saves a notes-only patch, a moved fill refused, preview ≡ save with `keptReason`; every H red with one side reverted). The ten
+boundaries: #1 and #2 rendered through a `KpiCard` stub and a per-column `cell()` invocation (consistent figures; the Radix layer
+and the client row window cannot mount — **no jsdom / happy-dom / @testing-library is installed on this tree**, which the 2N and
+2O briefs had assumed); #3/#4 crossed at the data with the PRE dialog collapsing two rows to one card; #5 the two edge columns
+AGREE; #6 recharts draws nothing in SSR (the source pin is the guard); #7 covered by an existing test; #8 the orchestrator's;
+#9 preview ≡ save for the BLANK Add form too (both doors still estimate a new row's principal — the recorded Q-A deviation for
+`commitManualTrade`); #10 the members route on the same projection.
+
+**The 16 findings, graded by INTRODUCED regressions (the owner's stopping rule).** Introduced by 2O: **ONE silent wrong
+number** — mtf-staged#0 `lib/import/commit.ts:2682` D20's hand-back `rebuildStagedTrade` has no `isOpen` guard, so a notes-only
+editor save (and a leg-note edit through `staged.ts:635`) on a CLOSED legacy staged MTF row with no recorded principal RELEASES
+the margin-config estimate: mtfInterest 44.80 → 0, netPnl 833.47 → 913.67 (+₹80.20 on a closed trade), the owner's 2O row-1
+ruling ("leave the closed rows alone") breached through a door the job's `isOpen` filter never covers — pre-wave the same save
+kept `[44.8, 166.53, 833.47]`; one medium — mtf-staged#1 `lib/jobs/mtf-accrual.ts:54-66` the job's new staged branch has no
+per-row try/catch (the flat path has one at :121-131), so a broker with no eq_mtf epoch covering today throws out of
+`accrueMtfInterest`, `/equity` swallows it, and every later row in rowid order — flat rows with a STATED principal included —
+silently stops accruing (a zerodha row stays 0 where 30.40 was due); three low — mtf-staged#3 ≡ dates-charges-ask#0
+`lib/domain/trade-edit.ts:212` `patchMovesChargeInput` compares the NORMALISED patch date with the parent's RAW stored date, and
+`parentAggregate` (`lib/domain/staged.ts:693`) copies a leg's raw `'20-01-2026'` onto the parent, so a legacy ladder with a
+day-first leg date is refused on EVERY editor save with D20's sentence (the S-FIX defect-2 class again, for dates; narrow
+reachability — legs written by a non-browser `addLeg` before 2M or a restored hand-edited backup); mtf-staged#4
+`mtf-accrual.ts:54` the job's staged branch lacks the editor's `legCount > 0` guard, so a staged-flagged row with no legs is
+rewritten from an EMPTY ladder to 0 on every /equity render (reachable only by a damaged row; a data-loss write, not a refusal);
+mtf-staged#5 `data-quality.ts:1288-1293` `info` weighs 2 against a 30-point per-issue cap, so the closed code reaches its own cap
+at 15 rows and 5 open + 15 closed unpriced rows lose 60 points where one issue cost 30 (the D10 review's "ceiling unchanged"
+reason was only partly true — `info` halves the rate, not the ceiling); two cosmetic — identity#0 `lib/trash.ts:969-973` the D4
+restore message says "Data Quality asks which holding is its own" for a record whose holding is exactly what did not come back,
+and `ipoAskPairs` raises that question only over an unlinked HOLDING (the builder's own test had to plant an unrelated allotment
+to make the sentence true — a design premise the build inherited); seams#0 `components/trackers/tracker-client.tsx:329` "over
+the 1 row that state own capital". **Pre-existing** (not 2O's, each verified on the `5e537b3` copy): identity#1 (medium)
+`lib/trash.ts:754-758` a purged book's `ipos` reference to a holding in ANOTHER book is replayed verbatim after that holding was
+deleted and its envelope purged — the ghost id excludes the record from `getUnlinkedExitedIpoRecords` (`isNull(ipos.tradeId)`),
+so a re-import of the holding states the sale TWICE with the record-side question silent; mtf-staged#2 (**silent wrong number**)
+`lib/queries/staged.ts:225-282` → `charges.ts:107` D7's apportionment evaluates a TIERED broker's slab on each tranche's SHARE,
+not the row's stated principal: a Dhan row stating 8,00,000 over two same-day tranches bills 5,201.32 where the job's whole-leg
+figure is 5,617.75 (₹416.43 apart over 19 days) — the property the 2O ruling and the `staged.ts:155-161` header state fails on
+every tiered card (the 2O pin checked Zerodha's flat card only); dates-charges-ask#1 (low) a WHITESPACE stored date is ABSENT to
+`storedDateProblem` (it trims) but PRESENT to `updateManualTrade`'s `daysHeld` (`buyDate && sellDate` → `new Date(' ')` → NaN →
+the D17 throw), while `closePosition` and `applyOverride` read it as no date and bill 0 days silently (mtfInterest 20 → 0);
+dates-charges-ask#2 (low) `app/api/ipos/route.ts:58-61,441` `day('')` folds to `''` on the stored side while `strOrNull` folds
+the sent value to null, so a record with a stored `''` exit date LINKED to a sold holding answers 409 to a notes-only save (the
+L3 no-way-out class; worse than D16's recorded "unpriced"); dates-charges-ask#3 (cosmetic) the editor on a row whose stored buy
+date is `'9999-99-99'` prints the SENT-value refusal ("Nothing was changed.") beside an input the browser shows BLANK, with Save
+ENABLED — and Save posts the blank, which CLEARS the stored date and re-prices (the 2N re-check recorded the silent clear; the
+promise-then-change is the worse half). Four test-low, RECORDED not built: metrics-palette#0 the /lenses `GroupDetail` guards are
+source-pinned only (not exported, opens on a click); metrics-palette#1 (pre-existing) the palette's Ctrl+K handler has no
+behavioural pin — the reviewer's `vi.mock('react')` harness is the cheap handler-level proof D3 did not consider; seams#1 fixH
+H7 does NOT go red with `mtf-accrual.ts` alone reverted (its fixtures cannot separate the halves; the D6 breaking sequence is
+pinned by `tests/mtf-accrual-unpriced.test.ts:208-232`, and the file's header + `wave2o-seams.md` §4 quote a red that cannot
+occur; H2's lens-edge half is type-only; H1's quoted edge-page red is not the real one); seams#2 fixF F1(a)'s flipped pin has no
+non-emptiness guard (satisfiable by an empty cell list — exactly what D11's rejected `missing` alternative would produce).
+
+**Grade.** 2O introduced one silent wrong number — the FOURTH wave in a row (2L identity#0, 2M counted-once#0, 2N mtf#0, 2O
+mtf-staged#0). The mechanism this time: **D20 was found by the MTF builder mid-wave, designed inside a builder report, and never
+went through `vyuha-design-reviewer`** — the seam pass then caught two of its consequences (S-FIX, S-FIX2) but walked neither the
+CLOSED-row door nor the job's new staged branch against the owner's ruling that binds the writer D20 added a caller to. **Rule,
+from this entry on (the reviewer's, builder's and seam tester's briefs carry it):** a design found mid-wave is a design — it gets
+the same review before it is built, and every design that ADDS A CALLER of a writer (`rebuildStagedTrade`, `priceLegs`, the
+accrual job, `updateManualTrade`, `applyOverride`, `closePosition`) lists the owner rulings that bind that writer's outputs and
+the reviewer checks each new caller against each ruling (open vs closed, stated vs null, staged vs flat). A second rule the
+same finding teaches: **a "no `it.fails`, all green" seam file is not proof that every quoted red happened** — the seam tester's
+red-on-revert ledger is re-run by the re-check, and a quoted red that cannot occur (seams#1) is a test finding.
+
+**What 2P is now.** By the stopping rule every PRODUCT finding reopens work: all 12 join fix wave 2P — designs D1–D12 in
+`18-FIX-WORK-4.3.0/wave2p-designs.md` (drafted by a Fable agent from `wave2o-recheck.json` read whole, every consumer set and
+writer set grep-verified, in the recheck-draft format), `vyuha-design-reviewer` FIRST, ONE builder at a time, the seam pass with
+the four guards, the gate, commit, CI, then 2P's own scoped re-check. The orchestrator's decisions, recorded with the rejected
+alternative: D1 (mtf#0) `rebuildStagedTrade` on a CLOSED parent whose `mtf_funded_amount` is null CARRIES FORWARD the stored
+`mtf_interest` into `charges_total` / `net_pnl` whichever door reaches it — the estimate stays exactly as the owner ruled; an
+OPEN null-funded parent still bills 0 (Q-A) (rejected: skipping the rebuild on closed rows — a leg edit must still re-price the
+other heads, and two doors would answer two prices); D2 (mtf#1) a per-row try/catch in the job's staged branch mirroring the flat
+block, the skip surfaced the way the job surfaces other skips (rejected: a page-level catch — it is the swallow that hid this);
+D3 (mtf#2) the slab is evaluated on the row's STATED principal and each tranche's share is billed at that rate, restoring the
+ruling's Σ-equals-the-job property on tiered cards (rejected: per-share slabs, the broker charges the slab on the whole funded
+book); D4 (mtf#3 ≡ dates#0) `patchMovesChargeInput` compares NORMALISED days on both sides through one helper and the rebuild
+writes a normalised `buyDate` onto the parent (rejected: a raw compare with a normalised parent only — a second tab still sends
+the raw form); D5 (mtf#4) the job takes the editor's `legCount > 0` guard as ONE shared predicate (rejected: a second copy);
+D6 (mtf#5) the two MTF codes share one 30-point cap or the closed code carries `affectedCount` with `count: 1` — the drafter picks
+the one that keeps the score's meaning; D7 (dates#1) one day-count rule — `updateManualTrade`'s `daysHeld` reads through the same
+trim / normalise the other two writers use, the third copy folded into a shared helper; D8 (dates#2) the /ipos route folds `''`
+and whitespace to null on BOTH sides before `samePatch` and reserves the 409 for a real sale conflict; D9 (dates#3) the editor
+derives its problem from the STORED value when the browser blanks an unreadable input, states it, and disables Save until a real
+day is entered — a blank submit never clears a date the row's pricing needs; D10 (identity#0) the restore message says what Data
+Quality actually does, or the grouped question gains the record — by what the user can act on; D11 (identity#1) a READER-side fix
+only: the unlinked-record query treats a `trade_id` that names no `trades` row as unlinked, with copy that says the holding is in
+Deleted items when it is — the reference is KEPT because a Trash-resident holding restored later makes the link live again (D4's
+envelope rule stands; rejected: nulling on restore); D12 (seams#0) noun and verb from one plural helper. The four test-lows are
+recorded above and not built; seams#1 and seams#2 sit in the seam files the wave's seam tester owns and may correct while it
+re-proves H7 against the new job code.
+
+**Model.** Orchestrated on Fable by the owner's instruction; every agent Fable (five reviewers ≈ 2.05 M subagent tokens, 628 tool
+uses, 32 min). No separate skeptic was needed: 0 REFUTED, 0 UNVERIFIABLE.
