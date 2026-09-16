@@ -344,8 +344,9 @@ no trades). A fourth and fifth, examined 2026-09-04, are POPULATED and pinned by
 stated figures (gross −1.05, net −4.28, charges 3.23, met to the paisa) and a trade
 report of 11 executions → 4 positions committing net −271.92. So the layouts below
 are VERIFIED, and value behaviour is VERIFIED for the realised-P&L export and pinned
-(against our own arithmetic, not a broker statement) for the trade report; the ledger
-still has no parser. Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
+(against our own arithmetic, not a broker statement) for the trade report; the
+ledger parser shipped in v3.9 (`upstox-ledger`); the F&O tradingsymbol grammar (:358-360) is
+pinnable from the 2026-09-16 trade report with 6 NIFTY option rows (`BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md`). Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
 `realizedPnL_EQ_<from>_To_<to>_<code>.xlsx`, `ledger_<from>_To_<to>_trading_<code>.xlsx`.
 **Fingerprint: `UPSTOX SECURITIES PRIVATE LIMITED` in A1** (then `(Formerly …)`,
 `Dealing Office …`, `UCC`/`Name`/… label rows, `Report Time Period`, `Generated On`).
@@ -511,11 +512,11 @@ What changed per broker:
 - Workbook decode is memoised once per `ParseContext` (the ≤8-decode load
   bound had broken at 11 when the new detectors landed).
 
-Still not built (as of 2026-09-04): the Paytm P&L parser, the Dhan MTF Report,
-short-sell / cross-exchange pairing. (Everything else this line used to list —
-Dhan DP charges, holdings and contract note, the Upstox and Angel One ledgers
-and the Angel One P&L statement — shipped in v3.9; see "Reference and
-enrichment sources" below.)
+Still not built (as of 2026-09-17): a Zerodha ledger parser (Console Funds statement), a Groww ledger
+parser (Client Fund Ledger), and Groww / Upstox contract-note parsers — the real exports arrived 2026-09-16/17
+(`VYUHA/BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md`; the parser wave is STATE §0.1 row 15). The three items
+this line used to name are done: the Paytm P&L parser and short-sell / cross-exchange pairing shipped in v3.9.0,
+and the Dhan MTF Report was ruled out of existence (DECISIONS 2026-08-30). Kotak Neo, Sahi, Paytm F&O and Groww F&O are CLOSED (no account / no such trading).
 
 ## Status (2026-08-20)
 
