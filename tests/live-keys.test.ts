@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { deskAction, isTypingTarget, nextIndex } from "@/components/live/desk-keys";
-import { isPanelToggleChord } from "@/components/system/search-panel-keys";
+import { isPaletteChord, isPanelToggleChord } from "@/components/system/search-panel-keys";
 
 /**
  * The Live Desk keyboard map, and the two app-wide chords it must never eat.
  *
  * A bare-letter map on `window` is the cheapest way to break a shortcut that
  * lives somewhere else entirely: `k` is the desk's "row up" AND the second half
- * of Ctrl+K (the modal command palette, `command-palette.tsx:143`) and of
- * Ctrl+Shift+K (the search panel, `search-panel-keys.ts`). Nothing throws when
+ * of Ctrl+K (the modal command palette, `isPaletteChord`) and of
+ * Ctrl+Shift+K (the search panel, `isPanelToggleChord`). Nothing throws when
  * both fire — the palette opens and the desk scrolls a row underneath it — so
  * only a test can hold the line.
  *
@@ -32,10 +32,6 @@ const chord = (key: string, mods: Partial<Record<"ctrlKey" | "metaKey" | "shiftK
   ...mods,
   key,
 });
-
-/** The modal palette's predicate, mirrored from `command-palette.tsx:143`. */
-const isPaletteChord = (e: { ctrlKey: boolean; metaKey: boolean; key: string }) =>
-  (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
 
 describe("the desk's bare-letter map", () => {
   it("moves, expands, routes and filters on the keys the help line advertises", () => {
@@ -72,6 +68,15 @@ describe("Ctrl/Cmd+K still belongs to the command palette", () => {
       expect(isPaletteChord(e), JSON.stringify(mods)).toBe(true);
       expect(deskAction(e), JSON.stringify(mods)).toBe(null);
     }
+  });
+
+  it("the palette's own predicate refuses Shift and Alt, on both platforms", () => {
+    // Imported, never mirrored: a local copy of this chord is exactly how the
+    // palette kept its missing Shift guard while this file looked green.
+    expect(isPaletteChord(chord("k", { ctrlKey: true }))).toBe(true);
+    expect(isPaletteChord(chord("k", { metaKey: true }))).toBe(true);
+    expect(isPaletteChord(chord("K", { ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(isPaletteChord(chord("k", { ctrlKey: true, altKey: true }))).toBe(false);
   });
 
   it("…and to the search panel's Ctrl/Cmd+Shift+K, using the panel's own predicate", () => {

@@ -9,6 +9,7 @@ import { useNavHistory } from "@/components/layout/nav-history";
 import { screenVisible, type Workspace } from "@/lib/domain/workspace";
 import type { SearchResult, SourceKey } from "@/lib/domain/search-scope";
 import { Search, CornerDownLeft, Plus, ArrowLeft, Undo2 } from "lucide-react";
+import { isPaletteChord } from "./search-panel-keys";
 import {
   MIN_QUERY,
   SEARCH_DEBOUNCE_MS,
@@ -152,7 +153,7 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
 
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      if (isPaletteChord(e)) {
         e.preventDefault();
         setOpen((o) => !o);
       }

@@ -216,7 +216,8 @@ describe("merge: the snapshot records the pre-merge links the merge re-points", 
     // L7 (wave 2L): the row the merge SKIPPED is still null, so the envelope's
     // `ipoRefs` re-links it to the duplicate that just came back — the MERGE
     // branch's `ipoRefs` doing the work the purge branch's cannot (there the
-    // rows ride back inside `accountRows.ipos` with `trade_id` intact).
+    // rows ride back inside `accountRows.ipos` with their `trade_id`, cleared
+    // only for a trade this restore could not bring back — D4, wave 2O).
     expect(ipoTradeId(legacyIpo)).toBe(sourceTrade);
   });
 });

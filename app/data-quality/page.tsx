@@ -38,7 +38,12 @@ export default function DataQualityPage() {
           const Icon = issue.severity === "critical" ? ShieldAlert : issue.severity === "warning" ? AlertTriangle : Info;
           return <div key={issue.code} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
             <Icon className={`size-5 shrink-0 ${issue.severity === "critical" ? "text-loss" : issue.severity === "warning" ? "text-warning" : "text-accent"}`} />
-            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-sm font-medium">{issue.title}</p><Badge variant="outline">{issue.count}</Badge></div><p className="text-xs text-muted-foreground">{issue.detail}</p></div>
+            {/* D5 (wave 2O, identity#1) — the badge is how many records the issue is
+                ABOUT. The grouped IPO-record issue carries `count: 1` on purpose (one
+                question costs one warning in `scoreIssues`) while its detail names n
+                holdings, so it states `affectedCount` and the badge reads that; every
+                other issue passes the affected number as `count` and is unchanged. */}
+            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-sm font-medium">{issue.title}</p><Badge variant="outline">{issue.affectedCount ?? issue.count}</Badge></div><p className="text-xs text-muted-foreground">{issue.detail}</p></div>
             <Button asChild size="sm" variant="outline"><Link href={issue.href}>Review</Link></Button>
           </div>;
         })}

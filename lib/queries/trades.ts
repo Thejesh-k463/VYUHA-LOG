@@ -60,12 +60,21 @@ const LENS_FIELDS = [
   "buyDate", "sellDate", "isOpen", "netPnl", "importBatchId", "createdAt", "staged",
   // … plus what LensTrade adds, and what computeKpis reads.
   "setupTag", "playbookId", "bucket", "grossPnl", "chargesTotal", "rMultiple",
+  // …and the three `edgeMeasurable` reads (the wave 2O seam pass, defect 1):
+  // without them `!t.acquisition` is TRUE for every row, so `unpricedCount` was
+  // permanently 0 here and a basis-less IPO sale counted as a priced WIN — one
+  // book read "Win rate 100.0%" on /lenses and null through `getTrades()`. The two
+  // that are NOT on the /trades wire shape are named as the deliberate exception
+  // in `tests/render-windowing.test.ts`'s subset pin; `buyValue` already was.
+  "acquisition", "acquisitionPrice", "buyValue",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]>;
 
 /**
- * /lenses: the `LENS_FIELDS` above, a strict subset of `SLIM_TRADE_FIELDS`.
+ * /lenses: the `LENS_FIELDS` above — `SLIM_TRADE_FIELDS` plus the two basis
+ * columns the /trades wire shape does not carry (`acquisition`,
+ * `acquisitionPrice`), minus everything this page never groups on.
  *
  * The Lenses tree only ever reads the delete-scope identity fields plus the
  * six grouping/KPI fields. Everything else in the wire shape (`strike`,
@@ -76,8 +85,11 @@ export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]>;
  * NO COUNTS IN THIS PROSE, deliberately: it read "19 columns, not the 43 of
  * SlimTrade" while `SLIM_TRADE_FIELDS` went 43 → 44 → 45 (v3.7.0 added
  * `reviewedAt`), so the sentence was wrong for two releases and nothing could
- * fail. The two arrays are the count; `tests/render-windowing.test.ts` pins
- * that this one stays a subset of the other and does not creep.
+ * fail. The two arrays are the count; `tests/render-windowing.test.ts` pins that
+ * this one stays inside the other PLUS the two named basis columns, and does not
+ * creep. Those two are the ONE exception, and they buy nothing on the RSC payload:
+ * since v3.7 /lenses ships GROUP rows, not per-trade rows, so they cross the wire
+ * only for the one group the members route is asked for.
  *
  * This route shares `SLIM_TRADE_FIELDS` with /trades, which genuinely needs the
  * wider shape, so it gets its OWN projection rather than narrowing that one —
@@ -119,11 +131,18 @@ const DASH_FIELDS = [
   "broker", "bucket", "segment", "symbol", "exchange",
   "netPnl", "grossPnl", "chargesTotal", "rMultiple",
   "isOpen", "sellDate", "buyDate", "setupTag",
+  // The three `edgeMeasurable` reads (the wave 2O seam pass, defect 1): the hero
+  // KPIs, the segment bars and the setup cut all run `computeKpis`/`groupBy` on
+  // THIS projection, and without these the dashboard showed a basis-less IPO sale
+  // as a priced win (win rate 100.0%, expectancy ₹1,496 for a book with no
+  // measurable edge) while `computeKpis(getTrades())` answered "—". Required on
+  // `AnalyticsTrade` since the same pass, so a narrower projection cannot compile.
+  "acquisition", "acquisitionPrice", "buyValue",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type DashboardTrade = Pick<Trade, (typeof DASH_FIELDS)[number]>;
 
-/** The dashboard's 13-field per-trade wire shape (the page always shipped exactly this). */
+/** The dashboard's per-trade wire shape (13 render fields + the 3 basis fields). */
 export const getDashboardTrades = cache((): DashboardTrade[] => scopedBookRows(DASH_FIELDS));
 
 const TRACKER_FIELDS = [

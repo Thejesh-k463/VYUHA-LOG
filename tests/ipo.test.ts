@@ -248,3 +248,54 @@ describe("ipoAllotmentStampBase — the allotment day is read through the calend
     expect(ipoAllotmentStampBase(ipo({ allotmentDate: "2019-02-31", exitDate: "2026-03-02" }), 10000)).toBe(0); // not a day → the exit date
   });
 });
+
+/**
+ * D16 (v4.3.0 fix wave 2O, dates-charges#3) — A BLANK EXIT DATE IS NO EXIT DATE.
+ *
+ * `ipoHoldingCharges`' guard narrowed from the pre-wave `!i.exitDate ||
+ * isPriceableExitDate(i.exitDate)` to `f.exitDate != null && !isPriceable…`
+ * when the pricing moved into the shared helper (D4, wave 2N): `''` is not null
+ * and is not priceable, so a record with an EMPTY-STRING exit date read
+ * `realised:false, unpriced:true` and dropped out of every realised consumer
+ * where the pre-wave expression priced it. No writer produces `''` today
+ * (`strOrNull`), so reachability is a restored or hand-edited row — which is
+ * why it is low, not because the behaviour change is small. The guard now tests
+ * the TRIMMED value, the idiom `lib/analytics/ipo-link.ts#unreadableExitDate`
+ * already uses, so "blank means no exit date stated" is ONE rule on both sides.
+ */
+describe("D16 — a blank exit date states no day, and is priced as none (dates-charges#3)", () => {
+  const exited = (exitDate: string | null) =>
+    ipo({ allotted: true, allottedQty: 10, appliedPrice: 100, lotSize: 10, lotsApplied: 1, exitPrice: 150, allotmentDate: "2026-01-20", exitDate });
+
+  it("'' prices exactly as null does; a real day and an unreadable one are unchanged", () => {
+    const none = computeIpo(exited(null));
+    // THE assertions (HEAD: realised false, unpriced true — the record dropped
+    // out of realisedNet, capital and the tax pack).
+    const blank = computeIpo(exited(""));
+    expect([blank.realised, blank.unpriced]).toEqual([true, false]);
+    expect([blank.charges, blank.netPnl, blank.grossPnl]).toEqual([none.charges, none.netPnl, none.grossPnl]);
+    expect([none.realised, none.unpriced]).toEqual([true, false]);
+
+    /**
+     * RECORDED, NOT FIXED (wave 2O D16): a WHITESPACE-only exit date passes this
+     * guard as blank but is still refused by both CHARGERS, which test the raw
+     * value for truthiness — `seedFallbackCharger` here (`:375`) and, outside
+     * B2O-DATES' file set, `lib/queries/ipos.ts:71,86`. Trimming only the pure
+     * guard would make the client preview price a row the server would not, so
+     * both halves must move in one change; `''` — the finding's own reproduce,
+     * and the only value any writer could leave — is falsy on both and is fixed.
+     */
+    const ws = computeIpo(exited(" "));
+    expect([ws.realised, ws.unpriced]).toEqual([false, true]);
+    const iso = computeIpo(exited("2026-03-02"));
+    expect([iso.realised, iso.unpriced]).toEqual([true, false]);
+    const bad = computeIpo(exited("2026-02-30"));
+    expect([bad.realised, bad.unpriced, bad.charges, bad.netPnl]).toEqual([false, true, 0, 0]);
+  });
+
+  it("an injected charger is reached for a blank date, and its figure is the net", () => {
+    const c = computeIpo(exited(""), () => 100);
+    // THE assertion (HEAD: the charger was never called — charges 0, unpriced true).
+    expect([c.charges, c.netPnl, c.unpriced]).toEqual([100, 400, false]);
+  });
+});

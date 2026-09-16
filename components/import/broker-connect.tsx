@@ -240,11 +240,25 @@ export function metEarlierPull(c: { kind: string; sameSnapshot?: boolean }): boo
  * row.
  */
 type CollisionRowFacts = {
+  /**
+   * D18 (v4.3.0 wave 2O, ask#0) — the INDEX of the incoming row cross-source
+   * raised this collision for. The five-value key below cannot tell two DIFFERENT
+   * incoming rows of one scrip apart when they agree on those five (one scrip
+   * under two products, or on two exchanges), so they collapsed into ONE card
+   * reading "…cannot vouch for this row." beside a server sentence that counted
+   * two. They ARE distinguishable — different `existing.id`, quantities and detail
+   * — so the server states which row each blocker is about, and the dialog counts
+   * what the message counts.
+   */
+  row?: number;
   symbol?: string;
   incoming?: { buyQty: number; sellQty: number; buyValue: number; sellValue: number };
 };
 
 function collisionRowKey(c: CollisionRowFacts): string | null {
+  // The five-value key stays as the FALLBACK: a copy test's bare `{kind}`, and any
+  // payload written before the server stated the index.
+  if (c.row !== undefined) return `row:${c.row}`;
   if (c.symbol === undefined || c.incoming === undefined) return null;
   return [c.symbol, c.incoming.buyQty, c.incoming.sellQty, c.incoming.buyValue, c.incoming.sellValue].join("|");
 }

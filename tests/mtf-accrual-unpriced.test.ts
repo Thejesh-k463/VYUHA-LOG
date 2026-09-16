@@ -34,6 +34,7 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 
 let t: TempDb;
 let accrueMtfInterest: typeof import("@/lib/jobs/mtf-accrual").accrueMtfInterest;
+let staged: typeof import("@/lib/queries/staged");
 
 // Measured locally 2026-09-15: migrate + seed + the one dynamic import ~1.6 s,
 // inside the 3 s local hook budget. The raised timeout is for the Windows runner
@@ -41,6 +42,7 @@ let accrueMtfInterest: typeof import("@/lib/jobs/mtf-accrual").accrueMtfInterest
 beforeAll(async () => {
   t = await openTempDb("mtf-accrual-unpriced", { seed: true });
   ({ accrueMtfInterest } = await import("@/lib/jobs/mtf-accrual"));
+  staged = await import("@/lib/queries/staged");
 }, 120_000);
 afterAll(() => t?.cleanup());
 
@@ -143,5 +145,119 @@ describe("M1 — the daily accrual job accrues interest but never states a funde
       [0, 0, 0, 0],
       [16000, 121.6, 121.6, -121.6],
     ]);
+  });
+});
+
+/**
+ * D6 (v4.3.0 fix wave 2O — mtf#0, a SILENT WRONG NUMBER) — A STAGED ROW'S
+ * CHARGES HAVE EXACTLY ONE WRITER: THE LADDER.
+ *
+ * The staged ladder (`lib/queries/staged.ts#priceLegs` → `rebuildStagedTrade`)
+ * was the FIFTH writer of stored `mtf_interest`, and this job had no `staged`
+ * filter, so the two doors took turns: measured on HEAD (zerodha eq_mtf 100 @100,
+ * `mtf_funded_amount` NULL, clock 2026-08-20) `convertToStaged` stored 71.38 of
+ * interest, this job released it, `addLeg` billed it again, the next /equity
+ * render released it again — stored money oscillating with no prompt and no audit
+ * row (DECISIONS 2026-08-30 decision 6).
+ *
+ * And the release itself broke invariant 5: the job patches the PARENT row only,
+ * so the design review's probe read parent 71.38 against legs 218.58 on a legacy
+ * ladder (147.20 released from the parent alone, the legs left carrying it). The
+ * job therefore skips a `staged` row in BOTH branches and re-prices it through
+ * `rebuildStagedTrade`, which writes the legs and the parent in one transaction —
+ * so parent = Σ legs at every step of the walk below.
+ *
+ * The owner ruled (2O row 1) that CLOSED staged rows priced before 4.3.0 KEEP
+ * their earlier estimate: the job never selects a closed row, so nothing here
+ * touches them.
+ */
+describe("D6 — the accrual job never patches a staged parent; the ladder prices it", () => {
+  /** Σ of the ladder's own per-leg charges, which the parent must equal (invariant 5). */
+  const legCharges = (id: number) =>
+    Math.round(
+      t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, id)).all()
+        .reduce((s, l) => s + l.chargesTotal, 0) * 100,
+    ) / 100;
+  const parentCharges = (id: number) => row(id).chargesTotal;
+
+  it("convert → accrue → addLeg → accrue on an UNPRICED row: [null, 0] at every step, parent = Σ legs at every step", () => {
+    const id = openMtf("D6WALK", 100, null);
+    const seen: Array<[number | null, number, boolean]> = [];
+    const step = () => seen.push([row(id).mtfFundedAmount, row(id).mtfInterest, parentCharges(id) === legCharges(id)]);
+
+    expect(staged.convertToStaged(id).ok).toBe(true);
+    step();
+    accrueMtfInterest("2026-08-20");
+    step();
+    expect(staged.addLeg({ tradeId: id, kind: "entry", tradeDate: "2026-08-05", qty: 50, price: 102, direction: "long" }).ok).toBe(true);
+    step();
+    accrueMtfInterest("2026-08-20");
+    step();
+
+    // THE assertion (on revert: [[null, 71.38, …], [null, 0, …], [null, >0, …],
+    // [null, 0, …]] — the row alternating between 71.38 and 0 on every leg edit
+    // and every Equity Tracker visit).
+    expect(seen, "an unpriced staged row bills nothing, and nothing oscillates").toEqual([
+      [null, 0, true],
+      [null, 0, true],
+      [null, 0, true],
+      [null, 0, true],
+    ]);
+  });
+
+  it("a LEGACY open staged row carrying the old estimate is released through the ladder — legs AND parent together", () => {
+    const id = openMtf("D6LEGACY", 100, null);
+    expect(staged.convertToStaged(id).ok).toBe(true);
+    // The state a version before 4.3.0 left behind: the estimate on the parent
+    // AND on the leg the ladder priced.
+    const leg = t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, id)).all()[0];
+    t.db.update(t.schema.tradeLegs).set({ chargesTotal: 71.38 }).where(eq(t.schema.tradeLegs.id, leg.id)).run();
+    t.db.update(t.schema.trades).set({ mtfInterest: 71.38, chargesTotal: 71.38, netPnl: -71.38 }).where(eq(t.schema.trades.id, id)).run();
+
+    accrueMtfInterest("2026-08-20");
+
+    // THE assertion (on revert: the job zeroes the PARENT's interest and charges
+    // and leaves the leg at 71.38 — the design review's probed 71.38 vs 218.58,
+    // invariant 5 broken by the release itself).
+    const after = row(id);
+    expect([after.mtfFundedAmount, after.mtfInterest], "the estimate is out of the row").toEqual([null, 0]);
+    expect(parentCharges(id), "parent = Σ legs after the release").toBe(legCharges(id));
+    // The 71.38 of interest really did leave the stored money: what is left is the
+    // ladder's own brokerage and statutory charges on the tranche, and the net
+    // moves with them.
+    expect(parentCharges(id)).toBeLessThan(71.38);
+    expect(after.netPnl).toBe(Math.round((after.grossPnl - parentCharges(id)) * 100) / 100);
+    // …and it is idempotent: a second run states nothing to do.
+    expect(accrueMtfInterest("2026-08-20").updated).toBe(0);
+  });
+
+  it("a STAGED row that STATES its funding is billed the LADDER's apportioned figure, not the job's whole-leg one", () => {
+    // ONE tranche: the two doors agree to the paisa, which is the property owner
+    // ruling 2O row 2 asks for — 4,000 × 14.6% × 19 days ÷ 365 = 30.40.
+    const single = openMtf("D6STATED1", 100, 4000);
+    expect(staged.convertToStaged(single).ok).toBe(true);
+    accrueMtfInterest("2026-08-20");
+    expect(funding(single).slice(0, 2), "Σ per-leg interest = the job's whole-leg figure").toEqual([4000, 30.4]);
+    expect(parentCharges(single)).toBe(legCharges(single));
+
+    // TWO tranches, ten days apart: the ladder bills each tranche for its OWN
+    // days on its OWN share of the stated 4,000 — 10,000 + 5,100 of tranche value,
+    // so 2,649.01 held 19 days (20.13) and the remainder 1,350.99 held 10 (5.40) —
+    // which is LESS than the 30.40 this job bills on the whole amount from the
+    // earliest buy date.
+    const laddered = openMtf("D6STATED2", 100, 4000);
+    expect(staged.convertToStaged(laddered).ok).toBe(true);
+    expect(staged.addLeg({ tradeId: laddered, kind: "entry", tradeDate: "2026-08-10", qty: 50, price: 102, direction: "long" }).ok).toBe(true);
+
+    accrueMtfInterest("2026-08-20");
+
+    // THE assertion (on revert: 30.40 — the job re-bills the whole stated amount
+    // from `agg.buyDate` over the ladder's per-tranche figure, so the parent no
+    // longer equals Σ legs and one row states two answers).
+    expect(row(laddered).mtfInterest, "the job did not overwrite the ladder").toBeCloseTo(25.53, 2);
+    expect(row(laddered).mtfInterest).not.toBe(30.4);
+    expect(parentCharges(laddered)).toBe(legCharges(laddered));
+    // …and re-running the job changes nothing (the ladder is idempotent).
+    expect(accrueMtfInterest("2026-08-20").updated).toBe(0);
   });
 });

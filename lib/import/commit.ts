@@ -32,9 +32,14 @@ import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
-import { ipoHoldingCharges } from "@/lib/analytics/ipo";
+import { ipoEditCharges, type IpoEditPricing } from "@/lib/analytics/ipo";
 import { sellChargerFor } from "@/lib/queries/ipos";
-import { chargeInputsChanged, chargeInputsOf, statesNoCharges, storedCharges } from "@/lib/domain/trade-edit";
+// D20 (wave 2O): the ladder is the SINGLE writer of a staged parent's priced heads,
+// so the editor's own save hands them back to it. Server-only, like this module and
+// `lib/queries/ipos` above; `lib/queries/staged.ts` imports nothing from here, so
+// the graph stays acyclic.
+import { rebuildStagedTrade } from "@/lib/queries/staged";
+import { chargeInputsChanged, chargeInputsOf, patchMovesChargeInput, statesNoCharges, storedCharges } from "@/lib/domain/trade-edit";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
 import { heldIdentityHashes, isLotIdentityFrozen, STALE_CLOSE_NOTE, withStaleCloseNote } from "./close-open-lots";
@@ -1970,9 +1975,14 @@ export function closePosition(
     const days = buyIso
       ? Math.max(0, Math.floor((new Date(exitDateIso).getTime() - new Date(buyIso).getTime()) / 86400000))
       : 0;
-    // Q-A: interest 0 on an unstated principal, and the PLEDGE charge still
-    // billed — pledging the scrip is a fact of the MTF product, independent of
-    // how the position was split between the trader and the broker.
+    // Q-A: interest 0 on an unstated principal — AND NO PLEDGE CHARGE EITHER, which
+    // is the RECORDED DEVIATION (DECISIONS 2026-09-16, wave 2N; D12, wave 2O). This
+    // comment used to claim the pledge fee "still billed", because pledging the
+    // scrip is a fact of the MTF product independent of how the position was split.
+    // The code does not do that: `lib/engine/charges.ts:106` gates interest AND
+    // pledge on the same `input.mtf.fundedAmount > 0`, so handing it 0 bills neither
+    // and an unpriced row is billed IDENTICALLY to a stated 0 (probed: [null, 0, 0]).
+    // Billing pledge alone would need an engine change, which was not made.
     mtf = { fundedAmount: funded ?? 0, daysHeld: days, pledgeScrips: 1 };
   }
 
@@ -2337,38 +2347,20 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
  * (1)). ONE helper (`ipoHoldingCharges`, lib/analytics/ipo.ts) for the listing,
  * the sync and this editor, so no two of them state a different bill for one sale.
  *
- * `mtfInterest` and `pledgeCharges` are carried VERBATIM, as the sync's KEPT_HEADS
- * rule does: the IPO model prices neither, and a figure in those columns is money
- * that really moved.
- *
- * Null when this is not an allotment-derived holding, or when the IPO model prices
- * nothing for it (no sale yet, an exit date that states no day, no rate row) — the
- * caller then falls back to the engine, or keeps what the row states.
+ * D14 (wave 2O): the pure half now LIVES in `lib/analytics/ipo.ts#ipoEditCharges`
+ * beside `ipoHoldingCharges`, because the editor's live PREVIEW
+ * (`app/api/charges/preview`) has to read it too — it had learned only the keep
+ * branch, and its fall-through priced an allotment as a delivery round trip while
+ * the save priced it the IPO way (dates-charges#1). This wrapper is the save's own
+ * door: it injects the server-only charger (invariants 2 and 3) and nothing else.
  */
-function ipoEditCharges(
-  t: { acquisition: string | null; acquisitionDate: string | null; broker: string; exchange: string; mtfInterest: number; pledgeCharges: number },
+function ipoEditChargesFor(
+  t: { acquisition: string | null; broker: string; exchange: string },
   v: { buyValue: number; sellValue: number; sellQty: number; buyDate: string | null; sellDate: string | null },
   rates: RatesMap,
-): ChargeBreakdown | null {
+): IpoEditPricing | null {
   if (t.acquisition !== "ipo") return null;
-  const priced = ipoHoldingCharges(
-    {
-      allotmentValue: v.buyValue,
-      allotmentDays: [t.acquisitionDate, v.buyDate],
-      sellValue: v.sellValue,
-      sellQty: v.sellQty,
-      exitDate: v.sellDate,
-    },
-    sellChargerFor(t.broker, t.exchange, v.sellDate, rates),
-  );
-  if (priced == null || typeof priced === "number") return null;
-  const kept = Math.round((t.mtfInterest + t.pledgeCharges) * 100) / 100;
-  return {
-    ...priced,
-    mtfInterest: t.mtfInterest,
-    pledgeCharges: t.pledgeCharges,
-    total: Math.round((priced.total + kept) * 100) / 100,
-  };
+  return ipoEditCharges(t as unknown as Record<string, unknown>, v, sellChargerFor(t.broker, t.exchange, v.sellDate, rates));
 }
 
 export interface UpdateTradeFields {
@@ -2427,6 +2419,22 @@ export function updateManualTrade(
   const avgSellPrice = fields.avgSellPrice ?? t.avgSellPrice;
   const sellDate = fields.sellDate !== undefined ? normalizeDate(fields.sellDate) : t.sellDate;
 
+  // D17 (v4.3.0 wave 2O, dates-charges#4) — THE THIRD WRITER OF THE ONE RULE.
+  //
+  // Each date above falls back to the STORED column when the patch omits that
+  // field, and `daysHeld` below then counts from it: for an eq_mtf row storing
+  // '9999-99-99' (what the pre-2L writer made of a typed '99-99-9999') that is an
+  // Invalid Date, so NaN went into `computeCharges` and the write died with the
+  // `NOT NULL constraint failed: trades.charges_total_paise` D3 removed from
+  // `closePosition` and `applyOverride` — a 500 rather than an {ok:false}.
+  // `lib/domain/trading-day.ts` already promised "ONE implementation for the three
+  // writers" and named two. Refused before anything is priced or written; a patch
+  // that CLEARS the bad date still saves (blank means clear, above), and one that
+  // SENDS a bad value is already refused by `unreadableDate`, so the UI's own path
+  // is unchanged and only the throw is closed.
+  const badStored = storedDateProblem({ buyDate, sellDate });
+  if (badStored) return { ok: false, message: badStored };
+
   // Resolved AFTER the edited dates are known. Moving a trade's sell date across
   // an epoch boundary must re-price it at the epoch it now falls in, otherwise
   // the stored charges disagree with what importing the same trade would produce.
@@ -2434,19 +2442,88 @@ export function updateManualTrade(
 
   if (buyQty <= 0 && sellQty <= 0) return { ok: false, message: "At least one side (buy or sell) needs a positive quantity." };
 
-  const buyValue = Math.round(buyQty * avgBuyPrice * 100) / 100;
-  const sellValue = Math.round(sellQty * avgSellPrice * 100) / 100;
+  const isMtf = t.segment === "eq_mtf";
+  // MTF: an explicit edit to ownCapitalUsed always wins, as the funded principal
+  // below — resolved from the value basis this save writes (a staged parent's own
+  // roll-up, a flat row's recomputed aggregate), so the refusal and the write ask
+  // the same question of the same figure.
+  const ownCapitalPatched = isMtf && fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0;
+  const fundedFrom = (base: number) => Math.max(0, Math.round((base - fields.ownCapitalUsed!) * 100) / 100);
+
+  // D20 (v4.3.0 wave 2O, the owed guard) — A STAGED PARENT IS PRICED ONLY BY ITS
+  // LADDER.
+  //
+  // After D6/D7 `rebuildStagedTrade` is the SINGLE writer of a staged row's priced
+  // heads (invariant 5: parent = Σ legs), and `closePosition` (STAGED),
+  // `closeStaleLot` and the /ipos route all refuse such a row. This writer did not:
+  // it rewrote the parent from the flat aggregate with no knowledge of legs, no exit
+  // leg landed in `trade_legs`, and the next ladder action rebuilt the parent from
+  // its legs — erasing what was written here. Worse, `statesNoCharges` made it fire
+  // on a notes-only save of a staged row whose heads a release had zeroed.
+  //
+  // So: a patch that moves NO charge input saves the journal fields and hands the
+  // pricing back to the ladder (`rebuildStagedTrade`, idempotent — legs and parent
+  // together); a patch that MOVES one is refused, because the quantities, prices and
+  // dates of a staged position ARE its fills.
+  //
+  // THE QUESTION IS ASKED OF THE PATCH (the wave 2O seam pass, defect 2 —
+  // `wave2h-reports/wave2o-seams.md` §5), and asked BEFORE any aggregate is derived.
+  // It used to be asked of values this function RESOLVES, and on a staged parent one
+  // of them moved by itself: `r2(buyQty × avgBuyPrice)` disagrees with the stored Σ
+  // of leg values by the weighted average's rounding, so EVERY save on a ladder
+  // built at two prices was refused — a patch carrying nothing but a note included,
+  // which is exactly what this refusal is not for (measured: `[150, 103.33, 15500]`
+  // against 15,499.50; notes, setup tag, stop, target, risk and the mark were all
+  // unsaveable through both doors). `patchMovesChargeInput` (lib/domain/trade-edit,
+  // the same paisa comparison) asks only of the fields THIS patch carries.
+  const legCount = db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
+  const isStaged = t.staged || legCount > 0;
+  const stagedFillMoved =
+    isStaged &&
+    patchMovesChargeInput(
+      {
+        ...(fields.buyQty !== undefined ? { buyQty } : {}),
+        ...(fields.avgBuyPrice !== undefined ? { avgBuyPrice } : {}),
+        ...(fields.buyDate !== undefined ? { buyDate } : {}),
+        ...(fields.sellQty !== undefined ? { sellQty } : {}),
+        ...(fields.avgSellPrice !== undefined ? { avgSellPrice } : {}),
+        ...(fields.sellDate !== undefined ? { sellDate } : {}),
+        // Own capital IS a charge input (it sets the funded principal the ladder
+        // apportions across the tranches), so a patch that states a different one
+        // is refused too — the ladder is the only writer of a staged row's
+        // interest. A patch that states none keeps the stored principal and moves
+        // nothing. Read against the parent's OWN roll-up, which is the basis the
+        // write below uses for a staged row.
+        ...(ownCapitalPatched ? { fundedAmount: fundedFrom(t.buyValue) } : {}),
+      },
+      t,
+    );
+  if (stagedFillMoved) {
+    return {
+      ok: false,
+      message:
+        "This is a staged position built from more than one fill, so its quantities, prices and dates are not edited here: they are the fills on its own ladder in Trades, which prices each tranche and rolls them up into this row. Edit the fill there. Nothing was changed.",
+    };
+  }
+
+  // D20 / defect 2: past that refusal a staged parent's fills provably did not move,
+  // so its own roll-up stands — `buyValue` is Σ its LEG values while `avgBuyPrice` is
+  // the ROUNDED weighted average, and re-deriving `r2(qty × avg)` would write
+  // 15,499.50 over a stored 15,500 on a 100 @100 + 50 @110 ladder. The ladder
+  // re-derives both at the end of this save, but a staged row it cannot rebuild (no
+  // legs, or legs that fail validation) would otherwise keep the rounding as a silent
+  // change of its cost basis. A FLAT row is recomputed exactly as before — an edit is
+  // how its aggregate is stated.
+  const buyValue = isStaged ? t.buyValue : Math.round(buyQty * avgBuyPrice * 100) / 100;
+  const sellValue = isStaged ? t.sellValue : Math.round(sellQty * avgSellPrice * 100) / 100;
   const isOpen = buyQty !== sellQty;
   const buyOrderCount = buyQty > 0 ? t.buyOrderCount || defaults.buyOrders : 0;
   const sellOrderCount = sellQty > 0 ? t.sellOrderCount || defaults.sellOrders : 0;
 
-  // MTF: an explicit edit to ownCapitalUsed always wins; otherwise keep the
-  // persisted funded amount; only estimate if the trade somehow has none yet.
-  const isMtf = t.segment === "eq_mtf";
   let fundedAmount: number | null = null;
   if (isMtf) {
-    if (fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0) {
-      fundedAmount = Math.max(0, Math.round((buyValue - fields.ownCapitalUsed) * 100) / 100);
+    if (ownCapitalPatched) {
+      fundedAmount = fundedFrom(buyValue);
     } else {
       // V3 — a stored 0 (the whole position from own capital) is kept.
       // Q-A (wave 2N) — and a NULL stays null: a save with nothing typed in
@@ -2482,13 +2559,23 @@ export function updateManualTrade(
   // nothing stated is destroyed by it (the /ipos sync's own `statesNoCharges`
   // rule), so a manual row, an import whose file carried no charge columns and a
   // fixture are all priced on their first editor save, exactly as before.
-  const repriced = chargeInputsChanged(storedInputs, nextInputs) || statesNoCharges(t);
+  const inputsMoved = chargeInputsChanged(storedInputs, nextInputs);
+
+  // A row that states NO charge at all is priced whatever this save changed —
+  // except a STAGED one, whose ladder owns every priced head (D20).
+  const repriced = !isStaged && (inputsMoved || statesNoCharges(t));
+
+  // D4(b) / D14: a holding that came from an allotment is priced the way the IPO
+  // model prices it — the sale plus the allotment's stamp, no purchase STT
+  // (06-ANSWERS row (1)) — through the SAME pure helper the preview route and
+  // /ipos price it by. D15: for an allotment with NO sale that helper answers the
+  // row's own stored heads and `repriced: false`, so this save prices nothing at
+  // all and the net and the marker stand.
+  const ipoPriced = repriced ? ipoEditChargesFor(t, { buyValue, sellValue, sellQty, buyDate, sellDate }, rates) : null;
+  const pricedHere = repriced && (ipoPriced == null || ipoPriced.repriced);
 
   const charges = repriced
-    ? // D4(b): a holding that came from an allotment is priced the way the IPO
-      // model prices it — the sale plus the allotment's stamp, no purchase STT
-      // (06-ANSWERS row (1)) — through the SAME helper /ipos prices it by.
-      ipoEditCharges(t, { buyValue, sellValue, sellQty, buyDate, sellDate }, rates) ??
+    ? ipoPriced?.charges ??
       computeCharges(
         {
           segment: t.segment as Segment,
@@ -2498,7 +2585,11 @@ export function updateManualTrade(
           sellQty,
           buyOrderCount,
           sellOrderCount,
-          // Q-A: an unstated principal bills 0 interest; the pledge charge stands.
+          // Q-A: an unstated principal bills 0 interest — and no pledge charge either
+          // (D12, wave 2O): `lib/engine/charges.ts:106` gates BOTH on the same
+          // `fundedAmount > 0`, so an unpriced row is billed identically to a stated 0.
+          // That is the recorded deviation (DECISIONS 2026-09-16, wave 2N); billing the
+          // pledge fee alone would need an engine change, which was not made.
           mtf: isMtf ? { fundedAmount: fundedAmount ?? 0, daysHeld, pledgeScrips: 1 } : null,
         },
         r,
@@ -2508,7 +2599,9 @@ export function updateManualTrade(
   // A save that changes no charge input changes no money: the net stands as
   // stored, and R and realised % are recomputed FROM it (a risk-amount-only edit
   // still updates R).
-  const netPnl = repriced ? Math.round((grossPnl - charges.total) * 100) / 100 : t.netPnl;
+  // D15: an un-exited allotment prices nothing, so `pricedHere` is false for it
+  // and both the net and the marker below take the not-repriced path.
+  const netPnl = pricedHere ? Math.round((grossPnl - charges.total) * 100) / 100 : t.netPnl;
   const realisedPct = buyValue > 0 && !isOpen ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
   const riskAmount = fields.riskAmount !== undefined ? fields.riskAmount : t.riskAmount;
   const rMultiple = riskAmount && riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null;
@@ -2536,7 +2629,7 @@ export function updateManualTrade(
   // re-priced first and then noticed the figures had moved, which for an IPO-synced
   // holding they always had (two different pricings of one sale), so every save
   // dropped the marker.
-  const keptNotes = repriced ? withoutSyncChargesNote(t.importNotes) : t.importNotes;
+  const keptNotes = pricedHere ? withoutSyncChargesNote(t.importNotes) : t.importNotes;
   const nextNotes = exitLegChanged ? withoutStaleCloseNote(keptNotes) : keptNotes;
 
   db.update(tradesTable)
@@ -2582,6 +2675,12 @@ export function updateManualTrade(
     .where(eq(tradesTable.id, tradeId))
     .run();
 
+  // D20 — the ladder re-derives every priced head of a staged parent, so the row
+  // this save just wrote back verbatim is confirmed to equal Σ legs (invariant 5)
+  // and a legacy row whose heads were released is priced through the one writer
+  // that knows its tranches. Idempotent; nothing to rebuild without legs.
+  if (isStaged && legCount > 0) rebuildStagedTrade(tradeId);
+
   let markNote = "";
   if (fields.currentPrice != null && fields.currentPrice > 0) {
     if (isDerivativeInstrument(t)) {
@@ -2624,6 +2723,17 @@ export function applyOverride(
   // save that can only refuse.
   if (storedDateProblem(t)) return false;
 
+  // D20 (v4.3.0 wave 2O, the owed guard) — a STAGED parent's priced heads belong to
+  // its ladder alone (invariant 5), and this writer recomputed them from the flat
+  // aggregate: a re-tag TO eq_mtf billed the whole position one round trip's
+  // interest beside legs that state each tranche's, and the next ladder action
+  // erased it. Refused like `closePosition`'s own STAGED case; the override row is
+  // not written either, so "nothing was changed" is the fact. The re-tag dialog can
+  // reach a staged row (nothing gates it) and `overrideTrade` discards the boolean,
+  // exactly as it does for the stored-date refusal above.
+  const stagedLegs = db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
+  if (t.staged || stagedLegs > 0) return false;
+
   const segment = ov.segment ?? (ov.isMtf ? "eq_mtf" : (t.segment as Segment));
   const exchange = ov.exchange ?? (t.exchange as Exchange);
   const bucket = SEGMENT_BUCKET[segment];
@@ -2661,7 +2771,9 @@ export function applyOverride(
   const isMtf = segment === "eq_mtf";
   // V3: a stored 0 is kept. Q-A (wave 2N): a null stays null — a re-tag TO
   // eq_mtf no longer invents a funded principal for a row nobody priced, and
-  // bills no interest for it (the pledge charge below still applies).
+  // bills no interest for it (and no pledge charge either — D12, wave 2O: the
+  // engine gates both on the same `fundedAmount > 0`, so this row is billed
+  // exactly like one that states 0; the recorded deviation, not an oversight).
   const fundedAmount = isMtf ? t.mtfFundedAmount : null;
   // Open positions accrue nothing here — the daily job (lib/jobs/mtf-accrual.ts)
   // takes over from its next run, per-epoch.
@@ -2681,7 +2793,11 @@ export function applyOverride(
       sellQty: t.sellQty,
       buyOrderCount: t.buyOrderCount,
       sellOrderCount: t.sellOrderCount,
-      // Q-A: an unstated principal bills 0 interest; the pledge charge stands.
+      // Q-A: an unstated principal bills 0 interest — and no pledge charge either
+      // (D12, wave 2O): `lib/engine/charges.ts:106` gates BOTH on the same
+      // `fundedAmount > 0`, so an unpriced row is billed identically to a stated 0.
+      // That is the recorded deviation (DECISIONS 2026-09-16, wave 2N); billing the
+      // pledge fee alone would need an engine change, which was not made.
       mtf: isMtf ? { fundedAmount: fundedAmount ?? 0, daysHeld, pledgeScrips: 1 } : null,
     },
     r,

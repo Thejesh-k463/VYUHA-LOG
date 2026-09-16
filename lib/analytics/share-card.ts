@@ -10,11 +10,13 @@
 
 export interface ShareStats {
   netPnl: number;
-  winRatePct: number;
+  /** null = no priced closed trade to measure a rate over (Kpis' rule). */
+  winRatePct: number | null;
   profitFactor: number;
   avgR: number | null;
   trades: number;
-  expectancy: number;
+  /** null = no priced closed trade to average over. */
+  expectancy: number | null;
   maxDrawdown: number;
   charges: number;
   bestTrade: number;
@@ -56,7 +58,12 @@ export interface ShareCardValue {
   tone: "profit" | "loss" | "neutral";
 }
 
-const inr = (n: number) => {
+// Kept local rather than swapped for lib/format's `inrCompact`: this is the
+// glyph set the canvas card is pinned to (U+2212 minus, ₹1.25L / −₹18.0K
+// thresholds), and the two differ. `null` is a metric the book cannot state —
+// `Math.abs(null)` is 0, so without this branch a blank printed as "₹0".
+const inr = (n: number | null) => {
+  if (n == null) return "—";
   const abs = Math.abs(n);
   const sign = n < 0 ? "−" : "";
   if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)}Cr`;
@@ -65,7 +72,8 @@ const inr = (n: number) => {
   return `${sign}₹${Math.round(abs)}`;
 };
 
-const toneOf = (n: number): ShareCardValue["tone"] => (n > 0 ? "profit" : n < 0 ? "loss" : "neutral");
+const toneOf = (n: number | null): ShareCardValue["tone"] =>
+  n == null ? "neutral" : n > 0 ? "profit" : n < 0 ? "loss" : "neutral";
 
 /**
  * Render the selected metrics under the chosen privacy mode.
@@ -84,7 +92,7 @@ export function buildShareCard(stats: ShareStats, opts: ShareCardOptions): Share
 
     if (meta.kind === "ratio" || meta.kind === "count") {
       const display =
-        id === "winRate" ? `${stats.winRatePct.toFixed(1)}%`
+        id === "winRate" ? (stats.winRatePct == null ? "—" : `${stats.winRatePct.toFixed(1)}%`)
         : id === "profitFactor" ? (Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : "∞")
         : id === "avgR" ? (stats.avgR == null ? "—" : `${stats.avgR.toFixed(2)}R`)
         : `${stats.trades}`;
@@ -112,7 +120,7 @@ export function buildShareCard(stats: ShareStats, opts: ShareCardOptions): Share
       out.push({
         id,
         label: `${meta.label} (% of capital)`,
-        display: cap > 0 ? `${((raw / cap) * 100).toFixed(2)}%` : "—",
+        display: cap > 0 && raw != null ? `${((raw / cap) * 100).toFixed(2)}%` : "—",
         tone: toneOf(raw),
       });
     } else {

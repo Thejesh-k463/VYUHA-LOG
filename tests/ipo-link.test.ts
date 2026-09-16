@@ -283,6 +283,40 @@ describe("linkedSyncFor — a holding with a sale recorded in Trades is never re
     expect(linkedSyncFor({ stored: soldOnIpos, next: soldOnIpos, trade: { ...soldInTrades, avgSellPrice: 152 } })).toBe("leave");
   });
 
+  /**
+   * D13 (v4.3.0 fix wave 2O, dates-charges#0) — ONE CALENDAR ON BOTH SIDES.
+   *
+   * v4.2.0 stored a day-first exit date verbatim AND its sync wrote that same
+   * string onto the holding, so the upgrade population holds '20-02-2026' in
+   * BOTH columns. D2's fold (`app/api/ipos/route.ts#linkInput`) hands `next` and
+   * `stored` the ISO day while the trade still holds the day-first one, so the
+   * raw string compare below stopped recognising the sale as this IPO's own exit
+   * and an exit-PRICE correction was answered 409 where the pre-wave route saved
+   * it and synced. Both sides now resolve through the shared calendar.
+   */
+  it("D13 · a LEGACY day-first sale is still this IPO's exit once the record's date is folded (dates-charges#0)", () => {
+    const legacySale = { sellQty: 10, avgSellPrice: 150, sellDate: "20-02-2026" };
+    const folded = { ...soldOnIpos, exitDate: "2026-02-20" };
+    // THE assertions (red before the fix: false, and 'refuse' — the 409).
+    expect(sellLegIsIpoExit(folded, legacySale)).toBe(true);
+    expect(linkedSyncFor({ stored: folded, next: { ...folded, exitPrice: 160 }, trade: legacySale })).toBe("sync");
+    // …and the mirror shape (the record still raw, the holding already ISO).
+    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: "20-02-2026" }, { ...legacySale, sellDate: "2026-02-20" })).toBe(true);
+
+    // Idempotent for a pair the route already folded, and unchanged for every
+    // other shape: a different day is still a different day, a byte-identical
+    // UNREADABLE pair still compares equal, and one side null still differs.
+    expect(sellLegIsIpoExit(soldOnIpos, { ...legacySale, sellDate: "2026-03-02" })).toBe(true);
+    expect(sellLegIsIpoExit(folded, { ...legacySale, sellDate: "2026-02-21" })).toBe(false);
+    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: "2026-02-30" }, { ...legacySale, sellDate: "2026-02-30" })).toBe(true);
+    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: "2026-02-30" }, { ...legacySale, sellDate: null })).toBe(false);
+    // Neither side states a day at all: the quantity and price decide, as before.
+    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: null }, { ...legacySale, sellDate: null })).toBe(true);
+    // A sale corrected in Trades to ANOTHER day is still not the exit — the
+    // recorded Y2 gap this design does not re-open (DECISIONS 7421-7423).
+    expect(linkedSyncFor({ stored: folded, next: { ...folded, exitPrice: 160 }, trade: { ...legacySale, sellDate: "12-03-2026" } })).toBe("refuse");
+  });
+
   it("no second writer: the recompute that re-read gross against a kept sale is gone", () => {
     expect("keepLinkedSellLeg" in ipoLink).toBe(false);
   });

@@ -18,6 +18,12 @@ interface PreviewResp {
   breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
   grossPnl: number;
   netPnl: number;
+  /** D4 (wave 2N) / D20 (wave 2O): the route kept the row's stored bill — a
+   *  notes-only edit, or a staged parent whose ladder owns the pricing. */
+  keptCharges?: boolean;
+  /** The sentence that says WHY the bill was kept (or why the save will refuse
+   *  a moved fill on a ladder) — rendered in the `dateProblem` shape. */
+  keptReason?: string;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -317,6 +323,10 @@ export function EditTradeDialog({
 
       {dateProblem && (
         <p className="rounded-md border border-border bg-card-hover/30 p-3 text-xs text-muted-foreground">{dateProblem}</p>
+      )}
+
+      {!dateProblem && preview?.keptReason && (
+        <p className="rounded-md border border-border bg-card-hover/30 p-3 text-xs text-muted-foreground">{preview.keptReason}</p>
       )}
 
       {!dateProblem && preview && (

@@ -44,6 +44,9 @@ let closePreviewBody: typeof import("@/components/trades/close-trade-dialog").cl
 let resolveExitIso: typeof import("@/components/trades/close-trade-dialog").resolveExitIso;
 let editPreviewBody: typeof import("@/components/trades/edit-trade-dialog").editPreviewBody;
 let toSlimTrade: typeof import("@/lib/domain/slim-trade").toSlimTrade;
+// D20 (wave 2O): a STAGED parent is priced by its ladder alone, so the staged
+// cells below build the ladder through its OWN door rather than faking legs.
+let stagedQ: typeof import("@/lib/queries/staged");
 // No margin-estimate imports: since Q-A neither half of the matrix estimates a
 // funded amount, so the broker own-margin table is not a dimension of it.
 let findRates: typeof import("@/lib/engine/rates").findRates;
@@ -62,6 +65,7 @@ beforeAll(async () => {
   ({ closePreviewBody, resolveExitIso } = await import("@/components/trades/close-trade-dialog"));
   ({ editPreviewBody } = await import("@/components/trades/edit-trade-dialog"));
   ({ toSlimTrade } = await import("@/lib/domain/slim-trade"));
+  stagedQ = await import("@/lib/queries/staged");
   ({ findRates } = await import("@/lib/engine/rates"));
   ({ loadRatesMap } = await import("@/lib/engine/rates-db"));
 
@@ -449,6 +453,232 @@ describe("G3 — an edit that changes no charge input: the preview shows what th
     const r = row(id);
     expect(r.importNotes).toContain("Exit charges computed from the linked IPO record");
     expect([r.chargesTotal, r.netPnl, r.rMultiple]).toEqual([41.25, 458.75, 4.59]);
+  });
+});
+
+/**
+ * D14 / D15 (v4.3.0 fix wave 2O, dates-charges#1 and #2) — THE ALLOTMENT CELLS
+ * THIS MATRIX DID NOT HAVE.
+ *
+ * D4(b) taught the SAVE an IPO mode (`ipoEditCharges ?? computeCharges`) but the
+ * preview route learned only the KEEP branch, so on any editor edit that MOVES a
+ * charge input on an `acquisition:'ipo'` row the fall-through priced
+ * `computeCharges`, which has no IPO mode: measured on a 10 @100 allotment sold
+ * 10 @160, the dialog showed charges 18.43 / net 581.57 (sttCtt 3, the purchase
+ * STT ruling row (1) says is not due) while the row stored 17.40 / 582.60
+ * (sttCtt 2). The stored figure is right; the figure the user approves was wrong
+ * — exactly the class this file exists for, and it had no cell crossing `ipo` ×
+ * re-price, nor an OPEN allotment on either half.
+ *
+ * ONE helper (`ipoEditCharges`, lib/analytics/ipo.ts — pure, with the charger
+ * injected by each door) is now read by both.
+ */
+describe("G3 — an allotment-derived row the editor RE-PRICES (D14/D15, wave 2O)", () => {
+  const HEADS = ["brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty", "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges"] as const;
+
+  /** The route's whole answer, not just the four figures. */
+  async function previewFull(body: unknown) {
+    const res = await POST(new Request("http://localhost:3011/api/charges/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+    expect(res.status).toBe(200);
+    return (await res.json()) as { breakdown: Record<string, number>; grossPnl: number; netPnl: number; keptCharges?: boolean };
+  }
+  const headsOf = (r: Record<string, unknown>) => Object.fromEntries(HEADS.map((k) => [k, Number(r[k]) || 0]));
+  const allotment = (over: Record<string, unknown>) =>
+    t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", symbol: `IPO${++seq}`, tradingsymbol: `IPO${seq}`,
+          acquisition: "ipo", acquisitionPrice: 100, acquisitionDate: BUY_ISO,
+          buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: BUY_ISO, buyOrderCount: 1,
+          sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-08-14", sellOrderCount: 1,
+          isOpen: false, grossPnl: 500,
+          chargesTotal: 2.06, brokerage: 0, sttCtt: 2, exchangeTxn: 0.05, sebi: 0, stampDuty: 0, ipft: 0, gst: 0.01,
+          dpCharges: 0, mtfInterest: 0, pledgeCharges: 0, netPnl: 497.94,
+          ...over,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+
+  it("D14 · a moved exit price on an acquisition:'ipo' holding: the dialog's ten heads equal the stored ones, and sttCtt is 2 not 3", async () => {
+    const id = allotment({});
+    const fields = { buyQty: 10, avgBuyPrice: 100, sellQty: 10, avgSellPrice: 160, buyDate: BUY_ISO, sellDate: "2026-08-14", ownCapitalUsed: null };
+
+    const shown = await previewFull(editPreviewBody(wire(id), fields));
+    expect(commit.updateManualTrade(id, fields).ok).toBe(true);
+    const stored = row(id) as unknown as Record<string, unknown>;
+
+    // THE assertions (HEAD: the dialog shows sttCtt 3 / total 18.43 / net 581.57
+    // beside a row that stores sttCtt 2 / 17.40 / 582.60).
+    expect(headsOf(shown.breakdown)).toEqual(headsOf(stored));
+    expect([shown.breakdown.total, shown.netPnl, shown.grossPnl]).toEqual([stored.chargesTotal, stored.netPnl, stored.grossPnl]);
+    expect(saved(id)).toEqual([shown.grossPnl, shown.breakdown.total, shown.netPnl, shown.breakdown.mtfInterest]);
+    // The purchase STT ruling row (1): 0.1% of the SALE alone (1600 → 2), never
+    // of the allotment beside it (2600 → 3).
+    expect(shown.breakdown.sttCtt).toBe(2);
+  });
+
+  it("D15 · an OPEN allotment: neither half bills purchase STT, and the preview says the bill was kept", async () => {
+    const id = allotment({
+      isOpen: true, sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null, sellOrderCount: 0, grossPnl: 0,
+      chargesTotal: 0, sttCtt: 0, exchangeTxn: 0, gst: 0, netPnl: 0,
+    });
+    const ZERO = Object.fromEntries(HEADS.map((k) => [k, 0]));
+    // A notes-only save, and then a quantity correction — the row states no
+    // charge at all, so `statesNoCharges` forces the re-price path on both.
+    for (const fields of [
+      { buyQty: 10, avgBuyPrice: 100, sellQty: 0, avgSellPrice: 0, buyDate: BUY_ISO, sellDate: null, ownCapitalUsed: null },
+      { buyQty: 20, avgBuyPrice: 100, sellQty: 0, avgSellPrice: 0, buyDate: BUY_ISO, sellDate: null, ownCapitalUsed: null },
+    ]) {
+      const shown = await previewFull(editPreviewBody(wire(id), fields));
+      expect(commit.updateManualTrade(id, fields).ok).toBe(true);
+      const stored = row(id) as unknown as Record<string, unknown>;
+      // THE assertions (HEAD: sttCtt 1, exchangeTxn 0.03, gst 0.01, total 1.04,
+      // net -1.04 on BOTH halves — money the journal fabricates).
+      expect(headsOf(shown.breakdown), JSON.stringify(fields)).toEqual(ZERO);
+      expect(headsOf(stored), JSON.stringify(fields)).toEqual(ZERO);
+      expect([shown.breakdown.total, shown.netPnl], JSON.stringify(fields)).toEqual([0, 0]);
+      expect([stored.chargesTotal, stored.netPnl], JSON.stringify(fields)).toEqual([0, 0]);
+      expect(shown.keptCharges, "the dialog says whose figure it is showing").toBe(true);
+    }
+    expect(row(id).buyQty).toBe(20);
+  });
+});
+
+/**
+ * D20 (v4.3.0 fix wave 2O) — THE STAGED CELLS THIS MATRIX DID NOT HAVE.
+ *
+ * D20 made `rebuildStagedTrade` the SINGLE writer of a staged parent's priced
+ * heads (invariant 5, parent = Σ legs): `updateManualTrade` never prices such a
+ * row — a patch that moves no fill saves the journal fields and hands the pricing
+ * back to the ladder, and a patch that MOVES one is refused outright. The preview
+ * route knew nothing of legs, so it priced the FLAT round trip `computeCharges`
+ * bills on the aggregate.
+ *
+ * MEASURED by the wave 2O seam round (`wave2h-reports/wave2o-S-FIX.md`, readers
+ * left #1) on a 100 @100 + 50 @110 delivery ladder — parent
+ * `[buyQty 150, avgBuyPrice 103.33, buyValue 15500]`: the dialog's own body over
+ * the real route answered `{"total":17.59,"kept":false,"netPnl":-17.59}` while the
+ * row stores the ladder's **19.59**, because two entry tranches pay two lots of
+ * every per-order head and a round trip bills an exit nobody made. The stored
+ * figure is right; the figure the user approves was wrong — exactly this file's
+ * class, and it had no cell crossing `staged` × the editor at all.
+ *
+ * `editPreviewBody` sends `buyValue: buyQty × avgBuyPrice` (15,499.4999…), which
+ * is why the flat predicate could never answer "kept" for a ladder either: a
+ * staged parent's `buyValue` is Σ its LEG values while its `avgBuyPrice` is the
+ * rounded weighted average.
+ */
+describe("G3 — a STAGED parent: the ladder prices it, and the dialog shows the ladder's bill (D20, wave 2O)", () => {
+  const HEADS = ["brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty", "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges"] as const;
+  const headsOf = (r: Record<string, unknown>) => Object.fromEntries(HEADS.map((k) => [k, Number(r[k]) || 0]));
+
+  /** The route's whole answer, including what it says about whose figure it is. */
+  async function previewFull(body: unknown) {
+    const res = await POST(new Request("http://localhost:3011/api/charges/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+    const j = (await res.json()) as { breakdown: Record<string, number>; grossPnl: number; netPnl: number; keptCharges?: boolean; keptReason?: string };
+    expect(res.status, JSON.stringify(j)).toBe(200);
+    return j;
+  }
+
+  /** A flat delivery row, 100 @100 on the buy side and nothing sold. */
+  const flatRow = (tag: string) =>
+    t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", symbol: `${tag}${++seq}`, tradingsymbol: `${tag}${seq}`,
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: BUY_ISO, buyOrderCount: 1,
+          sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null, sellOrderCount: 0, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+
+  /**
+   * A two-tranche ladder built through the ladder's OWN door (`convertToStaged`
+   * then `addLeg`), so the parent really is Σ its legs before anything is
+   * previewed — a hand-written `staged: true` row would prove nothing about the
+   * figures the rebuild writes.
+   */
+  function ladderRow(): number {
+    const id = flatRow("LADDER");
+    const conv = stagedQ.convertToStaged(id);
+    expect(conv.ok, conv.message).toBe(true);
+    const add = stagedQ.addLeg({ tradeId: id, kind: "entry", tradeDate: "2026-07-20", qty: 50, price: 110 });
+    expect(add.ok, add.message).toBe(true);
+    return id;
+  }
+
+  /** The dialog's own fields for a row it has not changed a number on. */
+  const untouched = (id: number) => {
+    const w = wire(id);
+    return { buyQty: w.buyQty, avgBuyPrice: w.avgBuyPrice, sellQty: w.sellQty, avgSellPrice: w.avgSellPrice, buyDate: w.buyDate, sellDate: w.sellDate, ownCapitalUsed: null };
+  };
+
+  it("a notes-only patch on a ladder: the ten heads the dialog shows are the ladder's own, before and after the save", async () => {
+    const id = ladderRow();
+    const parent = row(id);
+    // The premise of the whole divergence, stated rather than assumed.
+    expect(
+      [parent.staged, parent.buyQty, parent.avgBuyPrice, parent.buyValue, Math.round(parent.buyQty * parent.avgBuyPrice * 100) / 100],
+      "the parent's roll-up is not its own average × quantity",
+    ).toEqual([true, 150, 103.33, 15500, 15499.5]);
+    const before = headsOf(parent as unknown as Record<string, unknown>);
+    const fields = untouched(id);
+
+    const shown = await previewFull(editPreviewBody(wire(id), fields));
+    const res = commit.updateManualTrade(id, { ...fields, notes: "journal only" });
+    expect(res.ok, res.message).toBe(true);
+    const after = row(id);
+
+    // THE assertions (HEAD: the dialog shows the flat round trip's 17.59 / net
+    // −17.59 beside a row storing the ladder's 19.59).
+    expect(headsOf(shown.breakdown), "preview ≠ the bill the row states").toEqual(before);
+    expect(headsOf(after as unknown as Record<string, unknown>), "the save re-priced a row its ladder owns").toEqual(before);
+    expect([shown.breakdown.total, shown.netPnl, shown.grossPnl], "preview ≠ save").toEqual([after.chargesTotal, after.netPnl, after.grossPnl]);
+    expect(shown.keptCharges, "the dialog says whose figure it is showing").toBe(true);
+    expect(shown.keptReason ?? "", "…and why").toContain("ladder");
+    expect(after.notes, "and the journal field really was saved").toBe("journal only");
+
+    // NOT VACUOUS: the same aggregate as a FLAT row is billed differently, so the
+    // staged branch is what produced the figures above (17.59 vs 19.59 — two
+    // tranches pay two lots of every per-order head).
+    const twin = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", symbol: `FLATTWIN${++seq}`, tradingsymbol: `FLATTWIN${seq}`,
+          buyQty: 150, avgBuyPrice: 103.33, buyValue: 15500, buyDate: BUY_ISO, buyOrderCount: 1,
+          sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null, sellOrderCount: 0, isOpen: true,
+          chargesTotal: parent.chargesTotal, stampDuty: parent.stampDuty, exchangeTxn: parent.exchangeTxn, gst: parent.gst, netPnl: parent.netPnl,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const flat = await previewFull(editPreviewBody(wire(twin), untouched(twin)));
+    expect([flat.keptCharges ?? false, flat.breakdown.total === shown.breakdown.total], "a FLAT row of the same aggregate is still priced fresh, and differently").toEqual([false, false]);
+  });
+
+  it("a moved fill on a ladder: the preview carries the save's own refusal, and neither half changes a figure", async () => {
+    const id = ladderRow();
+    const before = row(id);
+    // An exit typed into the editor — the fills of a staged position ARE its
+    // ladder, so the save refuses this outright (D20).
+    const fields = { ...untouched(id), sellQty: 150, avgSellPrice: 120, sellDate: "2026-08-14" };
+
+    const shown = await previewFull(editPreviewBody(wire(id), fields));
+    const res = commit.updateManualTrade(id, fields);
+    expect(res.ok, "a patch that moves a fill on a ladder is refused").toBe(false);
+
+    // THE assertion (HEAD: `keptReason` is undefined and the dialog shows a full
+    // flat ROUND TRIP — gross 3,500 and its charges — for a save that stores
+    // nothing at all).
+    expect(shown.keptReason, "the preview states the refusal in the save's own words").toBe(res.message);
+    expect(headsOf(shown.breakdown), "and the figures it shows are the ones the row keeps").toEqual(headsOf(before as unknown as Record<string, unknown>));
+    expect([shown.breakdown.total, shown.netPnl, shown.grossPnl], "preview ≠ save").toEqual([before.chargesTotal, before.netPnl, before.grossPnl]);
+    expect(row(id), "nothing was written").toEqual(before);
   });
 });
 

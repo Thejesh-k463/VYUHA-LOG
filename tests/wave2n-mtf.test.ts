@@ -102,7 +102,16 @@ describe("D7 — the four shapes that stated a figure the journal never recorded
     // ownCapital 5,000 in "Own capital in MTF").
     expect([p.fundedAmount, p.ownCapital]).toEqual([null, null]);
     expect(p.ownCapitalUnstated).toBe("sellToOpen");
-    expect(ownCapitalTotal([p]).unstatedWhy.sellToOpen).toBe(1);
+    // PIN MOVED, deliberately (D9, wave 2O — mtf#4): the SHAPE of the row is still
+    // `sellToOpen` (asserted above, and it is what the Live Desk wire ships), but
+    // the TALLY every surface reads out states the reason the user can act on, and
+    // this row states no funded amount at all. /risk already calls it "not priced"
+    // and /targets "funding not recorded"; three screens now give one answer.
+    const why = ownCapitalTotal([p]).unstatedWhy;
+    expect([why.sellToOpen, why.unpriced]).toEqual([0, 1]);
+    // …and with its funding recorded the shape reason is what is counted.
+    const stated = one({ buyQty: 0, sellQty: 100, avgBuyPrice: 0, avgSellPrice: 200, mtfFundedAmount: 16000 });
+    expect(ownCapitalTotal([stated]).unstatedWhy.sellToOpen).toBe(1);
   });
 
   it("close-readers#1 — a row the journal never priced states NO funded amount and NO own capital", () => {
@@ -190,14 +199,28 @@ describe("D7 — the KPI dialog's three MTF money rows come from ONE set (close-
     // — ₹32,000 of financing beside ₹4,000 of own capital and a 5.00x ratio, so
     // the two rows above the leverage imply 9.00x).
     expect(text, "the component still reduces fundedAmount itself").not.toMatch(/\.reduce\([\s\S]{0,80}?p\.fundedAmount/);
+    // D8 (wave 2O): the reduce stays out, and each figure comes from ONE exported
+    // helper — `mtfFundedStated` for the card face and this row, `ownCapitalTotal`
+    // for own capital and the leverage ratio.
+    expect(text).toContain("mtfFundedStated(positions)");
     expect(text).toContain("ownCap.funded");
   });
 
   it("the note is attached to all THREE money rows, and a fourth line states what is left out", () => {
     const lines = (re: RegExp) => text.split(/\r?\n/).filter((l) => re.test(l)).length;
-    // the const + "Own capital in MTF" + Broker-funded + Your own capital +
-    // leverage + the "not in these figures" line
-    expect(lines(/ownCapNote/), "a money row is rendered without saying what it left out").toBe(6);
+    // the const + "Own capital in MTF" + Your own capital + leverage + the
+    // "not in these figures" line.
+    //
+    // PIN MOVED, deliberately (D8, wave 2O — mtf#2 ≡ seams#0): was 6, with
+    // "Broker-funded" reading `ownCap.funded` and carrying this note. That is what
+    // pointed the KPI FACE at the own-capital subset too, so a book of partly sold
+    // MTF rows whose funding IS recorded printed "MTF funded ₹0" beside cells of
+    // 16,000. Broker-funded is now `mtfFundedStated` — the same figure as the face
+    // and /targets — and states THAT set in its own hint, which is a different set
+    // from the one this note names.
+    expect(lines(/ownCapNote/), "a money row is rendered without saying what it left out").toBe(5);
+    expect(text, "the Broker-funded row states the set it describes").toMatch(/every MTF row that states funding/);
+    expect(text, "the leverage row states its own inputs").toMatch(/that state own capital/);
     expect(text, "the dialog never states the financing it excluded without counting it").toMatch(/not in these figures/i);
   });
 
@@ -265,6 +288,62 @@ describe("D7 — the Live Desk half is pinned, not left to tsc (close-readers#4)
     const client = src("components/live/tracker-client.tsx");
     expect(client).toMatch(/row\.mtf\.fundedP === null/);
     expect(client).toContain("MTF_INTEREST_WHOLE_LEG_NOTE");
+    // D9 (wave 2O, mtf#4): both note sites resolve the reason through the ONE
+    // exported predicate, so a row that is partly sold AND states no funding is no
+    // longer told "the stored funding covers the whole original leg" — and the
+    // interest block's Q-B caveat is the same `interestOnWholeLeg` /equity reads,
+    // which an unpriced row (accruing nothing under Q-A) does not satisfy.
+    expect(client).toContain("mtfDashReason(");
+    expect(client).toContain("interestOnWholeLeg(");
+    expect(client, "the shape reason is no longer read on its own").not.toMatch(/MTF_UNSTATED_NOTE\[row\.mtf\.unstated/);
+  });
+});
+
+/**
+ * D12 (wave 2O, mtf#5) — THE FIVE PLEDGE COMMENTS STATE WHAT THE CODE DOES.
+ *
+ * All five said the pledge charge is still billed for a null-funded MTF row. It is
+ * not: `lib/engine/charges.ts:106` gates interest AND pledge on the same
+ * `input.mtf.fundedAmount > 0`, so `closePosition` on such a row stores
+ * `[mtfFundedAmount null, mtfInterest 0, pledgeCharges 0]` — the DECISIONS entry's
+ * recorded deviation. A comment stating removed behaviour as current is the rc7
+ * mtf-accrual#3 class, and the next builder reads it as the contract.
+ *
+ * No behaviour changed: `tests/seams-v43-fixF.test.ts` F44 ([null, 0, 0] across the
+ * five writers) and `tests/seams-v43-fixE.test.ts` E-c X2 already hold it.
+ */
+describe("D12 — no comment claims the pledge charge survives an unrecorded principal", () => {
+  const COMMENT_SITES = [
+    "lib/import/commit.ts",
+    "app/api/charges/preview/route.ts",
+    "lib/queries/staged.ts",
+  ];
+
+  it("none of the writer sites claims the pledge fee stands", () => {
+    const claims = [
+      /pledge charge stands/i,
+      /pledge charge still/i,
+      /keeps its pledge charge/i,
+      /pledge charge below still applies/i,
+      /pledge charge still applies/i,
+    ];
+    const hits: string[] = [];
+    for (const rel of COMMENT_SITES) {
+      const text = fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+      text.split(/\r?\n/).forEach((line, i) => {
+        if (claims.some((re) => re.test(line))) hits.push(`${rel}:${i + 1} ${line.trim()}`);
+      });
+    }
+    // THE assertion (on revert: five lines, each stating the opposite of the code
+    // and of the DECISIONS entry).
+    expect(hits, "a comment states behaviour the engine does not have").toEqual([]);
+  });
+
+  it("and each of the three files states the deviation instead", () => {
+    for (const rel of COMMENT_SITES) {
+      const text = fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+      expect(text, `${rel} does not cite the engine's own gate`).toMatch(/charges\.ts:106|gates (?:interest AND pledge|BOTH)/);
+    }
   });
 });
 

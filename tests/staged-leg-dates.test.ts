@@ -35,8 +35,6 @@ let staged: typeof import("@/lib/queries/staged");
 let loadRatesMap: typeof import("@/lib/engine/rates-db").loadRatesMap;
 let findRates: typeof import("@/lib/engine/rates").findRates;
 let computeCharges: typeof import("@/lib/engine/charges").computeCharges;
-let defaultMtfFundedAmount: typeof import("@/lib/risk/margin").defaultMtfFundedAmount;
-let getMarginPct: typeof import("@/lib/queries/margin").getMarginPct;
 let todayIstIso: typeof import("@/lib/domain/trading-day").todayIstIso;
 
 const ENTRY_DAY = "2026-08-20";
@@ -50,8 +48,6 @@ beforeAll(async () => {
   ({ loadRatesMap } = await import("@/lib/engine/rates-db"));
   ({ findRates } = await import("@/lib/engine/rates"));
   ({ computeCharges } = await import("@/lib/engine/charges"));
-  ({ defaultMtfFundedAmount } = await import("@/lib/risk/margin"));
-  ({ getMarginPct } = await import("@/lib/queries/margin"));
   ({ todayIstIso } = await import("@/lib/domain/trading-day"));
 }, 120_000);
 afterAll(() => t?.cleanup());
@@ -61,7 +57,11 @@ const legsOf = (id: number) =>
   t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, id)).all().sort((a, b) => a.seq - b.seq);
 
 let seq = 0;
-/** An open angelone eq_mtf position, 100 @200 bought on 2026-08-20, staged. */
+/** What the seeded row RECORDS as broker-funded (D6/D7, wave 2O: the ladder bills
+ *  interest on the stated principal and on nothing else). */
+const FUNDED = 15000;
+/** An open angelone eq_mtf position, 100 @200 bought on 2026-08-20, ₹15,000 of it
+ *  broker-funded, staged. */
 function stagedMtf(): number {
   const sym = `LEGDATE${++seq}`;
   const id = t.db
@@ -86,6 +86,7 @@ function stagedMtf(): number {
         sellDate: null,
         sellOrderCount: 0,
         isOpen: true,
+        mtfFundedAmount: FUNDED,
       }),
     )
     .returning({ id: t.schema.trades.id })
@@ -288,8 +289,18 @@ describe("D4 · convertToStaged refuses a stored date the calendar does not have
 });
 
 describe("G-G3-1 · the ladder bills the days the dates really are", () => {
-  /** MTF interest the engine charges for ONE open tranche held `days` days. */
-  const interestFor = (value: number, qty: number, days: number, asOf: string) => {
+  /**
+   * MTF interest the engine charges for ONE open tranche of `funded` principal
+   * held `days` days.
+   *
+   * D6/D7 (wave 2O): the principal is the one the ROW STATES, apportioned across
+   * the entry tranches by value — it is no longer
+   * `defaultMtfFundedAmount(leg value, margin_config)`, which made the ladder the
+   * fifth writer of an estimate into stored money (owner ruling Q-A). The DATE
+   * rule this describe exists for is unchanged, so the seed now states a funded
+   * amount; a row that states none bills nothing, which the last case pins.
+   */
+  const interestFor = (funded: number, value: number, qty: number, days: number, asOf: string) => {
     const rates = findRates(loadRatesMap(), "angelone", "eq_mtf", "NSE", asOf);
     return computeCharges(
       {
@@ -300,7 +311,7 @@ describe("G-G3-1 · the ladder bills the days the dates really are", () => {
         sellQty: 0,
         buyOrderCount: 1,
         sellOrderCount: 0,
-        mtf: { fundedAmount: defaultMtfFundedAmount(value, getMarginPct("angelone", "eq_mtf")), daysHeld: days, pledgeScrips: 1 },
+        mtf: { fundedAmount: funded, daysHeld: days, pledgeScrips: 1 },
       },
       rates,
     ).mtfInterest;
@@ -313,8 +324,12 @@ describe("G-G3-1 · the ladder bills the days the dates really are", () => {
     expect(staged.addLeg({ tradeId: id, kind: "entry", tradeDate: "31-08-2026", qty: 50, price: 210, direction: "long" }).ok).toBe(true);
 
     const asOf = todayIstIso();
+    // D7 (wave 2O): the row states 15,000, split by tranche value across
+    // 20,000 + 10,500 = 30,500 — 9,836.07 on the first tranche and the
+    // remainder, 5,163.93, on the second, so the two shares sum to the 15,000
+    // the row states (owner ruling, 2O row 2).
     const expected =
-      Math.round((interestFor(20000, 100, daysTo(ENTRY_DAY, asOf), asOf) + interestFor(10500, 50, daysTo("2026-08-31", asOf), asOf)) * 100) / 100;
+      Math.round((interestFor(9836.07, 20000, 100, daysTo(ENTRY_DAY, asOf), asOf) + interestFor(5163.93, 10500, 50, daysTo("2026-08-31", asOf), asOf)) * 100) / 100;
 
     // THE assertion: the stored figure is the one the two REAL holding periods
     // earn. Before the fix this row could not be written at all (NaN charges).
@@ -341,16 +356,29 @@ describe("G-G3-1 · the ladder bills the days the dates really are", () => {
     const asOf = "2026-09-15";
     const map = loadRatesMap();
     const leg = (tradeDate: string): Leg[] => [{ id: 1, kind: "entry", seq: 1, tradeDate, qty: 100, price: 200 }];
-    const ctx = { broker: "angelone", segment: "eq_mtf", exchange: "NSE", direction: "long", asOf } as const;
+    const ctx = { broker: "angelone", segment: "eq_mtf", exchange: "NSE", direction: "long", asOf, mtfFundedAmount: FUNDED } as const;
     const interest = (tradeDate: string) => staged.priceLegs(leg(tradeDate), ctx, map)[0].breakdown.mtfInterest;
 
     const honest = interest(ENTRY_DAY);
     expect(honest).toBeGreaterThan(0);
+    // …and it is billed on the 15,000 the row STATES, not on the margin-config
+    // estimate for the 20,000 tranche (D6/D7, wave 2O — mtf#0/mtf#1).
+    expect(honest).toBe(interestFor(FUNDED, 20000, 100, daysTo(ENTRY_DAY, asOf), asOf));
     // '2026-02-31' rolled to 3 March and billed 1449.86 against this 192.33.
     expect(interest("2026-02-31")).toBe(0);
     // 'not-a-date' was NaN, which is what reached the NOT NULL column.
     expect(interest("not-a-date")).toBe(0);
     // …and the day-first form of the SAME day bills the same money as the ISO one.
     expect(interest("20-08-2026")).toBe(honest);
+
+    // D6 — a row that states NO principal bills nothing, on a date the calendar
+    // has. On revert: 192.33 of interest from the margin table, written into the
+    // parent row's stored money and taken back out by the accrual job on the next
+    // /equity render (mtf#0's oscillation).
+    const unstated = { ...ctx, mtfFundedAmount: null };
+    expect(staged.priceLegs(leg(ENTRY_DAY), unstated, map)[0].breakdown.mtfInterest).toBe(0);
+    // …and the pledge fee goes with it: the engine gates both on the same
+    // `fundedAmount > 0`, so an unpriced row is billed exactly like a stated 0.
+    expect(staged.priceLegs(leg(ENTRY_DAY), unstated, map)[0].breakdown.pledgeCharges).toBe(0);
   });
 });

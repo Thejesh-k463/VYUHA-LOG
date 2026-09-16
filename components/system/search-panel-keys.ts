@@ -37,6 +37,23 @@ export function isPanelToggleChord(e: Chord): boolean {
 }
 
 /**
+ * Ctrl/Cmd + K opens the modal command palette — and ONLY that.
+ *
+ * It lives beside `isPanelToggleChord` so the two are mutually exclusive BY
+ * CONSTRUCTION: this one refuses Shift (which belongs to the panel above), that
+ * one requires it, and both refuse Alt for the AltGr reason documented there.
+ * The palette had neither guard, so Ctrl+Shift+K opened the panel AND the
+ * palette over it, and AltGr+K (₹ on the Indian layout) opened the palette
+ * mid-word.
+ */
+export function isPaletteChord(e: Chord): boolean {
+  if (e.altKey) return false;
+  if (!(e.ctrlKey || e.metaKey)) return false;
+  if (e.shiftKey) return false;
+  return e.key.toLowerCase() === "k";
+}
+
+/**
  * What "← previous search" is given to restore.
  *
  * `cats` are the chips THE HITS WERE FETCHED WITH, taken off the hits

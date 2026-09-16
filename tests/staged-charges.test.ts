@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, it, expect } from "vitest";
 import { computeCharges } from "@/lib/engine/charges";
 import { seedRatesMap, findRates } from "@/lib/engine/rates";
 import { legChargeShapes, summarise, type Leg, type Direction } from "@/lib/domain/staged";
 import type { ChargeRates } from "@/lib/engine/types";
+import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 const ratesMap = seedRatesMap();
 
@@ -212,5 +213,116 @@ describe("charges flow into R correctly", () => {
     // Contributions must sum to the total R.
     const summed = pos.fills.reduce((s, f) => s + (f.rContribution ?? 0), 0);
     expect(summed).toBeCloseTo(pos.realisedR!, 1);
+  });
+});
+
+/**
+ * D6 / D7 (v4.3.0 fix wave 2O — mtf#0 SILENT WRONG NUMBER, mtf#1 SILENT WRONG
+ * NUMBER) — THE LADDER BILLS MTF INTEREST ONLY ON THE PRINCIPAL THE ROW STATES.
+ *
+ * `priceLegs` declared `ctx.mtfFundedAmount` and never read it: every entry
+ * tranche was priced on `defaultMtfFundedAmount(leg value, margin_config)`, and
+ * `rebuildStagedTrade` collapses those legs into the parent row's stored
+ * `mtf_interest` / `charges_total` / `net_pnl`. So the ladder was the FIFTH
+ * writer of stored MTF interest and owner ruling Q-A (wave 2N: "no writer
+ * persists an estimate") had never been applied to it. Measured on HEAD
+ * (zerodha, an open eq_mtf 100 @100 with `mtf_funded_amount` NULL, clock
+ * 2026-08-20): `convertToStaged` stored 71.38 of interest, `accrueMtfInterest`
+ * took it straight back out, `addLeg` put it back — stored money oscillating on
+ * every leg edit and every Equity Tracker visit, with no prompt and no audit row
+ * (DECISIONS 2026-08-30 decision 6).
+ *
+ * The rule now, in the ladder:
+ *   null (never recorded) → nothing is billed (Q-A / D6);
+ *   a stated 0            → nothing is billed (V3/X2: 0 is a STATEMENT);
+ *   a stated amount       → billed, APPORTIONED across the entry tranches by
+ *                           tranche value (owner ruling, 2O row 2 —
+ *                           `stated × legValue ÷ Σ entry legValue`, invariant
+ *                           4's weighted rule), so the shares sum to the stated
+ *                           principal and Σ per-leg interest equals what the
+ *                           accrual job bills on the whole leg for the same
+ *                           spans;
+ *   a PARTLY consumed tranche → its whole share to `asOf`, not to the partial
+ *                           sale's date (Q-B: no funding is released for the
+ *                           units already sold).
+ *
+ * The REAL `priceLegs` is driven here, not the mirror above it: the mirror
+ * cannot see the MTF branch at all. lib/queries/staged.ts is server-only, so it
+ * is imported dynamically after the helper sets VYUHA_DB_PATH — ONE temp
+ * database per FILE (AGENTS.md Testing).
+ */
+describe("D6/D7 · the staged ladder bills interest on the STATED funded amount, apportioned by tranche value", () => {
+  let t: TempDb;
+  let staged: typeof import("@/lib/queries/staged");
+
+  // Measured locally 2026-09-16: migrate + seed + the staged import ~1.7 s,
+  // inside the 3 s local hook budget. The raised timeout is for the Windows
+  // runner (> 15x slower on SQLite-file work, AGENTS.md Testing).
+  beforeAll(async () => {
+    t = await openTempDb("staged-charges", { seed: true });
+    staged = await import("@/lib/queries/staged");
+  }, 120_000);
+  afterAll(() => t?.cleanup());
+
+  const ASOF = "2026-09-15";
+  const A_DAY = "2026-08-01"; // 45 days to ASOF
+  const B_DAY = "2026-08-10"; // 36 days to ASOF
+  const mtfRates = () => findRates(ratesMap, "zerodha", "eq_mtf", "NSE", ASOF);
+
+  /** The interest the ENGINE charges for one tranche of `funded` held `days`. */
+  const interestFor = (funded: number, days: number) =>
+    computeCharges(
+      { segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, mtf: { fundedAmount: funded, daysHeld: days, pledgeScrips: 1 } },
+      mtfRates(),
+    ).mtfInterest;
+
+  const ctx = (mtfFundedAmount: number | null) =>
+    ({ broker: "zerodha", segment: "eq_mtf", exchange: "NSE", direction: "long", asOf: ASOF, mtfFundedAmount }) as const;
+
+  /** legId → MTF interest, as the real ladder prices it. */
+  const billed = (legs: Leg[], funded: number | null): Map<number, number> =>
+    new Map(staged.priceLegs(legs, ctx(funded), ratesMap).map((p) => [p.legId, p.breakdown.mtfInterest]));
+
+  it("a row the journal never priced (null) bills NOTHING, and a stated 0 bills nothing either", () => {
+    const legs = ladder(entry(100, 200, A_DAY));
+    // THE assertion (on revert: 16,000 — zerodha's seeded own-margin share of the
+    // 20,000 tranche — billed for 45 days, and stored on the parent row).
+    expect([...billed(legs, null).values()], "a principal the journal never recorded is not billed").toEqual([0]);
+    // A stated 0 is "I paid for it in full" (V3/X2), not "never set".
+    expect([...billed(legs, 0).values()]).toEqual([0]);
+    // …and the ladder really does bill a stated amount (not a vacuous 0 = 0).
+    expect([...billed(legs, 3000).values()]).toEqual([interestFor(3000, 45)]);
+    expect(interestFor(3000, 45)).toBeGreaterThan(0);
+  });
+
+  it("a stated 3,000 over two tranches is split by VALUE, and the two shares sum to 3,000", () => {
+    const legs = ladder(entry(100, 200, A_DAY), entry(50, 210, B_DAY)); // 20,000 + 10,500
+    const out = billed(legs, 3000);
+    // 3,000 × 20,000 ÷ 30,500 = 1,967.21, and the remainder — 1,032.79 — on the
+    // last tranche, so no paisa of the stated principal is lost to rounding.
+    expect([out.get(1), out.get(2)]).toEqual([interestFor(1967.21, 45), interestFor(1032.79, 36)]);
+    // THE assertion (on revert: 16,000 and 8,400 — the margin estimate per
+    // tranche, ₹24,400 of principal on a row that states ₹3,000).
+    expect(out.get(1)).not.toBe(interestFor(16000, 45));
+
+    // …and the shares really do sum to the stated principal: two tranches on ONE
+    // day bill exactly what the accrual job bills on the whole 3,000 for that day.
+    const sameDay = ladder(entry(100, 200, A_DAY), entry(50, 210, A_DAY));
+    const both = [...billed(sameDay, 3000).values()];
+    expect(sum(both), "Σ per-leg interest = the job's whole-leg figure").toBeCloseTo(interestFor(3000, 45), 2);
+  });
+
+  it("a PARTLY consumed tranche accrues its whole share to asOf; a fully consumed one stops on the day it closed", () => {
+    const partly = ladder(entry(100, 200, A_DAY), exit(40, 210, "2026-09-01"));
+    const closed = ladder(entry(100, 200, A_DAY), exit(100, 210, "2026-09-01"));
+    // Q-B (owner ruling, wave 2N): no funding is released for the units already
+    // sold, so the tranche keeps accruing on the whole stated amount until it
+    // closes. THE assertion (on revert: `consumedOn` took the LAST consumption
+    // date, so the partly sold tranche was billed only to 1 September — 31 days
+    // — while the accrual job billed the same row to today).
+    expect(billed(partly, 3000).get(1)).toBe(interestFor(3000, 45));
+    expect(billed(partly, 3000).get(1)).not.toBe(interestFor(3000, 31));
+    // A tranche the ladder really did close stops there, as it always has.
+    expect(billed(closed, 3000).get(1)).toBe(interestFor(3000, 31));
   });
 });

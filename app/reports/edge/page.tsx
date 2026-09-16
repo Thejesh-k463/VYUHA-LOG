@@ -7,7 +7,7 @@ import { bySegment, bySetup, type GroupStat } from "@/lib/analytics/metrics";
 import { benjaminiYekutieli, fmtIntervalPct, proportionPValue, rateVerdict, wilsonInterval } from "@/lib/analytics/inference";
 import { segmentDepth, segmentFinding, type SegmentDepthReport } from "@/lib/analytics/segment-depth";
 import { hasKnownBasis } from "@/lib/analytics/acquisition";
-import { num, inr } from "@/lib/format";
+import { num, inr, pct } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { computeMaeMfe, stopTuningReport, type MaeTradeInput } from "@/lib/analytics/mae-mfe";
 import { getBarsMap } from "@/lib/queries/price-history";
@@ -24,10 +24,15 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
+// `pricedCount` rides along because it is the DENOMINATOR of "Win rate" and of
+// "Expectancy" on this table: a sheet carrying the rate without the trades it
+// was measured over cannot be checked. A null win rate exports as a blank cell
+// (lib/export.ts's `?? ""`), never a 0.
 const COLS = [
   { key: "key", label: "Group" }, { key: "count", label: "Trades" },
   { key: "net", label: "Net" }, { key: "gross", label: "Gross" },
   { key: "charges", label: "Charges" }, { key: "wins", label: "Wins" },
+  { key: "pricedCount", label: "Priced trades" },
   { key: "winRate", label: "Win rate" }, { key: "avgR", label: "Avg R" },
 ];
 
@@ -292,7 +297,7 @@ function MaeMfeCard({ report }: { report: ReturnType<typeof computeMaeMfe> }) {
 }
 
 function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows: GroupStat[]; labelFor: (k: string) => string; exportName: string }) {
-  const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
+  const pnl = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
   /**
    * This table RANKS slices, which makes it a multiple-comparison machine: with
@@ -306,13 +311,25 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
    *
    * Nothing is hidden — a row that fails correction is MARKED and stays. It is
    * the user's own record (invariant 7).
+   *
+   * ONE denominator on this table (wave 2O): every statistic here — the win
+   * rate, its interval, the p-value and the expectancy — is measured over the
+   * PRICED trades, which is the rule the dashboard and /lenses already use.
+   * "Trades" stays the whole closed count, because that is a hygiene figure.
+   * A row with no priced trade is not a test: it is excluded from the
+   * correction below (leaving it in only inflates m and pushes every real row's
+   * threshold out of reach) and shows "—" for all three cells.
    */
   const bookWins = rows.reduce((s, r) => s + r.wins, 0);
-  const bookCount = rows.reduce((s, r) => s + r.count, 0);
+  const bookCount = rows.reduce((s, r) => s + r.pricedCount, 0);
   const bookRate = bookCount > 0 ? bookWins / bookCount : null;
   const corrected = bookRate == null
     ? []
-    : benjaminiYekutieli(rows.map((r) => ({ item: r.key, p: proportionPValue(r.wins, r.count, bookRate) })));
+    : benjaminiYekutieli(
+        rows
+          .filter((r) => r.pricedCount > 0)
+          .map((r) => ({ item: r.key, p: proportionPValue(r.wins, r.pricedCount, bookRate) })),
+      );
   const verdictFor = new Map(corrected.map((c) => [c.item, c.significant]));
   return (
     <Card className="p-0">
@@ -341,17 +358,26 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
             </ReportThead>
             <tbody>
               {rows.map((r) => {
-                const expectancy = r.count ? r.net / r.count : 0;
+                const priced = r.pricedCount > 0;
+                const expectancy = priced ? r.pricedNet / r.pricedCount : null;
                 return (
                   <ReportTr key={r.key}>
                     <ReportTd className="font-medium">{labelFor(r.key)}</ReportTd>
                     <ReportTd align="right">{r.count}</ReportTd>
                     <ReportTd align="right" className={`font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</ReportTd>
                     <ReportTd align="right" className={pnl(expectancy)}>{num(expectancy, 0)}</ReportTd>
-                    <ReportTd align="right">{(r.winRate * 100).toFixed(1)}%</ReportTd>
-                    <ReportTd align="right" muted title={rateVerdict(wilsonInterval(r.wins, r.count), bookRate)}>
-                      <span className="whitespace-nowrap">{fmtIntervalPct(wilsonInterval(r.wins, r.count))}</span>
-                      {bookRate != null && !verdictFor.get(r.key) && (
+                    <ReportTd align="right">{pct(r.winRate == null ? null : r.winRate * 100, 1)}</ReportTd>
+                    <ReportTd
+                      align="right"
+                      muted
+                      // `wilsonInterval(w, 0)` is a FULL 0–100% interval by design (no
+                      // evidence, every rate consistent) and `rateVerdict` calls n = 0
+                      // "no closed trades yet" — both false for a closed-but-unpriced
+                      // slice, so neither is asked (invariant 6).
+                      title={priced ? rateVerdict(wilsonInterval(r.wins, r.pricedCount), bookRate) : "no priced trades in this slice"}
+                    >
+                      <span className="whitespace-nowrap">{priced ? fmtIntervalPct(wilsonInterval(r.wins, r.pricedCount)) : "—"}</span>
+                      {bookRate != null && priced && !verdictFor.get(r.key) && (
                         <span
                           className="ml-1.5 text-[10px] text-warning"
                           title="This slice's win rate is not yet distinguishable from your book's overall rate once every slice on this table is accounted for (Benjamini-Yekutieli, q=0.05). It is shown, not hidden — but do not trade on it yet."

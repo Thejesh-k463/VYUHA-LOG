@@ -104,7 +104,15 @@ export const REGISTRY: FieldRule[] = [
     // The CONSUMER surfaces. lib/analytics/positions.ts is the writer — it is
     // where the null is decided, and its own `invested - funded` construction
     // and ROI denominator guard are not reads of someone else's value.
-    roots: ["components/trackers", "components/live", "app/equity", "app/targets"],
+    //
+    // `lib/queries` joined them in v4.3.0 wave 2O (D6): the staged ladder
+    // (lib/queries/staged.ts) prices each entry tranche's `fundedAmount` from the
+    // amount the parent row states, and it WRITES the result into stored money —
+    // it was the fifth writer of `mtf_interest`, reading the nullable principal
+    // under a rule no other writer used (it read none at all: it substituted a
+    // margin-config estimate). A directory, not the one file, so the next query
+    // that reads the field is scanned without anyone remembering to add it.
+    roots: ["components/trackers", "components/live", "app/equity", "app/targets", "lib/queries"],
     provenance:
       "wave 2L re-check close-readers#1 and #4: `p.fundedAmount <= 0` filed an unpriced row under 'user funded', " +
       "`> 0` hid it from both, `toPaise(p.fundedAmount)` would print a STATED ₹0 on the desk for a row nobody " +
@@ -135,9 +143,12 @@ export const REGISTRY: FieldRule[] = [
       "`normalizeDate` / `resolveExitIso` / `isRealDay` / a `Date.parse` validation — or guarded for emptiness where it is used.",
     forbidden:
       "`new Date(rawDateField)` with neither a resolver in its provenance nor an emptiness guard over it; " +
-      "a raw date field handed to a DAY COUNTER (`epochSpans`) with no resolver at all — it does not throw on a value it cannot read",
-    allowed: "`new Date(exitIso)` after `resolveExitIso`, `new Date(t.buyDate)` under `if (!t.buyDate) return` or inside `t.buyDate ? … : 0`, `epochSpans(…, buyIso, today)` after `normalizeDate`",
-    triggers: ["new Date(", "epochSpans("],
+      "a raw date field handed to a DAY COUNTER (`epochSpans`) with no resolver at all — it does not throw on a value it cannot read; " +
+      "a writer that prices from the STORED date columns (`closePosition`, `applyOverride`, `updateManualTrade`) with no `storedDateProblem` refusal in it",
+    allowed:
+      "`new Date(exitIso)` after `resolveExitIso`, `new Date(t.buyDate)` under `if (!t.buyDate) return` or inside `t.buyDate ? … : 0`, " +
+      "`epochSpans(…, buyIso, today)` after `normalizeDate`, and `if (storedDateProblem(t)) return …` before any pricing in the three writers",
+    triggers: ["new Date(", "epochSpans(", "closePosition", "applyOverride", "updateManualTrade"],
     roots: ["lib", "app", "components"],
     provenance:
       "wave 2H new_defects[1] / wave 2I I1[1]: closePreviewBody took the holding period off the RAW exit field, " +
@@ -145,7 +156,10 @@ export const REGISTRY: FieldRule[] = [
       "MTF interest against a save that charged ₹205.15 of it. Wave 2N ipo#1 added the DAY-COUNTER half: " +
       "`accrueMtfInterest` (lib/jobs/mtf-accrual.ts) handed `t.buyDate` raw to `epochSpans`, which does NOT throw — " +
       "measured '9999-99-99' → 0 days (the job zeroed the row's stored interest, charges and net) and " +
-      "'2026-02-31' → 199 days / ₹636.80 billed from a day the row does not state.",
+      "'2026-02-31' → 199 days / ₹636.80 billed from a day the row does not state. Wave 2O D17 added the " +
+      "STORED-COLUMN half: `updateManualTrade` was the third writer the shared docstring counted and the only one " +
+      "left raw — a price-only patch on a row storing '9999-99-99' took NaN into `computeCharges` and died with " +
+      "`NOT NULL constraint failed: trades.charges_total_paise` (a 500, not an {ok:false}).",
   },
   {
     id: "ipo-link-scope",
@@ -484,9 +498,43 @@ function guarded(sf: TS.SourceFile, node: TS.Node, key: string): boolean {
  */
 const DAY_COUNTERS = /^(epochSpans)$/;
 
+/**
+ * The writers that price from the STORED date COLUMNS — a patch may omit a date,
+ * and then the row's own value decides the day count and the rate epoch.
+ *
+ * Their `new Date(...)` reads a LOCAL whose initializer mentions a resolver
+ * (`fields.buyDate !== undefined ? normalizeDate(fields.buyDate) : t.buyDate`),
+ * so `resolvedLocally` above clears it and the unresolved STORED half is
+ * invisible to every expression rule in this scanner. The only readable rule is
+ * therefore the one the tree already states: such a writer refuses the row
+ * through the ONE shared helper (`storedDateProblem`, lib/domain/trading-day)
+ * before it prices anything.
+ *
+ * D17 (v4.3.0 wave 2O, dates-charges#4) added the third name: `closePosition`
+ * and `applyOverride` were fixed in wave 2N while `updateManualTrade` — which
+ * the same docstring counted — took NaN into `computeCharges` for a stored
+ * '9999-99-99' and died with `NOT NULL constraint failed:
+ * trades.charges_total_paise`.
+ */
+const STORED_DATE_WRITERS = /^(closePosition|applyOverride|updateManualTrade)$/;
+
 function scanRawDate(sf: TS.SourceFile, file: string): Violation[] {
   const out: Violation[] = [];
   walk(sf, (n) => {
+    if (ts.isFunctionDeclaration(n) && n.name && STORED_DATE_WRITERS.test(n.name.text) && n.body) {
+      if (!/\bstoredDateProblem\b/.test(n.body.getText(sf))) {
+        out.push({
+          rule: "raw-date",
+          file,
+          line: lineOf(sf, n),
+          expr: `function ${n.name.text}(…)`,
+          why:
+            `\`${n.name.text}\` prices from the trade's STORED buy/sell date when the patch omits it, and never asks ` +
+            "`storedDateProblem` whether the row states a day — an unreadable stored value is an Invalid Date, and the NaN " +
+            "day count dies on the charge write instead of refusing",
+        });
+      }
+    }
     if (ts.isCallExpression(n) && DAY_COUNTERS.test(trailingName(n.expression) ?? "")) {
       for (const arg of n.arguments) {
         const name = trailingName(arg);

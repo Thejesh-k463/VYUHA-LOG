@@ -11,10 +11,13 @@ import {
 
 // ── Local factory ───────────────────────────────────────────────────────────
 
+// The three `edgeMeasurable` reads are REQUIRED on `AnalyticsTrade` since the
+// wave 2O seam pass (defect 1), so a member states them; `m()` defaults them to
+// the values the optional fields read as before (a priced row).
 type TestMember = GroupMember & {
-  acquisition?: string | null;
-  buyValue?: number;
-  acquisitionPrice?: number | null;
+  acquisition: string | null;
+  buyValue: number;
+  acquisitionPrice: number | null;
 };
 
 let seq = 0;
@@ -37,6 +40,9 @@ function m(netPnl: number, over: Partial<TestMember> = {}): TestMember {
     broker: "zerodha",
     segment: "equity-delivery",
     bucket: "delivery",
+    acquisition: null,
+    acquisitionPrice: null,
+    buyValue: 0,
     ...over,
   };
 }

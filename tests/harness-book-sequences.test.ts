@@ -5,8 +5,11 @@ import {
   QTY,
   SYM,
   IPO_NAME,
+  CROSS_BOOK_IPO_NAME,
+  FOREIGN_IPO_NAME,
   LOOKALIKE_IPO_NAME,
   STRAY_IPO_NAME,
+  SURVIVOR_IPO_NAME,
   VARIANTS,
   checkInvariants,
   describeViolations,
@@ -55,11 +58,11 @@ import {
  *                           stated
  *
  * WHAT IT RUNS: 17 operations; every ordered pair of them — 289 less the 14 the
- * table marks incompatible = 275 — plus each op alone (17), 16 curated
+ * table marks incompatible = 275 — plus each op alone (17), 19 curated
  * sequences of three to five taken from this release's findings (four of them
- * the IPO-pairing cases waves 2M and 2N moved) and 6 tests that PLANT each
- * invariant's own violation so a green sweep is known to be able to go red.
- * 317 `it`s.
+ * the IPO-pairing cases waves 2M and 2N moved, two of them wave 2O's CROSS-BOOK
+ * pair, D4) and 6 tests that PLANT each invariant's own violation so a green
+ * sweep is known to be able to go red. 319 `it`s.
  *
  * `VARIANTS` (book-ops.ts) holds fixture shapes a named scenario needs, plus
  * the one step that is an ANSWER rather than an operation on the book, none of
@@ -92,6 +95,8 @@ let m: BookMods;
 let ids: SeedIds;
 let tpl: Template;
 
+// Re-measured 2026-09-16 with wave 2O's two D4 cases added: 319 `it`s, 34.0 s
+// wall, the two new ones 187 ms and 185 ms (inside the <= 300 ms budget).
 // Re-measured 2026-09-16 with the wave-2M case added: 316 `it`s, 23.9 s wall.
 // Measured locally 2026-09-15 (vitest's own per-test times, 315 `it`s): this one
 // hook — migrate + seed + sixteen product modules + the fixture, which itself
@@ -497,6 +502,85 @@ describe("the sequences the v4.3.0 re-checks were written about", () => {
    * marks the candidate, the question is raised, and the user's own link on
    * /ipos is what counts the allotment once.
    */
+
+  /**
+   * D4 (v4.3.0 fix wave 2O, re-check finding identity#0) — the two sequences
+   * this wave owes the harness, both about a CROSS-BOOK IPO link.
+   *
+   * Both fixtures pass through a state the invariants legitimately call an
+   * imbalance, so neither can use `expectClean`: a record in one book naming a
+   * holding in another is counted in ITS OWN book (the holding is not in view)
+   * and left out of All accounts (the holding is counted there) — the rule
+   * lib/queries/ipos.ts:154-177 states deliberately, which makes All accounts
+   * NOT the sum of its books for that one record. So these drive the ops
+   * directly and assert the SEQUENCE introduces no violation the fixture did not
+   * already have, plus the facts I2 cannot see (the link column itself, the
+   * /trades badge, and which row the record's sale is stated on).
+   */
+  const drive = async (ctx: BookCtx, names: string[]): Promise<string[]> => {
+    for (const name of names) {
+      const op = OPS.find((o) => o.name === name) ?? VARIANTS.find((o) => o.name === name);
+      if (!op) throw new Error(`no such op: ${name}`);
+      await op.run(t.db, ctx);
+    }
+    return describeViolations(await checkInvariants(t.db, ctx));
+  };
+  const ipoRowNamed = (name: string) => t.db.select().from(t.schema.ipos).all().find((r) => r.name === name);
+  const inView = <T,>(accountId: number, read: () => T): T => {
+    t.db.update(t.schema.settings).set({ selectedAccountId: accountId }).run();
+    return read();
+  };
+
+  it("D4 · purge → un-purge: a record naming ANOTHER book's holding keeps its link, and no view's ipoRealised moves", async () => {
+    tpl.reset();
+    const ctx = freshCtx(t, m, ids);
+    const ipoRealisedPerView = () =>
+      [ids.acctA, ids.acctB, 0].map((v) => inView(v, () => m.capital.getCapitalSummary().ipoRealised));
+
+    const before = await drive(ctx, ["addCrossBookIpoRecordInB"]);
+    const realisedBefore = ipoRealisedPerView();
+    expect(ipoRowNamed(CROSS_BOOK_IPO_NAME)!.tradeId, "the fixture: B's record names A's holding").toBe(ids.dupA);
+
+    const after = await drive(ctx, ["purgeAccountB", "restoreSourceAccount"]);
+    // THE assertion: the reference was never part of this delete, so the replay
+    // keeps it. Under a `landed`-only gate the link is cut and All accounts gains
+    // the record's own realised net — one sale, counted twice.
+    expect(ipoRowNamed(CROSS_BOOK_IPO_NAME)!.tradeId, "replayed verbatim").toBe(ids.dupA);
+    expect(ipoRealisedPerView(), "every view reads what it read before the purge").toEqual(realisedBefore);
+    expect(after, "and the sequence introduces no violation the fixture did not have").toEqual(before);
+  });
+
+  it("D4 · merge → un-merge whose duplicate CANNOT land: the foreign record comes back UNLINKED and its sale is counted once", async () => {
+    tpl.reset();
+    const ctx = freshCtx(t, m, ids);
+    const fixture = await drive(ctx, ["addDuplicateIpoRecordsInA"]);
+    expect(fixture.length, "the cross-book fixture's own recorded imbalance").toBeGreaterThan(0);
+
+    // The merge drops B's copy and SKIPS the record naming it, because the
+    // survivor already carries one (L7) — so it is deleted into the envelope (D5).
+    await drive(ctx, ["mergeAccountBIntoA"]);
+    expect(ipoRowNamed(FOREIGN_IPO_NAME), "removed with the duplicate it names").toBeUndefined();
+
+    // …and the id it named is taken before the un-merge, so the duplicate cannot
+    // come back at all.
+    const after = await drive(ctx, ["takeTheDroppedDuplicatesId", "restoreSourceAccount"]);
+    const foreign = ipoRowNamed(FOREIGN_IPO_NAME)!;
+    // THE assertion. On HEAD the replay is verbatim: `tradeId` is the id of
+    // GTAKEN — an unrelated closed trade — so /trades badges that row and the
+    // record's own sale leaves capital, the tax pack, the ITR export and both AIS
+    // sides (it is "counted through" a trade that is not its holding).
+    expect([foreign.accountId, foreign.tradeId], "its own book, and no holding").toEqual([ids.acctA, null]);
+    expect(inView(0, () => m.ipoQ.getIpoTradeLinks().get(ids.dupB)), "nothing badges the trade that took the id").toBeUndefined();
+    expect(
+      inView(0, () => m.taxItr.getTaxBase().exitedIpos.some((r) => r.id === foreign.id)),
+      "its exit is stated on its own row, once",
+    ).toBe(true);
+    // The survivor's own record still names the survivor, and with B's copy gone
+    // for good every invariant is clean again — the imbalance was the cross-book
+    // link, and the link is now honestly absent.
+    expect(ipoRowNamed(SURVIVOR_IPO_NAME)!.tradeId).toBe(ids.dupA);
+    expect(after.join("\n")).toBe("");
+  });
 
   /**
    * G-G2-1, the ambiguous half — a RECORDED limitation, pinned as what the app

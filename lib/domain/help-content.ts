@@ -214,7 +214,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["group", "by month", "by broker", "by import", "breakdown", "tabs", "setup", "outcome", "segment", "per-file"],
     refusals: [
       "Overlapping cuts are not offered here. One trade belongs to several NSE themes and can carry several mistake tags, so those totals exceed the book by design — they live in their own reports, labelled as lenses rather than breakdowns.",
-      "Win rate, profit factor and expectancy are blank for a group with nothing closed, rather than shown as zero — and a LOCKED figure looks like a Pro chip, never like a blank, so \"not entitled\" can never be mistaken for \"no data\".",
+      "Win rate, profit factor and expectancy are blank for a group with nothing closed — and for one whose closed trades all lack a cost basis, since a rate over no priced trade is not a rate — rather than shown as zero; and a LOCKED figure looks like a Pro chip, never like a blank, so \"not entitled\" can never be mistaken for \"no data\".",
       "Grouping, counts, P&L and deleting a group are free on every tier: isolating and undoing a bad import is journal hygiene, not analytics.",
     ],
   },

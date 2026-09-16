@@ -566,6 +566,9 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   const skipped: TrashRestoreResult["skipped"] = [];
   let restored = 0, legs = 0, attachments = 0;
   let extraRestored = 0, extraSkipped = 0;
+  // D4 (wave 2O): replayed rows whose trade reference this restore had to clear,
+  // because the trade it named was in this envelope and did not come back.
+  let unlinkedIpos = 0, unlinkedLedger = 0;
 
   let accountBack = false;
   let mergeMarkerReturned = false;
@@ -704,29 +707,62 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
       // back with the book. A row that cannot land (id or unique key taken —
       // e.g. a session date the account has planned again since) is COUNTED,
       // never silently dropped and never duplicated under a fresh id.
+      //
+      // D4 (v4.3.0 wave 2O, re-check finding identity#0) — a replayed row that
+      // NAMES A TRADE gets the gate the `ledgerRefs` and `ipoRefs` loops above
+      // have, so this is no longer the one write that ignores what landed
+      // (`:792`: "a link onto a row this restore did not bring back is not this
+      // restore's to make"). It is keyed on the ENVELOPE, not on `landed`:
+      //
+      //   envTradeIds.has(ref) && !landed.has(ref)  →  the reference is cleared
+      //
+      // — the reference named a trade THIS delete removed and this restore could
+      // not bring back (the id is taken, or the row is already back by another
+      // route), so the row it names is not the row the user linked; `trades.id`
+      // is AUTOINCREMENT, so a freed id reappears only against a database whose
+      // rowids came from elsewhere (a backup, the desktop template swap) — and
+      // then it belongs to an unrelated trade, which the record then badged and
+      // whose sale replaced its own in capital, the tax pack, the ITR export and
+      // both AIS sides (measured: All accounts `ipoRealised` 482.61 vs 965.22).
+      //
+      // A reference this delete never touched is REPLAYED VERBATIM. A purge
+      // snapshots every `ipos` row of the book, including one naming a holding in
+      // ANOTHER account (lib/queries/ipos.ts:163-177), and that trade is not in
+      // `landed` because it never left: clearing it would cut a live link and
+      // count that sale twice. Hence the envelope clause, not `!landed` alone.
+      //
+      // The row itself always comes back (invariant 10 — a restore must not lose
+      // the journal); unlinked, it is what Data Quality's unlinked-exited
+      // question is for, and the count is stated in the message below.
       if (env.account && env.accountRows) {
-        const groups: [unknown, Record<string, unknown>[] | undefined][] = [
-          [importBatches, env.accountRows.importBatches],
-          [tradingSessions, env.accountRows.tradingSessions],
-          [capitalSnapshots, env.accountRows.capitalSnapshots],
-          [ipos, env.accountRows.ipos],
-          [ledgerEntries, env.accountRows.ledgerEntries],
+        const envTradeIds = new Set(rows.map((r) => r.id));
+        /** The column naming a trade, for the two tables that have one. */
+        const groups: [unknown, Record<string, unknown>[] | undefined, "tradeId" | "refTradeId" | null][] = [
+          [importBatches, env.accountRows.importBatches, null],
+          [tradingSessions, env.accountRows.tradingSessions, null],
+          [capitalSnapshots, env.accountRows.capitalSnapshots, null],
+          [ipos, env.accountRows.ipos, "tradeId"],
+          [ledgerEntries, env.accountRows.ledgerEntries, "refTradeId"],
           // v3.7: the user's own weekly notes come back with the book. A week
           // the surviving account has since reviewed keeps ITS row — the
           // unique index refuses the insert and it is COUNTED as skipped, not
           // silently duplicated under a fresh id.
-          [weeklyReviews, env.accountRows.weeklyReviews],
-          // v3.7: the user's own weekly notes come back with the book. A week
-          // the surviving account has since reviewed keeps ITS row — the
-          // unique index refuses the insert and it is COUNTED as skipped, not
-          // silently duplicated under a fresh id.
+          [weeklyReviews, env.accountRows.weeklyReviews, null],
         ];
-        for (const [table, tableRows] of groups) {
+        for (const [table, tableRows, refColumn] of groups) {
           for (const row of tableRows ?? []) {
+            const ref = refColumn ? row[refColumn] : null;
+            const cut = typeof ref === "number" && envTradeIds.has(ref) && !landed.has(ref);
             try {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              tx.insert(table as any).values(row as any).run();
+              tx.insert(table as any).values((cut ? { ...row, [refColumn as string]: null } : row) as any).run();
               extraRestored++;
+              // Counted only after the row actually landed: a row the unique
+              // index refused states nothing about a link.
+              if (cut) {
+                if (refColumn === "tradeId") unlinkedIpos++;
+                else unlinkedLedger++;
+              }
             } catch {
               extraSkipped++;
             }
@@ -926,6 +962,20 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   }
   if (extraSkipped > 0) {
     message += ` ${extraSkipped} related row${extraSkipped === 1 ? " was" : "s were"} already present and skipped.`;
+  }
+  // D4 (wave 2O) — a link this restore could not make is SAID, not guessed. The
+  // rows themselves came back (they are the user's own records); what they no
+  // longer state is a holding, which is exactly what Data Quality asks about.
+  if (unlinkedIpos > 0) {
+    message +=
+      ` ${unlinkedIpos} IPO record${unlinkedIpos === 1 ? "" : "s"} came back unlinked because the holding ` +
+      `${unlinkedIpos === 1 ? "it names" : "they name"} could not be restored — Data Quality asks which holding ` +
+      `${unlinkedIpos === 1 ? "is its own" : "each one is"}.`;
+  }
+  if (unlinkedLedger > 0) {
+    message +=
+      ` ${unlinkedLedger} ledger entr${unlinkedLedger === 1 ? "y" : "ies"} came back without ` +
+      `${unlinkedLedger === 1 ? "its" : "their"} trade reference, for the same reason.`;
   }
   if (skipped.length > 0) {
     message += ` ${skipped.length} could not be restored — ${skipped[0].symbol}: ${skipped[0].reason}${skipped.length > 1 ? `, and ${skipped.length - 1} more` : ""}.`;

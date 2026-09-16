@@ -113,7 +113,7 @@ export default function PerformancePage() {
   const closedNets = trades.filter((t) => !t.isOpen).map((t) => t.netPnl);
   const shareStats: ShareStats = {
     netPnl: k.netPnl,
-    winRatePct: k.winRate * 100,
+    winRatePct: k.winRate == null ? null : k.winRate * 100,
     profitFactor: k.profitFactor,
     avgR: k.avgR,
     trades: k.closedCount,

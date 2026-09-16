@@ -297,8 +297,10 @@ export interface SetupSlStat {
 
 /**
  * The same classification grouped by setup. A local grouper rather than
- * metrics.ts's `groupBy`, whose accumulator is fixed to GroupStat — the key
- * convention ("(untagged)") matches `bySetup` there.
+ * metrics.ts's `groupBy`, whose accumulator is fixed to GroupStat (net/gross/
+ * charges over every closed trade, wins and `winRate` over its `pricedCount`)
+ * — the key convention ("(untagged)") matches `bySetup` there. The denominator
+ * here is `closedWithSl`, its own and unrelated.
  */
 export function slBySetup(trades: SlTrade[]): SetupSlStat[] {
   const groups = new Map<string, SlTrade[]>();

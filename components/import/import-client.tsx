@@ -411,11 +411,17 @@ export function ImportClient({
             {/* W2N (D8): six SYMBOLS, with every blocker of each — an incoming
                 row can carry two (today's earlier pull AND an older file), and
                 a flat slice listed one of them and counted the other as "more",
-                against a headline that counts symbols. */}
+                against a headline that counts symbols.
+                D19 (wave 2O, ask#1): and bounded in LINES again. On a FILE import
+                `symbol` is the incoming tradingsymbol and no row can have two
+                blockers, so one scrip stated on many days rendered one line per
+                colliding row with no tail at all. Both tails are shown: the
+                symbols not listed, and the rows of a listed symbol elided. */}
             <ul className="space-y-0.5 text-muted-foreground">
               {crossList.rows.map((c, i) => (
                 <li key={i}>▸ <b>{c.symbol}</b> — {c.detail}</li>
               ))}
+              {crossList.truncated > 0 && <li>…and {crossList.truncated} more {crossList.truncated === 1 ? "row" : "rows"} of the scrips listed above.</li>}
               {crossList.more > 0 && <li>…and {crossList.more} more.</li>}
             </ul>
           </div>

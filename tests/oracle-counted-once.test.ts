@@ -17,7 +17,7 @@ import {
  *
  *   over a seeded book, every realised SALE is counted EXACTLY ONCE in EVERY
  *   consumer and EVERY view — and it stays counted once after each of the
- *   thirteen stateful operations below, applied one at a time to a fresh copy
+ *   fifteen stateful operations below, applied one at a time to a fresh copy
  *   of that book, through the REAL code paths.
  *
  * WHY THIS SHAPE. The wave-2H and wave-2I re-checks
@@ -132,6 +132,8 @@ let importer: typeof import("@/lib/import/commit");
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {}, revalidateTag: () => {}, unstable_cache: (fn: unknown) => fn }));
 
+// Re-measured 2026-09-16 with wave 2O's D4 case added (18 `it`s): the slowest is
+// 140 ms ("the oracle at rest"), the new one 97 ms, wall clock 4.0 s.
 // Measured locally 2026-09-15 (vitest's own per-test times, 16 `it`s): the
 // slowest `it` is 105 ms ("the oracle at rest"), then 97, 96, 95; the 16 sum to
 // ~1.4 s and the file's wall clock is 3.3 s, the rest of it this hook (migrate +
@@ -452,6 +454,83 @@ const OPS: Op[] = [
       expect(back.restored, back.message).toBe(2);
       expect(ipoRowOf(b.ids.legacyIpo)!.tradeId, "the cross-account link is re-pointed, not left null").toBe(b.ids.a2Sold);
       return base;
+    },
+  },
+  {
+    /**
+     * D4 (v4.3.0 fix wave 2O, re-check finding identity#0) — A RESTORE THAT
+     * CANNOT BRING A HOLDING BACK LEAVES ITS IPO RECORD UNLINKED.
+     *
+     * The purge snapshots account 2's OWN `ipos` rows into `accountRows.ipos`,
+     * and that replay was the one restore path with no gate on what landed (the
+     * `ipoRefs` and ledger loops both skip a trade that did not come back, and
+     * lib/trash.ts:792 states the rule: "a link onto a row this restore did not
+     * bring back is not this restore's to make"). So when the holding cannot come
+     * back — its id is taken, the shape a snapshot restored against a database
+     * whose rowids came from elsewhere reaches — the record came back naming
+     * WHATEVER now holds that id: /trades badged that unrelated row, and the
+     * record's own sale left every consumer, because the counted-once rule read
+     * it as "counted through" a trade that is not its holding.
+     *
+     * The record must come back UNLINKED instead (it is the user's own record —
+     * invariant 10), which is the same state the /trades delete of that holding
+     * leaves: the sale is stated by the RECORD instead of the trade, once.
+     */
+    name: "purge account 2, then restore it with the IPO holding's id taken",
+    run: async (b, base) => {
+      selectOracleAccount(t, ORACLE_A1);
+      const res = accountDelete.deleteAccount({ accountId: ORACLE_A2, mode: "purge", connections: "delete", source: "test" });
+      expect(res.ok, res.message).toBe(true);
+      // The freed id, taken in account 1 by an OPEN purchase — no realised money,
+      // so what the eighteen readings gain is one open row and 1,000 of AIS
+      // purchase, and everything else is about the record that lost its holding.
+      t.db
+        .insert(t.schema.trades)
+        .values(
+          tradeRow({
+            id: b.ids.a2IpoHolding, accountId: ORACLE_A1, broker: "zerodha", segment: "eq_delivery",
+            symbol: "A1TAKEN", tradingsymbol: "A1TAKEN",
+            buyQty: 20, avgBuyPrice: 50, buyValue: 1000, buyDate: ORACLE_BUY_DATE,
+            sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null,
+            grossPnl: 0, chargesTotal: 0, netPnl: 0, isOpen: true,
+          }),
+        )
+        .run();
+      const back = trash.restoreTrashSnapshot(res.snapshotId!, "oracle");
+      expect([back.ok, back.restored], back.message).toEqual([true, 1]);
+      expect(back.skipped.map((s) => s.id), "the holding's id belongs to another trade now").toEqual([b.ids.a2IpoHolding]);
+      // THE assertion. On HEAD: the id of A1TAKEN — an open purchase in the other
+      // book — so `getIpoTradeLinks()` badged it and the record's own ₹497.95
+      // left capital, the tax base, the ITR export and both AIS sides.
+      expect(ipoRowOf(b.ids.linkedIpo)!.tradeId, "its holding is not in the journal, so it names nothing").toBeNull();
+      expect(back.message, "and the restore says what it could not do").toContain("1 IPO record came back unlinked");
+      const a2Ipo = r2(b.ipoNet.linked + b.ipoNet.loose);
+      const openPurchase = (v: OracleView): Partial<OracleView> => ({
+        ais: { ...v.ais, [`${ORACLE_FY} purchase`]: (v.ais[`${ORACLE_FY} purchase`] ?? 0) + 1000 },
+        kpi: { count: v.kpi.count + 1, open: v.kpi.open + 1, net: v.kpi.net },
+      });
+      return patch(base, {
+        a1: openPurchase(base.a1),
+        // Exactly the state the /trades delete of that holding leaves (above):
+        // the sale is stated by the record, once.
+        a2: {
+          capital: { equityRealised: 490.25, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(490.25 + a2Ipo) },
+          taxNets: [490.25, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
+          ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
+          itrScrips: ["A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+          fyRealised: { [ORACLE_FY]: r2(490.25 + a2Ipo) },
+          kpi: { count: 1, open: 0, net: 490.25 },
+        },
+        all: {
+          ...openPurchase(base.all),
+          capital: { equityRealised: 6142.5, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(6142.5 + a2Ipo) },
+          taxNets: [192, 490.25, 490.25, 4970, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
+          ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
+          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+          fyRealised: { [ORACLE_FY]: r2(6142.5 + a2Ipo) },
+          kpi: { count: 10, open: 6, net: 6451.5 },
+        },
+      });
     },
   },
   {

@@ -7436,3 +7436,181 @@ Second `npm run verify` (after the two fixes and the `\u0000` escape): **EXIT 0 
 (no expected fail); `next build` compiled; the three lint warnings are the pre-existing ones. Introduced-regression grade for
 2N, as of the gate: the seam pass found NONE (the 2N scoped re-check is the measurement that counts — see the next entry).
 Committed as **`f9a1a6b`** (55 files, +4,903 / −519), pushed; CI run 35086623142 **SUCCESS 6/6** (conclusion success, six jobs success). **Owner ruling at the hand-off (06-ANSWERS "v4.3.0 fix-wave 2N rulings", last row): the backlog audit's three live product defects go into 4.3.0 as fix wave 2O**, after the 2N re-check, together with any finding it produces.
+
+## 2026-09-16 — v4.3.0 fix wave 2N: the scoped re-check (tenth session) → 42 CONFIRMED, 0 REFUTED, 0 UNVERIFIABLE; 18 new findings (16 product, 2 test-low) → fix wave 2O absorbs all 16 product findings beside the backlog audit's three
+
+**Procedure.** `18-FIX-WORK-4.3.0/recheck-wave2n.js` (the 2L script copied: pre-wave `e23b96c`, wave `f9a1a6b`, tree HEAD `5e537b3`
+whose code is `f9a1a6b`, probe prefix `zzprobe-rc8-`), FIVE probe-capable Opus reviewers in one workflow — identity (D1, D5, D6),
+dates-charges (D2, D3, D4), mtf (D7 + Q-A + Q-B), ask (D8), seams (F37–F45, the seven flipped pins, the four guards, the nine
+uncovered boundaries of `wave2n-seams.md` §1) — every fix re-proved RED-ON-REVERT from `git show e23b96c:<path>` copies wired
+through vi.mock, every probe deleted, no tracked file touched (all five reported `probes_deleted: true`,
+`tracked_files_untouched: true`; the tree was clean before and after). Verdicts persisted: `18-FIX-WORK-4.3.0/wave2n-recheck.json`
+(five units; 42 verdicts; 20 raw findings of which two are the same defect reported by two units — mtf#2 ≡ seams#0, mtf#7 ≡
+seams#1 — so 18 unique). Raw lines quoted by the reviewers: the four guards + `seams-v43-fixF` in ONE run 5 files / 477 passed
+(35.5 s; `harness-book-sequences` 317 alone in 31.2 s); `preview-equals-save-matrix` 63; `wave2n-{ask,mtf,dates-and-charges}`
+15 / 20 / 15; `oracle-counted-once` 17. Entry gate on `5e537b3` re-run by the orchestrator first: EXIT 0, **430 files / 9,410
+passed / 35 skipped**, no expected fail; CI 35086623142 re-read `success` 6/6 on `f9a1a6b`.
+
+**Every 2N fix CONFIRMED** (D1 the write rule ⊂ the mark rule over a 4×4 matrix, the Bee and GOMIX shapes write nothing and keep
+their question, a legacy envelope + a scrip-named record still restores linked, a twice-run restore lands 0 / skips 1; D5 the
+third book's record removed with its duplicate and back on un-merge in All accounts AND its own view, merge → un-merge
+idempotent; D6 both directions refuse, preview ≡ execute; D2 the fold + `exitDateWasReadable`; D3 the three refusals and the
+accrual's skip; D4 the notes-only save keeps the bill and the marker, preview ≡ save on 63 matrix cells; D7 fourteen readers of
+the null `fundedAmount` plus Q-A in the accrual and the four writers; D8 one 409 with both blockers and a clean round 2; every
+one of F37–F45 red with one half reverted). Nine uncovered boundaries: all nine probed — six turned out to be covered by an
+existing unit pin or a render probe with nothing wrong; three produced findings (the /equity KPI card face, the grouped
+`ipo_record_link` badge, broker-compare's estimate).
+
+**The 18 findings, graded by INTRODUCED regressions (the owner's stopping rule, 06-ANSWERS "Audit stopping rule").**
+Introduced by 2N: **ONE silent wrong number** — mtf#0 `lib/queries/staged.ts:172-188` the staged ladder's `priceLegs` is a
+FIFTH writer of stored `mtf_interest` / `charges_total` / `net_pnl` (D7 named the accrual and four `commit.ts` writers) and
+Q-A was never applied to it, so a staged MTF position with NO recorded funded amount stores a margin-config ESTIMATE of interest
+while the accrual job then leaves it — the exact figure Q-A ruled out; four medium — dates-charges#0 `lib/analytics/ipo-link.ts:285`
+`linkedSyncFor`'s two `sellLegIsIpoExit` calls carry no `ignoreDate`, so D2's fold breaks a match it did not walk;
+dates-charges#1 `app/api/charges/preview/route.ts:141-156` the preview learned D4's KEEP branch but not its IPO mode
+(`ipoEditCharges` in `commit.ts:2491`), so preview ≠ save for an allotment-derived row the editor re-prices; identity#0
+`lib/trash.ts:707-735` the `accountRows.ipos` replay is the ONE restore path not gated on what landed, so an un-merge that
+cannot land the duplicate still writes the foreign record's `trade_id`; mtf#2 (≡ seams#0) `components/trackers/tracker-client.tsx:79`
+the /equity "MTF funded" KPI card FACE reads the own-capital subset and states ₹0 while the row's cell states ₹15,000 and the
+card's sub-line states the interest accruing on it; three low — dates-charges#3 `lib/analytics/ipo.ts:316` the shared helper's
+guard narrowed from `!i.exitDate` to `f.exitDate != null`, so an EMPTY-STRING exit date now prices nothing; mtf#3
+`lib/analytics/data-quality.ts:1334` the `mtf_funding` issue has no `isOpen` filter, so a CLOSED unpriced MTF row (which Q-A's
+`closePosition` now keeps null) sits on Data Quality for ever; mtf#4 `lib/analytics/positions.ts:178-190` the reason ladder tests
+the sale before the missing amount, so a partly sold AND unpriced row says "partly sold" and hides the one reason the user can
+act on; four cosmetic — ask#0 `broker-connect.tsx:247-268` the dialog under-counts incoming rows when two different rows of one
+scrip share the five key figures; ask#1 `cross-source.ts:404-415` `collisionsToList` lost its six-LINE cap (caps symbols, keeps
+every entry); identity#1 `data-quality.ts:1382` the grouped issue is added with `count: 1` beside a sentence naming n holdings;
+mtf#5 five `commit.ts` comments say the pledge charge is still billed on a null-funded row (it is not — `charges.ts:106` gates
+both); two test-low — mtf#6 the Live Desk half of D7 is pinned by source text only, no render; seams#2 F40 (and F18 before it)
+restore a shared `charge_config` row with the case's last statement, not a `finally`. **Pre-existing** (not 2N's): mtf#1
+`staged.ts:143-190` `priceLegs` declares `ctx.mtfFundedAmount` and never reads it — every entry tranche is priced on the
+margin-config estimate even when the row STATES a funded amount (a silent wrong number that predates 4.3.0); dates-charges#2
+`commit.ts:2485-2497` an OPEN allotment-derived holding is billed 0.1 % purchase STT by a notes-only editor save
+(`ipoHoldingCharges` returns null for a row with no sale, and `statesNoCharges` forces the re-price); dates-charges#4
+`commit.ts:2461` `updateManualTrade`'s `daysHeld` is the third copy of the day-count rule and the one left without
+`storedDateProblem`; mtf#7 (≡ seams#1) `app/reports/broker-compare/page.tsx:61` the one surviving `?? defaultMtfFundedAmount`
+reader of a trade row, now contradicting Q-A on a Pro report.
+
+**Grade.** 2N introduced one silent wrong number — the THIRD wave in a row (2L identity#0, 2M counted-once#0, 2N mtf#0). The
+design-review mechanism (`vyuha-design-reviewer` + the builder's consumer sweep) caught the reader class it was built for (D7's
+`fundedAmount` readers: fourteen confirmed) and missed a WRITER: the sweep for "who writes `mtf_interest`" stopped at
+`lib/import/commit.ts` and `lib/jobs/mtf-accrual.ts` because the ladder writes it through `priceLegs` → `rebuildStagedTrade`'s
+parent write (`staged.ts:418`), under a helper name, not the column's. **Rule, from this entry on (the reviewer's and builder's
+briefs carry it):** for every stored column a design touches, Grep the column name, the camelCase field AND every helper that
+produces the value, across `lib/queries/*`, `lib/jobs/*`, `lib/import/*`, `lib/trash.ts`, `app/api/**` and `app/**/actions.ts`
+— a writer is anything that ends in an UPDATE of that column, whatever it is called. The sequential-builder rule stands for the
+rest of the release (already in force since 2M).
+
+**What 2O is now.** By the stopping rule every PRODUCT finding reopens work at any severity: all 16 product findings above join
+the backlog audit's three (`metrics.ts:141-149`, `:229`, `command-palette.tsx:155` — 06-ANSWERS "v4.3.0 fix-wave 2N rulings",
+last row) in fix wave 2O; the two test-low findings are RECORDED here and not built (mtf#6, seams#2). The three backlog designs
+(D1–D3, `18-FIX-WORK-4.3.0/wave2o-designs.md`) were decided from an Opus explorer's consumer sweep (six `computeKpis` callers,
+four `Kpis` importers, the 59-file grep narrowed to the readers that trace to a `Kpis`; `charts.tsx`'s `SegmentBars` reads only
+`key`/`net`, so the "two win rates" clash is `/reports/edge` vs `/dashboard` + `/lenses`, not one page) and reviewed by
+`vyuha-design-reviewer` BEFORE the builder (`wave2o-design-review.md`): D1 BUILD with two additions (never `?? undefined` at a
+`valueNum` — `kpi-card.tsx:188` renders an EMPTY card for it; widen `help-content.ts:217`'s promise to the all-unpriced book),
+D2 REVISE adopted verbatim (`wilsonInterval(w, 0)` = `{point: NaN, lo: 0, hi: 1}` and `fmtIntervalPct` prints "0%–100%" — a full
+interval on no evidence; `rateVerdict`'s n = 0 branch says "no closed trades yet", false for a closed-but-unpriced group; the BY
+set excludes `pricedCount === 0` rows, which lowers m and flips a real p = 0.02 slice to significant — pinned; the edge table's
+local `net / count` expectancy becomes `pricedNet / pricedCount`, a deliberate widening the reviewer graded IN the ruling —
+one denominator rule on one row), D3 BUILD with an exclusivity table and the "Ctrl+K twice toggles" sequence. Decisions
+recorded with their rejected alternatives: `profitFactor` (`:145`) keeps its `Infinity / 0` rule (outside the ruling's
+enumeration); `components/kpi-card.tsx`'s `valueNum` prop is NOT widened (call-site avgR pattern; rejected: a nullable prop every
+future caller renders as 0); NO e2e press of Control+Shift+K in 2O (rejected: a two-platform CI surface for a one-line fix;
+recorded so a later wave adds it deliberately); `GroupStat.count` stays `list.length` (the hygiene count) while `pricedCount` /
+`pricedNet` are added; `readers-follow-writers` gets NO registry row (derived ratios, not stored money). The 16 re-check designs
+(D4 onward) are drafted from `wave2n-recheck.json` read whole with grep-verified consumer sets, then reviewed by the same
+agent before their builders — ONE builder per behaviour family (identity / IPO-link / Trash / merge; MTF + staged; dates /
+charges / preview; the two ask cosmetics ride along), sequential. The three backlog designs are built FIRST by their own single
+builder while the re-check designs are drafted (disjoint files: metrics / edge / lenses / share-card / palette vs. trash /
+staged / ipo-link / preview route / positions).
+
+**Model.** Orchestrated on Fable by the owner's instruction; every agent Opus (five reviewers ≈ 1.67 M subagent tokens over
+35 min; the explorer 0.18 M; the design reviewer 0.14 M). No Fable auditor was needed: 0 REFUTED, 0 UNVERIFIABLE.
+
+## 2026-09-16 — v4.3.0 fix wave 2O built (tenth session): the backlog audit's three defects + the 2N re-check's 16 product findings, design-reviewed first, FOUR sequential builders, one seam round + two seam-fix builders
+
+**Designs.** D1–D3 (`18-FIX-WORK-4.3.0/wave2o-designs.md`, from an Opus explorer's consumer sweep) and D4–D19
+(`wave2o-designs-recheck-draft.md`, drafted by an Opus agent from `wave2n-recheck.json` read whole, every consumer set
+grep-verified; the orchestrator's decisions on its four questions in `wave2o-designs.md` "D4–D19"). Two `vyuha-design-reviewer`
+rounds (`wave2o-design-review.md`: D2 REVISE; `wave2o-design-review-recheck.md`: D4, D6, D7, D10 REVISE) — every revision adopted
+verbatim. What the reviews caught before a line was written: `wilsonInterval(w, 0)` prints "0%–100%" through `fmtIntervalPct` and
+`rateVerdict`'s n = 0 branch says "no closed trades yet" (D2); a `landed` gate on the `accountRows.ipos` replay would NULL a live
+cross-account link on a purge → restore and count ₹482.61 twice — the gate keys on the ENVELOPE (D4); the accrual job releasing a
+legacy staged row's estimate from the PARENT alone breaks invariant 5 (parent 71.38 vs legs 218.58) — the job now skips staged rows
+and the ladder is the single writer of a staged row's charges (D6/D7); the draft's D10 href named a query key `parseTradesQuery`
+drops and an anchor the page does not render; two capped Data Quality issues would raise the penalty ceiling 30 → 60 (D10 is
+`info`); `kpi-card.tsx:188` renders an EMPTY card for `valueNum` undefined (D1). **Owner rulings before the MTF builder**
+(06-ANSWERS "v4.3.0 fix-wave 2O rulings"): closed staged MTF rows priced before 4.3.0 KEEP their earlier estimate (release notes say
+so; rejected: release once, with or without an audit row); a stated funded amount is apportioned across tranches by tranche value.
+Orchestrator decisions, recorded with the rejected alternative: a CLOSED unpriced MTF row stays listed under its own `info` code;
+broker-compare prices a null-funded row with no financing and says so once; `profitFactor` keeps its rule; `kpi-card`'s `valueNum`
+not widened; no e2e press of Control+Shift+K in 2O; `GroupStat.count` stays the hygiene count beside `pricedCount` / `pricedNet`.
+
+**Built, ONE builder at a time (Opus), each red-first with the quote in its report (`wave2h-reports/wave2o-*.md`):**
+- **B-METRICS-PALETTE (D1–D3).** The five `Kpis` ratios and `GroupStat.winRate` are `number | null`; `LensEdge` / `ShareStats`
+  widened; every formatting reader through `lib/format`'s null-safe family, every arithmetic reader guarded (the three raw
+  `${k.chargePctOfGross}%` literals and the two `!== 0` "NaN×" guards TypeScript cannot see are source-pinned); `groupBy` counts
+  `wins` AND `avgR` over priced trades (a third rule on one row is the distortion `metrics.ts:125-131` warns of — a recorded
+  widening); the edge report's book rate, Wilson CIs, p-values and local expectancy move to `pricedCount` / `pricedNet` with the
+  BY m-effect pinned; `isPaletteChord` beside `isPanelToggleChord`, mutually exclusive by construction, the palette's chord
+  unpinned in both directions until now. Deviations: `pct(v, 2)` prints "30.00%" where "30%" printed; the share card keeps its
+  LOCAL `inr` with a null branch (canvas glyphs pinned); `classify`'s signature unchanged (the call site guards).
+- **B-IDENTITY (D4, D5).** The `accountRows.ipos` / `ledgerEntries` replay nulls a trade reference only when that trade was in
+  the envelope AND did not land, stated in the restore message; `QualityIssue.affectedCount` (badge) beside `count: 1` (score).
+  The sweep corrected the draft: `lib/db/data-fixes.ts` is a READER of `ipos.trade_id`, not a writer. Harness +2, oracle +1.
+- **B-MTF (D6–D12; resumed once at the 150-turn limit).** `priceLegs` bills interest only from a STATED amount, apportioned by
+  tranche value, a partly consumed tranche to `asOf`; the job skips staged rows and re-prices legacy OPEN staged rows through
+  `rebuildStagedTrade` (which gains an optional `asOf` — one clock for flat and staged rows); `mtfFundedStated` (`{funded, stated,
+  unstated}`) feeds the /equity face, the dialog and /targets — the RECORDED deviation from D7.2: the dialog's three MTF rows are
+  no longer one set (Broker-funded is the recorded-funding superset, own capital and leverage the stating subset, each labelled);
+  `mtfDashReason` gives one reason per row (`unstatedWhy` now tallies it — a sell-to-open / over-sold row with no stated funding
+  counts as `unpriced`, pinned); `mtf_funding_closed` (info); broker-compare passes the null through. Found while building: the
+  SIXTH writer class — `updateManualTrade` and `applyOverride` patch a STAGED parent's charges with no `staged` guard → D20.
+- **B-DATES (D13–D19 + D20; resumed once).** `sellLegIsIpoExit` folds both days; `syncWritesSellDate` (`app/api/ipos/route.ts:193`,
+  a consumer the design missed — D13 alone turned the 409 into a 400) folded too; `ipoEditCharges`'s pure half in
+  `lib/analytics/ipo.ts` read by the save AND the preview, the no-sale branch keeps heads / net / marker; `''` exit date is no
+  exit date; `updateManualTrade` is the third writer refusing a stored dateless date; the collision `row` index keys the dialog's
+  cards; `collisionsToList` has a 12-row budget (F45's `[6, 7, 1]` holds). **D20:** a staged parent's priced heads are written only
+  by the ladder — a notes-only save hands back to `rebuildStagedTrade` (only when `legCount > 0`), a moved fill is refused in the
+  editor's own sentence, and the `statesNoCharges` hole on a staged parent is closed; `commit.ts` now imports `lib/queries/staged.ts`.
+  Recorded gap: `lib/queries/ipos.ts:71,86` still treat a WHITESPACE-only exit date as unpriced (`' '` pinned as the gap).
+
+**The seam pass (`wave2h-reports/wave2o-seams.md`; `tests/seams-v43-fixH.test.ts` NEW, 18 cases in 14 describes H1–H14,
+each red with one side reverted through `git show HEAD:<path>` copies; fixF: F1(a) flipped to the built behaviour with the D11
+citation, F35's fixture given the funded amount its vacuity guard needs, the five "replays verbatim" prose lines updated for D4).
+TWO seam DEFECTS, both product:** (1) PRE-EXISTING, medium-high, and it falsified D1's premise — `DASH_FIELDS` and `LENS_FIELDS`
+(`lib/queries/trades.ts`) omitted `acquisition` / `acquisitionPrice` / `buyValue`, which `edgeMeasurable` reads, so the dashboard
+and /lenses counted an unpriced sale as a priced WIN (`[unpricedCount 0, winRate 1, expectancy 1496]` against `getTrades()`'s
+`[2, null, null]`) and the widened `help-content.ts:217` promise was false on the two screens D1 fixed; (2) INTRODUCED by D20,
+medium — `inputsMoved` derived from a RECOMPUTED `buyValue` refused EVERY notes-only save on a staged parent whose weighted
+average does not round exactly (`[150, 103.33, 15500]` vs `r2(150 × 103.33) = 15499.5`). **Both fixed in-session by a seam-fix
+builder (`wave2o-S-FIX.md`)**: the three columns added to both projections and made REQUIRED on `AnalyticsTrade` (6 tsc errors in
+5 files, all fixtures; a narrowed projection is now a compile error; `tests/render-windowing.test.ts` names the two non-wire
+fields as the ONE exception to the /trades payload bound); `patchMovesChargeInput` in `lib/domain/trade-edit.ts` decides from the
+PATCH; both `it.fails` pins flipped. It measured one more D20 consequence — the charge PREVIEW on a staged parent priced a flat
+round trip (17.59) beside a save that stores the ladder's 19.59 — **fixed by a second seam-fix builder (`wave2o-S-FIX2.md`)**:
+`keptCharges` takes the staged branch first (the same predicate and helper as D20), answers `keptReason`, and the refused case
+carries the save's sentence (the matrix pins the two copies equal; 65 → 67 cells); the orchestrator rendered `keptReason` in
+`edit-trade-dialog.tsx` in the `dateProblem` shape. H5's dropped assertion (the purged row back where it was) restored.
+Recorded, not built: the four ladder-owned editor fields (`slPlanned` / `trailingSl` / `targetPlanned` / `riskAmount`) are
+re-derived by `rebuildStagedTrade` after an editor save on a staged parent, so only notes / setup / exit trigger / the mark stick
+on a ladder — the ladder is the source of truth for a staged position's risk (invariant 4), and the editor should show those
+fields read-only for a staged row (a UI follow-up, §8); a staged parent whose stored heads are ZERO previews those zeros (comment);
+`LADDER_REFUSAL` is a second copy of D20's sentence pinned equal (one export owed); the two test-low re-check findings mtf#6 and
+seams#2. Ten boundaries with no seam case are listed in the report's §1 (the KPI dialog's Radix rows, the empty `<tbody>`, the
+import panel's `<li>` list, the blocked-pull cards, the segment-depth column, `SegmentBars` over H1's book, the export of a null,
+`e2e/z-live-desk`, the Add form's preview door — 2N's #6, still open — and the /lenses members route's own `computeKpis`).
+
+**The gate.** First whole-suite vitest on the wave tree: `2 failed | 9,520 passed | 35 skipped (433 files)` — `tests/readme-claims`
+on the FILE count (430 → 433: `wave2o-metrics-palette`, `wave2o-mtf`, `seams-v43-fixH`) and `tests/broker-connect-copy.test.ts:579`,
+whose fixture copied one collision with only the symbol changed — under D18 two collisions with one `row` index ARE one incoming
+row by construction, so the fixture now carries `row: 1` (a pin-fixture update, cited). README 9,410 → 9,522, 430 → 433 (six
+mentions + one). Then `npm run verify` on the wave tree: **EXIT 0 — raw line 433 files / 9,522 passed / 35 skipped** (no
+expected fail); typecheck 0 errors; lint 0 errors / the 3 pre-existing warnings; `next build` compiled. Introduced-regression grade
+for 2O as of the gate: the seam round found ONE introduced product defect and one introduced preview gap, both D20's and both fixed
+before the gate; the 2O scoped re-check is the measurement that counts.
+
+**Model.** Orchestrated on Fable by the owner's instruction; every agent Opus: 1 explorer, 1 drafter, 2 design reviewers, 4 builders
+(B-MTF and B-DATES resumed once at the 150-turn limit), 1 seam tester (resumed once), 2 seam-fix builders — ≈ 5.3 M subagent tokens
+for the wave, ≈ 2 M for the re-check before it.

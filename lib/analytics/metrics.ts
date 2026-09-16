@@ -17,11 +17,11 @@ export interface AnalyticsTrade {
    * How the stock was acquired, when NOT bought inside the imported window
    * (see lib/analytics/acquisition.ts). Null for the overwhelming majority.
    */
-  acquisition?: string | null;
+  acquisition: string | null;
   /** User-supplied cost per share for an acquisition-flagged trade. */
-  acquisitionPrice?: number | null;
+  acquisitionPrice: number | null;
   /** Purchase value; zero on a sale whose purchase is not in the data. */
-  buyValue?: number;
+  buyValue: number;
 }
 
 /**
@@ -48,15 +48,31 @@ export interface Kpis {
   netPnl: number;
   grossPnl: number;
   charges: number;
-  chargePctOfGross: number;
+  /**
+   * THE FIVE RATIOS BELOW ARE `null` WHEN THEIR OWN DENOMINATOR IS 0.
+   *
+   * A book cannot state a win rate over no priced trade, an average loss with
+   * no loser, or a charge share of a gross of exactly zero — and a 0 there
+   * reads as a real, terrible figure (invariant 6: never fabricate a
+   * denominator). Every reader FORMATS through lib/format's null-safe family
+   * (`inr`/`inrCompact`/`num`/`pct` all print "—") and GUARDS `!= null` before
+   * any arithmetic or comparison: `null !== 0` is TRUE, which is how the payoff
+   * cell used to print "NaN×", and `${null}%` is the string "null%".
+   */
+  /** null when `grossPnl` is 0. */
+  chargePctOfGross: number | null;
   wins: number;
   losses: number;
-  winRate: number; // 0..1
+  /** 0..1; null when no closed trade could be priced. */
+  winRate: number | null;
+  /** NOT in the null family — its own Infinity (no losers) / 0 (nothing) rule. */
   profitFactor: number;
-  expectancy: number;
+  /** null when no closed trade could be priced. */
+  expectancy: number | null;
   avgR: number | null;
-  avgWin: number;
-  avgLoss: number;
+  /** null when there is no winner / no loser to average. */
+  avgWin: number | null;
+  avgLoss: number | null;
   maxDrawdown: number;
   maxWinStreak: number;
   maxLossStreak: number;
@@ -138,15 +154,15 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
     netPnl: r2(netPnl),
     grossPnl: r2(grossPnl),
     charges: r2(charges),
-    chargePctOfGross: grossPnl !== 0 ? r2((charges / Math.abs(grossPnl)) * 100) : 0,
+    chargePctOfGross: grossPnl !== 0 ? r2((charges / Math.abs(grossPnl)) * 100) : null,
     wins,
     losses,
-    winRate: pricedCount ? wins / pricedCount : 0,
+    winRate: pricedCount ? wins / pricedCount : null,
     profitFactor: sumLoss !== 0 ? r2(sumWin / Math.abs(sumLoss)) : sumWin > 0 ? Infinity : 0,
-    expectancy: pricedCount ? r2(pricedNetPnl / pricedCount) : 0,
+    expectancy: pricedCount ? r2(pricedNetPnl / pricedCount) : null,
     avgR: rCount ? r2(rSum / rCount) : null,
-    avgWin: wins ? r2(sumWin / wins) : 0,
-    avgLoss: losses ? r2(sumLoss / losses) : 0,
+    avgWin: wins ? r2(sumWin / wins) : null,
+    avgLoss: losses ? r2(sumLoss / losses) : null,
     maxDrawdown: r2(Math.abs(maxDd)),
     maxWinStreak: maxWin,
     maxLossStreak: maxLoss,
@@ -191,12 +207,22 @@ export function dailyPnl(trades: AnalyticsTrade[]): Map<string, number> {
 
 export interface GroupStat {
   key: string;
+  /**
+   * Every closed trade in the group — the hygiene count the "Trades" column
+   * shows. NOT the denominator of any ratio below.
+   */
   count: number;
   net: number;
   gross: number;
   charges: number;
+  /** Winners among the PRICED trades only (the `computeKpis` numerator rule). */
   wins: number;
-  winRate: number;
+  /** Closed trades whose edge can be measured — the ratio denominator. */
+  pricedCount: number;
+  /** Their net P&L — the numerator of this group's expectancy. */
+  pricedNet: number;
+  /** null when `pricedCount` is 0: a rate over nothing is not a rate (invariant 6). */
+  winRate: number | null;
   avgR: number | null;
 }
 
@@ -214,8 +240,16 @@ export function groupBy(
   const out: GroupStat[] = [];
   for (const [key, list] of map) {
     let net = 0, gross = 0, charges = 0, wins = 0, rSum = 0, rCount = 0;
+    let pricedCount = 0, pricedNet = 0;
     for (const t of list) {
+      // Cash always counts — the money moved whether or not we know the basis.
       net += t.netPnl; gross += t.grossPnl; charges += t.chargesTotal;
+      // …and the ratios below skip it, exactly as computeKpis does above. A
+      // group's win rate divided by every closed trade while the numerator
+      // skipped the unpriced ones printed one rate here and another on the
+      // dashboard for the same book.
+      if (!edgeMeasurable(t)) continue;
+      pricedCount++; pricedNet += t.netPnl;
       if (t.netPnl > 0) wins++;
       if (t.rMultiple != null) { rSum += t.rMultiple; rCount++; }
     }
@@ -226,7 +260,9 @@ export function groupBy(
       gross: r2(gross),
       charges: r2(charges),
       wins,
-      winRate: list.length ? wins / list.length : 0,
+      pricedCount,
+      pricedNet: r2(pricedNet),
+      winRate: pricedCount ? wins / pricedCount : null,
       avgR: rCount ? r2(rSum / rCount) : null,
     });
   }

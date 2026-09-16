@@ -91,6 +91,20 @@ export type OverlapKind = "same-quantity" | "same-value" | "partial-quantity" | 
 
 export interface CrossSourceCollision {
   symbol: string;
+  /**
+   * D18 (v4.3.0 wave 2O, ask#0) — WHICH incoming row this blocks: its index in the
+   * `incoming` array the caller passed.
+   *
+   * The dialog is a list of ROWS, not of blockers (at most two are reported per
+   * row), and it keyed a card on symbol + the four incoming figures — so two
+   * DIFFERENT incoming rows of one scrip that agree on those five (one scrip under
+   * two products, or on two exchanges) collapsed into ONE card reading "…cannot
+   * vouch for this row." beside a server sentence reading "2 rows in this file
+   * (TWOEX)". Wave 2N rejected an id on the premise that such rows are
+   * indistinguishable; they are not — they carry different `existing.id`,
+   * quantities and detail text.
+   */
+  row: number;
   incoming: { buyQty: number; sellQty: number; buyValue: number; sellValue: number };
   existing: { id: number; buyQty: number; sellQty: number; sourceFile: string | null };
   kind: OverlapKind;
@@ -223,7 +237,9 @@ export function detectCrossSourceDuplicates(
     else byKey.set(key, [e]);
   }
 
-  for (const inc of incoming) {
+  // D18: the INDEX rides onto every collision this row produces, so the dialog
+  // can count the rows the message counts.
+  for (const [incRow, inc] of incoming.entries()) {
     const candidates = (byKey.get(`${inc.broker}\u0000${norm(inc.tradingsymbol)}`) ?? []).filter(
       (e) =>
         // An identical hash is an ordinary duplicate the existing dedup already
@@ -281,6 +297,7 @@ export function detectCrossSourceDuplicates(
         const sameSnapshot = snapshot;
         const c: CrossSourceCollision = {
           symbol: inc.symbol,
+          row: incRow,
           incoming: { buyQty: inc.buyQty, sellQty: inc.sellQty, buyValue: inc.buyValue, sellValue: inc.sellValue },
           existing: { id: e.id, buyQty: e.buyQty, sellQty: e.sellQty, sourceFile: e.sourceFile },
           kind,
@@ -395,21 +412,63 @@ export function detectCrossSourceDuplicates(
 
 /**
  * The collisions as a UI list, capped by SYMBOL rather than by collision (W2N,
- * D8). One incoming row can now carry TWO entries — today's snapshot blocker
- * and the older cross-FILE one — so a flat `slice(0, 6)` could list a symbol's
- * first blocker and elide its second, and its "…and n more" counted collisions
- * while the headline above it counts symbols. Every entry of a listed symbol is
- * kept; `more` is the number of symbols not listed.
+ * D8) AND bounded in LINES (D19, wave 2O). One incoming row can carry TWO entries
+ * — today's snapshot blocker and the older cross-FILE one — so a flat
+ * `slice(0, 6)` could list a symbol's first blocker and elide its second, and its
+ * "…and n more" counted collisions while the headline above it counts symbols.
+ *
+ * But keeping EVERY entry of a listed symbol made the card unbounded on the path
+ * that motivated nothing: on a FILE import `symbol` is the incoming
+ * `tradingsymbol` and `app/api/import/route.ts` previews with no
+ * `supersedeSnapshot`, so one scrip stated on many days rendered one `<li>` per
+ * colliding row (30 collisions → 30 lines, `more 0`) where the pre-wave
+ * `collisions.slice(0, 6)` rendered six and "…and 24 more." (ask#1).
+ *
+ * So a ROW budget sits beside the symbol cap: symbols are admitted WHOLE, in the
+ * order they first appear, while they fit — the first is always admitted and
+ * truncated to `maxRows` if it alone exceeds it. No symbol is ever listed with one
+ * of its two blockers, and no card is unbounded.
+ *
+ *   `more`      — SYMBOLS not listed at all (the existing "…and n more." tail);
+ *   `truncated` — rows of a LISTED symbol that were elided (a second tail).
+ *
+ * A symbol that does not fit ends the admission rather than being skipped over: a
+ * list whose lines jump back and forth over the budget reads as arbitrary, and
+ * every symbol left is counted in `more` either way.
  */
 export function collisionsToList<C extends { symbol: string }>(
   collisions: readonly C[],
   maxSymbols = 6,
-): { rows: C[]; more: number } {
-  const listed = new Set<string>();
-  const all = new Set<string>();
+  maxRows = 12,
+): { rows: C[]; more: number; truncated: number } {
+  const bySymbol = new Map<string, C[]>();
   for (const c of collisions) {
-    all.add(c.symbol);
-    if (listed.size < maxSymbols) listed.add(c.symbol);
+    const bucket = bySymbol.get(c.symbol);
+    if (bucket) bucket.push(c);
+    else bySymbol.set(c.symbol, [c]);
   }
-  return { rows: collisions.filter((c) => listed.has(c.symbol)), more: all.size - listed.size };
+  // The QUOTA per admitted symbol, decided before anything is emitted, so the
+  // rows keep the server's own collision order (the tail of one symbol is not
+  // hoisted above another's head).
+  const quota = new Map<string, number>();
+  let budget = 0;
+  let truncated = 0;
+  for (const [symbol, entries] of bySymbol) {
+    if (quota.size >= maxSymbols) break;
+    if (quota.size > 0 && budget + entries.length > maxRows) break;
+    // The first symbol is listed even when it alone overflows — a card that named
+    // no symbol at all would say less than the message above it.
+    const room = quota.size === 0 ? Math.min(entries.length, maxRows) : entries.length;
+    quota.set(symbol, room);
+    budget += room;
+    truncated += entries.length - room;
+  }
+  const left = new Map(quota);
+  const rows = collisions.filter((c) => {
+    const n = left.get(c.symbol) ?? 0;
+    if (n <= 0) return false;
+    left.set(c.symbol, n - 1);
+    return true;
+  });
+  return { rows, more: bySymbol.size - quota.size, truncated };
 }

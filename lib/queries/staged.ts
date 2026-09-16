@@ -10,8 +10,9 @@ import { todayIstIso, normalizeDate, unreadableDateMessage } from "@/lib/domain/
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeRates } from "@/lib/engine/types";
 import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
-import { defaultMtfFundedAmount } from "@/lib/risk/margin";
-import { getMarginPct } from "@/lib/queries/margin";
+// D6/D7 (wave 2O): no margin_config read is left in the ladder — `getMarginPct`
+// and `defaultMtfFundedAmount` are gone from this file, so no stored figure on a
+// staged row is a function of that table (owner ruling Q-A, invariant 6).
 import { recordAudit } from "@/lib/audit";
 import { getSelectedAccountId } from "./accounts";
 import {
@@ -132,6 +133,36 @@ export interface PricedLeg {
  * was consumed (or `asOf` while still open), so a position built in three
  * tranches doesn't get billed as if all the money arrived on day one.
  *
+ * THE PRINCIPAL IS THE ONE THE ROW STATES, NEVER AN ESTIMATE (D6/D7, v4.3.0 fix
+ * wave 2O — mtf#0 and mtf#1, two silent wrong numbers). This function used to
+ * price every entry tranche on `defaultMtfFundedAmount(leg value, margin_config)`
+ * while `ctx.mtfFundedAmount` — the amount the parent row actually records — sat
+ * unread, and `rebuildStagedTrade` collapses these legs into the parent's stored
+ * `mtf_interest` / `charges_total` / `net_pnl`. That made the ladder the FIFTH
+ * writer of stored MTF interest, the one owner ruling Q-A ("no writer persists an
+ * estimate", wave 2N) was never applied to: a null-funded staged row stored 71.38
+ * of interest on `convertToStaged`, the accrual job took it straight back out on
+ * the next /equity render, and `addLeg` put it back — stored money oscillating
+ * with no prompt and no audit row (DECISIONS 2026-08-30 decision 6). So:
+ *
+ *   - `mtfFundedAmount` null (never recorded) → nothing is billed, exactly as
+ *     closePosition / updateManualTrade / applyOverride / closeStaleLot and the
+ *     accrual job now leave it. `lib/engine/charges.ts:106` gates interest AND
+ *     pledge on the same `fundedAmount > 0`, so this is identical to a stated 0
+ *     (the recorded deviation, DECISIONS 2026-09-16 wave 2N);
+ *   - a stated 0 → nothing is billed (V3/X2: a stored 0 is a STATEMENT, the
+ *     position paid for in full, not "never set");
+ *   - a stated amount → APPORTIONED across the entry tranches by tranche value
+ *     (owner ruling, 2O row 2: `stated × legValue ÷ Σ entry legValue`, which is
+ *     invariant 4's weighted rule), so the shares sum to the stated principal
+ *     and Σ per-leg interest equals what the accrual job bills on the whole leg
+ *     for the same spans. The ladder is now the SINGLE writer of a staged row's
+ *     charges (`lib/jobs/mtf-accrual.ts` skips `staged` rows and re-prices them
+ *     through `rebuildStagedTrade`), so the two doors cannot state two answers.
+ *
+ * No margin_config read is left in the ladder's pricing path, so no stored
+ * figure moves when that table moves.
+ *
  * KNOWN, ACCEPTED ARTEFACT: STT and stamp duty round to the nearest rupee. A
  * round-trip priced in one call rounds once per statutory head; the same trade
  * priced as two legs rounds twice, so converting an existing trade to staged
@@ -162,16 +193,47 @@ export function priceLegs(
   if (ctx.segment === "eq_mtf") {
     const pos = summarise(legs, ctx.direction);
     const asOf = ctx.asOf ?? todayIstIso();
+    // Q-B (owner ruling, wave 2N) in the ladder (D7's revision, wave 2O): a
+    // tranche that is only PARTLY consumed keeps accruing on its whole share
+    // until it CLOSES — no funding is treated as released for the units already
+    // sold, because how a broker releases it is the broker's rule. Taking the
+    // last consumption date unconditionally billed a partly sold tranche only to
+    // that partial sale's day, while the accrual job billed the same row to
+    // today. `pos.openTranches` is the domain's own answer to "what is still
+    // open", so a tranche listed there has no consumption date at all.
+    const stillOpen = new Set(pos.openTranches.map((o) => o.legId));
     const consumedOn = new Map<number, string>();
     for (const fill of pos.fills) {
       for (const c of fill.consumed) {
+        if (stillOpen.has(c.legId)) continue;
         // Last consumption date wins — that is when the tranche fully closed.
         consumedOn.set(c.legId, fill.tradeDate);
       }
     }
-    const ownPct = getMarginPct(ctx.broker, "eq_mtf");
-    for (const leg of ordered) {
-      if (leg.kind !== "entry") continue;
+    // The principal the ROW states, split by tranche value (D6/D7 — see the
+    // header). The shares are rounded per tranche with the REMAINDER on the last
+    // one, so Σ shares is the stated principal to the paisa (invariant 1: money
+    // is exact, and a lost paisa here is a lost paisa of stored interest).
+    const stated = ctx.mtfFundedAmount;
+    const entries = ordered.filter((l) => l.kind === "entry");
+    const entryValue = new Map(entries.map((l) => [l.id, r2(l.qty * l.price)]));
+    const totalEntryValue = r2([...entryValue.values()].reduce((s, v) => s + v, 0));
+    // `stated != null`, never a truthiness or `> 0` test: a stated 0 must reach
+    // the apportionment and come out as a share of 0 (which the engine bills
+    // nothing for), not fall into the "never recorded" branch — the null-vs-0
+    // rule every writer and reader keeps (V3/X2, tests/helpers/field-rules.ts).
+    if (stated != null && totalEntryValue > 0) {
+      let allocated = 0;
+      entries.forEach((leg, i) => {
+        const share =
+          i === entries.length - 1
+            ? r2(stated - allocated)
+            : r2((stated * (entryValue.get(leg.id) ?? 0)) / totalEntryValue);
+        allocated = r2(allocated + share);
+        mtfFundedByLeg.set(leg.id, share);
+      });
+    }
+    for (const leg of entries) {
       const end = consumedOn.get(leg.id) ?? asOf;
       // G-G3-1 — BOTH ends resolved through the one calendar (lib/domain/trading-day)
       // before any day is counted. A raw `new Date(leg.tradeDate)` rolled '2026-02-31'
@@ -185,7 +247,6 @@ export function priceLegs(
         ? Math.max(0, Math.floor((new Date(endDay).getTime() - new Date(legDay).getTime()) / 86400000))
         : 0;
       mtfDaysByLeg.set(leg.id, days);
-      mtfFundedByLeg.set(leg.id, defaultMtfFundedAmount(r2(leg.qty * leg.price), ownPct));
     }
   }
 
@@ -206,8 +267,14 @@ export function priceLegs(
         sellQty: shape.sellQty,
         buyOrderCount: shape.buyOrderCount,
         sellOrderCount: shape.sellOrderCount,
+        // A tranche of a row that states NO principal carries no share at all,
+        // so nothing MTF reaches the engine and it bills neither interest nor
+        // pledge — identical to the stated 0 that DOES reach it, because
+        // `lib/engine/charges.ts:106` gates both on the same `fundedAmount > 0`
+        // (the recorded deviation, DECISIONS 2026-09-16 wave 2N; billing pledge
+        // alone would need an engine change, which was not made).
         mtf:
-          ctx.segment === "eq_mtf" && mtfFunded && mtfFunded > 0 && mtfDays != null
+          ctx.segment === "eq_mtf" && mtfFunded != null && mtfDays != null
             ? { fundedAmount: mtfFunded, daysHeld: mtfDays, pledgeScrips: 1 }
             : null,
       },
@@ -292,8 +359,12 @@ export interface RebuildResult {
  * and tax pack keeps reading one flat row exactly as before.
  *
  * Idempotent: running it twice produces the same numbers.
+ *
+ * `asOf` is the day an OPEN MTF tranche's interest is counted to (D6, wave 2O):
+ * the daily accrual job hands it its own `today` so one run states one day for
+ * every row, flat or staged. Omitted — every UI writer — it is today, as before.
  */
-export function rebuildStagedTrade(tradeId: number, direction?: Direction): RebuildResult {
+export function rebuildStagedTrade(tradeId: number, direction?: Direction, asOf?: string): RebuildResult {
   const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
   if (!t) return { ok: false, problems: [{ legId: null, message: "Trade not found." }] };
 
@@ -315,6 +386,7 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction): Rebu
       exchange: t.exchange as Exchange,
       direction: dir,
       mtfFundedAmount: t.mtfFundedAmount,
+      ...(asOf ? { asOf } : {}),
     },
     ratesMap,
   );

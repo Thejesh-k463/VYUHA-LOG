@@ -5,7 +5,7 @@ import { getTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
-import { deriveOpenPositions } from "@/lib/analytics/positions";
+import { deriveOpenPositions, mtfFundedStated } from "@/lib/analytics/positions";
 import { dailyPnl } from "@/lib/analytics/metrics";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
@@ -60,11 +60,16 @@ export default function TargetEquityPage() {
   // MTF summary
   const rates = loadRatesMap();
   const mtfPos = positions.filter((p) => p.isMtf);
-  let funded = 0, dailyInterest = 0, accrued = 0, interestToDate = 0, value = 0;
+  // D8 (wave 2O, mtf#2 ≡ seams#0): the FUNDED total and the count of rows that
+  // state none come from the one exported helper the /equity KPI face and its
+  // dialog read, so the two screens cannot state two figures for one book. The
+  // per-row rate work below stays here — it needs charge_config, which the pure
+  // analytics module deliberately does not touch.
+  const stated = mtfFundedStated(mtfPos);
+  let dailyInterest = 0, accrued = 0, interestToDate = 0, value = 0;
   // A guard per position: a broker with no rate epoch covering today must cost
   // that ONE position its interest line, not blank the entire Target Tracker.
   // `today` is already in scope above — no second clock read.
-  let unstatedFunding = 0;
   for (const p of mtfPos) {
     // D7 (close-readers#1) — every ₹ figure below is built from the STATED
     // funded amount. A row the journal never priced is left out of all of them
@@ -75,20 +80,15 @@ export default function TargetEquityPage() {
     // (Q-A, lib/jobs/mtf-accrual.ts).
     const fundedRow = p.fundedAmount;
     accrued += p.accruedInterest;
-    if (fundedRow == null) {
-      unstatedFunding += 1;
-      continue;
-    }
+    if (fundedRow == null) continue;
     let r;
     try {
       r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, today);
     } catch {
-      funded += fundedRow;
       value += p.currentValue;
       continue;
     }
     const rate = mtfRateFor(fundedRow, r);
-    funded += fundedRow;
     dailyInterest += (fundedRow * rate) / 365;
     interestToDate += (fundedRow * rate * (p.daysHeld ?? 0)) / 365;
     value += p.currentValue;
@@ -97,11 +97,11 @@ export default function TargetEquityPage() {
   // it beside the figures it is left out of (invariant 6).
   const mtf: MtfSummary = {
     count: mtfPos.length,
-    unstated: unstatedFunding,
-    funded: Math.round(funded * 100) / 100,
+    unstated: stated.unstated,
+    funded: stated.funded,
     dailyInterest: Math.round(dailyInterest * 100) / 100,
     accrued: Math.round(accrued * 100) / 100,
-    blendedRate: funded > 0 ? (dailyInterest * 365) / funded : 0,
+    blendedRate: stated.funded > 0 ? (dailyInterest * 365) / stated.funded : 0,
     breakevenMovePct: value > 0 ? Math.round((interestToDate / value) * 10000) / 100 : 0,
   };
 

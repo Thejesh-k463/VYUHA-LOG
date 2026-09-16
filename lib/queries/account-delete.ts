@@ -775,7 +775,9 @@ export function deleteAccount(opts: {
   // RECOVERABLE operation, and the counted-once rule of wave 2H
   // (CAP-IPO-LINK / TAX-IPO-LINK, keyed on `ipos.trade_id`) left reading a null.
   // The purge's OWN rows are in here too: they ride back inside
-  // `accountRows.ipos` with `trade_id` intact, so their ref is inert — the
+  // `accountRows.ipos` with `trade_id` intact — intact unless that trade could
+  // not be restored, when D4 (wave 2O) clears the reference rather than
+  // pointing it at whatever now holds the id — so their ref is inert; the
   // envelope states the whole picture rather than a filtered one.
   const ipoRefRows = collectIdChunks(doomedIds, (chunk) =>
     db.select({ ipoId: ipos.id, tradeId: ipos.tradeId, accountId: ipos.accountId }).from(ipos).where(inArray(ipos.tradeId, chunk)).all(),
@@ -811,10 +813,12 @@ export function deleteAccount(opts: {
   // move to the target as a second record naming one trade, and it must not
   // stay behind unlinked. It is snapshotted below, so the book restores whole:
   // the row rides back inside `accountRows.ipos` with its OWN `accountId`, its
-  // own id and its `trade_id` intact, beside the duplicate that comes back with
-  // it (`restoreTrashSnapshot` replays those rows verbatim, and the `ipoRefs`
-  // loop that runs before the replay is `isNull`-guarded on a row that does not
-  // exist yet, so nothing lands twice).
+  // own id and its `trade_id` — intact unless that trade could not be restored,
+  // when D4 (wave 2O) clears the reference rather than pointing it at whatever
+  // now holds the id — beside the duplicate that comes back with it
+  // (`restoreTrashSnapshot` replays those rows with that one gate, and the
+  // `ipoRefs` loop that runs before the replay is `isNull`-guarded on a row
+  // that does not exist yet, so nothing lands twice).
   //
   // D5 (wave 2N, re-check finding identity#0): this was
   // `.filter(s => s.accountId === accountId)`, so only the SOURCE's own copies

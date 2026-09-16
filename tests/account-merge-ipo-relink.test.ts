@@ -33,6 +33,7 @@ let trash: typeof import("@/lib/trash");
 let capital: typeof import("@/lib/queries/capital");
 let taxItr: typeof import("@/lib/queries/tax-itr");
 let ipoQueries: typeof import("@/lib/queries/ipos");
+let dq: typeof import("@/lib/queries/data-quality");
 let ais: typeof import("@/app/api/ais/route");
 let trashDir: string;
 
@@ -144,6 +145,7 @@ beforeAll(async () => {
   capital = await import("@/lib/queries/capital");
   taxItr = await import("@/lib/queries/tax-itr");
   ipoQueries = await import("@/lib/queries/ipos");
+  dq = await import("@/lib/queries/data-quality");
   ais = await import("@/app/api/ais/route");
   trashDir = (await import("@/lib/db")).trashDir;
   // The seed's account 1 ("Primary", default, live) is the last-live anchor.
@@ -157,6 +159,9 @@ beforeAll(async () => {
     // OUTSIDE the book being merged — in a third account, and in the target's.
     [31, "D5 legacy holder"], [32, "D5 third target"], [33, "D5 third source"],
     [34, "D5 own-book target"], [35, "D5 own-book source"],
+    // D4 (fix wave 2O, re-check finding identity#0): the un-merge that CANNOT
+    // bring the duplicate back, so the record it named has no holding to name.
+    [36, "D4 legacy holder"], [37, "D4 taken target"], [38, "D4 taken source"],
   ] as [number, string][]) {
     t.db.insert(t.schema.accounts).values({ id, name }).run();
   }
@@ -398,8 +403,11 @@ describe("a dropped trade with no IPO changes nothing", () => {
  *
  * So the skipped set is no longer filtered by account: EVERY skipped record is
  * snapshotted into the merge envelope with its OWN accountId and deleted inside
- * the transaction. `restoreTrashSnapshot` replays `accountRows.ipos` verbatim,
- * so an un-merge puts it back in its own book with `trade_id` intact.
+ * the transaction. `restoreTrashSnapshot` replays `accountRows.ipos` with its
+ * `trade_id` intact, so an un-merge puts it back in its own book still naming its
+ * own holding — unless that holding could not come back, when D4 (wave 2O) clears
+ * the reference rather than pointing it at whatever now holds the id (the last
+ * describe in this file).
  */
 describe("D5 · a skipped IPO record filed in a THIRD account is removed with its duplicate", () => {
   const HASH = "d5-merge-ipo-third";
@@ -506,5 +514,131 @@ describe("D5 · a skipped IPO record filed in the TARGET's own book is removed w
     expect(realisedIn(34), "and the target reads what it read before the merge").toEqual({
       equityRealised: NET, ipoRealised: 482.6, totalRealised: 972.85,
     });
+  });
+});
+
+/**
+ * D4 (v4.3.0 fix wave 2O, re-check finding "identity#0", medium) — a restore
+ * that cannot bring a holding back leaves its IPO record UNLINKED and says so.
+ *
+ * D5 (above) routes a FOREIGN book's skipped record through `accountRows.ipos`,
+ * which `restoreTrashSnapshot` replayed VERBATIM — the one restore path with no
+ * gate on what actually landed. The `ipoRefs` loop (lib/trash.ts:694-700) and
+ * the ledger loop (:686-691) both `continue` unless `landed.has(ref.tradeId)`,
+ * and D1 wrote the rule into the same file: "a link onto a row this restore did
+ * not bring back is not this restore's to make".
+ *
+ * So when the un-merge cannot land the duplicate the record named — the id is
+ * taken (`trades.id` is AUTOINCREMENT, so an ordinary re-import never reuses a
+ * freed rowid; the field shape is a snapshot restored against a database whose
+ * rowids came from elsewhere, a backup or the desktop template swap) — the
+ * record came back stating a link to WHATEVER now holds that id. Measured by the
+ * re-check: `getIpoTradeLinks().get(6)` badged an unrelated scrip in another
+ * book, All accounts read `ipoRealised` 482.61 instead of 965.22, the ITR export
+ * lost the record's row and both AIS sides fell.
+ *
+ * The gate keys on the ENVELOPE (`envTradeIds`), never on `landed` alone: a
+ * reference this delete never touched (a cross-account link on a purge) is kept
+ * verbatim — pinned in `tests/trash-restore-ipo-legacy.test.ts`.
+ */
+describe("D4 · a skipped IPO record whose duplicate CANNOT come back is restored UNLINKED", () => {
+  const HASH = "d4-merge-ipo-taken";
+  const SCRIPS = ["D4TAKEN", "D4OTHER", "D4-TAKEN-LEG (IPO)", "D4-TAKEN-TGT (IPO)", "D4HOLD"];
+  let targetTrade = 0;
+  let sourceTrade = 0;
+  let targetIpo = 0;
+  let strayIpo = 0;
+  let heldElsewhere = 0;
+  let snapshotId = "";
+  let restoreMessage = "";
+
+  const askAbout = (accountId: number, ipoId: number) => {
+    select(accountId);
+    return dq
+      .getDataQualityReport()
+      .issues.find((x) => x.code.startsWith("ipo_record_link") && x.detail.includes(`#${ipoId} `));
+  };
+
+  it("baseline: the merge removes the stray record with the duplicate it names", () => {
+    targetTrade = closedTrade(37, "D4TAKEN", { dedupHash: HASH });
+    sourceTrade = closedTrade(38, "D4TAKEN", { dedupHash: HASH });
+    // The survivor already carries its OWN record, which is what makes the stray
+    // one a SKIP rather than a re-point (L7).
+    targetIpo = exitedIpo(37, "D4-TAKEN-TGT", targetTrade);
+    strayIpo = exitedIpo(36, "D4-TAKEN-LEG", sourceTrade);
+    // An unlinked allotment still HELD in the legacy holder's book, so the
+    // question Data Quality raises about the stray record has a holding to name.
+    heldElsewhere = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({
+        accountId: 36, broker: "zerodha", segment: "eq_delivery", symbol: "D4HOLD", tradingsymbol: "D4HOLD",
+        buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20", isOpen: true,
+        acquisition: "ipo", acquisitionPrice: 100, acquisitionDate: "2026-02-20",
+      }))
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    expect(itrScripsIn(0, SCRIPS), "two copies of the sale, each counted once").toEqual(["D4TAKEN", "D4TAKEN"]);
+
+    select(1);
+    const res = mod.deleteAccount({ accountId: 38, mode: "merge", targetId: 37, connections: "delete" });
+    expect([res.ok, res.skippedTrades], res.message).toEqual([true, 1]);
+    snapshotId = res.snapshotId!;
+    expect(res.message).toContain("1 filed in “D4 legacy holder”");
+    expect(ipoRow(strayIpo)).toBeUndefined();
+  });
+
+  it("the id the dropped duplicate held now belongs to another closed trade", () => {
+    // The field shape: a snapshot restored against a database whose rowids came
+    // from elsewhere. Written explicitly here because AUTOINCREMENT never hands
+    // the id back on its own.
+    t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({
+        id: sourceTrade, accountId: 37, broker: "zerodha", segment: "eq_delivery", symbol: "D4OTHER", tradingsymbol: "D4OTHER",
+        buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-02-20",
+        sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02",
+        grossPnl: 500, chargesTotal: 500 - NET, netPnl: NET, isOpen: false,
+      }))
+      .run();
+    expect(t.db.select().from(t.schema.trades).all().find((r) => r.id === sourceTrade)!.tradingsymbol).toBe("D4OTHER");
+  });
+
+  it("the un-merge brings the record back with NO link, and says so", () => {
+    const back = trash.restoreTrashSnapshot(snapshotId, "D4 probe");
+    restoreMessage = back.message;
+    expect([back.restored, back.skipped.length], back.message).toEqual([0, 1]);
+    expect(back.skipped[0].reason).toBe("a trade with that id is already in the journal");
+    // THE assertion. On HEAD: [36, sourceTrade] — where that id is now D4OTHER,
+    // a different scrip in a different book.
+    expect(linkOf(strayIpo), "the holding it named is not in the journal, so it names nothing").toEqual([36, null]);
+    // The restore says what it did: nothing here is silent (invariant 6).
+    expect(restoreMessage).toContain("1 IPO record came back unlinked");
+  });
+
+  it("so nothing badges the unrelated trade, and its own sale is stated once", async () => {
+    // On HEAD: ["D4OTHER", "D4TAKEN"] — the record's own sale left the ITR
+    // export, the capital summary and both AIS sides with the link.
+    expect(itrScripsIn(0, SCRIPS)).toEqual(["D4-TAKEN-LEG (IPO)", "D4OTHER", "D4TAKEN"]);
+    // On HEAD: `getIpoTradeLinks().get(sourceTrade)` returned the stray record's
+    // id, so /trades badged D4OTHER as that allotment's holding.
+    select(0);
+    expect(ipoQueries.getIpoTradeLinks().get(sourceTrade), "no badge on a trade this record never named").toBeUndefined();
+    expect(taxIn(0).ipoNames).toContain("D4-TAKEN-LEG");
+    expect(realisedIn(36), "the record's own exit, in its own book").toEqual({
+      equityRealised: 0, ipoRealised: 482.6, totalRealised: 482.6,
+    });
+    expect(linkOf(targetIpo), "and the survivor's own record is untouched").toEqual([37, targetTrade]);
+    const ais = await aisIn(36);
+    // Purchase 2,000 = the record's own allotment (1,000) + the still-held D4HOLD
+    // buy (1,000); sale 1,500 is the record's exit alone, stated once.
+    expect([ais[`${FY} purchase`], ais[`${FY} sale`]], "both AIS sides state the record's own allotment").toEqual([2000, 1500]);
+  });
+
+  it("and Data Quality asks which holding is the record's", () => {
+    // The honest pre-2N state, without leaving the record behind: unlinked and
+    // asked about, rather than pointed at another trade.
+    const issue = askAbout(36, strayIpo);
+    expect(issue?.title, "the record is a candidate again").toBe("IPO records not linked to their holdings");
+    expect(issue!.ids).toContain(heldElsewhere);
   });
 });

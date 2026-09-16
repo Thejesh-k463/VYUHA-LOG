@@ -18,7 +18,7 @@ import { LIVE_FEED_COPY } from "@/components/settings/live-feed-card";
 // reference. Merging the two specifiers rewrites the line that guard reads and
 // reddens a seam this change has nothing to do with.
 import { ANGELONE_FEED_COPY } from "@/components/settings/live-feed-card";
-import { MTF_INTEREST_WHOLE_LEG_NOTE } from "@/lib/analytics/positions";
+import { interestOnWholeLeg, MTF_INTEREST_WHOLE_LEG_NOTE, mtfDashReason } from "@/lib/analytics/positions";
 import { applyTicks, mergeTicks, type TickMap } from "@/lib/live/apply-ticks";
 import { connectPromptDismissal, connectPromptKey, showConnectPrompt } from "@/lib/live/connect-prompt";
 import { isMarketOpenIst, istParts } from "@/lib/live/market-hours";
@@ -128,6 +128,26 @@ const MTF_UNSTATED_NOTE: Record<NonNullable<DeskRow["mtf"]>["unstated"] & string
   overSold: "More sold than bought on this row — the remaining leg states no own capital.",
   sellToOpen: "Sold to open — there is no entry leg on this row to state own capital against.",
 };
+
+/**
+ * WHICH of those four sentences this row gets (D9, v4.3.0 fix wave 2O — mtf#4).
+ *
+ * The wire carries the row's SHAPE (`unstated`) and its recorded funding
+ * (`fundedP`), and the shape was read alone — so a row that is partly sold AND
+ * states no funding at all was told "the stored funding covers the whole original
+ * leg", about funding it does not have, while /risk called it "not priced" and
+ * /targets "funding not recorded". `mtfDashReason` is the one predicate behind all
+ * of them. `fundedP` is PAISE and the helper's field is rupees (invariant 1), which
+ * does not enter it: the question asked is only whether the amount is recorded.
+ */
+const mtfNoteFor = (mtf: NonNullable<DeskRow["mtf"]>): string =>
+  MTF_UNSTATED_NOTE[mtfDashReason({ isMtf: true, fundedAmount: mtf.fundedP, ownCapitalUnstated: mtf.unstated }) ?? "unpriced"];
+
+/** Does this row's accrued interest carry the Q-B caveat? The same predicate
+ *  /equity's cell and KPI read, so an unpriced row — which accrues nothing under
+ *  Q-A — is never labelled with an estimate it does not carry (D9). */
+const mtfWholeLegNote = (mtf: NonNullable<DeskRow["mtf"]>): boolean =>
+  interestOnWholeLeg({ isMtf: true, fundedAmount: mtf.fundedP, ownCapitalUnstated: mtf.unstated });
 
 const PositionChartPanel = dynamic(
   // W2's real panel. `ssr:false` because it measures its own box and reads a
@@ -1328,17 +1348,17 @@ function DetailPane({
           <Block
             title="MTF funded"
             value={fmt.money(row.mtf.fundedP)}
-            note={row.mtf.fundedP === null ? MTF_UNSTATED_NOTE[row.mtf.unstated ?? "unpriced"] : undefined}
+            note={row.mtf.fundedP === null ? mtfNoteFor(row.mtf) : undefined}
           />
           <Block
             title="Your own capital"
             value={fmt.money(row.mtf.ownCapitalP)}
-            note={row.mtf.ownCapitalP === null ? MTF_UNSTATED_NOTE[row.mtf.unstated ?? "unpriced"] : undefined}
+            note={row.mtf.ownCapitalP === null ? mtfNoteFor(row.mtf) : undefined}
           />
           <Block
             title="Interest accrued"
             value={fmt.money(row.mtf.accruedInterestP)}
-            note={row.mtf.unstated === "partlySold" || row.mtf.unstated === "overSold" ? MTF_INTEREST_WHOLE_LEG_NOTE : undefined}
+            note={mtfWholeLegNote(row.mtf) ? MTF_INTEREST_WHOLE_LEG_NOTE : undefined}
           />
         </div>
       )}

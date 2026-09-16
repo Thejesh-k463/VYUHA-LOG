@@ -60,6 +60,28 @@ describe("buildShareCard — ratio & count metrics are privacy-neutral", () => {
     const rows = buildShareCard({ ...stats, avgR: null }, { metrics: ["avgR"], privacy: "amounts" });
     expect(find(rows, "avgR").display).toBe("—");
   });
+
+  it("a book with no priced trade draws a dash for the win rate and the expectancy", () => {
+    // `winRatePct.toFixed(1)` on a null THREW, inside the client useMemo that
+    // builds the card (components/reports/share-card.tsx) — taking the whole
+    // /reports/performance client subtree and the PNG export down with it.
+    const blank = { ...stats, winRatePct: null, expectancy: null };
+    const rows = buildShareCard(blank, { metrics: ["winRate", "expectancy", "netPnl"], privacy: "amounts" });
+    expect(find(rows, "winRate").display).toBe("—");
+    expect(find(rows, "winRate").tone).toBe("neutral");
+    expect(find(rows, "expectancy").display).toBe("—");
+    expect(find(rows, "expectancy").tone).toBe("neutral");
+    // The cash metrics beside them are untouched.
+    expect(find(rows, "netPnl").display).toBe("₹1.25L");
+  });
+
+  it("…in percent mode too, rather than 0.00% of capital", () => {
+    const rows = buildShareCard(
+      { ...stats, expectancy: null },
+      { metrics: ["expectancy"], privacy: "percent", capital: 1000000 },
+    );
+    expect(find(rows, "expectancy").display).toBe("—");
+  });
 });
 
 describe("buildShareCard — privacy modes", () => {

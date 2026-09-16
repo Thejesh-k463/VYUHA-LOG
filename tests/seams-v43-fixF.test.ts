@@ -188,8 +188,9 @@ import { todayIstIso, unreadableDateMessage } from "@/lib/domain/trading-day";
  *     account read short-call/Unlimited where the card is a covered call)
  *
  * NOT proven red by a revert: F9 (b), the account PURGE. J2's own report says so
- * — the purge's `ipos` rows ride back inside `accountRows.ipos` with `trade_id`
- * intact, so its `ipoRefs` are inert; the case is a standing guard on that
+ * — the purge's `ipos` rows ride back inside `accountRows.ipos` with their
+ * `trade_id`, cleared only for a trade this restore could not bring back (D4,
+ * wave 2O), so its `ipoRefs` are inert; the case is a standing guard on that
  * branch (and on the merge re-point K1 landed in the same file), not a
  * regression pin. Its consumer half (trash.ts' re-link loop) is proven by F9 (a).
  *
@@ -679,10 +680,16 @@ describe("F1 · an MTF position paid for in full out of own capital (the editor'
     const zeroCells = mtfInterestCells(F1_ZERO);
     expect(zeroCells.length, "the report prices at least one broker").toBeGreaterThan(0);
     expect(new Set(zeroCells), "the re-pricing bills no interest on a stated 0").toEqual(new Set(["₹0"]));
-    // The same row with the amount unstated IS estimated — so the column is
-    // live, and the 0 above is an answer rather than an empty implementation.
+    // The row with the amount UNSTATED is now priced the same way (D11, wave 2O —
+    // mtf#7): this page was the last reader estimating a principal the journal
+    // never recorded, and the estimate did not stay in a cell — `compareBrokers`
+    // folds MTF interest into every broker's total, so the cheapest pick and the
+    // savings headline moved whenever margin_config moved. The column is still
+    // LIVE (the F1 fixture's stated-0 row proves the 0 above is an answer, and
+    // tests/seams-v43-fixH.test.ts H9 proves a margin edit cannot move a figure
+    // here); what it no longer does is invent the denominator.
     const unsetCells = mtfInterestCells(F1_UNSET);
-    expect(unsetCells.some((c) => c !== "₹0"), "an unstated funded amount is still estimated").toBe(true);
+    expect(unsetCells.every((c) => c === "₹0"), "an unstated funded amount is no longer estimated (D11, wave 2O)").toBe(true);
   });
 
   it("(b) /equity's own render: the tracker's position carries own capital 10,000 against a funded 0 — never a denominator the journal never recorded", () => {
@@ -1290,8 +1297,9 @@ describe("F9 · a linked, exited IPO whose holding is deleted and restored (dele
     const restored = trash.restoreTrashSnapshot(del.snapshotId!);
     expect(restored.ok, restored.message).toBe(true);
     // The envelope states the whole picture (J2): the purge's own IPO rides back
-    // inside `accountRows.ipos` with `trade_id` intact, and `ipoRefs` names it
-    // too — inert here, load-bearing for a row in another book.
+    // inside `accountRows.ipos` with its `trade_id`, cleared only for a trade this
+    // restore could not bring back (D4, wave 2O) — and `ipoRefs` names it too,
+    // inert here, load-bearing for a row in another book.
     expect(ipoRowOf("F9-PURGE").tradeId).toBe(tradeId);
     expect(await countedOnce(F9_PURGE)).toEqual(before);
   });
@@ -2606,7 +2614,9 @@ describe("F24 · a merge whose surviving copy ALREADY carries an IPO, with a sec
   // on the un-merge. An unlinked EXITED record is realised on its own figure
   // beside the survivor's equity sale — 490.25 → 972.85, two ITR rows for one
   // sale — so EVERY skipped record now rides into the envelope's
-  // `accountRows.ipos` and comes back in its OWN book on an un-merge.
+  // `accountRows.ipos` and comes back in its OWN book on an un-merge, with its
+  // `trade_id`, cleared only for a trade this restore could not bring back (D4,
+  // wave 2O).
   it("exactly one ipos row names the surviving copy; EVERY skipped record is removed with the duplicate it names — this book's and the third book's alike — and an un-merge brings both back where they were", () => {
     const targetTrade = sold(F24_TGT, "F24-IPO");
     const sourceTrade = sold(F24_SRC, "F24-IPO");
@@ -2643,7 +2653,9 @@ describe("F24 · a merge whose surviving copy ALREADY carries an IPO, with a sec
     expect(afterMerge, "…so the merged book states that sale exactly once").toBe(allBefore);
 
     // The un-merge: BOTH records ride back inside `accountRows.ipos`, in their
-    // OWN books, with `trade_id` intact (the envelope's `ipoRefs` still records
+    // OWN books, with their `trade_id` — cleared only for a trade this restore
+    // could not bring back (D4, wave 2O; both land here). The envelope's
+    // `ipoRefs` still records
     // the original pairs; the re-link loop is `isNull`-guarded, so nothing
     // lands twice).
     const restored = trash.restoreTrashSnapshot(res.snapshotId!);
@@ -3426,6 +3438,10 @@ describe("F35 · a LEGACY row converted to a ladder (lib/queries/staged.ts:690-7
           accountId: F35_ACC, broker: "angelone", bucket: "equity", segment: "eq_mtf", instrumentType: "equity", exchange: "NSE",
           symbol: `F35L${++n}`, tradingsymbol: `F35L${n}`,
           buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate, buyOrderCount: 1, isOpen: true,
+          // The row must STATE its funded principal for the ladder to bill any
+          // interest at all (D6/D7, wave 2O: no writer persists a margin-config
+          // estimate any more), or the vacuity guard below compares 0 with 0.
+          mtfFundedAmount: 15000,
         }),
       )
       .returning({ id: t.schema.trades.id })
@@ -3749,8 +3765,10 @@ describe("F39 · a merge whose dropped duplicate is named by a record in a THIRD
     const afterOther = await counted(F39_OTHER);
     expect([afterOther.ipoRealised, afterOther.ipoNames, afterOther.itrScrips], "the record went with the duplicate, so its own book states nothing").toEqual([0, [], []]);
 
-    // The un-merge replays `accountRows.ipos` verbatim: the record is back in its
-    // own book, still naming its own trade, and still counted once.
+    // The un-merge replays `accountRows.ipos` with its `trade_id`, cleared only
+    // for a trade this restore could not bring back (D4, wave 2O — this duplicate
+    // lands): the record is back in its own book, still naming its own trade, and
+    // still counted once.
     const restored = trash.restoreTrashSnapshot(res.snapshotId!);
     expect(restored.ok, restored.message).toBe(true);
     expect([ipoRowOf(foreign).accountId, ipoRowOf(foreign).tradeId], "back where it was filed, linked as it was").toEqual([F39_OTHER, sourceTrade]);

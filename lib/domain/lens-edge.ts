@@ -101,17 +101,19 @@ export interface LensTotals {
 export interface LensEdge {
   wins: number;
   losses: number;
-  /** 0..1 */
-  winRate: number;
+  /** 0..1; `null` = no closed trade in the group could be priced (Kpis' rule). */
+  winRate: number | null;
   /** `null` = no losing trade to divide by. Normalised from Infinity HERE:
    *  this value now crosses the RSC payload, where JSON silently turns
    *  Infinity into null — better to do it deliberately than trust an encoder. */
   profitFactor: number | null;
-  expectancy: number;
+  /** `null` = no priced closed trade to average over. */
+  expectancy: number | null;
   /** `null` = no R recorded on any trade in the group. */
   avgR: number | null;
-  avgWin: number;
-  avgLoss: number;
+  /** `null` = no winner / no loser to average. */
+  avgWin: number | null;
+  avgLoss: number | null;
   maxWinStreak: number;
   maxLossStreak: number;
   /** +n consecutive wins / -n consecutive losses, at the group's latest exit. */

@@ -131,6 +131,9 @@ describe("the basis rule reaches the analytics engines", () => {
     const base = {
       broker: "dhan", bucket: "equity", segment: "eq_delivery", rMultiple: null,
       isOpen: false, sellDate: "2026-07-22", buyDate: "2026-07-01", setupTag: null,
+      // REQUIRED on `AnalyticsTrade` since the wave 2O seam pass (defect 1): the
+      // real purchase below states no acquisition, the unpriced sale overrides both.
+      acquisition: null as string | null, acquisitionPrice: null as number | null,
     };
     const k = computeKpis([
       // A real loser.

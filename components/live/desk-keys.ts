@@ -6,7 +6,7 @@
  * collisions that matter without a browser.
  *
  * WHAT MUST NOT BREAK, and is asserted:
- *   Ctrl/Cmd+K          the modal command palette (`command-palette.tsx:143`)
+ *   Ctrl/Cmd+K          the modal command palette (`search-panel-keys.ts` isPaletteChord)
  *   Ctrl/Cmd+Shift+K    the search panel (`search-panel-keys.ts` isPanelToggleChord)
  * Both are answered here with `null` — the desk never sees a chorded key, so a
  * bare-letter map can never shadow an app-wide one. `isPanelToggleChord` is

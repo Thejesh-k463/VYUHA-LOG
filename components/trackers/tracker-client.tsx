@@ -13,6 +13,7 @@ import {
   fundingSide,
   interestOnWholeLeg,
   MTF_INTEREST_WHOLE_LEG_NOTE,
+  mtfFundedStated,
   ownCapitalNote,
   ownCapitalTotal,
   statesOwnCapital,
@@ -76,7 +77,19 @@ export function TrackerClient({
   // fourth line states the financing left out of them.
   const ownCap = ownCapitalTotal(positions);
   const ownCapNote = ownCapitalNote(ownCap);
-  const mtfFunded = ownCap.funded;
+  // D8 (wave 2O, mtf#2 ≡ seams#0): THE FACE STATES WHAT THE BOOK RECORDS. Wave 2N
+  // set this to `ownCap.funded` — the own-capital-STATING subset — so a book of
+  // partly sold MTF rows, each with its funding recorded, printed "MTF funded ₹0"
+  // on the headline KPI while the cells below it printed those very amounts and
+  // /targets stated their sum. A partly sold leg's funded amount IS stated (it is
+  // the whole leg, which is what Q-B keeps accruing on); only its own capital is
+  // unstatable. One helper, read here and by /targets, so they cannot disagree.
+  //
+  // RECORDED DEVIATION from D7.2's "the three money rows come from ONE set": the
+  // Broker-funded row below is this SUPERSET and says so in its own hint, while
+  // own capital and leverage keep `ownCapitalTotal`'s subset and say so in theirs.
+  // The face is never summed with `ownCap.funded` (DECISIONS 2026-09-16, wave 2O).
+  const mtfFunded = mtfFundedStated(positions);
   const mtfRowsOut = positions.filter((p) => p.isMtf && !statesOwnCapital(p));
   // Interest is stored money and is NOT subset-scoped: it is what the journal
   // has already booked on every MTF row, including the ones left out above.
@@ -291,21 +304,29 @@ export function TrackerClient({
         {variant === "equity" ? (
           <KpiCard
             label="MTF funded"
-            valueNum={mtfFunded}
+            valueNum={mtfFunded.funded}
             format="inrCompact"
-            sub={`Accrued int. ${inrCompact(mtfInterest)}`}
+            sub={
+              mtfFunded.unstated > 0
+                ? `Accrued int. ${inrCompact(mtfInterest)} · ${mtfFunded.unstated} ${mtfFunded.unstated === 1 ? "row states" : "rows state"} no funding`
+                : `Accrued int. ${inrCompact(mtfInterest)}`
+            }
             valueClassName="text-grad-gold"
             detail={{
               title: "MTF — what the broker is funding",
               summary: "Interest accrues only on the broker-funded portion, never on your own capital.",
               rows: [
-                // All three money rows read ONE set — `ownCapitalTotal`'s
-                // stating rows — so the ratio describes one book and the reader
-                // cannot compute a different leverage from the two rows above
-                // it (close-readers#2). The note rides on all three.
-                { label: "Broker-funded", value: inr(ownCap.funded, { decimals: 0 }), tone: "loss", hint: ownCapNote ?? undefined },
+                // D8 (wave 2O) — EACH ROW STATES ITS OWN SET, which is the
+                // recorded deviation from D7.2's one-set rule: "Broker-funded" is
+                // the whole book's recorded financing (the same figure as the face
+                // and as /targets), while own capital and the leverage ratio keep
+                // `ownCapitalTotal`'s stating subset, because a ratio built from
+                // two different sets describes no book. Neither figure is a
+                // superset of a number the other already counts, so nothing here
+                // is summed with anything (close-readers#2's arithmetic property).
+                { label: "Broker-funded", value: inr(mtfFunded.funded, { decimals: 0 }), tone: "loss", hint: `every MTF row that states funding — ${mtfFunded.stated} of ${mtfFunded.stated + mtfFunded.unstated}` },
                 { label: "Your own capital", value: inr(ownCap.total, { decimals: 0 }), hint: ownCapNote ?? undefined },
-                { label: "Effective leverage", value: ownCap.total > 0 ? `${((ownCap.total + ownCap.funded) / ownCap.total).toFixed(2)}×` : "—", hint: ownCapNote ?? undefined },
+                { label: "Effective leverage", value: ownCap.total > 0 ? `${((ownCap.total + ownCap.funded) / ownCap.total).toFixed(2)}×` : "—", hint: `over the ${ownCap.stating} ${ownCap.stating === 1 ? "row" : "rows"} that state own capital: ${inr(ownCap.funded, { decimals: 0 })} funded + ${inr(ownCap.total, { decimals: 0 })} own${ownCapNote ? ` · ${ownCapNote}` : ""}` },
                 // …and what those three left out is stated, never estimated.
                 ...(mtfRowsOut.length > 0
                   ? [{

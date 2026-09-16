@@ -792,6 +792,14 @@ export const OPS: BookOp[] = [
 export const LOOKALIKE_IPO_NAME = "Second G2 Sequence Issue Limited";
 /** The stray record's name — ANOTHER issue entirely (re-check counted-once#0). */
 export const STRAY_IPO_NAME = "Bee Industries Limited";
+/** D4 (wave 2O): a record in B naming a holding in A — the CROSS-BOOK link. */
+export const CROSS_BOOK_IPO_NAME = "G2 Cross Book Issue Limited";
+/** D4: the record the SURVIVING copy of the duplicate carries. */
+export const SURVIVOR_IPO_NAME = "G2 Survivor Issue Limited";
+/** D4: the record naming the copy a merge DROPS, filed in the target's book. */
+export const FOREIGN_IPO_NAME = "G2 Foreign Issue Limited";
+/** D4: the symbol of the trade that takes the dropped duplicate's freed id. */
+export const TAKEN_ID_SYMBOL = "GTAKEN";
 
 /**
  * FIXTURE VARIANTS (G-G2-1, wave 2M) — a shape a named scenario needs, which is
@@ -879,6 +887,129 @@ export const VARIANTS: BookOp[] = [
         .returning({ id: ctx.t.schema.ipos.id })
         .get()!.id;
       record(ctx, "addStrayExitedRecordOfAnotherScrip", "applied", `a stray exited record #${id} of another issue, same allotment facts`);
+    },
+  },
+  {
+    // D4 (fix wave 2O, re-check finding identity#0) — THE CROSS-BOOK LINK.
+    //
+    // An `ipos` row in B naming a holding in A: the shape lib/queries/ipos.ts
+    // :163-177 describes, which a Trash restore or an earlier merge leaves
+    // behind. A PURGE of B snapshots this row into `accountRows.ipos` with its
+    // `trade_id` intact, and A's holding is not in that envelope — so the replay
+    // must keep the reference VERBATIM. Gating it on `landed` alone would cut a
+    // live link, and an unlinked exited record beside the holding it names is
+    // that sale counted twice.
+    name: "addCrossBookIpoRecordInB",
+    needs: "A1's copy of the duplicate round trip is in the journal",
+    drives: "an /ipos record in B whose holding is in A — the raw row the fixture writes",
+    run: async (_db, ctx) => {
+      const holding = tradeById(ctx, ctx.ids.dupA);
+      if (!holding) return record(ctx, "addCrossBookIpoRecordInB", "skipped", "A1's duplicate is not in the journal");
+      const id = ctx.t.db
+        .insert(ctx.t.schema.ipos)
+        .values({
+          accountId: ctx.ids.acctB,
+          name: CROSS_BOOK_IPO_NAME,
+          broker: "zerodha",
+          exchange: "NSE",
+          appliedPrice: 100,
+          lotSize: QTY.dup,
+          lotsApplied: 1,
+          allotted: true,
+          allottedQty: QTY.dup,
+          listingPrice: 130,
+          exitPrice: 150,
+          appliedDate: "2026-02-10",
+          allotmentDate: "2026-02-20",
+          listingDate: "2026-02-24",
+          exitDate: "2026-03-02",
+          tradeId: holding.id,
+        })
+        .returning({ id: ctx.t.schema.ipos.id })
+        .get()!.id;
+      record(ctx, "addCrossBookIpoRecordInB", "applied", `record #${id} in account ${ctx.ids.acctB} names holding #${holding.id} in account ${ctx.ids.acctA}`);
+    },
+  },
+  {
+    // D4 — the pair that makes a merge SKIP a record rather than re-point it
+    // (L7: one trade takes one IPO record). Both are filed in the TARGET's book:
+    // the survivor's own record, and the record naming the copy the merge drops.
+    // The second is the one D5 deletes into `accountRows.ipos`.
+    name: "addDuplicateIpoRecordsInA",
+    needs: "both copies of the duplicate round trip are in the journal",
+    drives: "two /ipos records in A, one per copy of the duplicate — the raw rows the fixture writes",
+    run: async (_db, ctx) => {
+      const survivor = tradeById(ctx, ctx.ids.dupA);
+      const dropped = tradeById(ctx, ctx.ids.dupB);
+      if (!survivor || !dropped) return record(ctx, "addDuplicateIpoRecordsInA", "skipped", "one copy of the duplicate is gone");
+      const insert = (name: string, tradeId: number) =>
+        ctx.t.db
+          .insert(ctx.t.schema.ipos)
+          .values({
+            accountId: ctx.ids.acctA,
+            name,
+            broker: "zerodha",
+            exchange: "NSE",
+            appliedPrice: 100,
+            lotSize: QTY.dup,
+            lotsApplied: 1,
+            allotted: true,
+            allottedQty: QTY.dup,
+            listingPrice: 130,
+            exitPrice: 150,
+            appliedDate: "2026-02-10",
+            allotmentDate: "2026-02-20",
+            listingDate: "2026-02-24",
+            exitDate: "2026-03-02",
+            tradeId,
+          })
+          .returning({ id: ctx.t.schema.ipos.id })
+          .get()!.id;
+      const own = insert(SURVIVOR_IPO_NAME, survivor.id);
+      const foreign = insert(FOREIGN_IPO_NAME, dropped.id);
+      record(ctx, "addDuplicateIpoRecordsInA", "applied", `#${own} names the survivor #${survivor.id}, #${foreign} names the dropped copy #${dropped.id}`);
+    },
+  },
+  {
+    // D4 — the id the dropped duplicate held, taken by another closed trade.
+    //
+    // `trades.id` is AUTOINCREMENT, so an ordinary re-import never hands a freed
+    // rowid back: the field shape is a snapshot restored against a database whose
+    // rowids came from elsewhere (a backup from another machine, the desktop
+    // template swap). Written explicitly, and FLAT (bought and sold), so it moves
+    // no symbol's net quantity.
+    name: "takeTheDroppedDuplicatesId",
+    needs: "B's copy of the duplicate has left the journal",
+    drives: "a raw INSERT with an explicit id — the state a restore then meets",
+    run: async (_db, ctx) => {
+      if (tradeById(ctx, ctx.ids.dupB)) return record(ctx, "takeTheDroppedDuplicatesId", "skipped", "that id is still B's duplicate");
+      ctx.t.db
+        .insert(ctx.t.schema.trades)
+        .values(
+          tradeRow({
+            id: ctx.ids.dupB,
+            accountId: ctx.ids.acctA,
+            broker: "zerodha",
+            bucket: "equity",
+            segment: "eq_delivery",
+            symbol: TAKEN_ID_SYMBOL,
+            tradingsymbol: TAKEN_ID_SYMBOL,
+            buyQty: QTY.dup,
+            avgBuyPrice: 100,
+            buyValue: QTY.dup * 100,
+            buyDate: "2026-02-20",
+            sellQty: QTY.dup,
+            avgSellPrice: 150,
+            sellValue: QTY.dup * 150,
+            sellDate: "2026-03-02",
+            grossPnl: QTY.dup * 50,
+            chargesTotal: QTY.dup * 50 - DUP_NET,
+            netPnl: DUP_NET,
+            isOpen: false,
+          }),
+        )
+        .run();
+      record(ctx, "takeTheDroppedDuplicatesId", "applied", `#${ctx.ids.dupB} is now ${TAKEN_ID_SYMBOL} in account ${ctx.ids.acctA}`);
     },
   },
   {

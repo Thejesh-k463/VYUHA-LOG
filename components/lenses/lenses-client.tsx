@@ -358,8 +358,11 @@ function GroupList({
                 meaning CANNOT be computed from your data (invariant 6); and
                 the lock chip meaning computed, but not yours yet. A locked
                 value must never look like a zero or like missing data. */}
+            {/* `measurable` covers "nothing closed"; a closed book whose every
+                trade is unpriced has closedCount > 0 and a NULL rate, and pct()
+                is what draws that dash. */}
             <EdgeCell edge={edge} measurable={totals.closedCount > 0}
-              render={(e) => `${(e.winRate * 100).toFixed(0)}%`} />
+              render={(e) => pct(e.winRate == null ? null : e.winRate * 100, 0)} />
             <EdgeCell edge={edge} measurable={totals.closedCount > 0}
               render={(e) => (e.profitFactor == null ? "—" : num(e.profitFactor))} />
             <EdgeCell edge={edge} measurable={totals.closedCount > 0}
@@ -553,7 +556,7 @@ function GroupDetail({
             breakdown is the Pro figure. */}
         {edge === null ? (
           <KpiCard label="Win rate" value="Pro" sub="locked — see pricing" />
-        ) : totals.closedCount > 0 ? (
+        ) : totals.closedCount > 0 && edge.winRate != null ? (
           <KpiCard
             label="Win rate"
             valueNum={edge.winRate * 100}
@@ -577,11 +580,14 @@ function GroupDetail({
             }}
           />
         ) : (
-          <KpiCard label="Win rate" value="—" sub="nothing closed yet" />
+          // The card is guarded WHOLE rather than passing `valueNum={x ?? undefined}`:
+          // kpi-card branches on `valueNum !== undefined` and falls through to
+          // quietCurrency(undefined), which renders an EMPTY card — not a dash.
+          <KpiCard label="Win rate" value="—" sub={totals.closedCount > 0 ? "no priced closed trade yet" : "nothing closed yet"} />
         )}
         {edge === null ? (
           <KpiCard label="Expectancy" value="Pro" sub="locked — see pricing" />
-        ) : totals.closedCount > 0 ? (
+        ) : totals.closedCount > 0 && edge.expectancy != null ? (
           <KpiCard
             label="Expectancy"
             valueNum={edge.expectancy}
@@ -597,14 +603,19 @@ function GroupDetail({
                 { label: "Average loss", value: edge.losses > 0 ? inr(edge.avgLoss, { decimals: 0 }) : "—", tone: "loss" },
                 {
                   label: "Win / loss size ratio",
-                  value: edge.avgLoss !== 0 ? `${Math.abs(edge.avgWin / edge.avgLoss).toFixed(2)}×` : "—",
+                  // Both sides guarded: `null !== 0` is TRUE, and Math.abs(null / null)
+                  // printed "NaN×" on a group with no loser.
+                  value:
+                    edge.avgWin != null && edge.avgLoss != null && edge.avgLoss !== 0
+                      ? `${Math.abs(edge.avgWin / edge.avgLoss).toFixed(2)}×`
+                      : "—",
                   hint: "how many losses one win pays for",
                 },
               ],
             }}
           />
         ) : (
-          <KpiCard label="Expectancy" value="—" sub="nothing closed yet" />
+          <KpiCard label="Expectancy" value="—" sub={totals.closedCount > 0 ? "no priced closed trade yet" : "nothing closed yet"} />
         )}
       </section>
 

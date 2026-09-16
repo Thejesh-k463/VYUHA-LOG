@@ -12,7 +12,7 @@ import {
   resolvePosition,
   serialisePanelState,
 } from "@/components/system/use-panel-drag";
-import { frameFor, isPanelToggleChord } from "@/components/system/search-panel-keys";
+import { frameFor, isPaletteChord, isPanelToggleChord } from "@/components/system/search-panel-keys";
 
 /**
  * The floating search panel (v3.9 Search v2) — the PURE half.
@@ -33,6 +33,7 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "ut
 const PANEL = "components/system/search-panel.tsx";
 const DRAG = "components/system/use-panel-drag.ts";
 const LAYOUT = "app/layout.tsx";
+const PALETTE = "components/system/command-palette.tsx";
 
 describe("the stored envelope", () => {
   it("is a versioned vyuha- key, and round-trips", () => {
@@ -121,6 +122,55 @@ describe("the toggle chord", () => {
   it("ignores every other key and the bare modifiers", () => {
     expect(chord({ ctrlKey: true, shiftKey: true, key: "j" })).toBe(false);
     expect(chord({ shiftKey: true })).toBe(false);
+  });
+});
+
+describe("the modal palette's chord is the panel's mirror image", () => {
+  const chord = (o: Partial<Parameters<typeof isPaletteChord>[0]>) =>
+    isPaletteChord({ ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, key: "k", ...o });
+
+  it("fires on Ctrl+K and Cmd+K, whatever the case of the key", () => {
+    expect(chord({ ctrlKey: true })).toBe(true);
+    expect(chord({ metaKey: true, key: "K" })).toBe(true);
+  });
+
+  it("does NOT fire on Ctrl/Cmd+Shift+K — that chord is the search panel's", () => {
+    // Ctrl+Shift+K used to open BOTH surfaces at once: the panel toggled and the
+    // modal palette opened over it, because the palette tested no shiftKey.
+    expect(chord({ ctrlKey: true, shiftKey: true })).toBe(false);
+    expect(chord({ metaKey: true, shiftKey: true, key: "K" })).toBe(false);
+  });
+
+  it("does NOT fire when Alt is held: Ctrl+Alt is AltGr, and AltGr+K types ₹", () => {
+    expect(chord({ ctrlKey: true, altKey: true })).toBe(false);
+    expect(chord({ altKey: true })).toBe(false);
+  });
+
+  it("ignores every other key and the bare modifiers", () => {
+    expect(chord({ ctrlKey: true, key: "j" })).toBe(false);
+    expect(chord({})).toBe(false);
+  });
+
+  it("is mutually exclusive with the panel's chord — every chord owns at most ONE surface", () => {
+    // The whole point of one shared module: no keystroke can reach two handlers.
+    for (const base of [{ ctrlKey: true }, { metaKey: true }] as const) {
+      for (const extra of [{}, { shiftKey: true }, { altKey: true }, { shiftKey: true, altKey: true }] as const) {
+        for (const key of ["k", "K", "j"]) {
+          const e = { ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...base, ...extra, key };
+          const both = [isPaletteChord(e), isPanelToggleChord(e)].filter(Boolean).length;
+          expect(both, JSON.stringify(e)).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+  });
+
+  it("the palette uses THAT predicate, not a second un-guarded copy", () => {
+    const src = read(PALETTE);
+    expect(src, "Ctrl+K opens the palette through the shared predicate").toContain("isPaletteChord(e)");
+    expect(src, "no hand-rolled ctrl/meta + key test may survive beside it").not.toMatch(/e\.ctrlKey \|\| e\.metaKey\) && e\.key/);
+    // Ctrl+K twice still closes it: the predicate swap must not turn the
+    // toggle into an open-only chord.
+    expect(src, "Ctrl+K toggles").toContain("setOpen((o) => !o)");
   });
 });
 

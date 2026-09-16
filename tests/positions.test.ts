@@ -3,6 +3,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   deriveOpenPositions,
+  interestOnWholeLeg,
+  mtfDashReason,
+  mtfFundedStated,
   ownCapitalNote,
   ownCapitalTotal,
   statesOwnCapital,
@@ -417,16 +420,145 @@ describe("L2 [0] — the tracker reads the shared predicate, not its own reduce"
   });
 
   it("the note travels with the total wherever it is rendered", () => {
-    // The const, the four money rows that render a figure derived from it
-    // (Own capital in MTF, Broker-funded, Your own capital, Effective leverage —
-    // Broker-funded joined them in wave 2N, close-readers#2) and the line that
-    // states what those figures left out.
-    expect(lines(/ownCapNote/), "a total is rendered without saying what it left out").toBe(6);
+    // The const, the three money rows that render a figure derived from the
+    // own-capital total (Own capital in MTF, Your own capital, Effective leverage)
+    // and the line that states what those figures left out.
+    //
+    // PIN MOVED, deliberately (D8, wave 2O — mtf#2 ≡ seams#0): was 6, when
+    // "Broker-funded" was also `ownCap.funded` and carried this note. It is now
+    // `mtfFundedStated` — every MTF row that states funding, the same figure as
+    // the card face and /targets — and it states THAT set in its own hint, because
+    // "own capital not stated for …" describes a different set from the one the
+    // row leaves out. The recorded deviation from D7.2's one-set rule.
+    expect(lines(/ownCapNote/), "a total is rendered without saying what it left out").toBe(5);
     expect(src).toContain("ownCapitalNote(ownCap)");
+    // …and the Broker-funded row names its own set instead.
+    expect(src).toMatch(/every MTF row that states funding/);
   });
 
   it("the per-row cell reads the same predicate the total does", () => {
     expect(src).toContain("statesOwnCapital");
     expect(src).toMatch(/accessorKey: "ownCapital"[\s\S]{0,200}?statesOwnCapital/);
+  });
+});
+
+/**
+ * D8 / D9 (v4.3.0 fix wave 2O — mtf#2 ≡ seams#0 medium, mtf#4 low).
+ *
+ * D8: wave 2N repointed the /equity "MTF funded" KPI CARD FACE at
+ * `ownCapitalTotal`'s stating subset (`const mtfFunded = ownCap.funded`), and that
+ * subset excludes every row which states no OWN capital. So a book of two partly
+ * sold MTF rows, each recording ₹16,000 of broker funding, read "MTF funded ₹0" on
+ * its headline KPI while the two cells below it printed 16,000 and /targets stated
+ * ₹32,000 for the same rows. A partly sold leg's FUNDED amount IS stated — it is
+ * the whole leg, which is exactly what Q-B keeps accruing on; only its own capital
+ * is unstatable. `mtfFundedStated` is that one figure, read by the face, the
+ * dialog's "Broker-funded" row and /targets.
+ *
+ * D9: the reason ladder tests the SALE before the missing amount, so a row that is
+ * both partly sold AND unpriced reported "partlySold" — the desk printed "the
+ * stored funding covers the whole original leg" beside a dash for a row with no
+ * stored funding, /equity's note said "1 partly sold", the "no funded amount yet"
+ * hint never appeared, and /targets and /risk called the same row "not recorded".
+ * `mtfDashReason` is the reason the USER CAN ACT ON; `ownCapitalUnstated` keeps its
+ * shape meaning (no ladder reorder, no wire change).
+ */
+describe("D8 — `mtfFundedStated` is the funding the book records, not the own-capital subset", () => {
+  const mtfRow = (over: Partial<Trade>) =>
+    trade({
+      segment: "eq_mtf", instrumentType: "equity", bucket: "equity", symbol: "X", tradingsymbol: "X",
+      buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-20", mtfFundedAmount: 16000,
+      ...over,
+    });
+  const MTM = new Map([["X", 210]]);
+  const book = (...over: Partial<Trade>[]) => deriveOpenPositions(over.map(mtfRow), MTM, "2026-09-19");
+
+  it("two partly sold rows stating 16,000 each: funded 32,000 / unstated 0, where ownCapitalTotal states 0", () => {
+    const ps = book({ id: 1, sellQty: 40, avgSellPrice: 210 }, { id: 2, sellQty: 40, avgSellPrice: 210 });
+    // The subset the face used to read: nothing, because neither row states own capital.
+    expect(ownCapitalTotal(ps).funded, "the own-capital subset really is empty").toBe(0);
+    // THE assertion (on revert: 0 — a headline KPI of ₹0 beside two cells of 16,000).
+    expect(mtfFundedStated(ps)).toEqual({ funded: 32000, stated: 2, unstated: 0 });
+  });
+
+  it("an unpriced row beside them is COUNTED, never filled in; a stated 0 states its 0", () => {
+    const withUnpriced = book(
+      { id: 1, sellQty: 40, avgSellPrice: 210 },
+      { id: 2, sellQty: 40, avgSellPrice: 210 },
+      { id: 3, mtfFundedAmount: null },
+    );
+    expect(mtfFundedStated(withUnpriced)).toEqual({ funded: 32000, stated: 2, unstated: 1 });
+    // Every row unpriced is a TRUE ₹0 with the count beside it, not an estimate.
+    expect(mtfFundedStated(book({ id: 1, mtfFundedAmount: null }, { id: 2, mtfFundedAmount: null }))).toEqual({ funded: 0, stated: 0, unstated: 2 });
+    // A stated 0 (paid for in full) is a statement: inside the total, and counted
+    // as a row that states its funding (V3/X2).
+    expect(mtfFundedStated(book({ id: 1, mtfFundedAmount: 0 }))).toEqual({ funded: 0, stated: 1, unstated: 0 });
+    // A non-MTF row is in neither figure.
+    expect(mtfFundedStated(book({ id: 1, segment: "eq_delivery" }))).toEqual({ funded: 0, stated: 0, unstated: 0 });
+  });
+
+  it("an over-sold and a sell-to-open row state their funding too — only a null is unstated", () => {
+    const ps = book(
+      { id: 1, sellQty: 140, avgSellPrice: 200 }, //                                  over-sold, stated
+      { id: 2, buyQty: 0, sellQty: 100, avgSellPrice: 200, mtfFundedAmount: null }, // sell-to-open, unpriced
+    );
+    expect(mtfFundedStated(ps)).toEqual({ funded: 16000, stated: 1, unstated: 1 });
+  });
+
+  it("the /equity card FACE no longer reads the own-capital subset (source pin)", () => {
+    const text = fs.readFileSync(path.join(process.cwd(), "components/trackers/tracker-client.tsx"), "utf8");
+    // THE assertion (on revert: `const mtfFunded = ownCap.funded;` — the face and
+    // the dialog's Broker-funded row both read the subset, and nothing on the face
+    // disclosed anything).
+    expect(text, "the face is back on the own-capital subset").not.toMatch(/mtfFunded\s*=\s*ownCap\.funded/);
+    expect(text).toContain("mtfFundedStated(positions)");
+    // …and the face's own value is the helper's, never summed with ownCap.funded.
+    expect(text).toMatch(/valueNum=\{mtfFunded\.funded\}/);
+  });
+});
+
+describe("D9 — an unrecorded funded amount is the reason every surface gives", () => {
+  const mtfRow = (over: Partial<Trade>) =>
+    trade({
+      segment: "eq_mtf", instrumentType: "equity", bucket: "equity", symbol: "X", tradingsymbol: "X",
+      buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-20", mtfFundedAmount: 16000,
+      mtfInterest: 276,
+      ...over,
+    });
+  const one = (over: Partial<Trade>) => deriveOpenPositions([mtfRow(over)], new Map([["X", 210]]), "2026-09-19")[0];
+
+  it("partly sold AND unpriced: the reason is 'unpriced' on every reader, and it carries no Q-B caveat", () => {
+    const p = one({ sellQty: 40, avgSellPrice: 210, mtfFundedAmount: null });
+    // The SHAPE is unchanged — no ladder reorder, no wire change (the desk ships
+    // `unstated` verbatim).
+    expect(p.ownCapitalUnstated, "the shape reason is untouched").toBe("partlySold");
+    // THE assertion (on revert: 'partlySold' — three screens, two reasons, and the
+    // one remedy the user has is the one nothing named).
+    expect(mtfDashReason(p)).toBe("unpriced");
+    expect(ownCapitalTotal([p]).unstatedWhy).toEqual({ partlySold: 0, overSold: 0, sellToOpen: 0, unpriced: 1 });
+    expect(ownCapitalNote(ownCapitalTotal([p]))).toBe("own capital not stated for 1 unpriced MTF row");
+    // Q-A: such a row accrues nothing, so the whole-leg caveat is not its caveat.
+    expect(interestOnWholeLeg(p), "no Q-B label on a row that bills nothing").toBe(false);
+  });
+
+  it("partly sold with STATED funding keeps 'partlySold' and keeps the Q-B caveat", () => {
+    const p = one({ sellQty: 40, avgSellPrice: 210 });
+    expect([p.ownCapitalUnstated, mtfDashReason(p)]).toEqual(["partlySold", "partlySold"]);
+    expect(interestOnWholeLeg(p)).toBe(true);
+    expect(ownCapitalTotal([p]).unstatedWhy.partlySold).toBe(1);
+  });
+
+  it("an over-sold row: stated keeps its shape reason and the caveat, unpriced reports 'unpriced' and loses it", () => {
+    const stated = one({ sellQty: 140, avgSellPrice: 200 });
+    expect([mtfDashReason(stated), interestOnWholeLeg(stated)]).toEqual(["overSold", true]);
+    const unpriced = one({ sellQty: 140, avgSellPrice: 200, mtfFundedAmount: null });
+    expect([unpriced.ownCapitalUnstated, mtfDashReason(unpriced), interestOnWholeLeg(unpriced)]).toEqual(["overSold", "unpriced", false]);
+  });
+
+  it("a fully held unpriced row, a stated 0 and a non-MTF row answer exactly as before", () => {
+    expect(mtfDashReason(one({ mtfFundedAmount: null }))).toBe("unpriced");
+    expect(mtfDashReason(one({ mtfFundedAmount: 0 }))).toBeNull();
+    expect(mtfDashReason(one({}))).toBeNull();
+    expect(mtfDashReason(one({ segment: "eq_delivery", sellQty: 40, avgSellPrice: 210 }))).toBeNull();
   });
 });

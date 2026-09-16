@@ -40,6 +40,7 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 let t: TempDb;
 let trash: typeof import("@/lib/trash");
 let del: typeof import("@/lib/queries/delete");
+let accDel: typeof import("@/lib/queries/account-delete");
 let capital: typeof import("@/lib/queries/capital");
 let taxItr: typeof import("@/lib/queries/tax-itr");
 let dq: typeof import("@/lib/queries/data-quality");
@@ -57,6 +58,9 @@ const ACC_BEE = 948; //   rc7 counted-once#0: a stray exited record of ANOTHER s
 const ACC_HELD = 949; //  rc7 counted-once#1: an exited record beside an OPEN holding
 const ACC_BOOK = 950; //  rc7 counted-once#1: a second unlinked holding already in the book
 const ACC_NOLINK = 951; // D1 (2N): a 4.3 delete that broke NO link states `ipoRefs: []`
+const ACC_XLINK = 952; //  D4 (2O): the purged book whose record names ANOTHER book's holding
+const ACC_XHOLD = 953; //  D4 (2O): the book that holds it
+const ACC_XLEDGER = 954; // D4 (2O): the ledger half of the same gate
 
 const TRADE_NET = 490.25; // 10 × (150 − 100) − 9.75 of charges, as the row states them
 
@@ -193,6 +197,7 @@ beforeAll(async () => {
   t = await openTempDb("trash-restore-ipo-legacy", { seed: true });
   trash = await import("@/lib/trash");
   del = await import("@/lib/queries/delete");
+  accDel = await import("@/lib/queries/account-delete");
   capital = await import("@/lib/queries/capital");
   taxItr = await import("@/lib/queries/tax-itr");
   dq = await import("@/lib/queries/data-quality");
@@ -212,6 +217,9 @@ beforeAll(async () => {
       { id: ACC_HELD, name: "legacy-ipo still held", isDefault: false },
       { id: ACC_BOOK, name: "legacy-ipo twin in the book", isDefault: false },
       { id: ACC_NOLINK, name: "legacy-ipo no link broken", isDefault: false },
+      { id: ACC_XLINK, name: "legacy-ipo cross-book record", isDefault: false },
+      { id: ACC_XHOLD, name: "legacy-ipo cross-book holding", isDefault: false },
+      { id: ACC_XLEDGER, name: "legacy-ipo ledger refs", isDefault: false },
     ])
     .run();
 }, 120_000);
@@ -609,5 +617,105 @@ describe("a second unlinked IPO holding of the same scrip, already in the book",
     expect(linkOf(rec), "two holdings reach for it: 'whichever the envelope carried' is not an answer").toBeNull();
     expect(capitalOf()).toEqual(before);
     expect([issueOf(`ipo_record_link:${staying}`) != null, issueOf(`ipo_record_link:${going}`) != null]).toEqual([true, true]);
+  });
+});
+
+/**
+ * D4 (v4.3.0 fix wave 2O, re-check finding "identity#0") — THE HALF THAT SAYS
+ * WHY THE GATE KEYS ON THE ENVELOPE AND NOT ON `landed`.
+ *
+ * A PURGE snapshots every `ipos` row of the book (`account-delete.ts:859`),
+ * including one whose `trade_id` names a holding in ANOTHER account — the
+ * cross-book shape `lib/queries/ipos.ts:163-177` describes and a Trash restore
+ * or an earlier merge can leave behind. That trade was never part of this
+ * delete, so it is not in `landed` and never will be: gating the replay on
+ * `landed` alone would CUT a live link, and an unlinked exited record beside the
+ * holding it actually names is the sale counted twice — ₹482.61 in the
+ * All-accounts view (probed by the design reviewer).
+ *
+ * So the gate is `envTradeIds.has(ref) && !landed.has(ref)`: only a reference
+ * THIS delete removed and this restore could not bring back is cleared. This
+ * case is green on HEAD (the replay is verbatim) and green after the fix; it goes
+ * RED the moment the gate is `!landed.has(ref)`.
+ */
+describe("D4 · a purged book's record naming ANOTHER book's holding comes back with its link intact", () => {
+  it("keeps the cross-account link verbatim, so no view counts that sale twice", () => {
+    const foreignTrade = holding(ACC_XHOLD, "XLINK");
+    const ownTrade = holding(ACC_XLINK, "XOWN", { acquisition: null, acquisitionPrice: null, acquisitionDate: null });
+    // The record is filed in the book about to be purged; the holding it names
+    // is not (invariant 8 — the two reads are deliberately different scopes).
+    const record = ipoRecord(ACC_XLINK, "XLINK", foreignTrade);
+    const views = [ACC_XLINK, ACC_XHOLD, 0];
+    // The ITR export, narrowed to the three scrips THIS case owns: the
+    // All-accounts view reads every book in this file's single temp database
+    // (AGENTS.md: one temp database per FILE), so an absolute total there would
+    // be every case's. A scrip filter is absolute about the one thing under test.
+    const MINE = ["XLINK", "XOWN", "XLINK (IPO)"];
+    const perView = () =>
+      views.map((v) => {
+        selectAccount(v);
+        return {
+          capital: capitalOf(),
+          itr: taxItr.getItrExportRows().map((r) => r.scrip).filter((s) => MINE.includes(s)).sort(),
+        };
+      });
+    const before = perView();
+    // The shape is only interesting because the record's own sale is NOT stated
+    // twice today: All accounts counts the holding and leaves the record out,
+    // while the record's own book counts the record (its holding is not in view).
+    expect(before[2].itr, "All accounts: the holding is counted, the record is not").toEqual(["XLINK", "XOWN"]);
+    expect(before[0].itr, "its own book: the record states its own exit").toEqual(["XLINK (IPO)", "XOWN"]);
+
+    selectAccount(1);
+    const res = accDel.deleteAccount({ accountId: ACC_XLINK, mode: "purge", connections: "delete" });
+    expect(res.ok, res.message).toBe(true);
+    expect(t.db.select().from(t.schema.ipos).all().some((r) => r.id === record), "the purge took its own IPO rows").toBe(false);
+    expect(tradeExists(foreignTrade), "and left the other book alone").toBe(true);
+
+    const back = trash.restoreTrashSnapshot(res.snapshotId!, "D4 probe");
+    expect([back.ok, back.restored], back.message).toEqual([true, 1]);
+    expect(tradeExists(ownTrade)).toBe(true);
+    // THE assertion: a reference this delete never touched is replayed verbatim.
+    expect(linkOf(record), "the holding it names is still in the journal").toBe(foreignTrade);
+    expect(back.message, "and nothing was cleared, so nothing is claimed to have been").not.toContain("unlinked");
+    // Under a `landed`-only gate: All accounts reads ["XLINK", "XLINK (IPO)",
+    // "XOWN"] and its `ipoRealised` gains the record's ₹482.61 — one sale, twice.
+    expect(perView(), "every view reads exactly what it read before the purge").toEqual(before);
+  });
+
+  /**
+   * The ledger half of the SAME gate — one rule for every replayed row that names
+   * a trade. `ledger_entries.ref_trade_id` is the dividend/TDS provenance link
+   * (`lib/corporate-actions-apply.ts:162`/`:188` write it; `lib/queries/ledger.ts`
+   * carries it through), and only a PURGE snapshots ledger rows today.
+   */
+  it("clears a replayed ledger entry's reference when its trade cannot come back, and keeps a foreign one", () => {
+    const own = holding(ACC_XLEDGER, "XLEDG", { acquisition: null, acquisitionPrice: null, acquisitionDate: null });
+    const foreign = holding(ACC_XHOLD, "XFOR", { acquisition: null, acquisitionPrice: null, acquisitionDate: null });
+    const entry = (refTradeId: number, note: string) =>
+      t.db
+        .insert(t.schema.ledgerEntries)
+        .values({
+          accountId: ACC_XLEDGER, date: "2025-09-20", bucket: "equity", type: "dividend",
+          amountPaise: 12_500, refTradeId, symbol: "XLEDG", note, source: "corporate_action",
+        })
+        .returning({ id: t.schema.ledgerEntries.id })
+        .get()!.id;
+    const mine = entry(own, "this book's own holding");
+    const theirs = entry(foreign, "another book's holding");
+    const refOf = (id: number) => t.db.select().from(t.schema.ledgerEntries).all().find((r) => r.id === id)!.refTradeId;
+
+    selectAccount(1);
+    const res = accDel.deleteAccount({ accountId: ACC_XLEDGER, mode: "purge", connections: "delete" });
+    expect(res.ok, res.message).toBe(true);
+    // The freed id, taken by another trade — the shape a restore against a
+    // database whose rowids came from elsewhere meets.
+    holding(ACC_XHOLD, "XTAKEN", { id: own, acquisition: null, acquisitionPrice: null, acquisitionDate: null });
+
+    const back = trash.restoreTrashSnapshot(res.snapshotId!, "D4 probe");
+    expect([back.ok, back.restored], back.message).toEqual([true, 0]);
+    expect(refOf(mine), "its trade did not come back, so it names nothing").toBeNull();
+    expect(refOf(theirs), "a reference this delete never touched is replayed verbatim").toBe(foreign);
+    expect(back.message).toContain("1 ledger entry came back without its trade reference");
   });
 });

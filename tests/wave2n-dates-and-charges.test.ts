@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { eq as eqOf } from "drizzle-orm";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 /**
@@ -349,6 +350,73 @@ describe("D4 · a save that changes no charge input changes no charge (ipo#2)", 
     expect([tradeRow(id).netPnl, tradeRow(id).importNotes]).toEqual([458.75, "dedup-alias:abc"]);
   });
 
+  /**
+   * D15 (v4.3.0 fix wave 2O, dates-charges#2, pre-existing) — AN UN-EXITED
+   * ALLOTMENT IS BILLED NOTHING.
+   *
+   * `ipoHoldingCharges` returns null for a row with no sale, so `ipoEditCharges`
+   * returned null and the save fell back to `computeCharges`, which prices the
+   * allotment as an exchange PURCHASE; and because the /ipos sync writes no charges
+   * for an OPEN holding, such a row states no charge at all — which
+   * `statesNoCharges` makes a forced re-price on ANY save. A 10 @100 allotment
+   * therefore got sttCtt 1, exchangeTxn 0.03, gst 0.01, chargesTotal 1.04 and
+   * netPnl −1.04 written the first time the user saved a NOTE on it: money the
+   * journal fabricates, against ruling row (1) (no purchase STT is due on an
+   * allotment) and invariant 6.
+   *
+   * The IPO model prices an un-exited allotment at NOTHING, so the no-sale branch
+   * returns the row's stored heads and drives the net AND the marker down the
+   * not-repriced path. The engine fallback is never reached for an
+   * allotment-derived row on any door (the preview takes the same branch, D14).
+   */
+  describe("D15 · an OPEN allotment is never billed purchase STT (dates-charges#2)", () => {
+    const openAllotment = (symbol: string, over: Record<string, unknown> = {}) =>
+      trade(symbol, {
+        acquisition: "ipo", acquisitionPrice: 100, acquisitionDate: "2026-07-15",
+        buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-07-15", isOpen: true,
+        importNotes: "dedup-alias:xyz | " + NOTE,
+        ...over,
+      });
+    const ZERO = Object.fromEntries([...HEADS.map((k) => [k, 0]), ["chargesTotal", 0]]);
+
+    it("(a) a notes-only save leaves the ten heads, the total, the net and importNotes byte-identical", () => {
+      const id = openAllotment("D15-NOTES");
+      const before = tradeRow(id);
+      expect(chargesOf(id)).toEqual(ZERO);
+
+      expect(commit.updateManualTrade(id, { notes: "journal only" }).ok).toBe(true);
+
+      const after = tradeRow(id);
+      // THE assertions (HEAD: sttCtt 1, exchangeTxn 0.03, gst 0.01,
+      // chargesTotal 1.04, netPnl -1.04, and the marker stripped).
+      expect(chargesOf(id)).toEqual(ZERO);
+      expect([after.netPnl, after.grossPnl]).toEqual([before.netPnl, before.grossPnl]);
+      expect(after.importNotes).toBe(before.importNotes);
+      expect(after.notes).toBe("journal only");
+    });
+
+    it("(b) a QUANTITY correction bills nothing either — the allotment is not a purchase on an exchange", () => {
+      const id = openAllotment("D15-QTY");
+      const before = tradeRow(id);
+
+      expect(commit.updateManualTrade(id, { buyQty: 20, avgBuyPrice: 100 }).ok).toBe(true);
+
+      const after = tradeRow(id);
+      // THE assertions (HEAD: sttCtt 2, chargesTotal 2.07, netPnl -2.07).
+      expect(chargesOf(id)).toEqual(ZERO);
+      expect([after.buyQty, after.buyValue]).toEqual([20, 2000]);
+      expect([after.netPnl, after.importNotes]).toEqual([before.netPnl, before.importNotes]);
+    });
+
+    it("(c) a NON-ipo row stating no charges is still priced on its first editor save", () => {
+      const id = trade("D15-PLAIN", { isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", grossPnl: 500 });
+      expect(commit.updateManualTrade(id, { notes: "journal only" }).ok).toBe(true);
+      // Unchanged: `statesNoCharges` still prices a manual row, or an import whose
+      // file carried no charge columns, on its first save.
+      expect(tradeRow(id).chargesTotal).toBeGreaterThan(0);
+    });
+  });
+
   it("a risk-amount-only edit keeps the charges and recomputes R from the KEPT net", () => {
     const id = trade("D4-RISK", {
       isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02",
@@ -363,5 +431,225 @@ describe("D4 · a save that changes no charge input changes no charge (ipo#2)", 
     // THE assertions: the money is the user's (F1), R follows the new risk.
     expect(chargesOf(id)).toEqual(before);
     expect([after.netPnl, after.riskAmount, after.rMultiple]).toEqual([458.75, 100, 4.59]);
+  });
+});
+
+// ===========================================================================
+// v4.3.0 fix wave 2O — B2O-DATES (D17, D20)
+// ===========================================================================
+
+/**
+ * D17 (dates-charges#4, pre-existing) — THE THIRD WRITER REFUSES A STORED DATE
+ * THAT STATES NO DAY.
+ *
+ * `updateManualTrade` computes `daysHeld` from `new Date(sellDate) − new
+ * Date(buyDate)` where each side falls back to the STORED column when the patch
+ * omits that field, with no `storedDateProblem` guard — so for an eq_mtf row
+ * storing buy_date '9999-99-99', a patch that changes a price without sending the
+ * dates took NaN into `computeCharges` and died with the
+ * `NOT NULL constraint failed: trades.charges_total_paise` D3 removed from
+ * `closePosition` (:1896) and `applyOverride` (:2625). `lib/domain/trading-day.ts`
+ * already promised "ONE implementation for the three writers" and named two.
+ */
+describe("D17 · the editor refuses a stored date that states no day (dates-charges#4)", () => {
+  const badStored = (symbol: string, over: Record<string, unknown> = {}) =>
+    trade(symbol, {
+      segment: "eq_mtf", buyDate: "9999-99-99", isOpen: false,
+      sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02",
+      mtfFundedAmount: 16000, grossPnl: 500, chargesTotal: 41.25, sttCtt: 15, netPnl: 458.75,
+      ...over,
+    });
+  const SENTENCE =
+    "This trade's stored buy date “9999-99-99” is not a real calendar day, so nothing can be priced from it. Correct the date in Edit trade first. Nothing was changed.";
+
+  it("a price-only patch is refused with the shared sentence, and nothing is written", () => {
+    const id = badStored("D17-PRICE");
+    const before = tradeRow(id);
+
+    // THE assertion (HEAD: this THROWS `NOT NULL constraint failed:
+    // trades.charges_total_paise` — a 500, not an {ok:false}).
+    expect(commit.updateManualTrade(id, { avgSellPrice: 160 })).toEqual({ ok: false, message: SENTENCE });
+    expect(tradeRow(id)).toEqual(before);
+  });
+
+  it("a patch that CLEARS the unreadable date still saves, and one that SENDS a bad value is refused as before", () => {
+    const id = badStored("D17-CLEAR");
+    // Blank means clear, as every other field in this form does — the UI's own path.
+    expect(commit.updateManualTrade(id, { buyDate: null, avgSellPrice: 160 }).ok).toBe(true);
+    expect([tradeRow(id).buyDate, tradeRow(id).avgSellPrice]).toEqual([null, 160]);
+
+    const other = badStored("D17-TYPED");
+    const res = commit.updateManualTrade(other, { buyDate: "2026-02-31" });
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("2026-02-31");
+    expect(tradeRow(other).buyDate).toBe("9999-99-99");
+  });
+
+  it("a NULL buy date is an unanswered field, not an unreadable one: it still saves at 0 days", () => {
+    const id = badStored("D17-NULL", { buyDate: null });
+    expect(commit.updateManualTrade(id, { avgSellPrice: 160 }).ok).toBe(true);
+    expect(tradeRow(id).mtfInterest).toBe(0);
+  });
+});
+
+/**
+ * D20 (the owed guard, found by B2O-MTF; the reviewer's own rule "no third writer
+ * may patch a staged parent") — after D6/D7 the ladder (`rebuildStagedTrade`) is
+ * the SINGLE writer of a staged row's priced heads (invariant 5: parent = Σ legs).
+ *
+ * `updateManualTrade` (~:2404) and `applyOverride` (~:2617) wrote them directly
+ * with no `staged` guard, while `closePosition` (~:1912), `closeStaleLot` and the
+ * /ipos route all refuse a staged row: the editor's save rewrote the parent from
+ * the flat aggregate with no knowledge of legs, and `statesNoCharges` made it fire
+ * on a notes-only save.
+ */
+describe("D20 · a staged position's charges are written only by its ladder", () => {
+  let staged: typeof import("@/lib/queries/staged");
+  beforeAll(async () => {
+    staged = await import("@/lib/queries/staged");
+  });
+
+  const ladder = (symbol: string) => {
+    const id = trade(symbol, { staged: true });
+    t.db
+      .insert(t.schema.tradeLegs)
+      .values([
+        { tradeId: id, kind: "entry", seq: 1, tradeDate: "2026-01-20", qty: 10, price: 100 },
+        { tradeId: id, kind: "entry", seq: 2, tradeDate: "2026-02-10", qty: 10, price: 120 },
+      ])
+      .run();
+    expect(staged.rebuildStagedTrade(id).ok, symbol).toBe(true);
+    return id;
+  };
+  const legTotal = (id: number) =>
+    Math.round(
+      t.db.select().from(t.schema.tradeLegs).all().filter((l) => l.tradeId === id).reduce((s, l) => s + l.chargesTotal, 0) * 100,
+    ) / 100;
+  /** The editor's own fields for a row it has not changed a number on. */
+  const untouched = (id: number) => {
+    const r = tradeRow(id);
+    return { buyQty: r.buyQty, avgBuyPrice: r.avgBuyPrice, buyDate: r.buyDate, sellQty: r.sellQty, avgSellPrice: r.avgSellPrice, sellDate: r.sellDate };
+  };
+
+  it("(a) a notes-only save stores the note, and every priced head stays the ladder's", () => {
+    const id = ladder("D20-NOTES");
+    const before = tradeRow(id);
+    const beforeCharges = chargesOf(id);
+    expect(before.chargesTotal).toBe(legTotal(id));
+    expect(before.chargesTotal).toBeGreaterThan(0);
+
+    expect(commit.updateManualTrade(id, { ...untouched(id), notes: "journal only", setupTag: "breakout" }).ok).toBe(true);
+
+    const after = tradeRow(id);
+    // THE assertions: the note landed, and not one priced head moved off the ladder.
+    expect([after.notes, after.setupTag]).toEqual(["journal only", "breakout"]);
+    expect(chargesOf(id)).toEqual(beforeCharges);
+    expect(after.chargesTotal).toBe(legTotal(id));
+    expect([after.buyQty, after.avgBuyPrice, after.buyValue, after.netPnl, after.mtfInterest]).toEqual([
+      before.buyQty, before.avgBuyPrice, before.buyValue, before.netPnl, before.mtfInterest,
+    ]);
+  });
+
+  it("(a2) a staged row that STATES no charges is priced by the ladder, never by the flat engine", () => {
+    // The reachable shape: a legacy staged row whose heads a release zeroed (Q-A's
+    // release-once write, wave 2N), or one written before the ladder priced it.
+    // `statesNoCharges` makes ANY save a forced re-price, and this writer had no
+    // knowledge of legs — so a notes-only save priced the whole position as one
+    // flat round trip and the parent stopped equalling Σ legs.
+    const id = ladder("D20-ZEROED");
+    const legs = legTotal(id);
+    t.db
+      .update(t.schema.trades)
+      .set({ chargesTotal: 0, brokerage: 0, sttCtt: 0, exchangeTxn: 0, sebi: 0, stampDuty: 0, ipft: 0, gst: 0, dpCharges: 0, mtfInterest: 0, pledgeCharges: 0, netPnl: 0 })
+      .where(eqOf(t.schema.trades.id, id))
+      .run();
+    expect(tradeRow(id).chargesTotal).toBe(0);
+
+    expect(commit.updateManualTrade(id, { ...untouched(id), notes: "journal only" }).ok).toBe(true);
+
+    // THE assertions (HEAD: the flat engine's own bill for a 20 @110 round trip,
+    // stamp duty billed once on the aggregate, against legs that state each
+    // tranche's — parent 2.2 beside legs 3.2, measured).
+    expect(tradeRow(id).chargesTotal).toBe(legs);
+    expect(tradeRow(id).chargesTotal).toBe(legTotal(id));
+    expect(tradeRow(id).notes).toBe("journal only");
+  });
+
+  /**
+   * (a3) THE SHAPE THE WAVE 2O SEAM PASS MEASURED (`wave2o-seams.md` §5 defect 2,
+   * fixH H7): a ladder whose weighted average does NOT round exactly. (a) and (a2)
+   * above are built at 10 @100 + 10 @120, whose average (110) times its quantity
+   * (20) IS the stored 2,200 — so they passed while D20's refusal was derived from a
+   * RECOMPUTED `buyValue`, and every ladder built at two prices that round unevenly
+   * was refused every save: notes, setup tag, stop, target, risk and the mark.
+   *
+   * 100 @100 + 50 @110 rolls up to `[buyQty 150, avgBuyPrice 103.33, buyValue
+   * 15500]` while `r2(150 × 103.33)` is 15,499.50. The refusal is now decided by the
+   * PATCH (`patchMovesChargeInput`, lib/domain/trade-edit.ts), and the roll-up is
+   * written back verbatim rather than re-derived.
+   */
+  it("(a3) a notes-only save lands on a ladder whose weighted average does not round exactly, and its roll-up is untouched", () => {
+    const id = trade("D20-ROUNDING", { staged: true });
+    t.db
+      .insert(t.schema.tradeLegs)
+      .values([
+        { tradeId: id, kind: "entry", seq: 1, tradeDate: "2026-01-20", qty: 100, price: 100 },
+        { tradeId: id, kind: "entry", seq: 2, tradeDate: "2026-02-10", qty: 50, price: 110 },
+      ])
+      .run();
+    expect(staged.rebuildStagedTrade(id).ok).toBe(true);
+    const before = tradeRow(id);
+    const beforeCharges = chargesOf(id);
+    // The premise of the defect, measured on the fixture itself.
+    expect(
+      [before.buyQty, before.avgBuyPrice, before.buyValue, Math.round(before.buyQty * before.avgBuyPrice * 100) / 100],
+      "the parent's roll-up is not its own rounded average × quantity",
+    ).toEqual([150, 103.33, 15500, 15499.5]);
+
+    const res = commit.updateManualTrade(id, { ...untouched(id), notes: "journal only", setupTag: "breakout" });
+
+    // THE assertions (before the fix: {ok:false} with "This is a staged position
+    // built from more than one fill…" and nothing saved, through BOTH doors).
+    expect([res.ok, res.message]).toEqual([true, "Trade updated."]);
+    const after = tradeRow(id);
+    expect([after.notes, after.setupTag]).toEqual(["journal only", "breakout"]);
+    // …and the 50 paise of rounding never reached the cost basis.
+    expect([after.buyQty, after.avgBuyPrice, after.buyValue, after.netPnl]).toEqual([
+      before.buyQty, before.avgBuyPrice, before.buyValue, before.netPnl,
+    ]);
+    expect(chargesOf(id)).toEqual(beforeCharges);
+    expect(after.chargesTotal).toBe(legTotal(id));
+
+    // The other half of D20 on the SAME row: a patch that really moves a fill is
+    // still refused, so the fix widened nothing beyond the journal fields.
+    const priced = commit.updateManualTrade(id, { ...untouched(id), avgBuyPrice: 130 });
+    expect([priced.ok, priced.message.includes("staged position built from more than one fill")]).toEqual([false, true]);
+    expect(tradeRow(id)).toEqual(after);
+  });
+
+  it("(b) a patch that moves a charge input on a staged row is refused, and nothing is written", () => {
+    const id = ladder("D20-PRICE");
+    const before = tradeRow(id);
+
+    const res = commit.updateManualTrade(id, { ...untouched(id), avgBuyPrice: 130 });
+    // THE assertions (HEAD: {ok:true} and the parent rewritten from the flat
+    // aggregate — buyValue 2600 beside legs that state 2200).
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("This is a staged position built from more than one fill");
+    expect(res.message).toContain("Nothing was changed.");
+    expect(tradeRow(id)).toEqual(before);
+    expect(before.chargesTotal).toBe(legTotal(id));
+  });
+
+  it("(c) applyOverride on a staged row is refused the same way, and writes no override row", () => {
+    const id = ladder("D20-OVERRIDE");
+    const before = tradeRow(id);
+    const overrides = () => t.db.select().from(t.schema.classificationOverrides).all().length;
+    const n = overrides();
+
+    // THE assertions (HEAD: true, the parent re-priced as a flat eq_mtf round trip).
+    expect(commit.applyOverride(id, { segment: "eq_mtf" })).toBe(false);
+    expect(tradeRow(id)).toEqual(before);
+    expect(overrides()).toBe(n);
   });
 });

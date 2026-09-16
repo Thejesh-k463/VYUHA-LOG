@@ -261,6 +261,8 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     expect(r.collisions).toEqual([
       {
         symbol: "NIFTY",
+        // D18 (wave 2O, ask#0): the index of the incoming row this blocks.
+        row: 0,
         incoming: { buyQty: 25, sellQty: 0, buyValue: 3770, sellValue: 0 },
         existing: { id: 1, buyQty: 20, sellQty: 0, sourceFile: FILE },
         kind: "earlier-snapshot",
@@ -313,7 +315,7 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     const stuck = evening({ symbol: "STUCK", tradingsymbol: "STUCK", buyQty: 20, buyValue: 2010, sellQty: 0, sellValue: 0, sellDate: null, snapshotIds: [1], snapshotOffKey: true });
     const r = detectCrossSourceDuplicates([stuck], [morning({ symbol: "STUCK", tradingsymbol: "STUCK", buyQty: 10, buyValue: 1000 })], FILE);
     // The collision itself is the one G1 built: no new field.
-    expect(r.collisions.map((c) => [c.kind, c.sameSnapshot, Object.keys(c).length])).toEqual([["partial-quantity", true, 6]]);
+    expect(r.collisions.map((c) => [c.kind, c.sameSnapshot, Object.keys(c).length])).toEqual([["partial-quantity", true, 7]]); // 7 keys since D18 (row)
     // THE assertion (the key's reasons on revert). W2I re-pinned the tail: the
     // remedy counts the stored rows, and the sentence carries the user-record
     // warning and the way back from Deleted items.
@@ -391,7 +393,7 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     // nothing is on its key and the plan names BOTH stored rows.
     const r = detectCrossSourceDuplicates([conv2({ snapshotIds: [1, 2] })], [stored2(1), stored2(2, { buyQty: 5, buyValue: 495 })], FILE);
     // The collision object is untouched: still one report per incoming row, still 6 keys.
-    expect(r.collisions.map((c) => [c.symbol, c.sameSnapshot, Object.keys(c).length])).toEqual([["TWOEX", true, 6]]);
+    expect(r.collisions.map((c) => [c.symbol, c.sameSnapshot, Object.keys(c).length])).toEqual([["TWOEX", true, 7]]); // 7 keys since D18 (row)
     // THE assertion (on revert: "… is not written over that row. … the earlier
     // row can be deleted … committing anyway keeps both rows.").
     expect(r.message).toBe(
@@ -474,10 +476,12 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
     const before = detectCrossSourceDuplicates(incoming, [old, stored2(1)], FILE);
     // THE assertions (on revert of W2L: existing.id 5 ALONE, no sameSnapshot, 5
     // keys, and only the cross-file sentence). W2N: the snapshot row is still
-    // FIRST and still 6 keys; the older cross-file row rides beside it.
+    // FIRST; the older cross-file row rides beside it. RE-PINNED by D18 (wave 2O,
+    // ask#0): 7 keys on a snapshot report and 6 on a cross-file one, the extra being
+    // `row` - the index of the incoming row the collision is about.
     expect(before.collisions.map((c) => [c.symbol, c.existing.id, c.sameSnapshot, Object.keys(c).length])).toEqual([
-      ["TWOEX", 1, true, 6],
-      ["TWOEX", 5, undefined, 5],
+      ["TWOEX", 1, true, 7],
+      ["TWOEX", 5, undefined, 6],
     ]);
     expect(before.message).toContain(M1_ONE);
     // W2N (ask#0): both blockers, both remedies, one round.

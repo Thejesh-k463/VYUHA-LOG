@@ -18,6 +18,7 @@ import { computeChargesPaise } from "@/lib/engine/charges";
 import { seedRatesMap, statutoryRatesFor, type RatesMap } from "@/lib/engine/rates";
 import type { ChargeBreakdown, ChargeRates } from "@/lib/engine/types";
 import { normalizeDate, todayIstIso } from "@/lib/domain/trading-day";
+import { storedCharges } from "@/lib/domain/trade-edit";
 import { toPaise, toRupees } from "@/lib/money";
 
 export type IpoBoard = "mainboard" | "sme";
@@ -313,8 +314,88 @@ export interface IpoHoldingChargeFacts {
  */
 export function ipoHoldingCharges(f: IpoHoldingChargeFacts, sellCharger: IpoSellCharger): ChargeBreakdown | number | null {
   if (!(f.sellQty > 0)) return null;
-  if (f.exitDate != null && !isPriceableExitDate(f.exitDate)) return null;
+  // D16 (wave 2O, dates-charges#3): the guard tests the TRIMMED value, the idiom
+  // `lib/analytics/ipo-link.ts#unreadableExitDate` already uses, so "blank means no
+  // exit date stated" is ONE rule on both sides. This narrowed from the pre-wave
+  // `!i.exitDate || isPriceableExitDate(i.exitDate)` when the pricing moved here:
+  // '' is not null and is not priceable, so a record with an EMPTY-STRING exit date
+  // read unpriced and dropped out of every realised consumer.
+  const stated = (f.exitDate ?? "").trim();
+  if (stated !== "" && !isPriceableExitDate(stated)) return null;
   return sellCharger(f.sellValue, ipoAllotmentStampBaseOn([...f.allotmentDays, f.exitDate], f.allotmentValue));
+}
+
+/**
+ * D14 / D15 (v4.3.0 fix wave 2O) — AN `acquisition: 'ipo'` HOLDING'S CHARGES, FOR
+ * THE THREE DOORS THAT PRICE ONE.
+ *
+ * Moved here from `lib/import/commit.ts#ipoEditCharges` (D4(b), wave 2N), which
+ * only the SAVE could read: the trade editor's live preview
+ * (`app/api/charges/preview`) learned the KEEP branch alone and its fall-through
+ * priced `computeCharges`, which has no IPO mode — so on any edit that MOVES a
+ * charge input the dialog showed a delivery ROUND TRIP bill including the purchase
+ * STT ruling row (1) says is not due (measured: 18.43 / net 581.57 shown beside a
+ * row storing 17.40 / 582.60) while the save stored the IPO bill
+ * (dates-charges#1). One helper, read by both doors, with the charger injected so
+ * this module stays pure (invariant 2) and no rate is resolved here (invariant 3).
+ *
+ * `mtfInterest` and `pledgeCharges` are carried VERBATIM, as the /ipos sync's
+ * KEPT_HEADS rule does: the IPO model prices neither, and a figure in those
+ * columns is money that really moved.
+ *
+ * THE NO-SALE BRANCH (D15, dates-charges#2): an un-exited allotment is priced at
+ * NOTHING by the IPO model, so it answers the row's OWN stored heads with
+ * `repriced: false` — the caller then keeps its stored net and the sync's
+ * provenance marker too. Before this, `ipoHoldingCharges` answered null for a row
+ * with no sale, the caller fell back to the engine, and because the /ipos sync
+ * writes no charges for an OPEN holding such a row states no charge at all — which
+ * `statesNoCharges` makes a forced re-price on ANY save. A 10 @100 allotment was
+ * therefore billed sttCtt 1 / chargesTotal 1.04 / netPnl −1.04 the first time the
+ * user saved a NOTE on it: money the journal fabricates (invariant 6).
+ *
+ * Null when this is not an allotment-derived holding, or when the IPO model prices
+ * nothing for a row that HAS a sale (an exit date that states no day, no rate
+ * row); the caller then falls back to the engine, or keeps what the row states.
+ */
+export interface IpoEditPricing {
+  /** The ten heads and the total the row must end up with. */
+  charges: ChargeBreakdown;
+  /**
+   * False → this save priced NOTHING: the caller keeps its stored net and every
+   * note, the marker included. True → the figures are this save's own.
+   */
+  repriced: boolean;
+}
+
+export function ipoEditCharges(
+  row: Record<string, unknown>,
+  v: { buyValue: number; sellValue: number; sellQty: number; buyDate: string | null; sellDate: string | null },
+  sellCharger: IpoSellCharger,
+): IpoEditPricing | null {
+  if (row.acquisition !== "ipo") return null;
+  const mtfInterest = Number(row.mtfInterest) || 0;
+  const pledgeCharges = Number(row.pledgeCharges) || 0;
+  // D15 — no sale, nothing to price. REJECTED: pricing the allotment's stamp duty
+  // on its own — `ipoHoldingCharges` folds the allotment stamp base INTO the exit
+  // bill, so stating it at allotment would double-count it the moment the exit is
+  // priced.
+  if (!(v.sellQty > 0)) return { charges: storedCharges(row), repriced: false };
+  const priced = ipoHoldingCharges(
+    {
+      allotmentValue: v.buyValue,
+      allotmentDays: [(row.acquisitionDate ?? null) as string | null, v.buyDate],
+      sellValue: v.sellValue,
+      sellQty: v.sellQty,
+      exitDate: v.sellDate,
+    },
+    sellCharger,
+  );
+  if (priced == null || typeof priced === "number") return null;
+  const kept = r2(mtfInterest + pledgeCharges);
+  return {
+    charges: { ...priced, mtfInterest, pledgeCharges, total: r2(priced.total + kept) },
+    repriced: true,
+  };
 }
 
 /** The allotment as `computeIpo` reads it: what was credited, at what cost. */

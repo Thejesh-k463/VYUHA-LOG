@@ -185,7 +185,12 @@ export const GROUP_RULES: InsightRule<GroupRuleInput>[] = [
     compute: ({ label, kpis }) => {
       if (kpis.closedCount < FLOOR) return null;
       // No gross, no denominator — refuse rather than divide by a fabricated one.
+      // `chargePctOfGross` is null on exactly that book (metrics.ts), so the
+      // second line is the same refusal restated for the type; both stay, because
+      // this rule refuses while /reports/edge EXCLUDES — two different answers to
+      // a 0 denominator, deliberately not unified.
       if (kpis.grossPnl === 0) return null;
+      if (kpis.chargePctOfGross == null) return null;
       if (kpis.chargePctOfGross <= CHARGE_DRAG_PCT) return null;
       const insight: Insight = {
         id: "charge-drag",
@@ -300,12 +305,15 @@ export const GROUP_RULES: InsightRule<GroupRuleInput>[] = [
 // Inputs that make every rule above fire, for tests/intelligence-contract.test.ts
 // (the integrator registers { rules: GROUP_RULES, fixtures: CONTRACT_FIXTURES }).
 
-/** Fixture members may carry the acquisition fields computeKpis reads to mark
- *  a trade unpriced; the rules themselves never look at them. */
+/** Fixture members carry the acquisition fields computeKpis reads to decide
+ *  whether a trade is priced; the rules themselves never look at them. The three
+ *  are REQUIRED on `AnalyticsTrade` since the wave 2O seam pass (defect 1: two
+ *  narrow projections omitted them and every unpriced sale counted as a win), so
+ *  every fixture member states them — `fx` defaults them to a priced purchase. */
 type FixtureMember = GroupMember & {
-  acquisition?: string | null;
-  buyValue?: number;
-  acquisitionPrice?: number | null;
+  acquisition: string | null;
+  buyValue: number;
+  acquisitionPrice: number | null;
 };
 
 let seq = 0;
@@ -328,6 +336,10 @@ function fx(netPnl: number, over: Partial<FixtureMember> = {}): FixtureMember {
     broker: "zerodha",
     segment: "equity-delivery",
     bucket: "delivery",
+    // A priced purchase, unless a fixture says otherwise (fixtureB's two sales).
+    acquisition: null,
+    acquisitionPrice: null,
+    buyValue: 100000,
     ...over,
   };
 }

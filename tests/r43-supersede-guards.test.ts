@@ -380,7 +380,12 @@ describe("W2G M1 · a position the BROKER re-classified between two same-day /po
   });
   const pullOf = (rows: DhanPositionRow[]) => dhanParsedFile(normalizeDhanPositions(rows, TODAY));
   /** The fields the existing earlier-snapshot collision carries (cross-source.ts), and nothing else. */
-  const COLLISION_FIELDS = ["detail", "existing", "incoming", "kind", "sameSnapshot", "symbol"];
+  // D18 (v4.3.0 fix wave 2O, ask#0) — SEVEN keys: `row`, the index of the incoming
+  // row a collision blocks. A DELIBERATE pin move, and the reason wave 2N rejected
+  // adding an id: the dialog keyed a card on symbol + the four incoming figures, so
+  // two DIFFERENT incoming rows of one scrip that agree on those five collapsed into
+  // ONE card while the server sentence above it read "2 rows in this file (TWOEX)".
+  const COLLISION_FIELDS = ["detail", "existing", "incoming", "kind", "row", "sameSnapshot", "symbol"];
 
   it("noon INTRADAY BUY 10, evening the same position converted to CNC and grown to 20: asked (sameSnapshot, risky, 'collision'), the preview writes nothing, and only a forced commit adds a row", () => {
     expect(commit.commitParsedFile(pullOf([position()]), DHAN_FILE, null, ACC_CONV, dhanSnap).added).toBe(1);
@@ -395,6 +400,8 @@ describe("W2G M1 · a position the BROKER re-classified between two same-day /po
     expect(pre.crossSource?.collisions).toEqual([
       {
         symbol: "CONV",
+        // D18 (wave 2O, ask#0): the index of the incoming row this blocks.
+        row: 0,
         incoming: { buyQty: 20, sellQty: 0, buyValue: 2010, sellValue: 0 },
         existing: { id: noon[0]!.id, buyQty: 10, sellQty: 0, sourceFile: DHAN_FILE },
         kind: "partial-quantity",
@@ -434,6 +441,7 @@ describe("W2G M1 · a position the BROKER re-classified between two same-day /po
     expect(pre.crossSource?.collisions).toEqual([
       {
         symbol: "CONVX",
+        row: 0,
         incoming: { buyQty: 25, sellQty: 0, buyValue: 2525, sellValue: 0 },
         existing: { id: noon!.id, buyQty: 10, sellQty: 0, sourceFile: DHAN_FILE },
         kind: "earlier-snapshot",

@@ -195,7 +195,14 @@ function syncWritesSellDate(tradeId: number, accountId: number, values: Record<s
   if (!patch?.sellDate) return false;
   const row = db.select({ isOpen: trades.isOpen, sellDate: trades.sellDate }).from(trades).where(inAccount(tradeId, accountId)).get();
   if (!row) return false; // syncLinkedTrade writes nothing to a trade that is not there
-  return row.isOpen || row.sellDate !== patch.sellDate;
+  // D13 (v4.3.0 wave 2O) — the two sides are compared as the DAYS they state, the
+  // fold `sellLegIsIpoExit` now makes. A 4.2.x row holds the same day-first string
+  // in BOTH columns ('20-02-2026'), and `linkInput` hands this patch the ISO day:
+  // byte for byte that reads as a NEW sell date, so an exit-PRICE correction that
+  // the pairing had just stopped refusing (409) was refused here instead (400),
+  // over a day the holding already carries. A REAL change of day is still a new
+  // write, and an unreadable stored value still compares to itself.
+  return row.isOpen || day(row.sellDate) !== day(patch.sellDate);
 }
 
 /**

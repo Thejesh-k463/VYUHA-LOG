@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { epochSpans } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
+import { rebuildStagedTrade } from "@/lib/queries/staged";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -32,6 +33,38 @@ export function accrueMtfInterest(today = todayIstIso()): {
   let totalAccrued = 0;
 
   for (const t of open) {
+    // D6 (OWNER RULING 2O row 1 / mtf#0, a silent wrong number) — A STAGED ROW'S
+    // CHARGES HAVE ONE WRITER: THE LADDER. This job patches the PARENT row only,
+    // so on a staged position it wrote a figure the ladder's own legs disagreed
+    // with — probed on a legacy ladder: the release took 147.20 out of the parent
+    // (71.38) and left the legs at 218.58, which is invariant 5 broken by the fix
+    // for mtf#0. And because both doors wrote, the row's stored interest
+    // alternated between the ladder's answer and this job's on every leg edit and
+    // every /equity render.
+    //
+    // So a staged row is skipped in BOTH branches and re-priced through
+    // `rebuildStagedTrade`, which writes the legs and the parent in ONE
+    // transaction: the release of a pre-4.3.0 estimate on an OPEN staged row and
+    // the daily accrual of a STATED principal are then the same idempotent call,
+    // and parent = Σ legs holds at every step. The ladder reads `asOf` from us, so
+    // one run states one day for every row.
+    //
+    // A CLOSED staged row is not selected here at all (`isOpen` above), which is
+    // exactly what the owner ruled: one priced before 4.3.0 keeps its earlier
+    // estimate, and the release notes say so.
+    if (t.staged) {
+      const res = rebuildStagedTrade(t.id, undefined, today);
+      // A ladder the domain refuses (an unreadable leg date, an over-sold fill)
+      // is left exactly as it is — `rebuildStagedTrade` writes nothing then.
+      if (!res.ok) continue;
+      const after = db.select().from(trades).where(eq(trades.id, t.id)).get();
+      const interest = after?.mtfInterest ?? t.mtfInterest;
+      if (interest !== t.mtfInterest) {
+        updated++;
+        totalAccrued += interest;
+      }
+      continue;
+    }
     if (!t.buyDate) continue;
     // D3 (v4.3.0 wave 2N, ipo#1) — the THIRD reader of a stored buy date, and the
     // only one that writes on every render. `epochSpans` does not throw on a value

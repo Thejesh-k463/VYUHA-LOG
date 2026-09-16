@@ -115,11 +115,16 @@ function classify(n: number, winRate: number, payoff: number | null): WinLossVer
 export function winLossReport(trades: WinLossTrade[]): WinLossReport {
   const kpis = computeKpis(trades);
   const n = kpis.closedCount - kpis.unpricedCount;
+  // The `!= null` halves are the SAME condition as the counts (metrics.ts states
+  // null exactly when its count is 0) — they are here so the division is typed,
+  // not to change when a payoff exists.
   const payoff =
-    kpis.wins > 0 && kpis.losses > 0 ? r4(kpis.avgWin / Math.abs(kpis.avgLoss)) : null;
+    kpis.wins > 0 && kpis.losses > 0 && kpis.avgWin != null && kpis.avgLoss != null
+      ? r4(kpis.avgWin / Math.abs(kpis.avgLoss))
+      : null;
   const winRate = wilsonInterval(kpis.wins, n);
   const payoffNeeded =
-    n > 0 && kpis.winRate > 0 ? r4((1 - kpis.winRate) / kpis.winRate) : null;
+    n > 0 && kpis.winRate != null && kpis.winRate > 0 ? r4((1 - kpis.winRate) / kpis.winRate) : null;
   const winRateNeeded = payoff != null ? r4(1 / (1 + payoff)) : null;
   return {
     kpis,
@@ -128,7 +133,8 @@ export function winLossReport(trades: WinLossTrade[]): WinLossReport {
     winRate,
     payoffNeeded,
     winRateNeeded,
-    verdict: classify(n, kpis.winRate, payoff),
+    // A null win rate means n is 0, which `classify` refuses anyway.
+    verdict: kpis.winRate == null ? null : classify(n, kpis.winRate, payoff),
   };
 }
 

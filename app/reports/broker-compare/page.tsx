@@ -9,8 +9,9 @@ import { compareBrokers, type CompareTrade } from "@/lib/analytics/broker-compar
 import { BROKERS, BROKER_LABELS } from "@/lib/domain/constants";
 import { inr } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
-import { getMtfMarginByBroker } from "@/lib/queries/margin";
-import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+// D11 (wave 2O): no margin_config read is left on this page — it estimated a
+// funded principal the journal never recorded, and that estimate reached every
+// broker total, the cheapest pick and the savings headline (mtf#7).
 import { mtfComparison } from "@/lib/analytics/mtf-compare";
 import { MtfBrokerSection } from "@/components/reports/mtf-broker-section";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
@@ -32,7 +33,6 @@ export default function BrokerComparePage() {
   const today = todayIstIso();
   const trades = getTrades();
   const ratesMap = loadRatesMap();
-  const mtfMarginByBroker = getMtfMarginByBroker();
 
   // MTF across brokers — the delivery/MTF symbols this journal actually trades.
   const mtfCmp = mtfComparison(
@@ -56,9 +56,24 @@ export default function BrokerComparePage() {
             // MTF interest equally, which would still rank them correctly but
             // report an inflated absolute cost). A stored 0 is a STATED amount
             // (bought outright, nothing financed) and re-prices as no interest
-            // on every broker — the same null-vs-0 rule the writers keep (V3/X2);
-            // only a never-set null is estimated.
-            fundedAmount: t.mtfFundedAmount ?? defaultMtfFundedAmount(t.buyValue, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT),
+            // on every broker — the same null-vs-0 rule the writers keep (V3/X2).
+            //
+            // D11 (wave 2O, mtf#7 ≡ seams#1) — AND A NULL IS NO LONGER ESTIMATED
+            // EITHER. `?? defaultMtfFundedAmount(buyValue, margin_config)` made
+            // this the last reader pricing a principal the journal never recorded,
+            // and the estimate did not stay in a cell: `compareBrokers` adds MTF
+            // interest into every broker's total, so "vs recorded", the cheapest
+            // pick and the headline "Headroom to save" all moved when the margin
+            // table moved (probed: the page's strings differ at 20% and 50%). The
+            // null reaches the engine as 0, which bills neither interest nor
+            // pledge (`lib/engine/charges.ts:106`), so every broker's column omits
+            // the SAME rows' financing and the comparison stays like-for-like. The
+            // omission is stated once below (invariant 6's other half).
+            //
+            // NOT `missing`: that means "this broker cannot price this trade", and
+            // counting it would drop the row's priceable brokerage and STT as well
+            // and blank `cheapest` / `maxSaving` for the whole report.
+            fundedAmount: t.mtfFundedAmount ?? 0,
             daysHeld: heldDays(t.buyDate, t.sellDate, today),
             pledgeScrips: 1,
           }
@@ -67,6 +82,11 @@ export default function BrokerComparePage() {
     buyDate: t.buyDate,
     sellDate: t.sellDate,
   }));
+
+  // D11 — the rows every column omits the financing of, counted for the sentence
+  // below. The same predicate the `mtf` block above applies, so the count cannot
+  // describe a different set from the one that was priced.
+  const unstatedMtf = trades.filter((t) => t.segment === "eq_mtf" && t.buyValue > 0 && t.mtfFundedAmount == null).length;
 
   // Current broker = the one carrying the most trades.
   const counts = new Map<string, number>();
@@ -197,6 +217,16 @@ export default function BrokerComparePage() {
               </CardContent>
             </Card>
 
+            {/* D11 — what no column includes, said once and never estimated
+                (invariant 6). Financing is the largest component of an MTF
+                position, so a report that silently left it out of every column
+                would read as a cheaper book than it is. */}
+            {unstatedMtf > 0 && (
+              <p className="text-[0.6875rem] text-warning">
+                {`${unstatedMtf} MTF ${unstatedMtf === 1 ? "trade states" : "trades state"} no funded amount — no financing cost is included for ${unstatedMtf === 1 ? "it" : "them"} in any column.`}{" "}
+                Record what the broker funded in the trade editor (Edit → Own capital used) and every column prices it.
+              </p>
+            )}
             <p className="text-[0.6875rem] text-muted-foreground">
               Each broker total re-prices the identical trades (turnover, quantities and order counts) on that broker&apos;s
               rate card from charge config — brokerage, DP and MTF interest are the real differentiators; STT/exchange/SEBI/stamp

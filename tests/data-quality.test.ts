@@ -10,6 +10,7 @@ import {
   ipoRecordMatchesHolding,
   ipoRecordNamesHolding,
   isPlainDuplicateCopy,
+  scoreIssues,
   uniqueIpoRelinks,
   NO_PLAIN_COPY_NOTE,
   type DuplicateConnectionGroup,
@@ -155,8 +156,11 @@ describe("data quality — warnings", () => {
   });
 
   it("asks MTF positions — and only MTF positions — for a funded principal", () => {
-    expect(find(assessDataQuality(inputs({ trades: [trade({ segment: "eq_mtf", mtfFundedAmount: null })] })), "mtf_funding")?.count).toBe(1);
-    expect(find(assessDataQuality(inputs({ trades: [trade({ segment: "eq_delivery", mtfFundedAmount: null })] })), "mtf_funding")).toBeUndefined();
+    // D10 (wave 2O, mtf#3): an OPEN row is the `mtf_funding` question; a CLOSED one
+    // has its own code and its own screen (the describe below). This case states an
+    // OPEN row, which is what it always described.
+    expect(find(assessDataQuality(inputs({ trades: [trade({ isOpen: true, closingPrice: 1, segment: "eq_mtf", mtfFundedAmount: null })] })), "mtf_funding")?.count).toBe(1);
+    expect(find(assessDataQuality(inputs({ trades: [trade({ isOpen: true, closingPrice: 1, segment: "eq_delivery", mtfFundedAmount: null })] })), "mtf_funding")).toBeUndefined();
   });
 
   it("asks options for expiry, strike and CE/PE", () => {
@@ -259,6 +263,50 @@ describe("data quality — warnings", () => {
     expect(asks[0].detail).toContain("#12 Fan Industries Limited");
     expect(asks[0].detail).toContain("#1 (AAA)");
     for (const word of ["recommend", "suggest", "should", "consider"]) expect(asks[0].detail.toLowerCase(), word).not.toContain(word);
+  });
+
+  /**
+   * D5 (v4.3.0 fix wave 2O, re-check finding "identity#1") — the grouped issue
+   * BADGES the holdings it names.
+   *
+   * `count: 1` is deliberate and stays: `scoreIssues` is `min(30, count ×
+   * weight)`, so `count: pairs.length` would cost exactly what six separate
+   * issues cost and restore the floor D1.4 removed (DECISIONS 2N: "six identical
+   * warnings… floored the completeness score at 22"). What the page renders is a
+   * separate fact, so it is a separate field: `affectedCount`, the number of
+   * holdings the detail names. Every other `add()` already passes the affected
+   * number as `count`, which is why the badge read "1" beside a sentence about
+   * five holdings.
+   */
+  it("D5 · badges the holdings the grouped issue names, while its score cost stays ONE warning", () => {
+    const held = (id: number, symbol: string) =>
+      trade({ id, acquisition: "ipo", acquisitionPrice: 100, accountId: 7, symbol, tradingsymbol: symbol, buyQty: 10 });
+    const unmatched = ["AAA", "BBB", "CCC", "DDD", "EEE"].map((s, k) => held(k + 1, s));
+    const paired = held(6, "PAIRED");
+    const stray: IpoRecordFacts = { id: 12, accountId: 7, name: "Fan Industries Limited", allottedQty: 25, allotted: true, exitPrice: 150 };
+    const itsOwn: IpoRecordFacts = { id: 13, accountId: 7, name: "PAIRED", allottedQty: 10, allotted: true, exitPrice: 150 };
+    const report = assessDataQuality(
+      inputs({
+        trades: [...unmatched, paired],
+        knownSymbols: new Set(["AAA", "BBB", "CCC", "DDD", "EEE", "PAIRED"]),
+        unlinkedIpoRecords: [stray, itsOwn],
+      }),
+    );
+
+    const grouped = find(report, "ipo_record_link:account:7")!;
+    expect(grouped.detail, "the detail names five holdings…").toContain("5 holdings are recorded as IPO allotments");
+    // …so the badge says five. On HEAD: affectedCount undefined, badge "1".
+    expect([grouped.count, grouped.affectedCount, grouped.ids!.length]).toEqual([1, 5, 5]);
+    // A per-holding issue is one holding, and states no second number.
+    const per = find(report, "ipo_record_link:6")!;
+    expect([per.count, per.affectedCount]).toEqual([1, undefined]);
+
+    // The SCORE is pinned over the page's own superset (app/data-quality/page.tsx:24-25
+    // re-scores `report.issues` plus the cross-account facts), because that is the
+    // number the user sees: 30 (ipo_link, capped) + 6 + 6 + 12 + 24.
+    const pageIssues = [...report.issues, ...crossAccountIssues({ duplicateConnections: [connGroup()], duplicateTradeGroups: [tradeGroup()] })];
+    expect(scoreIssues(pageIssues), "one warning's worth, before and after the fix").toBe(22);
+    expect(pageIssues.map((x) => x.affectedCount ?? x.count), "what the badges read").toEqual([6, 1, 5, 2, 2]);
   });
 
   it("passes through externally-counted gaps", () => {
@@ -574,7 +622,10 @@ describe("data quality — instrument master", () => {
 describe("data quality — the score", () => {
   it("weights critical above warning above info for the same count", () => {
     const critical = assessDataQuality(inputs({ trades: [trade({ acquisition: "unknown" })] })).score;
-    const warning = assessDataQuality(inputs({ trades: [trade({ segment: "eq_mtf" })] })).score;
+    // An OPEN unpriced MTF row is the WARNING (`mtf_funding`); since D10 (wave 2O)
+    // a CLOSED one is the INFO `mtf_funding_closed`, which is what the third line
+    // below measures, so this fixture has to state which it is.
+    const warning = assessDataQuality(inputs({ trades: [trade({ isOpen: true, closingPrice: 1, segment: "eq_mtf" })] })).score;
     const info = assessDataQuality(inputs({ staleMtmCount: 1 })).score;
     expect(critical).toBeLessThan(warning);
     expect(warning).toBeLessThan(info);
@@ -1198,6 +1249,21 @@ describe("what a cross-account duplicate group SAYS it is", () => {
 
 /* ── the screen, pinned on its source (vitest has no DOM here) ───────────── */
 
+/**
+ * D5 (fix wave 2O, identity#1) — the page's badge. This suite has no jsdom, so
+ * the RENDER itself stays unpinned (recorded in the builder's report); what is
+ * pinned is that the Badge reads the affected number where an issue states one
+ * and falls back to `count` for the twenty issues that do not.
+ */
+describe("the Data Quality page's issue badge", () => {
+  const src = readFileSync(path.join(process.cwd(), "app", "data-quality", "page.tsx"), "utf8");
+
+  it("renders `affectedCount ?? count`, never `count` alone", () => {
+    expect(src).toContain("{issue.affectedCount ?? issue.count}");
+    expect(src).not.toMatch(/<Badge variant="outline">\{issue\.count\}<\/Badge>/);
+  });
+});
+
 describe("the DuplicateFix card", () => {
   const src = readFileSync(path.join(process.cwd(), "components", "quality", "duplicate-fix.tsx"), "utf8");
 
@@ -1254,5 +1320,70 @@ describe("the DuplicateFix card", () => {
     expect(code).toMatch(/const openerRef = React\.useRef<HTMLButtonElement \| null>\(null\);/);
     expect(code).toMatch(/openerRef\.current = e\.currentTarget;\s*setTarget\(/);
     expect(code).toMatch(/onCloseAutoFocus=\{\(e\) => \{\s*e\.preventDefault\(\);\s*openerRef\.current\?\.focus\(\);/);
+  });
+});
+
+/**
+ * D10 (v4.3.0 fix wave 2O — mtf#3) — A CLOSED MTF ROW WITH NO RECORDED FUNDING
+ * GETS ITS OWN QUESTION, ON A SCREEN IT CAN ACTUALLY APPEAR ON.
+ *
+ * Q-A (wave 2N) makes `closePosition` keep the null, so every closed unpriced MTF
+ * trade now sits in this issue for ever — and `mtf_funding` had no `isOpen` clause,
+ * a detail naming three OPEN-position surfaces ("own capital, leverage and the
+ * margin check leave the row out until it is recorded") and an href of
+ * `/equity?funding=mtf`, a tracker that lists OPEN positions only. Probed: an open
+ * eq_mtf row closed with `closePosition(id, 110, '2026-08-15')` reads
+ * [isOpen false, funded null] and raised that issue with that href.
+ *
+ * The owner's decision (a): the row STAYS listed — a net P&L the journal knows is
+ * stated too high would otherwise go unsaid (invariant 6's other half) — under its
+ * own code, with copy that names the cost and an href that lists the rows.
+ * `severity: "info"`, because splitting one capped issue into two raises the
+ * penalty ceiling from 30 to 60 and would re-floor the score exactly as six
+ * warnings did in wave 2L.
+ */
+describe("D10 — a closed MTF row's unrecorded funding is its own INFO item, with its own screen", () => {
+  const openUnpriced = (id: number) => trade({ id, isOpen: true, closingPrice: 1, segment: "eq_mtf", mtfFundedAmount: null });
+  const closedUnpriced = (id: number) => trade({ id, isOpen: false, segment: "eq_mtf", mtfFundedAmount: null });
+
+  it("an OPEN row keeps today's code, copy and /equity href", () => {
+    const r = assessDataQuality(inputs({ trades: [openUnpriced(1)] }));
+    const issue = find(r, "mtf_funding")!;
+    expect([issue.severity, issue.count, issue.href]).toEqual(["warning", 1, "/equity?funding=mtf"]);
+    expect(issue.detail).toContain("the margin check leave the row out until it is recorded");
+    expect(find(r, "mtf_funding_closed"), "an open row raises only the open question").toBeUndefined();
+  });
+
+  it("a CLOSED row raises the new code, says what it costs, and links to where the row IS", () => {
+    const r = assessDataQuality(inputs({ trades: [closedUnpriced(1)] }));
+    // THE assertion (on revert: `mtf_funding` count 1 with href
+    // "/equity?funding=mtf" — a screen on which the row cannot appear).
+    expect(find(r, "mtf_funding"), "a closed row is not the open question").toBeUndefined();
+    const issue = find(r, "mtf_funding_closed")!;
+    expect([issue.severity, issue.count, issue.ids]).toEqual(["info", 1, [1]]);
+    expect(issue.title).toBe("Closed MTF trades without funded principal");
+    expect(issue.detail).toBe(
+      "No financing cost is billed on these rows, so their net P&L is stated higher than it was; record the funded amount in the trade editor to bill it — listed among your closed MTF trades.",
+    );
+    // The only query shape /trades honours (lib/domain/trades-query.ts), and the
+    // copy names the superset it lands on.
+    expect(issue.href).toBe("/trades?segment=eq_mtf&view=closed");
+  });
+
+  it("a stated 0 is never listed, open or closed (the X2 rule)", () => {
+    const r = assessDataQuality(inputs({ trades: [{ ...closedUnpriced(1), mtfFundedAmount: 0 }, { ...openUnpriced(2), mtfFundedAmount: 0 }] }));
+    expect(codes(r).filter((c) => c.startsWith("mtf_funding"))).toEqual([]);
+  });
+
+  it("the score for a 3-open / 3-closed book is STATED, not discovered", () => {
+    const book = [openUnpriced(1), openUnpriced(2), openUnpriced(3), closedUnpriced(4), closedUnpriced(5), closedUnpriced(6)];
+    const r = assessDataQuality(inputs({ trades: book }));
+    expect(find(r, "mtf_funding")!.count).toBe(3);
+    expect(find(r, "mtf_funding_closed")!.count).toBe(3);
+    // warning 3 × 6 = 18 (capped at 30), info 3 × 2 = 6 → 100 − 24 = 76. Two
+    // WARNINGS would have been 18 + 18 = 36 → 64, re-flooring the score over a
+    // disclosure the user may never act on (the counted-once#3 lesson, wave 2L).
+    expect(scoreIssues(r.issues)).toBe(76);
+    expect(r.score).toBe(76);
   });
 });

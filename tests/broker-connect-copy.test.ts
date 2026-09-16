@@ -576,7 +576,12 @@ describe("Seam D1 · the pull dialog's words for a collision with today's earlie
     // W2N (D8): the count is of incoming ROWS, so the second one is a second
     // row — the same collision twice is one row, and a row's two blockers
     // (today's earlier pull AND an older file) are one row too.
-    const other = { ...report.collisions[0]!, symbol: "OTHEX" };
+    // W2O (D18, rc8 ask#0): a collision now carries the INDEX of the incoming
+    // row it blocks (`row`), and that index is the row key — two collisions
+    // with one `row` ARE one incoming row, whatever their symbol. A second
+    // incoming row therefore carries a second index; a copy that only changed
+    // the symbol became impossible by construction.
+    const other = { ...report.collisions[0]!, symbol: "OTHEX", row: 1 };
     expect(collisionDialogCopy({ collisions: [...report.collisions, other], message: null }).description).toMatch(
       /cannot vouch for these rows\.$/,
     );

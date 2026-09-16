@@ -134,3 +134,55 @@ describe("a paid plan carries its subscription into the total", () => {
     expect(u.brokers.find((b) => b.plan === "pro")!.subscription).toBe(249);
   });
 });
+
+/**
+ * D11 (v4.3.0 fix wave 2O — mtf#7 ≡ seams#1) — the ENGINE BOUNDARY half of "the
+ * report prices no financing the journal never recorded".
+ *
+ * `app/reports/broker-compare/page.tsx` now hands `t.mtfFundedAmount ?? 0` to this
+ * module instead of `?? defaultMtfFundedAmount(buyValue, margin_config)`. What that
+ * buys is asserted here: a 0 principal bills no interest on ANY broker's card and
+ * therefore reaches none of the four figures the estimate used to move — each
+ * broker's `total`, its `vsActual`, the `cheapest` pick and `maxSaving`. The page's
+ * own property (its strings do not move when the margin table moves, and the
+ * omission is stated once) is pinned in tests/wave2o-mtf.test.ts.
+ */
+describe("D11 — a principal of 0 bills no financing on any card, and a stated one still does", () => {
+  const map = ratesMapOf([
+    rate("A", { segment: "eq_mtf", mtfInterestAnnual: 0.15, pledgeCharge: 30 }),
+    rate("B", { segment: "eq_mtf", mtfInterestAnnual: 0.20, pledgeCharge: 30 }),
+  ]);
+  const mtfTrade = (fundedAmount: number): CompareTrade => ({
+    segment: "eq_mtf", exchange: "NSE", buyValue: 10000, sellValue: 11000, buyQty: 100, sellQty: 100,
+    buyOrderCount: 1, sellOrderCount: 1, actualCharges: 20,
+    mtf: { fundedAmount, daysHeld: 31, pledgeScrips: 1 },
+    buyDate: "2026-08-01", sellDate: "2026-09-01",
+  });
+
+  it("0 (an unrecorded principal at the boundary): every column's MTF interest is 0, and so is the pledge fee", () => {
+    const r = compareBrokers([mtfTrade(0)], map, ["A", "B"], "A");
+    // THE assertion (on revert of the page's read, which is what hands this a
+    // number: 8,000 of principal nobody recorded, priced differently per broker
+    // and folded into every total below).
+    expect(r.brokers.map((b) => b.mtfInterest)).toEqual([0, 0]);
+    // …and the two brokers differ ONLY by what they really can price, so the
+    // cheapest pick and the headline are not functions of the estimate.
+    expect(r.brokers.every((b) => b.complete)).toBe(true);
+    const stated = compareBrokers([mtfTrade(6000)], map, ["A", "B"], "A");
+    expect(stated.brokers.map((b) => b.mtfInterest > 0)).toEqual([true, true]);
+    // The same row, priced: every one of the four figures moves.
+    expect(stated.maxSaving).not.toBe(r.maxSaving);
+    expect(stated.brokers[0].total).toBeGreaterThan(r.brokers[0].total);
+  });
+
+  it("a row the broker cannot price at all is still `missing` — the two states are not the same", () => {
+    // `missing` means "no rate row / no published MTF rate", which blanks the
+    // broker's claim to be cheapest. An unrecorded principal must never do that:
+    // the row's brokerage and STT are perfectly priceable (the REJECTED design).
+    const unknown = ratesMapOf([rate("A", { segment: "eq_mtf", mtfRateUnknown: true })]);
+    const r = compareBrokers([mtfTrade(0)], unknown, ["A"]);
+    expect([r.brokers[0].missing, r.brokers[0].covered]).toEqual([1, 0]);
+    const priceable = compareBrokers([mtfTrade(0)], map, ["A"]);
+    expect([priceable.brokers[0].missing, priceable.brokers[0].covered]).toEqual([0, 1]);
+  });
+});

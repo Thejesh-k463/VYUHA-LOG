@@ -226,15 +226,32 @@ describe("the projections that replaced whole-row reads", () => {
     expect(read("app/lenses/page.tsx")).toContain("getLensTrades");
   });
 
-  it("LENS_FIELDS stays a strict subset of the /trades wire shape, and does not creep", () => {
+  it("LENS_FIELDS stays a subset of the /trades wire shape plus the two basis columns, and does not creep", () => {
     // The prose above LENS_FIELDS used to state both counts ("19 columns, not
     // the 43 of SlimTrade") and was wrong for two releases — SLIM_TRADE_FIELDS
     // went 43 → 44 → 45 when v3.7.0 added `reviewedAt`, and no test could
     // fail. The arrays are the count now; this is what holds them apart.
+    //
+    // THE TWO DELIBERATE EXCEPTIONS (v4.3.0 wave 2O seam pass, defect 1):
+    // `edgeMeasurable` (lib/analytics/metrics.ts) reads `acquisition` and
+    // `acquisitionPrice`, and /lenses runs `computeKpis` over THIS projection —
+    // without them every basis-less sale counted as a priced WIN on that screen
+    // (one book read "Win rate 100.0%" where `getTrades()` read "—"). The /trades
+    // wire shape does not carry them (its server-rendered panels own the
+    // tax-acquisition block), so they cannot come from SLIM_TRADE_FIELDS without
+    // widening the payload this file exists to keep narrow. Every OTHER column
+    // /trades does not select is still a stray, and the creep bound below is
+    // unchanged.
+    const BASIS_FIELDS = ["acquisition", "acquisitionPrice"];
     const lens = fieldList(src, "LENS_FIELDS");
     expect(lens.length).toBeGreaterThan(10);
-    const strays = lens.filter((f) => !(SLIM_TRADE_FIELDS as readonly string[]).includes(f));
+    const strays = lens.filter(
+      (f) => !(SLIM_TRADE_FIELDS as readonly string[]).includes(f) && !BASIS_FIELDS.includes(f),
+    );
     expect(strays, `LENS_FIELDS selects columns /trades does not: ${strays.join(", ")}`).toEqual([]);
+    // …and the exceptions are really there, so this pin cannot silently permit
+    // fields the projection has stopped selecting (defect 1 would be back).
+    expect(lens, "LENS_FIELDS dropped the basis columns computeKpis reads").toEqual(expect.arrayContaining([...BASIS_FIELDS, "buyValue"]));
     expect(
       lens.length,
       "LENS_FIELDS has crept up to the whole wire shape — the projection was the /lenses fix",

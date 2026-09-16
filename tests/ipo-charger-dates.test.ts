@@ -1167,6 +1167,57 @@ describe("IPO-EXITDATE · an unreadable exit date is refused on the way in and s
     expect([before.brokerage, before.dpCharges, before.chargesTotal]).toEqual([20, 15.93, 75.93]);
   });
 
+  /**
+   * D13 (v4.3.0 fix wave 2O, dates-charges#0) — THE 4.2.x LEGACY PAIR.
+   *
+   * v4.2.0 stored a day-first exit date verbatim AND its sync wrote that same
+   * string onto the holding, so such a row holds '20-02-2026' in BOTH columns.
+   * D2's fold gives `linkInput` the ISO day while the trade still holds the
+   * day-first one, and the raw compare in `sellLegIsIpoExit` then read the sale
+   * as somebody else's: an exit-PRICE correction was answered 409 where the
+   * pre-wave route saved it and synced, and the only way out (re-storing the
+   * date through the trade editor) costs the sync's provenance marker.
+   *
+   * Both the pairing AND H5's "would the sync write a NEW sell date" question
+   * now resolve each side through the one calendar — the second is a consumer
+   * the design did not name: with the pairing alone this save turns from a 409
+   * into a 400, because the folded '2026-02-20' differs from the stored
+   * '20-02-2026' byte for byte.
+   */
+  it("D13 · an exit-PRICE correction on a LEGACY day-first pair saves and syncs (200), and the holding's stored charges are kept", async () => {
+    const held = openTrade("D13-LEGACY", {
+      isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "20-02-2026",
+      grossPnl: 500, chargesTotal: 2.06, sttCtt: 2, gst: 0.01, exchangeTxn: 0.05, netPnl: 497.94,
+    });
+    const id = legacy("D13-LEGACY", "20-02-2026", { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: held });
+
+    const res = await post(formPayload(id, "D13-LEGACY", { exitPrice: "160", exitDate: "20-02-2026" }));
+    // THE assertions (HEAD: 409 "The linked holding has a sale recorded in
+    // Trades…"; with the pairing folded but not H5's compare: 400 "The exit date
+    // must be a real calendar day…").
+    expect([res.status, ((await res.json()) as { ok: boolean }).ok]).toEqual([200, true]);
+    const after = tradeRow(held);
+    expect([after.avgSellPrice, after.sellValue, after.grossPnl]).toEqual([160, 1600, 600]);
+    // The exit date states no priceable day, so the IPO prices nothing and the
+    // holding keeps every head it stated (invariant 6, owner ruling F1).
+    expect([after.chargesTotal, after.sttCtt, after.netPnl]).toEqual([2.06, 2, 597.94]);
+    // The sync writes the day the record states, so the next save is an ISO pair.
+    expect(after.sellDate).toBe("2026-02-20");
+  });
+
+  it("D13 · clearing the exit on the same legacy pair re-opens the holding (a zero-charge row)", async () => {
+    const held = openTrade("D13-LEGACY-CLEAR", {
+      isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "20-02-2026", grossPnl: 500, netPnl: 500,
+    });
+    const id = legacy("D13-LEGACY-CLEAR", "20-02-2026", { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: held });
+
+    const res = await post(formPayload(id, "D13-LEGACY-CLEAR", { exitPrice: "", exitDate: "" }));
+    // THE assertion (HEAD: 409 — the sale read as the user's own).
+    expect(res.status).toBe(200);
+    const r = tradeRow(held);
+    expect([r.isOpen, r.sellQty, r.sellValue, r.grossPnl, r.chargesTotal]).toEqual([true, 0, 0, 0, 0]);
+  });
+
   it("L3 · clearing an exit the SYNC wrote still re-opens the holding and takes that sale's charges off with it, MTF interest kept", async () => {
     const owned = openTrade("L3-REOPEN-SYNC", { chargesTotal: 40, mtfInterest: 40, netPnl: -40 });
     const id = legacy("L3-REOPEN-SYNC", "2026-03-02", { exitPrice: null, exitDate: null, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: owned });

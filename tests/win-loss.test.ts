@@ -30,6 +30,12 @@ function trade(p: Partial<WinLossTrade>): WinLossTrade {
     avgSellPrice: 98,
     qty: 10,
     riskAmount: null,
+    // The three `edgeMeasurable` reads, REQUIRED on `AnalyticsTrade` (and so on
+    // `WinLossTrade`) since the wave 2O seam pass (defect 1). Stated as the values
+    // the optional fields read as before — `acquisition` null is priced either way.
+    acquisition: null,
+    acquisitionPrice: null,
+    buyValue: 0,
     ...p,
   };
 }

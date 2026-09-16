@@ -151,3 +151,71 @@ export function chargeInputsChanged(stored: TradeChargeInputs, next: TradeCharge
   if (stored.fundedAmount == null || next.fundedAmount == null) return stored.fundedAmount !== next.fundedAmount;
   return paise(stored.fundedAmount) !== paise(next.fundedAmount);
 }
+
+/**
+ * The charge inputs an editor PATCH carries. Every field is optional in the
+ * `undefined = this save does not mention it` sense — the same meaning
+ * `UpdateTradeFields` gives them. `fundedAmount` is the principal the save
+ * RESOLVES from the patch's own-capital figure, present only when the patch
+ * states one.
+ */
+export interface ChargeInputPatch {
+  buyQty?: number;
+  avgBuyPrice?: number;
+  buyDate?: string | null;
+  sellQty?: number;
+  avgSellPrice?: number;
+  sellDate?: string | null;
+  fundedAmount?: number | null;
+}
+
+/**
+ * Does this PATCH move a charge input? (v4.3.0 wave 2O seam pass, defect 2 —
+ * `wave2h-reports/wave2o-seams.md` §5.)
+ *
+ * `chargeInputsChanged` above compares the values the save RESOLVES, and one of
+ * them moves by itself on a STAGED parent: its `buyValue` is Σ its leg values
+ * while its `avgBuyPrice` is the ROUNDED weighted average, so the save's
+ * `r2(buyQty × avgBuyPrice)` disagrees with the stored roll-up by the rounding for
+ * any ladder built at two prices (`[buyQty 150, avgBuyPrice 103.33, buyValue
+ * 15500]` against 15,499.50). D20 refuses a staged save whose charge inputs moved,
+ * so with that predicate a patch carrying nothing but a NOTE was refused: no
+ * notes, setup tag, stop, target, risk amount or mark could be saved on such a row
+ * through any door.
+ *
+ * So the staged door asks the PATCH instead: an input counts as moved only when
+ * the patch CARRIES that field AND its value differs from the stored column. A
+ * field the patch omits is not a change, and no aggregate is recomputed here.
+ * Money is compared at the paisa and the funded amount null-aware, exactly as
+ * `chargeInputsChanged` does — one comparison rule, two questions.
+ *
+ * The quantities, prices and dates of a staged position ARE its fills, so a patch
+ * that really moves one is still refused by its caller; the flat pricing of such a
+ * row belongs to `rebuildStagedTrade` alone (invariant 5).
+ */
+export function patchMovesChargeInput(
+  patch: ChargeInputPatch,
+  stored: {
+    buyQty: number;
+    avgBuyPrice: number;
+    buyDate: string | null;
+    sellQty: number;
+    avgSellPrice: number;
+    sellDate: string | null;
+    mtfFundedAmount: number | null;
+  },
+): boolean {
+  if (patch.buyQty !== undefined && patch.buyQty !== stored.buyQty) return true;
+  if (patch.sellQty !== undefined && patch.sellQty !== stored.sellQty) return true;
+  if (patch.avgBuyPrice !== undefined && paise(patch.avgBuyPrice) !== paise(stored.avgBuyPrice)) return true;
+  if (patch.avgSellPrice !== undefined && paise(patch.avgSellPrice) !== paise(stored.avgSellPrice)) return true;
+  if (patch.buyDate !== undefined && (patch.buyDate ?? null) !== (stored.buyDate ?? null)) return true;
+  if (patch.sellDate !== undefined && (patch.sellDate ?? null) !== (stored.sellDate ?? null)) return true;
+  if (patch.fundedAmount !== undefined) {
+    // A null (nobody priced it) and a stated 0 (paid for in full out of own
+    // capital) are different facts — the `chargeInputsChanged` rule, verbatim.
+    if (patch.fundedAmount == null || stored.mtfFundedAmount == null) return patch.fundedAmount !== stored.mtfFundedAmount;
+    if (paise(patch.fundedAmount) !== paise(stored.mtfFundedAmount)) return true;
+  }
+  return false;
+}

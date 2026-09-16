@@ -261,9 +261,56 @@ export interface OwnCapitalTotal {
   /** MTF rows that state none. Never folded into `total` — it is a count to
    *  disclose, not a number to fill in. */
   unstated: number;
+  /** MTF rows INSIDE `total` / `funded`, so a figure built from the pair can say
+   *  which rows it describes (D8, wave 2O: the leverage row states its inputs). */
+  stating: number;
   /** …broken down by reason, because the four have four different remedies and
    *  calling them all "partly sold" described three of them wrongly (D7). */
   unstatedWhy: UnstatedWhy;
+}
+
+/**
+ * WHAT THE BOOK RECORDS AS BROKER-FUNDED — the ONE figure behind the /equity
+ * "MTF funded" KPI face, the dialog's "Broker-funded" row and /targets' MTF card
+ * (D8, v4.3.0 fix wave 2O — mtf#2 ≡ seams#0).
+ *
+ * `ownCapitalTotal.funded` is the funding of the rows that state OWN CAPITAL, a
+ * deliberately narrower set: it exists so a leverage ratio describes one book.
+ * Wave 2N pointed the KPI FACE at it, and a book of two partly sold MTF rows each
+ * recording ₹16,000 then read "MTF funded ₹0" while the cells below it printed
+ * 16,000 and /targets stated ₹32,000. A partly sold leg's FUNDED amount IS
+ * stated — it is the whole leg, which is exactly what Q-B keeps accruing interest
+ * on; only its own capital is unstatable. So the face reads THIS: every MTF row
+ * that states its funding, with a count of the rows that state none (invariant 6 —
+ * disclosed, never estimated).
+ *
+ * `stated` is the count of rows inside `funded`, so a label can say "n of m"
+ * without re-deriving the rule at the call site.
+ */
+export interface MtfFundedStated {
+  /** ₹ the book records as broker-funded, over every MTF row that states it. */
+  funded: number;
+  /** MTF rows inside `funded` (a stated 0 is one of them — V3/X2). */
+  stated: number;
+  /** MTF rows that state no funded amount. A count to disclose, never a figure. */
+  unstated: number;
+}
+
+export function mtfFundedStated(positions: Pick<OpenPosition, "isMtf" | "fundedAmount">[]): MtfFundedStated {
+  let funded = 0;
+  let stated = 0;
+  let unstated = 0;
+  for (const p of positions) {
+    if (!p.isMtf) continue;
+    const rowFunded = p.fundedAmount;
+    if (rowFunded == null) {
+      unstated += 1;
+      continue;
+    }
+    funded += rowFunded;
+    stated += 1;
+  }
+  return { funded: Math.round(funded * 100) / 100, stated, unstated };
 }
 
 /** The own-capital total as it may honestly be shown, with what it left out. */
@@ -273,6 +320,7 @@ export function ownCapitalTotal(
   let total = 0;
   let funded = 0;
   let unstated = 0;
+  let stating = 0;
   const why: UnstatedWhy = { partlySold: 0, overSold: 0, sellToOpen: 0, unpriced: 0 };
   for (const p of positions) {
     if (!p.isMtf) continue;
@@ -282,13 +330,21 @@ export function ownCapitalTotal(
     // the journal cannot describe into a figure it is counted in.
     if (own == null || rowFunded == null) {
       unstated += 1;
-      if (p.ownCapitalUnstated) why[p.ownCapitalUnstated] += 1;
+      // D9 (wave 2O, mtf#4): the reason the tally reports is the one the USER CAN
+      // ACT ON. A row that is partly sold AND states no funding was counted as
+      // "partly sold", so /equity's note named the sale, the "no funded amount
+      // yet" hint (keyed on `unstatedWhy.unpriced`) never appeared, and /targets
+      // and /risk called the same row "not recorded" — three screens, two
+      // reasons, one row. `p.ownCapitalUnstated` keeps its SHAPE meaning.
+      const why_ = mtfDashReason(p);
+      if (why_) why[why_] += 1;
       continue;
     }
     total += own;
     funded += rowFunded;
+    stating += 1;
   }
-  return { total: Math.round(total * 100) / 100, funded: Math.round(funded * 100) / 100, unstated, unstatedWhy: why };
+  return { total: Math.round(total * 100) / 100, funded: Math.round(funded * 100) / 100, unstated, stating, unstatedWhy: why };
 }
 
 const UNSTATED_LABEL: Record<keyof UnstatedWhy, string> = {
@@ -342,7 +398,39 @@ export function fundingSide(p: Pick<OpenPosition, "fundedAmount">): "user" | "br
  */
 export const MTF_INTEREST_WHOLE_LEG_NOTE = "interest estimated on the whole funded amount until the row closes";
 
-/** Does this row's accrued interest carry the Q-B caveat? */
-export function interestOnWholeLeg(p: Pick<OpenPosition, "isMtf" | "ownCapitalUnstated">): boolean {
-  return p.isMtf && (p.ownCapitalUnstated === "partlySold" || p.ownCapitalUnstated === "overSold");
+/**
+ * Does this row's accrued interest carry the Q-B caveat?
+ *
+ * D9 (wave 2O): only a row that STATES its funding can. Under Q-A a row with no
+ * recorded funded amount accrues nothing at all, so "interest estimated on the
+ * whole funded amount" describes no figure on it — the desk printed that sentence
+ * beside a dash, against funding it did not have.
+ */
+export function interestOnWholeLeg(p: Pick<OpenPosition, "isMtf" | "fundedAmount" | "ownCapitalUnstated">): boolean {
+  return (
+    p.isMtf &&
+    p.fundedAmount != null &&
+    (p.ownCapitalUnstated === "partlySold" || p.ownCapitalUnstated === "overSold")
+  );
+}
+
+/**
+ * WHY an MTF money block on any surface shows a dash — the reason the user can
+ * act on, ahead of the shape (D9, v4.3.0 fix wave 2O — mtf#4).
+ *
+ * `ownCapitalUnstated` answers "what shape is this row?" and keeps doing so (the
+ * Live Desk wire ships it verbatim). This answers "what should the screen say?":
+ * an MTF row whose funded amount the journal never recorded reports `unpriced`,
+ * because recording it is the one remedy that exists, and every other surface
+ * (/risk "not priced", /targets "funding not recorded", Data Quality's
+ * `mtf_funding`) already says exactly that about the same row. A row that STATES
+ * its funding reports its shape, so a sell-to-open or over-sold row is never
+ * promised a remedy that cannot make its own capital statable.
+ */
+export function mtfDashReason(
+  p: Pick<OpenPosition, "isMtf" | "fundedAmount" | "ownCapitalUnstated">,
+): OwnCapitalUnstated {
+  if (!p.isMtf) return null;
+  if (p.fundedAmount == null) return "unpriced";
+  return p.ownCapitalUnstated;
 }

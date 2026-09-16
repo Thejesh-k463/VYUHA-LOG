@@ -11,6 +11,17 @@ export interface QualityIssue {
   count: number;
   href: string;
   ids?: number[];
+  /**
+   * D5 (v4.3.0 wave 2O, re-check finding identity#1) — how many records this
+   * issue is ABOUT, where that is not its `count`. Only the GROUPED IPO-record
+   * issue states it: it deliberately costs ONE warning (`count: 1`, so
+   * `scoreIssues` cannot re-floor the score the way six separate warnings did —
+   * DECISIONS 2N) while its detail names n holdings, and the badge must say n.
+   * Absent everywhere else, because every other `add()` already passes the
+   * affected number as `count`. `affected` on `QualityReport` is a different
+   * fact (distinct ids across every issue).
+   */
+  affectedCount?: number;
 }
 
 export interface QualityTrade {
@@ -1331,11 +1342,41 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
   // `!x || <= 0` rule flagged it as missing, telling the user to set what they
   // had just set. Only a row that states NOTHING — null, absent or non-finite —
   // is listed, the same null-vs-0 rule every other reader now uses.
-  const mtf = i.trades.filter((t) => t.segment === "eq_mtf" && !Number.isFinite(t.mtfFundedAmount ?? NaN));
+  const unpricedMtf = i.trades.filter((t) => t.segment === "eq_mtf" && !Number.isFinite(t.mtfFundedAmount ?? NaN));
+  // D10 (wave 2O, mtf#3) — AN OPEN ROW AND A CLOSED ROW ARE TWO DIFFERENT
+  // QUESTIONS. This check had no `isOpen` clause, and Q-A (wave 2N) makes
+  // `closePosition` keep the null — so every closed unpriced MTF trade sat here
+  // permanently, under a detail naming three OPEN-position surfaces and an href of
+  // `/equity?funding=mtf`, a tracker that lists open positions only.
+  const mtf = unpricedMtf.filter((t) => t.isOpen);
   // D7 (wave 2N) — the detail says what the missing amount COSTS the user, now
   // that nothing estimates it: /equity, the leverage ratio and the /risk margin
   // check all leave the row out rather than price it at the margin default.
   add({ code: "mtf_funding", severity: "warning", title: "MTF positions without funded principal", detail: "Interest, leverage and own-capital return need the broker-funded amount — own capital, leverage and the margin check leave the row out until it is recorded.", count: mtf.length, href: "/equity?funding=mtf" }, mtf.map((t) => t.id));
+
+  // The CLOSED half (owner decision (a), wave 2O): the row stays listed, because a
+  // realised net P&L the journal knows is stated too high would otherwise go
+  // unsaid (invariant 6's other half), and the remedy is real — recording the
+  // amount in the trade editor moves a charge input and re-prices the closed row.
+  //
+  // `info`, not `warning`: splitting one capped issue into two raises the penalty
+  // ceiling from 30 to 60 points, and a second warning would re-floor the score
+  // exactly as six of them did in wave 2L (the counted-once#3 lesson). The href is
+  // the only query shape `parseTradesQuery` honours (lib/domain/trades-query.ts —
+  // there is no `ids` key), and the copy names the superset it lands on.
+  const mtfClosed = unpricedMtf.filter((t) => !t.isOpen);
+  add(
+    {
+      code: "mtf_funding_closed",
+      severity: "info",
+      title: "Closed MTF trades without funded principal",
+      detail:
+        "No financing cost is billed on these rows, so their net P&L is stated higher than it was; record the funded amount in the trade editor to bill it — listed among your closed MTF trades.",
+      count: mtfClosed.length,
+      href: "/trades?segment=eq_mtf&view=closed",
+    },
+    mtfClosed.map((t) => t.id),
+  );
 
   const options = i.trades.filter((t) => t.instrumentType === "option" && (!t.expiry || t.strike == null || !t.optionType));
   add({ code: "option_contract", severity: "warning", title: "Incomplete option contracts", detail: "Expiry, strike and CE/PE are required for Greeks, settlement and seller analytics.", count: options.length, href: "/trades" }, options.map((t) => t.id));
@@ -1377,9 +1418,14 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
     list.push(p);
     unmatchedByAccount.set(key, list);
   }
+  // D5 (wave 2O, identity#1): `count: 1` is the SCORE (one question, one
+  // warning — `scoreIssues` is `min(30, count × weight)`, so `pairs.length`
+  // would cost exactly what the six separate warnings cost and re-floor the
+  // score D1.4 lifted); `affectedCount` is what the badge says, because the
+  // detail names every one of these holdings.
   for (const [accountId, pairs] of [...unmatchedByAccount.entries()].sort((a, b) => a[0] - b[0])) {
     add(
-      { code: `ipo_record_link:account:${accountId}`, severity: "warning", title: "IPO records not linked to their holdings", detail: ipoOrphanGroupNote(pairs), count: 1, href: IPO_LINK_HREF },
+      { code: `ipo_record_link:account:${accountId}`, severity: "warning", title: "IPO records not linked to their holdings", detail: ipoOrphanGroupNote(pairs), count: 1, affectedCount: pairs.length, href: IPO_LINK_HREF },
       pairs.map((p) => p.tradeId),
     );
   }

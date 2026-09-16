@@ -19,7 +19,7 @@ import {
   computeKpis, equityCurve, dailyPnl, bySegment, bySetup,
   type AnalyticsTrade,
 } from "@/lib/analytics/metrics";
-import { inr, inrCompact } from "@/lib/format";
+import { inr, inrCompact, pct } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, BUCKETS, BUCKET_LABELS, SEGMENTS, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
 
@@ -254,13 +254,13 @@ export function DashboardClient({
           label="Total charges"
           value={<CountUp value={k.charges} />}
           valueClassName="text-grad-gold"
-          sub={`${k.chargePctOfGross}% of gross`}
+          sub={k.chargePctOfGross == null ? "gross P&L is exactly zero" : `${pct(k.chargePctOfGross, 2)} of gross`}
           detail={{
             title: "Charges — the silent tax on your edge",
             summary: "Computed per broker × segment × exchange from your editable rate table.",
             rows: [
               { label: "Total charges", value: inr(k.charges, { decimals: 0 }), tone: "loss" },
-              { label: "As % of gross P&L", value: `${k.chargePctOfGross}%`, hint: "past ~30% costs are eating the edge" },
+              { label: "As % of gross P&L", value: pct(k.chargePctOfGross, 2), hint: "past ~30% costs are eating the edge" },
               { label: "Avg per closed trade", value: k.closedCount ? inr(k.charges / k.closedCount, { decimals: 0 }) : "—" },
               { label: "Gross P&L before charges", value: inr(k.grossPnl, { decimals: 0 }), tone: k.grossPnl >= 0 ? "profit" : "loss" },
               { label: "What you kept", value: inr(k.netPnl, { decimals: 0 }), tone: k.netPnl >= 0 ? "profit" : "loss" },
@@ -270,18 +270,22 @@ export function DashboardClient({
         />
         <KpiCard
           label="Win rate"
-          value={<CountUp value={k.winRate * 100} decimals={1} format="plain" suffix="%" />}
-          sub={`${k.wins}W / ${k.losses}L`}
+          // The avgR pattern below: a null is a DASH, never a 0 and never a
+          // `?? undefined` (kpi-card renders an EMPTY card for undefined).
+          value={k.winRate == null ? "—" : <CountUp value={k.winRate * 100} decimals={1} format="plain" suffix="%" />}
+          sub={k.winRate == null ? "no priced closed trade yet" : `${k.wins}W / ${k.losses}L`}
           detail={{
             title: "Win rate — and why it isn't the whole story",
             summary: "A low win rate with big winners beats a high win rate with big losers.",
             rows: [
               { label: "Wins", value: `${k.wins}`, tone: "profit" },
               { label: "Losses", value: `${k.losses}`, tone: "loss" },
-              { label: "Win rate", value: `${(k.winRate * 100).toFixed(1)}%` },
+              { label: "Win rate", value: pct(k.winRate == null ? null : k.winRate * 100, 1) },
               { label: "Average win", value: inr(k.avgWin, { decimals: 0 }), tone: "profit" },
               { label: "Average loss", value: inr(k.avgLoss, { decimals: 0 }), tone: "loss" },
-              { label: "Win / loss size ratio", value: k.avgLoss !== 0 ? `${Math.abs(k.avgWin / k.avgLoss).toFixed(2)}×` : "—", hint: "how many losses one win pays for" },
+              // `k.avgLoss !== 0` alone is TRUE on a null, and Math.abs(null / null)
+              // printed "NaN×" on a book with no loser.
+              { label: "Win / loss size ratio", value: k.avgWin != null && k.avgLoss != null && k.avgLoss !== 0 ? `${Math.abs(k.avgWin / k.avgLoss).toFixed(2)}×` : "—", hint: "how many losses one win pays for" },
             ],
             note: "Expectancy — win rate and win size together — is the number that actually compounds.",
           }}
@@ -297,7 +301,8 @@ export function DashboardClient({
               { label: "Gross winnings", value: inr(grossWins, { decimals: 0 }), tone: "profit" },
               { label: "Gross losses", value: `−${inr(Math.abs(grossLosses), { decimals: 0 })}`, tone: "loss" },
               { label: "Profit factor", value: k.profitFactor === Infinity ? "∞" : k.profitFactor.toFixed(2), tone: k.profitFactor >= 1 ? "profit" : "loss" },
-              { label: "Expectancy / trade", value: inr(k.expectancy, { decimals: 0 }), tone: k.expectancy >= 0 ? "profit" : "loss" },
+              // A null tone would paint a green "—".
+              { label: "Expectancy / trade", value: inr(k.expectancy, { decimals: 0 }), tone: k.expectancy == null ? undefined : k.expectancy >= 0 ? "profit" : "loss" },
               { label: "Closed trades", value: `${k.closedCount}`, hint: k.closedCount < 20 ? "under ~20 trades this is mostly noise" : undefined },
             ],
           }}
@@ -407,7 +412,7 @@ export function DashboardClient({
       <section className="grid gap-4 sm:grid-cols-3">
         <KpiCard label="Current streak" value={k.currentStreak === 0 ? "—" : `${Math.abs(k.currentStreak)} ${k.currentStreak > 0 ? "wins" : "losses"}`} valueClassName={k.currentStreak > 0 ? "text-profit" : k.currentStreak < 0 ? "text-loss" : ""} sub={`Best ${k.maxWinStreak}W · Worst ${k.maxLossStreak}L`} />
         <KpiCard label="Avg win / loss" value={`${inrCompact(k.avgWin)} / ${inrCompact(k.avgLoss)}`} sub="per closed trade" />
-        <KpiCard label="Charges leak" value={`${k.chargePctOfGross}%`} valueClassName="text-grad-gold" sub={`${inr(k.charges, { decimals: 0 })} paid`} />
+        <KpiCard label="Charges leak" value={pct(k.chargePctOfGross, 2)} valueClassName="text-grad-gold" sub={`${inr(k.charges, { decimals: 0 })} paid`} />
       </section>
     </div>
   );
