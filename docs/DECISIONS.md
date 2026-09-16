@@ -7435,3 +7435,4 @@ and `tests/readme-claims.test.ts` (README's file count: three new test files); r
 Second `npm run verify` (after the two fixes and the `\u0000` escape): **EXIT 0 — raw line 430 files / 9,410 passed / 35 skipped**
 (no expected fail); `next build` compiled; the three lint warnings are the pre-existing ones. Introduced-regression grade for
 2N, as of the gate: the seam pass found NONE (the 2N scoped re-check is the measurement that counts — see the next entry).
+Committed as **`f9a1a6b`** (55 files, +4,903 / −519), pushed; CI run 35086623142 **SUCCESS 6/6** (conclusion success, six jobs success). **Owner ruling at the hand-off (06-ANSWERS "v4.3.0 fix-wave 2N rulings", last row): the backlog audit's three live product defects go into 4.3.0 as fix wave 2O**, after the 2N re-check, together with any finding it produces.
