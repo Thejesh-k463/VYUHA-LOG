@@ -61,6 +61,10 @@ async function main() {
   const accountName = arg("account", "OPTIONS STRATEGY")!;
   const broker = arg("broker", "dhan")!;
   const capital = Number(arg("capital", "100000"));
+  // --lots N: size every trade at N lots instead of the log's one lot (a what-if book for a larger
+  // capital base; the log itself is one lot per trade). Per-unit prices and dates are untouched.
+  const lots = Number(arg("lots", "1"));
+  if (!Number.isInteger(lots) || lots < 1) throw new Error("--lots must be a positive integer");
   const dry = flag("dry");
 
   const rows: Row[] = JSON.parse(fs.readFileSync(path.resolve(jsonPath), "utf8"));
@@ -103,13 +107,13 @@ async function main() {
   const run = () => {
     for (const r of rows) {
       const { tradingsymbol, optionType } = dhanName(r.contract);
-      const qty = r.lot;
+      const qty = r.lot * lots;
       const avgBuyPrice = r.entry;
       // The exit column is the real exit price wherever it reproduces the booked P&L (the
       // booked figure is PnL% rounded to 4 dp, so allow ₹3 + 0.5%). Where it does not — the
       // TARGET-2 rows, booked at +75% against a +100% exit column — use the blended average
       // exit that reproduces the booked result (see header).
-      const exitDelta = Math.abs((r.exit - r.entry) * qty - r.pnl);
+      const exitDelta = Math.abs((r.exit - r.entry) * r.lot - r.pnl); // the log's P&L is per ONE lot
       const avgSellPrice = exitDelta <= 3 + Math.abs(r.pnl) * 0.005 ? r.exit : r.entry * (1 + r.pnlPct);
       const buyValue = Math.round(qty * avgBuyPrice * 100) / 100;
       const sellValue = Math.round(qty * avgSellPrice * 100) / 100;

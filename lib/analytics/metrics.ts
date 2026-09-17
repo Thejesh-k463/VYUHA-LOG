@@ -22,6 +22,9 @@ export interface AnalyticsTrade {
   acquisitionPrice: number | null;
   /** Purchase value; zero on a sale whose purchase is not in the data. */
   buyValue: number;
+  /** Chronological tiebreaks for same-day rows (closedSorted); optional so narrower fixtures still compile. */
+  id?: number;
+  exitTime?: string | null;
 }
 
 /**
@@ -85,12 +88,23 @@ export interface Kpis {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Closed trades sorted chronologically by sell date (fallback id-less: keep input order). */
+/**
+ * Closed trades sorted chronologically: sell date, then exit time, then id. Every caller feeds
+ * rows NEWEST-FIRST (`orderBy(desc(sellDate), desc(createdAt), desc(id))` in lib/queries/trades.ts),
+ * and a sort on sell date alone is stable, so same-day trades used to run BACKWARDS through the
+ * streak and drawdown loops — 42 same-day option trades read "8 wins · best 11W" for a book whose
+ * entry order says 7 wins · best 10W (2026-09-17). Rows without the tiebreak fields keep input order.
+ */
 export function closedSorted<T extends AnalyticsTrade>(trades: T[]): T[] {
   return trades
     .filter((t) => !t.isOpen)
     .slice()
-    .sort((a, b) => (a.sellDate ?? "").localeCompare(b.sellDate ?? ""));
+    .sort(
+      (a, b) =>
+        (a.sellDate ?? "").localeCompare(b.sellDate ?? "") ||
+        (a.exitTime ?? "").localeCompare(b.exitTime ?? "") ||
+        (a.id ?? 0) - (b.id ?? 0),
+    );
 }
 
 export function computeKpis(trades: AnalyticsTrade[]): Kpis {

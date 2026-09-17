@@ -7778,3 +7778,28 @@ capture measures `main.scrollHeight`, resizes the viewport to it, waits for rech
 ₹4.25L / stretch ₹5.10L against ₹75,133 — an owner input, not a default); the strategy's signal fields (watchlist tier, S/R
 zone, ΔOI unwind, volume, the T1/T2/SL ladder) live in `notes` and `setupTag` ("CE BREAKOUT (RES)" / "PE BREAKDOWN (SUP)")
 until the Option Strategies plan is revised for it — the owner will share the strategy's details first.
+
+## 2026-09-17 — Streaks and drawdown walked every trading day BACKWARDS (`closedSorted` had no same-day tiebreak)
+
+**Found by the owner** on the seeded options account's dashboard: "Current streak 8 wins · Best 11W · Worst 4L" for a book whose
+entry order (the log's Trade #, ids ascending) says **7 wins · best 10W · worst 4L**. The average win / loss (₹2,645.62 /
+−₹1,352.54 → "₹2.6K / −₹1.4K") and the charges leak (₹2,951.63 / ₹78,084.38 = 3.78%) were right.
+
+**Cause.** Every caller hands `computeKpis` rows NEWEST-FIRST (`lib/queries/trades.ts` orders `desc(sellDate), desc(createdAt),
+desc(id)`), and `closedSorted` sorted on `sellDate` alone. JavaScript's sort is stable, so each day's rows stayed in reverse and the
+streak loop and the drawdown loop ran the day backwards: 11 Sep's one win landed AFTER its four losses, joining 15–16 Sep's seven
+wins into "8"; 7–9 Sep's wins chained into "11". Max drawdown is the most negative contiguous run and is invariant under reversing
+the WHOLE book, but not under reversing each day separately — a run that crosses a day boundary is cut (the new test pins 7,000 vs
+4,000 on a four-row fixture). Same-day trades are the normal case for an intraday or options book, so this was wrong on every such
+dashboard since the KPI card existed; `/lenses` runs the same maths and was wrong the same way.
+
+**Fix.** `closedSorted` tiebreaks `sellDate` → `exitTime` → `id` (both optional on `AnalyticsTrade`, so narrower fixtures still
+compile and keep input order); `DASH_FIELDS` gains `id` and `exitTime`. `LENS_FIELDS` already carries `id` and is pinned to stay
+inside the /trades wire shape (`tests/render-windowing.test.ts`), which `exitTime` is not — so lenses tiebreak by id only.
+Rejected: reversing the input (a hack that breaks the moment a caller sorts ascending); sorting by `createdAt` (an import writes a
+whole file at one timestamp — id is the only order that survives). `tests/closed-sorted-tiebreak.test.ts` pins all of it.
+
+**Measured for the 5L capture (the same day).** The 42 trades at 4 lots each on ₹5,00,000: gross ₹3,12,337.50 · Dhan charges
+₹5,903.23 · net ₹3,06,434.27 · 33 W / 9 L (78.6%) · charges leak 1.89%. At 5 lots the ₹17.50 PHOENIXLTD trade (#30) turns
+net-positive because the flat ₹40 brokerage is spread over five lots → 34 W / 8 L (81.0%), net ₹3,83,538.39; the owner asked for
+78.6%, so 4 lots. `scripts/seed-options-account.ts --lots N` sizes the what-if book; the live journal stays at one lot.

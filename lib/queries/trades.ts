@@ -138,6 +138,9 @@ const DASH_FIELDS = [
   // measurable edge) while `computeKpis(getTrades())` answered "—". Required on
   // `AnalyticsTrade` since the same pass, so a narrower projection cannot compile.
   "acquisition", "acquisitionPrice", "buyValue",
+  // closedSorted's same-day tiebreaks (2026-09-17): rows arrive newest-first, and without these
+  // the streak and drawdown loops ran BACKWARDS inside a day.
+  "id", "exitTime",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type DashboardTrade = Pick<Trade, (typeof DASH_FIELDS)[number]>;

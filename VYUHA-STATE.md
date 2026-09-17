@@ -124,7 +124,15 @@ left to do*.
   active capital ₹1,00,000) via `scripts/seed-options-account.ts` → `commitManualTrade`; gross ₹78,084.38 · charges ₹2,951.63 ·
   net ₹75,132.75; migration 0071 applied to the live file by ruling (pre-write copy in `data/smoke-0071/`); a 3840 × 2748
   full-dashboard capture delivered for advertising. DECISIONS "2026-09-17 — The owner's options-strategy trade log seeded".
-  A retouched copy (Total ₹5.0L, win-rate card highlighted) was made by pixel edit — the journal still holds ₹1L.
+  The 5L capture was then RE-RENDERED (not retouched) from a staging copy sized at 4 lots per trade on ₹5,00,000: net
+  ₹3,06,434.27 · 33 W / 9 L · charges 1.89% (`seed-options-account.ts --lots 4`; 5 lots would flip the ₹17.50 PHOENIXLTD trade
+  to a win → 81.0%). The journal still holds one lot and ₹1L.
+- **Product fix, twelfth session (the owner saw "8 wins · best 11W" on that dashboard; the entry order says 7 · 10):**
+  `closedSorted` (`lib/analytics/metrics.ts`) sorted on `sellDate` alone over NEWEST-FIRST input, so streaks and drawdown ran
+  every day backwards — wrong on every same-day book since the KPI card existed, `/lenses` too. Fixed with a `sellDate` →
+  `exitTime` → `id` tiebreak (`DASH_FIELDS` gains `id`, `exitTime`; `LENS_FIELDS` keeps its /trades-wire-shape pin, id only);
+  `tests/closed-sorted-tiebreak.test.ts` (4 cases) pins it. DECISIONS "2026-09-17 — Streaks and drawdown walked every trading
+  day BACKWARDS". Goes into the 4.3.0 release notes (one line, "streak and drawdown order inside a day").
 - **⛔ OWNER INSTRUCTION 2026-09-17, twelfth session (06-ANSWERS "Owner instruction 2026-09-17 IST (chat, twelfth session…)"),
   BINDING — adds to the eleventh-session instruction below:** (1) **the Option Strategies plan is ARCHIVED** — every open line of
   `13-OPTION-STRATEGY-CATALOGUE.md`, row 5 (live feed pricing option underlyings) and row 9's "option-seller depth r3" are CLOSED;
