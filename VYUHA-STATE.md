@@ -134,7 +134,7 @@ left to do*.
   in order: fix wave 2P → the single strategy (design → `vyuha-design-reviewer` → one builder → seam pass → gate) → the release
   ritual (bump, build, push, CI 6/6, `release` skill, steward) → STOP for the owner's "tag".
 - **Next (the owner's two instructions, binding; the paste block is `NEXT-SESSION-CONTINUATION.md` §0, rewritten in the twelfth
-  session — old block archived as §0-prev10):** 2P → the single strategy (details pasted by the owner; ONE question group; design →
+  session — old block archived as §0-prev11):** 2P → the single strategy (details pasted by the owner; ONE question group; design →
   `vyuha-design-reviewer` → one builder → seam pass → gate) → the release ritual, all in ONE session on Opus. The capture tool is
   `scripts/shoot-dashboard.mjs`; the seed tool `scripts/seed-options-account.ts` (never re-run against the live journal without
   `--dry`). CI on `c97fd4c` run 35217890785 SUCCESS 6/6 (after one macOS e2e re-run: a `waitForLoadState` timeout on a docs-only
