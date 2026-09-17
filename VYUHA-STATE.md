@@ -133,7 +133,12 @@ left to do*.
   of day), expanded later on DEMAND only; **its full details arrive from the owner before any design.** (2) **ONE session** does,
   in order: fix wave 2P → the single strategy (design → `vyuha-design-reviewer` → one builder → seam pass → gate) → the release
   ritual (bump, build, push, CI 6/6, `release` skill, steward) → STOP for the owner's "tag".
-- **Next (the owner's instruction, binding):** **build fix wave 2P** (`NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1:
+- **Next (the owner's two instructions, binding; the paste block is `NEXT-SESSION-CONTINUATION.md` §0, rewritten in the twelfth
+  session — old block archived as §0-prev10):** 2P → the single strategy (details pasted by the owner; ONE question group; design →
+  `vyuha-design-reviewer` → one builder → seam pass → gate) → the release ritual, all in ONE session on Opus. The capture tool is
+  `scripts/shoot-dashboard.mjs`; the seed tool `scripts/seed-options-account.ts` (never re-run against the live journal without
+  `--dry`). CI on `c97fd4c` run 35217890785 SUCCESS 6/6 (after one macOS e2e re-run: a `waitForLoadState` timeout on a docs-only
+  sha). The eleventh-session wording of this bullet follows for the 2P and release-ritual detail: **build fix wave 2P** (`NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1:
   `wave2p-designs.md` D1–D12 as revised by `wave2p-design-review.md`; B2P-MTF-DATES then B2P-IDENTITY, one `vyuha-builder` at a
   time on Opus, red-first with the four guards; ONE seam pass; gate; README counts; commit; push; CI 6/6) → **row 2, the bump and
   the release ritual** (the release notes state the 2N + 2O + 2P lines — DECISIONS "… fix wave 2O built", the four `wave2o-B-*.md`
