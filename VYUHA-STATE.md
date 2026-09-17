@@ -119,6 +119,14 @@ left to do*.
   (mtf#6 the Live Desk's D7 half pinned by source only; seams#2 F18/F40 restore `charge_config` outside a `finally`); the ten seam
   boundaries with no render case (`wave2o-seams.md` §1, incl. the Add form's preview door — 2N's #6 — still estimating); no e2e
   press of Control+Shift+K (D3's rejected alternative). DECISIONS "… fix wave 2O built" has the full list.
+- **Side task, twelfth session (2026-09-17, no product code):** the owner's options-strategy log (`Trade-log-book.xlsx`, 42
+  closed same-day long stock-option trades) seeded into the LIVE desktop journal as account #3 "OPTIONS STRATEGY" (Dhan,
+  active capital ₹1,00,000) via `scripts/seed-options-account.ts` → `commitManualTrade`; gross ₹78,084.38 · charges ₹2,951.63 ·
+  net ₹75,132.75; migration 0071 applied to the live file by ruling (pre-write copy in `data/smoke-0071/`); a 3840 × 2748
+  full-dashboard capture delivered for advertising. DECISIONS "2026-09-17 — The owner's options-strategy trade log seeded".
+  **Owed:** the Option Strategies plan revision for that strategy — the owner shares the strategy's details first; the shipped
+  feature is a 40-shape multi-leg payoff catalogue over OPEN positions, the strategy is a single-leg signal system (S/R zone,
+  ΔOI unwind, T1 +50% / T2 +100% / SL −35%), so the revision is a NEW scope, not an edit of `13-OPTION-STRATEGY-CATALOGUE.md`.
 - **Next (the owner's instruction, binding):** **build fix wave 2P** (`NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1:
   `wave2p-designs.md` D1–D12 as revised by `wave2p-design-review.md`; B2P-MTF-DATES then B2P-IDENTITY, one `vyuha-builder` at a
   time on Opus, red-first with the four guards; ONE seam pass; gate; README counts; commit; push; CI 6/6) → **row 2, the bump and

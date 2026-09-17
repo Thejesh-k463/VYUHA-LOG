@@ -7739,3 +7739,42 @@ re-proves H7 against the new job code.
 
 **Model.** Orchestrated on Fable by the owner's instruction; every agent Fable (five reviewers ≈ 2.05 M subagent tokens, 628 tool
 uses, 32 min). No separate skeptic was needed: 0 REFUTED, 0 UNVERIFIABLE.
+
+## 2026-09-17 — The owner's options-strategy trade log seeded as its own account (`scripts/seed-options-account.ts`)
+
+**What happened.** The owner's `Trade-log-book.xlsx` (42 closed same-day long stock-option trades, 1–16 Sep 2026, all expiring
+29 Sep 2026, from an options strategy he is building and will later integrate with `/strategies`) was seeded into the LIVE
+desktop journal as account #3 "OPTIONS STRATEGY" (broker Dhan, `activeCapital` ₹1,00,000, `equityCapital` 0 — every value an
+owner ruling, never a default), and a 3840 × 2748 full-dashboard capture was taken for advertising. Every row went through
+`commitManualTrade` — the Add-trade form's own writer — so charges came from `charge_config` (invariant 3), the paise boundary
+was crossed once (invariant 1) and the `(account, broker, dedupHash)` index made the second run a 42-duplicate no-op.
+Result, identical on the staged copy and the live file: gross ₹78,084.38 · charges ₹2,951.63 · net ₹75,132.75 · 33 W / 9 L.
+
+**Measured: the sheet's "Net P&L" is GROSS, and its exit column disagrees with its P&L column on eight rows.** Summing
+(exit − entry) × lot gives ₹93,420.00; the P&L column sums to ₹78,089.06. The gap is entirely the "TARGET 2 HIT" rows, whose
+exit column shows the +100% T2 price while the P&L column books +75% (BLUESTARCO: entry 12, exit 24, P&L ₹2,925 = 12 × 325 ×
+0.75). Owner ruling 2026-09-17: the P&L column is the booked result. The script therefore uses the exit column as the real
+exit price wherever it reproduces the booked P&L within ₹3 + 0.5% (the booked figure is a 4-dp PnL% times cost, hence the
+tolerance) and, on the eight T2 rows, a blended average exit of entry × 1.75 — a scale-out at T1 and T2 — so VYUHA's own
+qty × price recomputation lands ₹4.68 under the sheet across 42 rows. Rejected: trusting the exit column (overstates the
+strategy by ₹15,331 in an advertising screenshot); writing the stated P&L into `grossPnl` directly (the engine recomputes from
+values, and a price that does not reproduce the P&L would be a silent wrong number on every drill-down).
+
+**The live file needed migration 0071 first.** v4.2.0 shipped at 0070; `commitManualTrade` reads `settings` through the HEAD
+schema, which selects `strategy_shelf_json`. Owner ruling: apply 0071 (one nullable preference column) and seed through the app
+writer rather than copy rows without the audit log. A pre-write copy of the journal sits at
+`data/smoke-0071/live-backup-pre-options-2026-09-17.sqlite` (gitignored). The desktop 4.2.0 build ignores the extra column
+and its startup migrator applies nothing (0071's `created_at` is newer than its own journal); the 4.3.0 installer finds it
+already applied. `settings.selectedAccountId` was left at 1 — the owner switches accounts himself.
+
+**Two traps for the next script that drives lib/ from tsx.** `server-only` is not an installed package (vitest aliases it to
+`tests/stubs/server-only.ts`); the script patches `Module._resolveFilename` the same way. And the app shell is
+`h-screen overflow-hidden` with `<main>` as the scroll container, so Playwright's `fullPage` sees nothing below the fold: the
+capture measures `main.scrollHeight`, resizes the viewport to it, waits for recharts to re-measure, and shoots the viewport at
+`deviceScaleFactor: 2` (1920 CSS px → 3840). The sidebar's fold state is `localStorage["vyuha-nav-order"]`
+(`{v:1, groups, items, shown, expanded}`); an init script sets every group expanded so the shot matches the owner's own view.
+
+**Not done, by design.** No `capital_goals` row for the account (the "Monthly target ladder" therefore shows the GLOBAL base
+₹4.25L / stretch ₹5.10L against ₹75,133 — an owner input, not a default); the strategy's signal fields (watchlist tier, S/R
+zone, ΔOI unwind, volume, the T1/T2/SL ladder) live in `notes` and `setupTag` ("CE BREAKOUT (RES)" / "PE BREAKDOWN (SUP)")
+until the Option Strategies plan is revised for it — the owner will share the strategy's details first.
