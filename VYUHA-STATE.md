@@ -132,7 +132,9 @@ left to do*.
   every day backwards — wrong on every same-day book since the KPI card existed, `/lenses` too. Fixed with a `sellDate` →
   `exitTime` → `id` tiebreak (`DASH_FIELDS` gains `id`, `exitTime`; `LENS_FIELDS` keeps its /trades-wire-shape pin, id only);
   `tests/closed-sorted-tiebreak.test.ts` (4 cases) pins it. DECISIONS "2026-09-17 — Streaks and drawdown walked every trading
-  day BACKWARDS". Goes into the 4.3.0 release notes (one line, "streak and drawdown order inside a day").
+  day BACKWARDS". Goes into the 4.3.0 release notes (one line, "streak and drawdown order inside a day"). Commits `0bf15bf`
+  (the fix) + `662b568` (README counts) — CI run 35252324892 SUCCESS 6/6; **gate re-run on this code: `npm run verify` — 434 files / 9,547 passed / 35 skipped
+  on the owner's machine (its one red was the README count, fixed in the follow-up; CI expects 9,526)**; README says 9526 / 434.
 - **⛔ OWNER INSTRUCTION 2026-09-17, twelfth session (06-ANSWERS "Owner instruction 2026-09-17 IST (chat, twelfth session…)"),
   BINDING — adds to the eleventh-session instruction below:** (1) **the Option Strategies plan is ARCHIVED** — every open line of
   `13-OPTION-STRATEGY-CATALOGUE.md`, row 5 (live feed pricing option underlyings) and row 9's "option-seller depth r3" are CLOSED;
