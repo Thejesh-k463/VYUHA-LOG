@@ -7960,3 +7960,19 @@ it ROLLS FORWARD rather than clamping, so **2026-01-31 + 1 month = 2026-03-03** 
 would have printed a receipt for ₹2,000 more than an annual buyer pays, and `tests/sell-flow.test.ts` PINNED the stale figure (a pin that agreed with the
 bug). Now 7,999, pin moved. `PLANS` gains `monthly` (₹599, "first month — launch offer") and `monthlyRenewal` (₹999); `npm run sell -- … --months 1`
 sells the first month and `--months 1 --renewal` every later one; the receipt's term line reads "1 month from …"; two term flags together are refused.
+
+## 2026-09-18 — The Windows CI runner gets a 20 s per-test timeout (the second loss in five runs; a class, not a flake)
+
+**Measured.** CI 35322863777 (first attempt) lost the Windows job to two 5 s timeouts (`backup-roundtrip`, one preview-matrix cell); CI 35339488381 lost it to FOUR
+(`seams-v43-fixE` E-e S3, `seams-v43-fixF` F9 (b) and F23, `seams-v43-fixH` 2P-S1). Six different cases, all heavy SQLite-file work, no assertion ever failed, every
+one green on Linux in the same run and green locally well inside the 300 ms budget. The arithmetic was always against us: AGENTS.md measures that runner at > 15×
+a dev machine, so a case INSIDE the 300 ms budget sits at vitest's 5 s default there, and one loaded runner tips it over. The release workflow runs `npm test` on
+Windows too, so the same stall would have failed the release run after the tag.
+
+**Decision.** `vitest.config.ts`: `testTimeout` = 20 s when `CI` is set AND the platform is win32; 5 s everywhere else. The 5 s default keeps enforcing the local
+budget where a test is written, so a genuinely slow test is still caught. This is the per-test twin of the 30 s `hookTimeout` raised for the same runner at v4.1.0
+(DECISIONS 2026-09-07). Rejected: re-running the job until green (it was done once today and the class came back within three runs); restructuring six seam cases
+with in-memory copies the day of a release (the right long-term shape for the slowest of them — AGENTS.md's prescription stands for any case that exceeds its LOCAL
+budget; none of these six does); a blanket 20 s everywhere (it would hide a slow test on the machine where it is cheapest to notice).
+The earlier entry of today said "if it recurs a third time, restructure rather than raise a timeout" — superseded by this measurement: the cases are within budget,
+the limit was wrong for that runner.
