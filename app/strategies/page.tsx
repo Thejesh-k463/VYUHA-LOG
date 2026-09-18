@@ -4,6 +4,10 @@ import { PayoffChart } from "@/components/reports/payoff-chart";
 import { LazyMount } from "@/components/ui/lazy-mount";
 import { Badge } from "@/components/ui/badge";
 import { StrategiesClient } from "@/components/strategies/strategies-client";
+import { StrategiesTabs } from "@/components/strategies/strategies-tabs";
+import { SignalBook } from "@/components/strategies/signal-book";
+import { getSignalTrades } from "@/lib/queries/signals";
+import { withholdSignalAnalytics } from "@/lib/analytics/signal-book";
 import { STRATEGY_COPY, withholdForFree, type PickerRow } from "@/components/strategies/strategy-copy";
 import { getOpenOptionPositions, getOpenUnderlyingPositions } from "@/lib/queries/trades";
 import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
@@ -250,6 +254,14 @@ export default function StrategiesPage() {
     ? CATALOGUE.map((d) => ({ id: d.id, name: d.name, style: d.style, beginner: d.beginner }))
     : null;
 
+  // THE SIGNAL BOOK (v4.3.0), the screen's first tab. The ROWS are the user's
+  // own record and stay free (invariant 7); the three analytics blocks are
+  // withheld HERE, before the payload, exactly as `withholdForFree` is above —
+  // on a free build `signalAnalytics` is null and there is nothing behind the
+  // lock to find in the RSC flight stream.
+  const signalRows = getSignalTrades();
+  const signalAnalytics = withholdSignalAnalytics(signalRows, pro);
+
   return (
     <>
       <PageHeader
@@ -262,18 +274,25 @@ export default function StrategiesPage() {
         }
       />
       <div className="space-y-5 p-6">
-        {/* The SEBI line, once, at the top — computed from SEBI_FNO_FACTS by
-            B5's own function, so a revised study updates the sentence and
-            cannot leave a stale literal behind. */}
-        <p className="rounded-md border border-border bg-card-hover/30 p-3 text-[0.6875rem] leading-relaxed text-muted-foreground">
-          {sebiRealityLine(SEBI_FNO_FACTS)}
-        </p>
+        <StrategiesTabs signalBook={<SignalBook rows={signalRows} analytics={signalAnalytics} />}>
+          {/* The catalogue panel, as CHILDREN: ten test files walk this page's
+              rendered tree through `props.children` to reach the `groups` and
+              `charts` the client is handed. */}
+          <div className="space-y-5">
+            {/* The SEBI line, once, at the top — computed from SEBI_FNO_FACTS by
+                B5's own function, so a revised study updates the sentence and
+                cannot leave a stale literal behind. */}
+            <p className="rounded-md border border-border bg-card-hover/30 p-3 text-[0.6875rem] leading-relaxed text-muted-foreground">
+              {sebiRealityLine(SEBI_FNO_FACTS)}
+            </p>
 
-        <StrategiesClient groups={groups} charts={charts} shelf={shelf} picker={picker} pro={pro} />
+            <StrategiesClient groups={groups} charts={charts} shelf={shelf} picker={picker} pro={pro} />
 
-        <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
-          <span className="text-foreground">{STRATEGY_COPY.beforeCharges}</span> {STRATEGY_COPY.sttNote}
-        </p>
+            <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+              <span className="text-foreground">{STRATEGY_COPY.beforeCharges}</span> {STRATEGY_COPY.sttNote}
+            </p>
+          </div>
+        </StrategiesTabs>
       </div>
     </>
   );

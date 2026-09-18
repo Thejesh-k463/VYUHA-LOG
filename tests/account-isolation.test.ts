@@ -27,6 +27,7 @@ let queries: {
   capital: typeof import("@/lib/queries/capital");
   sessions: typeof import("@/lib/queries/sessions");
   accounts: typeof import("@/lib/queries/accounts");
+  signals: typeof import("@/lib/queries/signals");
 };
 
 const PRIMARY = 1;
@@ -47,14 +48,17 @@ beforeAll(async () => {
     capital: await import("@/lib/queries/capital"),
     sessions: await import("@/lib/queries/sessions"),
     accounts: await import("@/lib/queries/accounts"),
+    signals: await import("@/lib/queries/signals"),
   };
 
   t.db.insert(t.schema.accounts).values({ id: SWING, name: "Swing", isDefault: false }).run();
 
   t.db.insert(t.schema.trades).values([
-    tradeRow({ accountId: PRIMARY, symbol: "TCS", setupTag: "orb", netPnl: 1000 }),
+    // v4.3.0: two of the three carry a Signal book envelope, in DIFFERENT
+    // accounts — `getSignalTrades` is scoped like every other read (invariant 8).
+    tradeRow({ accountId: PRIMARY, symbol: "TCS", setupTag: "orb", netPnl: 1000, signalJson: '{"v":1,"model":"S1","t1":14.48}' }),
     tradeRow({ accountId: PRIMARY, symbol: "INFY", setupTag: "orb", netPnl: -400 }),
-    tradeRow({ accountId: SWING, symbol: "RELIANCE", setupTag: "vcp", netPnl: 250 }),
+    tradeRow({ accountId: SWING, symbol: "RELIANCE", setupTag: "vcp", netPnl: 250, signalJson: '{"v":1,"model":"S2"}' }),
   ]).run();
 
   t.db.insert(t.schema.ledgerEntries).values([
@@ -166,6 +170,17 @@ describe("account isolation — reads", () => {
     s = queries.sessions.getSessionsWithReview();
     expect(s).toHaveLength(1);
     expect(s[0].maxTrades).toBe(5);
+  });
+
+  it("getSignalTrades is scoped, and aggregates in the All-accounts view", () => {
+    selectAccount(PRIMARY);
+    expect(queries.signals.getSignalTrades().map((r) => r.symbol)).toEqual(["TCS"]);
+    selectAccount(SWING);
+    expect(queries.signals.getSignalTrades().map((r) => r.symbol)).toEqual(["RELIANCE"]);
+    selectAccount(ALL);
+    expect(queries.signals.getSignalTrades().map((r) => r.symbol).sort()).toEqual(["RELIANCE", "TCS"]);
+    // INFY records no signal, so it is in neither book's Signal tab.
+    expect(queries.signals.getSignalTrades().every((r) => r.symbol !== "INFY")).toBe(true);
   });
 
   it("getTradeCount is scoped", () => {

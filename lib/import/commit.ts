@@ -18,6 +18,7 @@ import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
 import { todayIstIso, normalizeDate, storedDateProblem, calendarDaysHeld, sameDay } from "@/lib/domain/trading-day";
 import { closingAggregate } from "@/lib/domain/close-aggregate";
+import { classifyStoredSignal, SIGNAL_TOMBSTONE } from "@/lib/domain/signal";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
@@ -1677,6 +1678,13 @@ export interface ManualJournalFields {
   ruleViolations?: string[] | null;
   /** Derivatives lot size (shares = lots × lotSize) — user-entered, varies by contract. */
   lotSize?: number | null;
+  /**
+   * The Signal book's envelope (v4.3.0), ALREADY SERIALISED by
+   * `signalFromForm` server-side — this writer never sees the form's raw
+   * strings and never validates them. Stored only on an OPTION; anything else
+   * forces null, because a signal describes a strike's chain.
+   */
+  signalJson?: string | null;
 }
 
 /** Insert a single manually-entered trade (source_file = "manual"). */
@@ -1799,6 +1807,13 @@ export function commitManualTrade(
       rMultiple: riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null,
       setupTag: fields.setupTag ?? null,
       notes: fields.notes ?? null,
+      // v4.3.0 — the Signal book. An option only (the classifier's verdict, not
+      // the form's claim), and null on an Add that recorded none: an empty
+      // envelope would make the trade a signal trade with nothing in it.
+      // NOTHING above this line changes because of it — a trade committed with
+      // a signal stores identical money, charge, qty, dedup_hash and r_multiple
+      // columns to the same trade committed without one.
+      signalJson: cls.instrumentType === "option" ? fields.signalJson ?? null : null,
       ruleViolations: fields.ruleViolations && fields.ruleViolations.length ? fields.ruleViolations : null,
       brokerage: charges.brokerage,
       sttCtt: charges.sttCtt,
@@ -1823,7 +1838,9 @@ export function commitManualTrade(
     entityId: row!.id,
     action: "create",
     summary: `${cls.symbol} ${cls.segment} · ${isOpen ? "open" : "closed"} · net ${netPnl}${breaches ? ` · ⚠ ${breaches.length} limit breach${breaches.length === 1 ? "" : "es"}` : ""}`,
-    after: { symbol: cls.symbol, segment: cls.segment, buyQty: t.buyQty, sellQty: t.sellQty, netPnl, isOpen, ...(breaches ? { ruleViolations: breaches } : {}) },
+    // The audit records THAT a signal was recorded, not its levels — the trail
+    // is a history of actions, and the envelope itself lives on the row.
+    after: { symbol: cls.symbol, segment: cls.segment, buyQty: t.buyQty, sellQty: t.sellQty, netPnl, isOpen, ...(breaches ? { ruleViolations: breaches } : {}), ...(cls.instrumentType === "option" && fields.signalJson ? { signal: true } : {}) },
     source: "manual",
   });
 
@@ -2381,6 +2398,13 @@ export interface UpdateTradeFields {
   exitTrigger?: string | null;
   notes?: string | null;
   currentPrice?: number | null; // MTM for a still-open position
+  /**
+   * The Signal book's envelope (v4.3.0), already serialised server-side.
+   * `undefined` = NOT MENTIONED, so the stored value is kept (the D9 rule the
+   * dates follow); `null` = an explicit clear, which on a row that HAD a signal
+   * stores the tombstone rather than SQL NULL. See the write below.
+   */
+  signalJson?: string | null;
 }
 
 /**
@@ -2640,6 +2664,27 @@ export function updateManualTrade(
   const keptNotes = pricedHere ? withoutSyncChargesNote(t.importNotes) : t.importNotes;
   const nextNotes = exitLegChanged ? withoutStaleCloseNote(keptNotes) : keptNotes;
 
+  // v4.3.0 — THE SIGNAL BOOK's edit rule, in three parts and no more.
+  //
+  //   1. NOT AN OPTION, or NOT MENTIONED (`undefined`): the stored value stands.
+  //      A form that does not carry the field — a stale tab, a non-dialog client,
+  //      the trade table's own quick edits — must not clear it; the `notes` idiom
+  //      two lines down, and D9's "absent = not mentioned".
+  //   2. A STORED ENVELOPE THIS RELEASE CANNOT READ (a `v:2` written by a newer
+  //      version, restored from that machine's backup) is KEPT and the save says
+  //      so. `parseSignal` answers null for it, so the section seeds BLANK — and
+  //      without this one keystroke elsewhere in the form would replace a richer
+  //      envelope with a one-field v1. The tombstone is NOT this case: it is a
+  //      readable v1 that states nothing, and clearing or re-recording it is
+  //      exactly what the user should be able to do.
+  //   3. AN EXPLICIT CLEAR of a row that HAD a signal stores the tombstone
+  //      `{"v":1}`, never SQL NULL — `rerunDataFixesAfterRestore` forgets every
+  //      marker, so a NULL would let the seeded-notes backfill resurrect, on the
+  //      next restore, the signal the user deliberately deleted.
+  const storedSignalUnreadable = t.signalJson != null && classifyStoredSignal(t.signalJson) === "unreadable";
+  const signalMentioned = fields.signalJson !== undefined && t.instrumentType === "option" && !storedSignalUnreadable;
+  const nextSignalJson = signalMentioned ? fields.signalJson ?? (t.signalJson != null ? SIGNAL_TOMBSTONE : null) : t.signalJson;
+
   db.update(tradesTable)
     .set({
       buyQty,
@@ -2666,6 +2711,7 @@ export function updateManualTrade(
       setupTag: fields.setupTag !== undefined ? fields.setupTag : t.setupTag,
       exitTrigger: fields.exitTrigger !== undefined ? fields.exitTrigger : t.exitTrigger,
       notes: fields.notes !== undefined ? fields.notes : t.notes,
+      signalJson: nextSignalJson,
       ...(nextNotes !== t.importNotes ? { importNotes: nextNotes } : {}),
       brokerage: charges.brokerage,
       sttCtt: charges.sttCtt,
@@ -2706,11 +2752,21 @@ export function updateManualTrade(
     entityId: tradeId,
     action: "update",
     summary: `${t.symbol} edited · ${isOpen ? "open" : "closed"} · net ${netPnl}`,
-    before: { buyQty: t.buyQty, avgBuyPrice: t.avgBuyPrice, sellQty: t.sellQty, avgSellPrice: t.avgSellPrice, netPnl: t.netPnl, isOpen: t.isOpen },
-    after: { buyQty, avgBuyPrice, sellQty, avgSellPrice, netPnl, isOpen },
+    // `signal` is on BOTH sides, always: `assertSymmetricSnapshots` (lib/audit)
+    // refuses an asymmetric pair, and "the signal was removed" is exactly the
+    // transition the trail must be able to show. The trail records THAT a signal
+    // is on the row, never its levels — those live on the row itself.
+    before: { buyQty: t.buyQty, avgBuyPrice: t.avgBuyPrice, sellQty: t.sellQty, avgSellPrice: t.avgSellPrice, netPnl: t.netPnl, isOpen: t.isOpen, signal: t.signalJson != null },
+    after: { buyQty, avgBuyPrice, sellQty, avgSellPrice, netPnl, isOpen, signal: nextSignalJson != null },
   });
 
-  return { ok: true, message: "Trade updated." + markNote };
+  // Part 2 above, said out loud: a save that silently dropped a newer release's
+  // signal would be indistinguishable from one that kept it.
+  const signalNote =
+    storedSignalUnreadable && fields.signalJson !== undefined
+      ? " Its signal was recorded by a newer version of Vyuha and was left exactly as it is."
+      : "";
+  return { ok: true, message: "Trade updated." + markNote + signalNote };
 }
 
 /**

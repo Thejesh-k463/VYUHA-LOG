@@ -19,6 +19,7 @@ import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { CheckCircle2, Paperclip } from "lucide-react";
 import { buildManualPreviewBody } from "@/components/trades/manual-preview-body";
+import { SignalSection } from "@/components/trades/signal-section";
 
 interface PreviewResp {
   classification: { segment: Segment; bucket: string; exchange: string; symbol: string; optionType: string | null };
@@ -553,6 +554,12 @@ export function ManualTradeForm({
         )}
         <Field label="Notes" className="col-span-2 sm:col-span-4"><Input name="notes" placeholder="optional" /></Field>
       </div>
+
+      {/* The Signal book's entry door — options only, because a signal describes
+          a strike's chain. Off by default: a trade entered without one is not a
+          signal trade (`serializeSignal` returns null for an empty signal, so
+          the column stays SQL NULL). */}
+      {kind === "fno" && contractType === "option" && <SignalSection mode="add" entry={entryPremium} />}
 
       {/* Live charge preview */}
       {preview && (

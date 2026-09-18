@@ -505,6 +505,13 @@
       "when": 1788800500000,
       "tag": "0071_settings-strategy-shelf",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1788800600000,
+      "tag": "0072_trades-signal-json",
+      "breakpoints": true
     }
   ]
 }

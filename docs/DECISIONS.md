@@ -7837,3 +7837,67 @@ green with `lib/analytics/ipo-link.ts` reverted alone; the seam case H10 · 2P-S
 Boundaries with no seam case: D10's message clause, D3's `slabBasis` through a tiered broker's job + ladder together.
 
 **Gate.** `npm run verify` EXIT 0 — 435 files / 9,638 passed / 35 skipped on the owner's machine (9,616 expected on CI; README says 9616 / 435); typecheck 0; lint 3 pre-existing warnings; build compiled.
+
+## 2026-09-18 — v4.3.0 gains ONE single strategy: the Signal book (journal side only)
+
+**The scope ruling.** The owner runs one options strategy, and v4.3.0 records it. What it does NOT do is produce it:
+there is no scanner, no zone engine, no OI feed and no alerting in Vyuha, and none is planned here. The signal is
+generated elsewhere, on the owner's own machine; Vyuha's job is the JOURNAL side — record what the signal said, beside
+the trade it produced, and read it back. This keeps v4.3.0's "no new network host of any kind" true (Q59) and keeps the
+feature inside the one thing this product is: a record of what you did and what it cost.
+
+**The envelope, and the tombstone.** `trades.signal_json` (migration 0072) is ONE nullable `text` column holding a
+versioned JSON envelope, the same call 0071 made for the strategy shelf: the field list describes a STRATEGY, and a
+strategy gets revised, so a column per field would make the schema grow with the owner's note-taking and all nineteen
+would be NULL on every book that never records one. Plain `text`, not drizzle's `{mode:"json"}` — a `v:2` envelope must
+reach `parseSignal` as a raw string so it can be discarded whole rather than auto-parsed into a shape the readers would
+half-trust. `lib/domain/signal.ts` is the ONLY reader and the only writer of the content
+(`tests/signal-book-page.test.ts` scans lib/ app/ components/ for a second one).
+
+An explicit clear stores the TOMBSTONE `{"v":1}`, never SQL NULL. The reason is a sequence, not a preference:
+`restoreDatabase` calls `rerunDataFixesAfterRestore`, which deletes every marker and replays
+`signal-notes-backfill-v1` — and that fix reads the seeded four-line notes, which are still on the row. With NULL as the
+cleared state, a restore (which is also how you move to a new machine) would hand back a signal the user deliberately
+deleted. `parseSignal` answers null for the tombstone, `getSignalTrades` drops it, and the fix's `IS NULL` guard skips
+it. The rejected alternative was the design's original §5 row, which ACCEPTED the resurrection; the reviewer's
+measurement — five lines against a path every new machine takes — settled it.
+
+**The 2% / ₹0.05 adherence tolerance is a DECISION, not a measurement.** `ADHERENCE_TOL_PCT = 2` with a ₹0.05 floor
+(`tol(x) = max(0.05, x * 0.02)`) is how far an exit may sit from the level it claims and still be called adherent.
+Nothing was measured, because there are no live (non-seeded) exits to measure against yet — the 42 seeded rows are a
+back-solved log, not a sample of execution slippage. The constant is exported, printed on screen beside block A, and is
+to be revisited once real exits exist. The floor is there so a 60-paise option is not judged inside a two-paise band.
+
+**"R on signal SL" is a SECOND rule beside the stored `rMultiple`, and says so.** Block B's `avgR` is
+`netPnl / ((entry - signal.sl) * qty)`. The stored `rMultiple` is `netPnl / riskAmount`, rounded to 2 dp at the writer.
+The two agree on the seeded rows (there `slPlanned = sl`) and diverge on any form-entered trade, so the column header
+reads "R on signal SL" and never "R". A group with no recorded SL below its entry reports `avgR: null` and renders "—",
+with `rN` stated; `riskAmount` is never substituted for a missing signal stop (invariant 6).
+
+**The day-range caveat.** `dayHigh` / `dayLow` are the WHOLE session's range for the contract, not the range since
+entry, so "the day reached T1" may describe a move that happened before the position existed. The sentence is printed
+beside blocks A and C. Consequence, adopted from the design review: `TARGET_REACHED_NOT_TAKEN` is reported in `byCode`
+labelled "day high >= T1 (may precede entry)" but is EXCLUDED from `deviating{n, netPnl}` — attaching a rupee figure to
+a rule-break that cannot be known is exactly the fabricated denominator invariant 6 forbids.
+
+**No `tests/helpers/field-rules.ts` entry, deliberately.** That registry exists for NULLABLE MONEY and date fields read
+under a rule other than their writer's (`?? estimate`, never `&& > 0`) — the class that survived two fix waves.
+`signal_json` is neither: it holds no money (every number in it is a level or exchange data, stored REAL, invariant 1),
+and it has exactly ONE reader, pinned by a source scan rather than by a read-shape rule. Registering it would add a rule
+`tests/readers-follow-writers.test.ts` could never usefully fire on.
+
+**The accepted gap.** A seeded row that was in Trash at upgrade time restores WITHOUT a signal: a Trash restore runs no
+data fix (the same precedent the paytm and leg-date fixes already accept), and by the time the row comes back the
+backfill's marker is set. Recovery is ordinary — open the trade's Edit form and its Signal section, or restore a backup,
+which does replay the fix. Not worth a second fix pass over the Trash path.
+
+**Gate.** See the wave's own commit message for the verified counts.
+
+**The seam pass found one product defect, fixed before the gate (SIG-1).** `signalFromForm` stripped EVERY comma, so a
+decimal-comma T1 typed as "14,48" was stored as 1448 and block A would have judged the trade against it for life — while the
+function's own header promised a refusal. Fixed in `lib/domain/signal.ts`: a comma is accepted only as a thousands separator whose
+LAST group has three digits (Western 1,448 and Indian lakh grouping 3,00,000 both pass; "14,48", "1e5", "1,,448" are refused).
+Rejected: the Western-only `NUM` rule the notes parser uses (it would refuse 3,00,000, the way an Indian trader types strike OI).
+`num()` in `app/trades/actions.ts` still strips every comma for qty / price — pre-existing, recorded, not changed in 4.3.0.
+Seam boundaries with no runtime case, recorded: the RSC props into `signal-book.tsx`, `SLIM_TRADE_FIELDS.signalJson` into the edit
+dialog, `signal-section.tsx`'s own client state (vitest here runs node, no jsdom), the tab's force-mount; no e2e spec for the tab.

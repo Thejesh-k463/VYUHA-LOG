@@ -292,7 +292,7 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // CAPABILITY; a whole-page <ProGate> there would take away the free record —
   // the legs, the grouping, the payoff curve, the gross figures and the sixteen names
   // wherever the legs still form one of them.
-  { href: "/strategies", label: "Option Strategies — 40-shape catalogue, strategy shelf and picker", partial: true },
+  { href: "/strategies", label: "Option Strategies — 40-shape catalogue, strategy shelf and picker; Signal book — rule adherence, edge and ladder analytics", partial: true },
   { href: "/options-journal", label: "Options Seller Journal — IV, DTE, hedge and expiry outcomes" },
   { href: "/reports/expiry", label: "Expiry Analytics — expiry-day vs other-day edge" },
   { href: "/reports/rom", label: "Return on Margin — what your capital actually earned" },

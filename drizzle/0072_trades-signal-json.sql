@@ -1,0 +1,53 @@
+-- v4.3 — `trades.signal_json`: the SIGNAL a trade was taken on.
+--
+-- The journal gains ONE strategy of its own (the "Signal book"): an option
+-- signal recorded beside the trade it produced — model, the underlying's spot
+-- and S/R zone, the strike's OI figures, a score, the T1/T2/SL ladder, and how
+-- the position actually ended.
+--
+-- ONE COLUMN FOR THE WHOLE SIGNAL, the same call 0071 made for the strategy
+-- shelf. The field list is a STRATEGY's description and a strategy gets
+-- revised; a column per field would make the schema grow with the owner's
+-- note-taking, and all nineteen would be NULL on every book that never records
+-- one. The value is a versioned JSON envelope —
+-- `{"v":1,"model":"S1","spot":672.6,...}` — whose `v` is what protects a future
+-- shape: `parseSignal()` (lib/domain/signal.ts) DISCARDS an alien version
+-- rather than half-reading it, exactly as `parseShelf()` (0071) and
+-- `bhavcopy_backfill_progress` (0066) do.
+--
+-- PLAIN `text`, NOT drizzle's `{mode:"json"}` (which `rule_violations` uses).
+-- A v:2 envelope must reach `parseSignal` as a RAW STRING so it can be
+-- discarded as a whole; auto-parsing it would hand the readers a shape they
+-- would then half-trust.
+--
+-- NO MONEY (invariant 1). Every number inside is a LEVEL (spot, a zone edge, a
+-- day's high, a target, a stop) or exchange data (open interest, a volume, a
+-- percentage). Levels stay REAL, exactly as `sl_planned`, `target_planned` and
+-- `strike` do — rounding a per-unit level to paise corrupts the qty × price
+-- arithmetic every reader does. `oiValueCr` is the chain's notional in ₹ crore:
+-- market data, not the user's money. NOTHING converts to or from paise, and
+-- this migration moves no existing figure. A trade committed with a signal
+-- stores byte-identical money, charge, qty, dedup_hash and r_multiple columns
+-- to the same trade committed without one (tests/signal-db.test.ts).
+--
+-- NULLABLE, AND NULL IS THE HONEST DEFAULT — every existing row, and every
+-- imported row forever: an IMPORT never makes a signal, because a broker file
+-- states no signal. The one non-form writer is the `signal-notes-backfill-v1`
+-- data fix, which reads the 42 seeded options-strategy rows back out of their
+-- own `notes` and writes ONLY WHERE `signal_json IS NULL`.
+--
+-- THE TOMBSTONE. An explicit clear of a previously non-null signal stores
+-- `{"v":1}`, not NULL. `rerunDataFixesAfterRestore` forgets every marker, and a
+-- backup restore is also how you move to a new machine — so a NULL would let
+-- the backfill resurrect, from the notes, the signal you deliberately deleted.
+-- The tombstone reads as "no signal" everywhere (`parseSignal` answers null for
+-- an all-null envelope) and the fix's IS NULL guard skips it.
+--
+-- ACCOUNT SCOPE (invariants 8/9). The column lives on `trades`, which is
+-- already account-scoped; the single reader (`getSignalTrades`,
+-- lib/queries/signals.ts) goes through `getSelectedAccountId()` and applies
+-- `accountId > 0 ? filter : all`. No new `account_id` column, so
+-- tests/account-isolation.test.ts's registry is unaffected.
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `trades` ADD COLUMN `signal_json` text;

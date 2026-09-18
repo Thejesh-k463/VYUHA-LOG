@@ -91,6 +91,19 @@ export const trades = sqliteTable(
     // Journal
     setupTag: text("setup_tag"),
     notes: text("notes"),
+    /**
+     * THE SIGNAL this trade was taken on (v4.3.0, migration 0072) — a versioned
+     * JSON envelope, as a RAW STRING.
+     *
+     * Deliberately NOT `{mode:"json"}` like `ruleViolations` below: an envelope
+     * from a newer release must reach `parseSignal` (lib/domain/signal.ts)
+     * unparsed so it can be discarded as a whole rather than half-read. That
+     * module is the ONLY reader and the only writer of this value's CONTENT;
+     * everything here just carries the string. Null on every imported row —
+     * a broker file states no signal — and `{"v":1}` is the tombstone an
+     * explicit clear stores. No money lives inside it (invariant 1).
+     */
+    signalJson: text("signal_json"),
     playbookId: integer("playbook_id"), // links to playbooks.id (P2.4 behavioral journaling)
     emotionTag: text("emotion_tag"), // one of EMOTION_TAGS in lib/analytics/behavior.ts
     slPlanned: real("sl_planned"), // original stop-loss

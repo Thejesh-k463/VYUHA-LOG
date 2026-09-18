@@ -4,6 +4,8 @@ import {
   OPS,
   QTY,
   SYM,
+  SIGNAL_SYMBOL,
+  SEEDED_SIGNAL_NOTES,
   IPO_NAME,
   CROSS_BOOK_IPO_NAME,
   FOREIGN_IPO_NAME,
@@ -25,6 +27,7 @@ import {
   type SeedIds,
   type Template,
 } from "./helpers/book-ops";
+import { parseSignal } from "@/lib/domain/signal";
 
 /**
  * THE BOOK-SEQUENCE HARNESS (v4.3.0, builder G2).
@@ -387,6 +390,44 @@ describe("the sequences the v4.3.0 re-checks were written about", () => {
   it("merge → a 4.2.x envelope → un-merge → runDataFixes", async () => {
     await expectClean(["mergeAccountBIntoA", "legacifyLatestEnvelope", "restoreSourceAccount", "runDataFixes"]);
   });
+
+  /**
+   * v4.3.0 SIGNAL BOOK — record → clear → backup → restore.
+   *
+   * The one stateful sequence the Signal book adds, and the reason
+   * `trades.signal_json` stores a TOMBSTONE rather than SQL NULL on an explicit
+   * clear: `restoreDatabase` calls `rerunDataFixesAfterRestore`, which forgets
+   * every marker and replays `signal-notes-backfill-v1` — and the seeded notes
+   * this row carries are precisely what that fix reads. With NULL as the
+   * cleared state the restore would hand back a signal the user deleted, on the
+   * path that is also how you move to a new machine.
+   *
+   * Composed from VARIANTS, so the 275-scenario pair sweep is unchanged: a
+   * whole-database restore crossed with seventeen operations asks nothing these
+   * four steps do not, at ~15x the cost on the Windows runner.
+   *
+   * MEASURED LOCALLY 2026-09-18: 622 ms — over this file's <= 300 ms per-`it`
+   * budget, and the only case here that is, because `restoreDatabase` rewrites
+   * every table (~300 ms of it) where every other step touches one row. The
+   * Windows runner is measured >15x slower on SQLite-file work, which puts it
+   * past vitest's 5 s default, so THIS `it` carries an explicit 30 s — the same
+   * ceiling `hookTimeout` already uses for a seeded temp database. A genuinely
+   * hung restore still fails.
+   */
+  it("v4.3.0 · record a signal → clear it → backup → restore: the tombstone survives and nothing resurrects", async () => {
+    tpl.reset();
+    const ctx = freshCtx(t, m, ids);
+    expect(await applyMore(ctx, ["recordSignalTrade"])).toEqual([]);
+    const signalRow = () => t.db.select().from(t.schema.trades).all().find((r) => r.tradingsymbol === SIGNAL_SYMBOL)!;
+    expect(signalRow().signalJson).toBe('{"v":1,"model":"S1","t1":13,"t2":16,"sl":7.5}');
+    expect(signalRow().notes, "the notes the backfill reads are on the row").toBe(SEEDED_SIGNAL_NOTES);
+
+    expect(await applyMore(ctx, ["clearRecordedSignal", "backupDumpAndRestore"])).toEqual([]);
+    const after = signalRow();
+    expect(after.signalJson, "a cleared signal must not come back from its own notes").toBe('{"v":1}');
+    expect(parseSignal(after.signalJson), "and it reads as NO signal everywhere").toBeNull();
+    expect(after.notes, "the fix never rewrites what the user typed").toBe(SEEDED_SIGNAL_NOTES);
+  }, 30_000);
 
   /**
    * MOVED by D1 (v4.3.0 fix wave 2N, re-check finding counted-once#0).

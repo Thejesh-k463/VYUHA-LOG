@@ -13,6 +13,7 @@ import { toast } from "@/components/ui/toaster";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { ExitTriggerField } from "@/components/trades/exit-trigger-field";
+import { SignalSection } from "@/components/trades/signal-section";
 
 interface PreviewResp {
   breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
@@ -333,6 +334,11 @@ export function EditTradeDialog({
         <Field label="Exit trigger"><ExitTriggerField name="exitTrigger" value={exitTrigger} onChange={setExitTrigger} /></Field>
         <Field label="Notes"><Input name="notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
+
+      {/* The Signal book (v4.3.0) — options only, and it posts nothing until an
+          input is dirty, so an edit that fixes a sell date cannot blank a signal
+          the user never opened. */}
+      {trade.instrumentType === "option" && <SignalSection mode="edit" entry={avgBuyPrice} storedJson={trade.signalJson} />}
 
       <TradeAttachments tradeId={trade.id} />
 

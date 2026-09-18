@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { dedupHash, PAYTM_BROKER } from "@/lib/import/dedup";
 import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
 import { normalizeDate } from "@/lib/domain/trading-day";
+import { parseSeededSignalNotes, serializeSignal } from "@/lib/domain/signal";
 
 /**
  * Data fixes — one-shot row rewrites that SQL alone cannot express.
@@ -22,6 +23,7 @@ import { normalizeDate } from "@/lib/domain/trading-day";
 export const PAYTM_DEDUP_FIX = "paytm-dedup-isin-v1";
 export const IPO_ACCOUNT_REHOME_FIX = "ipo-account-rehome-v1";
 export const LEG_TRADE_DATE_ISO_FIX = "leg-trade-date-iso-v1";
+export const SIGNAL_NOTES_BACKFILL_FIX = "signal-notes-backfill-v1";
 
 export interface DataFixResult {
   name: string;
@@ -218,10 +220,70 @@ function applyLegTradeDateIso(sqlite: Database.Database): DataFixResult {
   return result;
 }
 
+/**
+ * SIGNAL-NOTES-BACKFILL (v4.3.0) — read the 42 seeded options-strategy rows'
+ * signal back out of the notes they already carry, into `signal_json` (0072).
+ *
+ * `scripts/seed-options-account.ts` wrote each trade's signal as four lines of
+ * `notes` because there was nowhere else to put it. Now there is. The parse
+ * lives in `lib/domain/signal.ts` (pure, exhaustively unit-tested) and this is
+ * just the loop: the fix has no account predicate — the log is one account's
+ * today, but a book restored under another name is the same 42 trades — and it
+ * NEVER writes `notes`. What was typed stays typed.
+ *
+ * IT REFUSES, IT DOES NOT GUESS. `parseSeededSignalNotes` answers null for
+ * anything but an exact four-line match under one of the two setup tags, with a
+ * direction that agrees with `option_type`; such a row is counted in
+ * `skippedCollisions`, LOGGED BY ID, and left exactly as stored. Without the log
+ * a refused row is silent — and a silent refusal in a one-shot fix is a row
+ * nobody ever looks at again.
+ *
+ * `signal_json IS NULL` is what makes it idempotent AND safe: a user-edited
+ * signal is never overwritten, and neither is the tombstone `{"v":1}` an
+ * explicit clear stores — which is the whole reason that tombstone exists, since
+ * `rerunDataFixesAfterRestore` forgets every marker and replays this fix.
+ *
+ * NO QUIET `hasColumn` GUARD (design review item 7). On a pre-0072 connection
+ * the SELECT throws "no such column", the marker transaction rolls back, and
+ * lib/db/index.ts swallows it so the fix runs again on the next open — which is
+ * correct. A quiet `return` would be MARKED by `runDataFixes` (it marks after
+ * ANY return) and the fix would be consumed forever, having done nothing.
+ */
+function applySignalNotesBackfill(sqlite: Database.Database): DataFixResult {
+  const result: DataFixResult = { name: SIGNAL_NOTES_BACKFILL_FIX, applied: true, rekeyed: 0, skippedCollisions: 0 };
+  const rows = sqlite
+    .prepare(
+      `SELECT id, notes, setup_tag, option_type
+         FROM trades
+        WHERE signal_json IS NULL
+          AND notes LIKE 'Options strategy log #%'
+          AND setup_tag IN ('CE BREAKOUT (RES)','PE BREAKDOWN (SUP)')
+        ORDER BY id`,
+    )
+    .all() as { id: number; notes: string | null; setup_tag: string | null; option_type: string | null }[];
+  const write = sqlite.prepare("UPDATE trades SET signal_json = ? WHERE id = ?");
+  const skipped: number[] = [];
+
+  for (const r of rows) {
+    const signal = r.notes ? parseSeededSignalNotes(r.notes, r.setup_tag, r.option_type) : null;
+    const json = signal ? serializeSignal(signal) : null;
+    if (!json) {
+      result.skippedCollisions++;
+      skipped.push(r.id);
+      continue;
+    }
+    write.run(json, r.id);
+    result.rekeyed++;
+  }
+  if (skipped.length) console.log(`[data-fix] ${SIGNAL_NOTES_BACKFILL_FIX}: ${skipped.length} note(s) not read in full, left as they are — trade ids ${skipped.join(", ")}`);
+  return result;
+}
+
 const FIXES: { name: string; apply: (sqlite: Database.Database) => DataFixResult }[] = [
   { name: PAYTM_DEDUP_FIX, apply: applyPaytmDedupIsin },
   { name: IPO_ACCOUNT_REHOME_FIX, apply: applyIpoAccountRehome },
   { name: LEG_TRADE_DATE_ISO_FIX, apply: applyLegTradeDateIso },
+  { name: SIGNAL_NOTES_BACKFILL_FIX, apply: applySignalNotesBackfill },
 ];
 
 /**

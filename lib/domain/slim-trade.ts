@@ -73,6 +73,11 @@ export const SLIM_TRADE_FIELDS = [
   "emotionTag",
   "mistakeTags",
   "notes",
+  // v4.3.0: the Signal book's envelope. Same reasoning as `notes` above — the
+  // edit dialog is typed on SlimTrade and its Signal section seeds from this
+  // value, it is user-authored, and it is null on every imported book. Fetching
+  // it when the dialog opens is the round trip slim-trade.ts:22-24 rejects.
+  "signalJson",
   "ruleViolations",
   "exitTrigger",
   // v3.7: the /trades table shows a reviewed marker and the queue's "Mark

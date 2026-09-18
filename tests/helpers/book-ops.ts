@@ -71,6 +71,7 @@ export interface BookMods {
   ipoQ: typeof import("@/lib/queries/ipos");
   dq: typeof import("@/lib/queries/data-quality");
   dataFixes: typeof import("@/lib/db/data-fixes");
+  backup: typeof import("@/lib/backup");
   lots: typeof import("@/lib/import/close-open-lots");
   staged: typeof import("@/lib/domain/staged");
   ipoRoute: typeof import("@/app/api/ipos/route");
@@ -92,6 +93,7 @@ export async function loadBookMods(): Promise<BookMods> {
     ipoQ: await import("@/lib/queries/ipos"),
     dq: await import("@/lib/queries/data-quality"),
     dataFixes: await import("@/lib/db/data-fixes"),
+    backup: await import("@/lib/backup"),
     lots: await import("@/lib/import/close-open-lots"),
     staged: await import("@/lib/domain/staged"),
     ipoRoute: await import("@/app/api/ipos/route"),
@@ -1027,7 +1029,81 @@ export const VARIANTS: BookOp[] = [
       await postIpo(ctx, "linkIpoRecordOnIpos", { tradeId: ctx.ids.ipoTrade });
     },
   },
+  /* ── v4.3.0 Signal book: the tombstone, across a backup restore ──────────── */
+  {
+    // The Signal book's ONE stateful sequence: a signal the user DELETED must
+    // not come back. `rerunDataFixesAfterRestore` forgets every marker inside
+    // the restore transaction and replays `signal-notes-backfill-v1`, and the
+    // seeded notes this row carries are exactly what that fix reads — so with
+    // SQL NULL as the cleared state the restore would hand the deletion back.
+    // The tombstone `{"v":1}` is what the fix's IS NULL guard skips.
+    name: "recordSignalTrade",
+    needs: "nothing — it adds the option round trip the next two steps act on",
+    drives: "lib/import/commit.ts commitManualTrade with `signalJson` (the Add form's Signal section)",
+    run: async (_db, ctx) => {
+      selectAccount(ctx, ctx.ids.acctA);
+      const res = ctx.m.commit.commitManualTrade(
+        {
+          broker: "zerodha",
+          tradingsymbol: SIGNAL_SYMBOL,
+          isin: null,
+          buyQty: 50,
+          avgBuyPrice: 10,
+          buyValue: 500,
+          sellQty: 50,
+          avgSellPrice: 16,
+          sellValue: 800,
+          closingPrice: null,
+          grossPnl: 300,
+          unrealisedPnl: 0,
+          buyDate: "2026-09-02",
+          sellDate: "2026-09-02",
+          productHint: null,
+          exchangeHint: null,
+          sourceFile: "manual",
+        } as never,
+        { notes: SEEDED_SIGNAL_NOTES, setupTag: "CE BREAKOUT (RES)", signalJson: '{"v":1,"model":"S1","t1":13,"t2":16,"sl":7.5}' },
+        ctx.ids.acctA,
+      );
+      if (!res.id) return record(ctx, "recordSignalTrade", "skipped", "the signal round trip is already in the journal");
+      bump(ctx, SIGNAL_SYMBOL, 0); // bought and sold the same day: flat
+      record(ctx, "recordSignalTrade", "applied", `#${res.id} carries a signal and the seeded notes`);
+    },
+  },
+  {
+    name: "clearRecordedSignal",
+    needs: "the signal round trip is in the journal and carries a signal",
+    drives: "lib/import/commit.ts updateManualTrade with `signalJson: null` — the Edit form's explicit clear",
+    run: async (_db, ctx) => {
+      const row = allTrades(ctx).find((r) => r.tradingsymbol === SIGNAL_SYMBOL);
+      if (!row) return record(ctx, "clearRecordedSignal", "skipped", "no signal round trip is in the journal");
+      selectAccount(ctx, row.accountId);
+      const res = ctx.m.commit.updateManualTrade(row.id, { signalJson: null });
+      if (!res.ok) return record(ctx, "clearRecordedSignal", "refused", res.message);
+      record(ctx, "clearRecordedSignal", "applied", `#${row.id} now stores ${row.signalJson === null ? "nothing" : "a tombstone"}`);
+    },
+  },
+  {
+    name: "backupDumpAndRestore",
+    needs: "nothing — it dumps the whole database and restores that dump over itself",
+    drives: "lib/backup.ts dumpDatabase + restoreDatabase (which reruns every data fix, invariant 10)",
+    run: async (_db, ctx) => {
+      const dump = ctx.m.backup.dumpDatabase(false);
+      const res = ctx.m.backup.restoreDatabase(dump);
+      record(ctx, "backupDumpAndRestore", res.ok ? "applied" : "refused", res.message);
+    },
+  },
 ];
+
+/** The Signal book variants' own contract — flat, so it states no quantity. */
+export const SIGNAL_SYMBOL = "OPT GSIG 25 Sep 2026 100 CE";
+/** The four lines `scripts/seed-options-account.ts` writes, which the fix reads. */
+export const SEEDED_SIGNAL_NOTES = [
+  "Options strategy log #7 · TIER 1",
+  "Spot 100.5 · S/R zone 98 - 102 · Day H/L 16.5/8.25",
+  "T1 13 · T2 16 · SL 7.5 · Exit: TARGET 2 HIT (60.00%)",
+  "ΔOI -2.10% (unwind) · Volume 1200",
+].join("\n");
 
 /** The stored IPO, edited through its own route with one field changed. */
 async function postIpo(ctx: BookCtx, opName: string, change: Record<string, unknown>): Promise<void> {

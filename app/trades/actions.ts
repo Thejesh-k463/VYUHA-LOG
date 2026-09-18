@@ -14,6 +14,7 @@ import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
 import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
+import { signalFromForm } from "@/lib/domain/signal";
 import { recordAudit } from "@/lib/audit";
 import { AccountRequiredError, getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import {
@@ -56,6 +57,24 @@ const ownCapital = (v: FormDataEntryValue | null) => {
   const x = Number(s);
   return Number.isFinite(x) ? x : null;
 };
+
+/**
+ * THE SIGNAL BOOK's form door (v4.3.0).
+ *
+ * The section posts the user's RAW strings as `signal.<field>` plus a hidden
+ * `signalPresent=1`, and `signalFromForm` (lib/domain/signal.ts, pure) is what
+ * turns them into the stored envelope — SERVER-SIDE, so a typed "14,48" or
+ * "abc" is REFUSED here rather than quietly becoming null in the browser and
+ * arriving as a gap the client never mentioned.
+ *
+ * `signalPresent` absent means the section was never opened (Add) or nothing in
+ * it was touched (Edit): `undefined`, which the writers read as "not mentioned"
+ * and keep. Present with every field blank IS a statement — an explicit clear.
+ */
+function signalFromFormData(formData: FormData) {
+  if (!formData.has("signalPresent")) return undefined;
+  return signalFromForm((k) => str(formData.get(`signal.${k}`)));
+}
 
 const ManualSchema = z.object({
   broker: z.enum(BROKERS),
@@ -167,6 +186,11 @@ export async function createManualTrade(
     } catch { /* never block a save on the limits check */ }
   }
 
+  // Refused BEFORE anything is written — nothing is half-saved (AGENTS.md: a
+  // row it cannot read is refused, never coerced).
+  const signal = signalFromFormData(formData);
+  if (signal && !signal.ok) return { ok: false, message: signal.message };
+
   try {
     const res = commitManualTrade(t, {
       forcedSegment: (segment as never) ?? null,
@@ -182,6 +206,7 @@ export async function createManualTrade(
       daysHeld: num(formData.get("daysHeld")) || null,
       currentPrice: num(formData.get("currentPrice")) || null,
       lotSize: num(formData.get("lotSize")) || null,
+      signalJson: signal?.ok ? signal.json : undefined,
     },
     // Present only when the form was submitted from the "All accounts" view.
     num(formData.get("accountId")) || null);
@@ -278,6 +303,9 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
   const id = Number(formData.get("tradeId"));
   if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
 
+  const signal = signalFromFormData(formData);
+  if (signal && !signal.ok) return { ok: false, message: signal.message };
+
   // D9 (v4.3.0 wave 2P) — a date field ABSENT from the form (a stale tab, a
   // non-dialog client) is "not mentioned" (`undefined` in UpdateTradeFields), not
   // "clear this": the stored date is kept and a stored value that states no day
@@ -301,6 +329,9 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
     exitTrigger: str(formData.get("exitTrigger")),
     notes: str(formData.get("notes")),
     currentPrice: num(formData.get("currentPrice")) || null,
+    // The same "absent = not mentioned" rule the two dates take: only a form
+    // that carried `signalPresent` says anything at all about the signal.
+    signalJson: signal?.ok ? signal.json : undefined,
   };
 
   const res = updateManualTrade(id, fields);
