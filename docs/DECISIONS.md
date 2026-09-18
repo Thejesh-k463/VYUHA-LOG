@@ -7976,3 +7976,25 @@ with in-memory copies the day of a release (the right long-term shape for the sl
 budget; none of these six does); a blanket 20 s everywhere (it would hide a slow test on the machine where it is cheapest to notice).
 The earlier entry of today said "if it recurs a third time, restructure rather than raise a timeout" — superseded by this measurement: the cases are within budget,
 the limit was wrong for that runner.
+
+## 2026-09-18 — v4.3.0 PUBLISHED; the plan for the next 100 credits
+
+**Published.** Tag `v4.3.0` = `c5c7c5b` (annotated, like v4.2.0) on a HEAD whose CI was 6/6; release workflow 3/3 (Windows x64, macOS Intel, macOS Apple silicon);
+`npm run release:verify v4.3.0 -- --deep`: 3 signatures, key id `4FF85F3BBE1DA21D`, each verified over the published bytes; draft published with `--latest`;
+`releases/latest` → v4.3.0; `latest.json` serves 4.3.0 for six platforms; `revocations` is still a prerelease. The Pages site (legacy build from `main` `/docs`,
+root redirecting to `sales/landing-page.html`) was fetched live: 4.3.0, the ₹599 plan, "from the second month", the Signal book; no 4.2.0 string left.
+NOT done, the owner's: the install on a non-build machine, the six-item smoke test, WDSI (client ZIP hash `DB71DD79…D9C0E19B`), winget (HELD).
+
+**Two traps of the day.** `sha256sum` on a Windows path PREFIXES the digest with a backslash (GNU escaping of a name containing one) — a 65-character "hash"; hash with
+a forward-slash path or strip it. `scripts/build-client-package.mjs` REFUSES to overwrite an existing ZIP: after a rebuild inside one version, rename the old ZIP aside
+(never delete it blind) — a chained command that ignores the refusal ships last hour's installer in the ZIP.
+
+**The plan for the next 100 credits (owner asked 2026-09-18; two sessions, each from a CLEARED context, Opus orchestrating, one builder per wave, a separate seam agent
+only when two builders share a wave, one gate per wave, one steward per release, every question asked in the first ten minutes).** Measured this session: a wave cost
+roughly 15–25 credits; the largest single cost was a Fable orchestrator carrying 330k+ tokens of context across ~200 turns.
+Session 1 = v4.4.0 (≈ 50): the parser wave (row 15), the UI asks (sidebar width, Appearance move, page default order + movable cards), the metrics copy and ratio waves,
+the fix list (the Outcome-lens Share column; `num()` comma handling; the unreadable-lot throw in `closeStaleLot`; a Help Desk entry + an e2e spec for the Signal book),
+then the release. Needs the owner's answers FIRST on metrics Q1 (per-lot F&O), Q3 (healthy ranges), Q5 (252 vs 245 days), Q6 (segment-aware risk cap).
+Session 2 (≈ 50): the auto-close rebuild with its two identity defects (row 1b) + the wave-3 tax work, ONE design review first (identity + tax), one builder each in
+sequence, then the release. NOT inside the 100: the signed widget feed, Telegram alerts, Atlas v3, the Positions tab / charts facade — each needs a new network surface
+or the owner's "build"; swap one in only by dropping something above.
