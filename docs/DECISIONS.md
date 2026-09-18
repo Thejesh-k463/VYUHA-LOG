@@ -7901,3 +7901,25 @@ Rejected: the Western-only `NUM` rule the notes parser uses (it would refuse 3,0
 `num()` in `app/trades/actions.ts` still strips every comma for qty / price — pre-existing, recorded, not changed in 4.3.0.
 Seam boundaries with no runtime case, recorded: the RSC props into `signal-book.tsx`, `SLIM_TRADE_FIELDS.signalJson` into the edit
 dialog, `signal-section.tsx`'s own client state (vitest here runs node, no jsdom), the tab's force-mount; no e2e spec for the tab.
+
+## 2026-09-18 — v4.3.0 bumped and built (thirteenth session): the release copy, the stale Rust cache, the Windows CI timeouts
+
+**The bump `7537ae2`.** `npm run bump-version 4.3.0`; `src-tauri/Cargo.lock` one line through `cargo update --workspace --offline` (it touched nothing else);
+`package-lock.json` two root version lines BY HAND (numstat 2 2). The release copy drops every auto-close claim — `lib/import/close-open-lots.ts` has no production
+caller — and says so explicitly; it adds Data Quality's "Close with the recorded sale", which ships and is the user-facing replacement. TWO database upgrades
+(0071, 0072). "Fifteen fix waves and nine scoped re-checks" is a COUNT (waves 1, 2, 2R, 2F, 2G, 2H, 2I, 2J, 2K, 2L, M1, 2M, 2N, 2O, 2P; `grep -c` of the re-check
+headings here), not an adjective. The legal pages' "Last updated" and the CHANGELOG heading carry 2026-09-18: if the tag slips a day, those four lines are re-dated.
+
+**Measured: the first desktop build after a folder move fails in the Rust step.** `failed to read plugin permissions: …\VYUHA-TRADE JOURNAL-V1\src-tauri\target\…` —
+every cached build-script output under `src-tauri/target/release/build` (150 dirs, 3.6 GB) embedded the repo's pre-move absolute path. `cargo clean --release`, then a
+plain `cargo build --release` to warm the cache (3 m 24 s; re-runnable, so it is safe inside a 10-minute tool window), then `npm run desktop:build` EXIT 0. Rejected:
+deleting only the crates that named the old path (nearly all of them did). Not a 4.3.0 code problem: the web bundle and a fresh `BUILD_ID` were written before the failure.
+
+**Measured: two Windows-runner timeouts, not defects.** CI 35322863777's first attempt failed `tests/backup-roundtrip.test.ts` "a pre-lots v3 envelope leaves today's
+lots alone" (6,558 ms) and one `preview-equals-save-matrix` G3 cell at vitest's 5 s, eight seconds apart, on a file 2P never touched; Linux ran the same tests green in the
+same run; `gh run rerun --failed` passed. The two later runs (35328890550, 35330899427) were green first time. If either case times out again on the TAG's run, re-run the
+job — and if it recurs a third time, give those two cases the `it.each` / in-memory-copy treatment AGENTS.md prescribes rather than a raised timeout.
+
+**Build evidence.** `BUILD_ID` 71 s after the build began; bundle markers `signal-notes-backfill-v1`, "R on signal SL", `rate-card-refresh.mjs`, migration 0072; both
+`.sig` key ids `4FF85F3BBE1DA21D` = the `tauri.conf.json` pubkey; client ZIP installer SHA-256 `3695B809…0B1D2A` equals an independent hash of the nsis setup.exe.
+Gate on the bump: 439 files / 9,711 passed / 35 skipped (9,689 on CI). NOT tagged: the tag is the owner's word.
