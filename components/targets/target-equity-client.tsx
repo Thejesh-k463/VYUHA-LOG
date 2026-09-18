@@ -57,8 +57,6 @@ export function TargetEquityClient({
 
   return (
     <div className="space-y-5">
-      <PositionSizeCalc defaultRisk={defaultRisk} equityCapital={equityCapital} />
-
       <section className="grid gap-3 sm:grid-cols-3">
         <Meter label="Max open positions" used={openCount} limit={maxOpen} />
         <Card className="p-3">
@@ -128,6 +126,8 @@ export function TargetEquityClient({
           )}
         </CardContent>
       </Card>
+
+      <PositionSizeCalc defaultRisk={defaultRisk} equityCapital={equityCapital} />
     </div>
   );
 }

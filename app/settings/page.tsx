@@ -1,5 +1,17 @@
 import { PageHeader } from "@/components/layout/page-header";
-import { SettingsForm } from "@/components/settings/settings-form";
+import {
+  AppUpdatesCard,
+  AppearanceCard,
+  CapitalGoLiveCard,
+  FirstRunCard,
+  IntegrationsCard,
+  PreferencesCard,
+  SettingsFormProvider,
+  SettingsLiveFeedCard,
+  WorkspaceCard,
+} from "@/components/settings/settings-form";
+import { Section, SectionArrangeProvider, SectionStack } from "@/components/layout/section-stack";
+import { RearrangeControls } from "@/components/layout/rearrange-controls";
 import { DefaultSettingsCard } from "@/components/settings/default-settings-card";
 import { RiskEditor } from "@/components/settings/risk-editor";
 import { ChargeEditor } from "@/components/settings/charge-editor";
@@ -53,44 +65,68 @@ export default function SettingsPage() {
     );
   }
 
+  // Default order = PAGE_SECTIONS.settings (lib/domain/section-registry.ts):
+  // capital first, the goals directly under total capital, Appearance LAST.
+  // The user can move any card (Rearrange, saved on this device). Every
+  // section arrives in the client stack as CHILDREN — never imported there —
+  // so these server reads stay on the server.
   return (
-    <>
-      <PageHeader title="Settings" description="Capital, go-live, charge rates and risk rules — all editable." />
-      <div className="space-y-6 p-6">
-        <SettingsForm current={settings} />
-        {/* Explicit props, not the settings row: the encrypted token must not
-            cross to the client even as ciphertext — `connected` is all the
-            card needs to know. */}
-        <TelegramCard
-          enabled={settings.telegramEnabled}
-          ackVersion={settings.telegramAckVersion}
-          sendTime={settings.telegramSendTime}
-          lastSentDate={settings.lastTelegramSentDate}
-          connected={Boolean(settings.telegramTokenEnc && settings.telegramChatId)}
-          chatId={settings.telegramChatId}
-        />
-        <DefaultSettingsCard />
-        <AccountManager accounts={getAccounts()} />
-        <LicenseCard status={getLicenseStatus()} entitlement={getEntitlement()} />
-        <CapitalCard summary={capital} />
-        <GoalCard
-          goals={goalView.goals}
-          capital={{ equity: bucketCapital.equityCapital, active: bucketCapital.activeCapital, total: bucketCapital.totalCapital }}
-          aggregate={goalView.aggregate}
-          excluded={goalView.excluded}
-        />
-        <Card>
-          <CardHeader><CardTitle>Capital growth</CardTitle></CardHeader>
-          <CardContent>
-            <CapitalGrowth data={getCapitalHistory()} targets={{ equity: goalLevel("equity"), active: goalLevel("active") }} />
-            <p className="mt-2 text-[0.6875rem] text-muted-foreground">
-              Capital checkpoints per bucket (snapshots taken when capital changes), ending at today&apos;s live values.
-            </p>
-          </CardContent>
-        </Card>
-        <RiskEditor rows={riskRows} />
-        <ChargeEditor rows={chargeRows} />
-      </div>
-    </>
+    <SectionArrangeProvider page="settings">
+      <PageHeader
+        title="Settings"
+        description="Capital, go-live, charge rates and risk rules — all editable."
+        actions={<RearrangeControls page="settings" />}
+      />
+      <SettingsFormProvider current={settings}>
+        <SectionStack page="settings" className="space-y-6 p-6">
+          <Section id="settings-capital-golive"><CapitalGoLiveCard /></Section>
+          <Section id="settings-capital-management"><CapitalCard summary={capital} /></Section>
+          <Section id="settings-capital-goals">
+            <GoalCard
+              goals={goalView.goals}
+              capital={{ equity: bucketCapital.equityCapital, active: bucketCapital.activeCapital, total: bucketCapital.totalCapital }}
+              aggregate={goalView.aggregate}
+              excluded={goalView.excluded}
+            />
+          </Section>
+          <Section id="settings-capital-growth">
+            <Card>
+              <CardHeader><CardTitle>Capital growth</CardTitle></CardHeader>
+              <CardContent>
+                <CapitalGrowth data={getCapitalHistory()} targets={{ equity: goalLevel("equity"), active: goalLevel("active") }} />
+                <p className="mt-2 text-[0.6875rem] text-muted-foreground">
+                  Capital checkpoints per bucket (snapshots taken when capital changes), ending at today&apos;s live values.
+                </p>
+              </CardContent>
+            </Card>
+          </Section>
+          <Section id="settings-workspace"><WorkspaceCard /></Section>
+          <Section id="settings-preferences"><PreferencesCard /></Section>
+          <Section id="settings-accounts"><AccountManager accounts={getAccounts()} /></Section>
+          <Section id="settings-defaults"><DefaultSettingsCard /></Section>
+          <Section id="settings-risk-rules"><RiskEditor rows={riskRows} /></Section>
+          <Section id="settings-charge-rates"><ChargeEditor rows={chargeRows} /></Section>
+          <Section id="settings-telegram">
+            {/* Explicit props, not the settings row: the encrypted token must not
+                cross to the client even as ciphertext — `connected` is all the
+                card needs to know. */}
+            <TelegramCard
+              enabled={settings.telegramEnabled}
+              ackVersion={settings.telegramAckVersion}
+              sendTime={settings.telegramSendTime}
+              lastSentDate={settings.lastTelegramSentDate}
+              connected={Boolean(settings.telegramTokenEnc && settings.telegramChatId)}
+              chatId={settings.telegramChatId}
+            />
+          </Section>
+          <Section id="settings-live-feed"><SettingsLiveFeedCard /></Section>
+          <Section id="settings-integrations"><IntegrationsCard /></Section>
+          <Section id="settings-license"><LicenseCard status={getLicenseStatus()} entitlement={getEntitlement()} /></Section>
+          <Section id="settings-first-run"><FirstRunCard /></Section>
+          <Section id="settings-app-updates"><AppUpdatesCard /></Section>
+          <Section id="settings-appearance"><AppearanceCard /></Section>
+        </SectionStack>
+      </SettingsFormProvider>
+    </SectionArrangeProvider>
   );
 }

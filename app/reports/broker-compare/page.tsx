@@ -223,6 +223,7 @@ export default function BrokerComparePage() {
                 Record what the broker funded in the trade editor (Edit → Own capital used) and every column prices it.
               </p>
             )}
+            <MtfBrokerSection cmp={mtfCmp} />
             <p className="text-[0.6875rem] text-muted-foreground">
               Each broker total re-prices the identical trades (turnover, quantities and order counts) on that broker&apos;s
               rate card from charge config — brokerage, DP and MTF interest are the real differentiators; STT/exchange/SEBI/stamp
@@ -237,7 +238,6 @@ export default function BrokerComparePage() {
               Comparing a paid plan on brokerage alone would always make it look cheaper than it is. Edit any rate in
               Settings → charge config; a row you edit is yours and later app updates will not overwrite it.
             </p>
-            <MtfBrokerSection cmp={mtfCmp} />
           </>
         )}
         </ProGate>

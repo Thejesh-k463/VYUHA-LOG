@@ -689,6 +689,26 @@ export function TradeCalculator({
               </Card>
             </div>
 
+            <Card className="p-0">
+              <CardHeader><CardTitle>Charge breakdown — one round trip (exit at target)</CardTitle></CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto"><table className="w-full text-xs">
+                  <tbody>
+                    {breakdown.map(([label, v]) => (
+                      <tr key={label} className="border-b border-rule">
+                        <td className="px-3 py-1.5 text-muted-foreground">{label}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{formatPaise(v, { decimals: 0 })}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-border">
+                      <td className="px-3 py-2 font-semibold">Total charges</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-loss">{formatPaise(result.chargesPerTradePaise, { decimals: 0 })}</td>
+                    </tr>
+                  </tbody>
+                </table></div>
+              </CardContent>
+            </Card>
+
             {/* ---------------- (d) MTF breakeven move ---------------- */}
             {result.mtfCost ? (
               <Card>
@@ -719,26 +739,6 @@ export function TradeCalculator({
                 </CardContent>
               </Card>
             ) : null}
-
-            <Card className="p-0">
-              <CardHeader><CardTitle>Charge breakdown — one round trip (exit at target)</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto"><table className="w-full text-xs">
-                  <tbody>
-                    {breakdown.map(([label, v]) => (
-                      <tr key={label} className="border-b border-rule">
-                        <td className="px-3 py-1.5 text-muted-foreground">{label}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{formatPaise(v, { decimals: 0 })}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t border-border">
-                      <td className="px-3 py-2 font-semibold">Total charges</td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-loss">{formatPaise(result.chargesPerTradePaise, { decimals: 0 })}</td>
-                    </tr>
-                  </tbody>
-                </table></div>
-              </CardContent>
-            </Card>
 
             <Card>
               <CardHeader className="flex-row items-center justify-between">

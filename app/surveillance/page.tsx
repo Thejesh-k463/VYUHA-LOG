@@ -54,22 +54,6 @@ export default function SurveillancePage() {
         }
       />
       <div className="space-y-5 p-6">
-        {loaded && (
-          <section className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-            <Stat label="Restricted" value={String(report.totalRestricted)} />
-            <Stat
-              label="You hold"
-              value={String(report.heldRestricted)}
-              tone={report.heldRestricted > 0 ? "text-warning" : "text-profit"}
-            />
-            <Stat label="F&O ban" value={String(report.byCategory.fno_ban)} />
-            <Stat label="ASM" value={String(report.byCategory.asm)} />
-            <Stat label="GSM" value={String(report.byCategory.gsm)} />
-            <Stat label="ESM" value={String(report.byCategory.esm)} />
-            <Stat label="Circuit" value={String(report.byCategory.circuit)} />
-          </section>
-        )}
-
         {/* Alerts on held positions */}
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">
@@ -133,6 +117,22 @@ export default function SurveillancePage() {
             )}
           </CardContent>
         </Card>
+
+        {loaded && (
+          <section className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            <Stat label="Restricted" value={String(report.totalRestricted)} />
+            <Stat
+              label="You hold"
+              value={String(report.heldRestricted)}
+              tone={report.heldRestricted > 0 ? "text-warning" : "text-profit"}
+            />
+            <Stat label="F&O ban" value={String(report.byCategory.fno_ban)} />
+            <Stat label="ASM" value={String(report.byCategory.asm)} />
+            <Stat label="GSM" value={String(report.byCategory.gsm)} />
+            <Stat label="ESM" value={String(report.byCategory.esm)} />
+            <Stat label="Circuit" value={String(report.byCategory.circuit)} />
+          </section>
+        )}
 
         {/* Load list */}
         <Card>

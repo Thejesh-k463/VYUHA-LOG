@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
 import { EquityCurve, SegmentBars } from "./charts";
 import { CalendarHeatmap } from "./calendar-heatmap";
+import { Section, SectionStack } from "@/components/layout/section-stack";
 import {
   computeKpis, equityCurve, dailyPnl, bySegment, bySetup,
   type AnalyticsTrade,
@@ -215,6 +216,12 @@ export function DashboardClient({
         </div>
       </div>
 
+      {/* The cards below are user-movable (PAGE_SECTIONS.dashboard, Rearrange
+          in the header); the filter bar above is a control over all of them
+          and stays put. A grid pair is ONE section. The blocks keep their
+          original indentation so this diff is the wrappers only. */}
+      <SectionStack page="dashboard" className="space-y-5">
+      <Section id="dash-kpis">
       {/* KPIs — count-up, sparkline, delta chip (C4) and click-through drill-downs */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <KpiCard
@@ -326,7 +333,9 @@ export function DashboardClient({
           }}
         />
       </section>
+      </Section>
 
+      <Section id="dash-equity-curve">
       {/* Equity curve + monthly ladder */}
       <section className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2 card-hero">
@@ -362,7 +371,9 @@ export function DashboardClient({
           </CardContent>
         </Card>
       </section>
+      </Section>
 
+      <Section id="dash-daily-calendar">
       {/* Calendar heatmap */}
       <Card>
         <CardHeader className="flex-row items-center justify-between">
@@ -395,7 +406,9 @@ export function DashboardClient({
           )}
         </CardContent>
       </Card>
+      </Section>
 
+      <Section id="dash-by-segment">
       {/* By segment / setup */}
       <section className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -407,13 +420,17 @@ export function DashboardClient({
           <CardContent>{setupStats.length ? <SegmentBars data={setupStats} labelFor={(kk) => kk} /> : <Empty />}</CardContent>
         </Card>
       </section>
+      </Section>
 
+      <Section id="dash-streaks">
       {/* Streaks + charge leak */}
       <section className="grid gap-4 sm:grid-cols-3">
         <KpiCard label="Current streak" value={k.currentStreak === 0 ? "—" : `${Math.abs(k.currentStreak)} ${k.currentStreak > 0 ? "wins" : "losses"}`} valueClassName={k.currentStreak > 0 ? "text-profit" : k.currentStreak < 0 ? "text-loss" : ""} sub={`Best ${k.maxWinStreak}W · Worst ${k.maxLossStreak}L`} />
         <KpiCard label="Avg win / loss" value={`${inrCompact(k.avgWin)} / ${inrCompact(k.avgLoss)}`} sub="per closed trade" />
         <KpiCard label="Charges leak" value={pct(k.chargePctOfGross, 2)} valueClassName="text-grad-gold" sub={`${inr(k.charges, { decimals: 0 })} paid`} />
       </section>
+      </Section>
+      </SectionStack>
     </div>
   );
 }

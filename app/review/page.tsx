@@ -171,18 +171,6 @@ export default function ReviewPage() {
       />
       <div className="space-y-5 p-6">
         <ProGate>
-          <ProcessScorePanel
-            weekLabel={isoWeekLabel(thisMonday)}
-            weekStart={thisMonday}
-            weekEnd={weekEndOf(thisMonday)}
-            score={thisWeek.score}
-            refusal={thisWeek.refusal?.reason ?? null}
-            closedTrades={thisWeek.closedTrades}
-            rows={rowsOf(thisWeek)}
-            comparison={weekOverWeek(scores, thisMonday, thisWeek.score)}
-            detail={metricDetail("processScore")}
-          />
-
           <ReviewQueuePanel
             rows={queue.rows}
             total={queue.total}
@@ -199,6 +187,18 @@ export default function ReviewPage() {
             weekStart={thisMonday}
             weekEnd={weekEndOf(thisMonday)}
             aggregateView={aggregateView}
+          />
+
+          <ProcessScorePanel
+            weekLabel={isoWeekLabel(thisMonday)}
+            weekStart={thisMonday}
+            weekEnd={weekEndOf(thisMonday)}
+            score={thisWeek.score}
+            refusal={thisWeek.refusal?.reason ?? null}
+            closedTrades={thisWeek.closedTrades}
+            rows={rowsOf(thisWeek)}
+            comparison={weekOverWeek(scores, thisMonday, thisWeek.score)}
+            detail={metricDetail("processScore")}
           />
 
           <SundayRitualPanel

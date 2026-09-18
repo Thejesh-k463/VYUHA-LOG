@@ -141,33 +141,37 @@ export default function AdvanceTaxPage() {
           fyStartMonth={fyStartMonth}
           harvestableLoss={harvestableLoss}
           ledger={ledger}
+          // The ledger card rides INTO the calculator's stack as a node, so it
+          // can sit under the schedule and above the Assumptions form (v4.4.0
+          // default order) while staying a server-rendered card.
+          ledgerSlot={
+            <Card className="p-0">
+              <CardHeader className="flex-row items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Advance tax paid — challan ledger {fy}</CardTitle>
+                  <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                    One row per payment, dated. With challans here the planner stops applying a single
+                    &ldquo;paid so far&rdquo; figure to every rung and measures each instalment against what stood paid on
+                    its own due date ({section(fy, "advanceTaxInstalments")}) — which is also how{" "}
+                    {section(fy, "interestDeferment")} computes the interest.
+                  </p>
+                </div>
+                {ledger.count > 0 && (
+                  <Badge variant="secondary">{ledger.count} payment{ledger.count === 1 ? "" : "s"}</Badge>
+                )}
+              </CardHeader>
+              <CardContent>
+                <ChallanEditor
+                  rows={challanRows}
+                  fy={fy}
+                  aggregate={aggregate}
+                  minDate={fyWindowStart}
+                  maxDate={fyWindowEnd < today ? fyWindowEnd : today}
+                />
+              </CardContent>
+            </Card>
+          }
         />
-
-        <Card className="p-0">
-          <CardHeader className="flex-row items-start justify-between gap-3">
-            <div>
-              <CardTitle>Advance tax paid — challan ledger {fy}</CardTitle>
-              <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
-                One row per payment, dated. With challans here the planner stops applying a single
-                &ldquo;paid so far&rdquo; figure to every rung and measures each instalment against what stood paid on
-                its own due date ({section(fy, "advanceTaxInstalments")}) — which is also how{" "}
-                {section(fy, "interestDeferment")} computes the interest.
-              </p>
-            </div>
-            {ledger.count > 0 && (
-              <Badge variant="secondary">{ledger.count} payment{ledger.count === 1 ? "" : "s"}</Badge>
-            )}
-          </CardHeader>
-          <CardContent>
-            <ChallanEditor
-              rows={challanRows}
-              fy={fy}
-              aggregate={aggregate}
-              minDate={fyWindowStart}
-              maxDate={fyWindowEnd < today ? fyWindowEnd : today}
-            />
-          </CardContent>
-        </Card>
       </ProGate>
       </div>
     </>

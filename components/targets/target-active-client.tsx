@@ -32,6 +32,7 @@ export function TargetActiveClient({
   segLimits,
   defaultRisk,
   undatedActive,
+  goalStrip,
 }: {
   daily: DailySummary[];
   limits: { dailyLossStop: number | null; optionsMaxTrades: number; intradayMaxTrades: number; commodityMaxTrades: number; optionsMaxOpen: number };
@@ -39,6 +40,13 @@ export function TargetActiveClient({
   segLimits: SegLimit[];
   defaultRisk: number | null;
   undatedActive: number;
+  /**
+   * The bucket's goal strip, rendered by the SERVER page and handed in as an
+   * element (a server component crosses the boundary as a node, never as an
+   * import). It sits BELOW the stop banner and the loss meter: a
+   * stop-trading banner outranks a goal (v4.4.0 default order).
+   */
+  goalStrip?: React.ReactNode;
 }) {
   // default to the worst-loss day (most relevant for a risk cockpit)
   const worst = daily.reduce<DailySummary | null>((w, d) => (w == null || d.net < w.net ? d : w), null);
@@ -125,6 +133,8 @@ export function TargetActiveClient({
           </div>
         </Card>
       )}
+
+      {goalStrip}
 
       {/* counters */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

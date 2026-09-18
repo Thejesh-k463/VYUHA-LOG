@@ -929,8 +929,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       9698 unit + integration tests across 439 files (+ tests/load: 16 load cases, run separately)
-e2e/         93 Playwright flows through the real app, in 29 specs
+tests/       9698 unit + integration tests across 441 files (+ tests/load: 16 load cases, run separately)
+e2e/         93 Playwright flows through the real app, in 31 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators

@@ -403,39 +403,6 @@ export default function PerformancePage() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="flex-row items-center justify-between">
-                <CardTitle>Monte Carlo — 1y forward</CardTitle>
-                {mc && <Badge variant="secondary">{mc.paths.toLocaleString("en-IN")} paths · resampling {mc.sampleDays} real days</Badge>}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {mc ? (
-                  <>
-                    <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                      <KpiCard label="Risk of ruin" value={`${mc.riskOfRuinPct}%`} valueClassName={mc.riskOfRuinPct > 10 ? "text-loss" : mc.riskOfRuinPct > 2 ? "text-warning" : "text-profit"} sub="ever −50% from today" detail={metricDetail("riskOfRuin")} />
-                      <KpiCard label="P(ending down)" value={`${mc.probLossPct}%`} valueClassName={mc.probLossPct > 50 ? "text-loss" : ""} sub="terminal < today's equity" detail={metricDetail("probEndingDown")} />
-                      <KpiCard label="Median outcome" valueNum={mc.terminal.p50} format="inr0" valueClassName={cls(mc.terminal.p50 - mc.startEquity)} sub={`from ${inr(mc.startEquity, { decimals: 0 })}`} detail={metricDetail("mcOutcomes", { note: "This card: the median (p50) — half the simulated paths ended above it, half below." })} />
-                      <KpiCard label="Bad year (p5)" valueNum={mc.terminal.p5} format="inr0" valueClassName="text-loss" sub="5th percentile" detail={metricDetail("mcOutcomes", { note: "This card: the 5th percentile — 95% of simulated paths ended above this figure." })} />
-                      <KpiCard label="Good year (p95)" valueNum={mc.terminal.p95} format="inr0" valueClassName="text-profit" sub="95th percentile" detail={metricDetail("mcOutcomes", { note: "This card: the 95th percentile — only 5% of simulated paths ended above this figure." })} />
-                    </section>
-                    <p className="text-[0.6875rem] text-muted-foreground">
-                      Bootstrap of your OWN daily returns (no normality assumed): each simulated day replays a random
-                      real day, {mc.horizonDays} days forward, {mc.paths.toLocaleString("en-IN")} times. Interquartile
-                      range {inr(mc.terminal.p25, { decimals: 0 })} – {inr(mc.terminal.p75, { decimals: 0 })}. Assumes
-                      you keep trading exactly like the sampled history — regime changes, position-size changes and
-                      luck are not modelled. Informational only.
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {capitalKnown
-                      ? "Needs at least 20 trading days of realised history to resample."
-                      : `Resampling % returns needs a real equity base — ${setCapitalNudge}.`}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
             <Card className="p-0">
               <CardHeader><CardTitle>Monthly returns</CardTitle></CardHeader>
               <CardContent className="p-0">
@@ -503,21 +470,38 @@ export default function PerformancePage() {
               </CardContent>
             </Card>
 
-            {capitalKnown ? (
-              <p className="text-[0.6875rem] text-muted-foreground">
-                Time-weighted figures are computed on running equity from the configured starting capital ({inr(capital, { decimals: 0 })}).
-                The money-weighted <strong>XIRR</strong> is derived from the cash ledger (deposits/withdrawals) plus realised and
-                unrealised trading P&L over {inr(toRupees(terminalPaise), { decimals: 0 })} terminal value — accounting for the
-                size and timing of capital. The <strong>TWR</strong> chains daily P&L returns while neutralising the
-                timing of deposits/withdrawals — the manager-skill counterpart to XIRR. Sharpe/Sortino use a {Math.round(RISK_FREE * 100)}% annual risk-free rate; ratios annualise with 252 trading days.
-              </p>
-            ) : (
-              <p className="text-[0.6875rem] text-muted-foreground">
-                No starting capital is configured, so every figure that divides by an equity base — total return, XIRR, TWR,
-                CAGR, Sharpe, Sortino, volatility, Calmar, Monte Carlo, benchmark alpha — shows &quot;—&quot; instead of a number
-                computed on an invented base. Rupee figures need no base and are exact. Set your capital under Settings → Capital &amp; Go-Live.
-              </p>
-            )}
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle>Monte Carlo — 1y forward</CardTitle>
+                {mc && <Badge variant="secondary">{mc.paths.toLocaleString("en-IN")} paths · resampling {mc.sampleDays} real days</Badge>}
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {mc ? (
+                  <>
+                    <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                      <KpiCard label="Risk of ruin" value={`${mc.riskOfRuinPct}%`} valueClassName={mc.riskOfRuinPct > 10 ? "text-loss" : mc.riskOfRuinPct > 2 ? "text-warning" : "text-profit"} sub="ever −50% from today" detail={metricDetail("riskOfRuin")} />
+                      <KpiCard label="P(ending down)" value={`${mc.probLossPct}%`} valueClassName={mc.probLossPct > 50 ? "text-loss" : ""} sub="terminal < today's equity" detail={metricDetail("probEndingDown")} />
+                      <KpiCard label="Median outcome" valueNum={mc.terminal.p50} format="inr0" valueClassName={cls(mc.terminal.p50 - mc.startEquity)} sub={`from ${inr(mc.startEquity, { decimals: 0 })}`} detail={metricDetail("mcOutcomes", { note: "This card: the median (p50) — half the simulated paths ended above it, half below." })} />
+                      <KpiCard label="Bad year (p5)" valueNum={mc.terminal.p5} format="inr0" valueClassName="text-loss" sub="5th percentile" detail={metricDetail("mcOutcomes", { note: "This card: the 5th percentile — 95% of simulated paths ended above this figure." })} />
+                      <KpiCard label="Good year (p95)" valueNum={mc.terminal.p95} format="inr0" valueClassName="text-profit" sub="95th percentile" detail={metricDetail("mcOutcomes", { note: "This card: the 95th percentile — only 5% of simulated paths ended above this figure." })} />
+                    </section>
+                    <p className="text-[0.6875rem] text-muted-foreground">
+                      Bootstrap of your OWN daily returns (no normality assumed): each simulated day replays a random
+                      real day, {mc.horizonDays} days forward, {mc.paths.toLocaleString("en-IN")} times. Interquartile
+                      range {inr(mc.terminal.p25, { decimals: 0 })} – {inr(mc.terminal.p75, { decimals: 0 })}. Assumes
+                      you keep trading exactly like the sampled history — regime changes, position-size changes and
+                      luck are not modelled. Informational only.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {capitalKnown
+                      ? "Needs at least 20 trading days of realised history to resample."
+                      : `Resampling % returns needs a real equity base — ${setCapitalNudge}.`}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
             <ShareCard stats={shareStats} capital={capital} />
 
@@ -537,6 +521,22 @@ export default function PerformancePage() {
                 </dl>
               </CardContent>
             </Card>
+
+            {capitalKnown ? (
+              <p className="text-[0.6875rem] text-muted-foreground">
+                Time-weighted figures are computed on running equity from the configured starting capital ({inr(capital, { decimals: 0 })}).
+                The money-weighted <strong>XIRR</strong> is derived from the cash ledger (deposits/withdrawals) plus realised and
+                unrealised trading P&L over {inr(toRupees(terminalPaise), { decimals: 0 })} terminal value — accounting for the
+                size and timing of capital. The <strong>TWR</strong> chains daily P&L returns while neutralising the
+                timing of deposits/withdrawals — the manager-skill counterpart to XIRR. Sharpe/Sortino use a {Math.round(RISK_FREE * 100)}% annual risk-free rate; ratios annualise with 252 trading days.
+              </p>
+            ) : (
+              <p className="text-[0.6875rem] text-muted-foreground">
+                No starting capital is configured, so every figure that divides by an equity base — total return, XIRR, TWR,
+                CAGR, Sharpe, Sortino, volatility, Calmar, Monte Carlo, benchmark alpha — shows &quot;—&quot; instead of a number
+                computed on an invented base. Rupee figures need no base and are exact. Set your capital under Settings → Capital &amp; Go-Live.
+              </p>
+            )}
           </>
         )}
       </div>

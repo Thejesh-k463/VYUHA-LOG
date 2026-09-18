@@ -210,36 +210,6 @@ export function TrackerClient({
 
   return (
     <div className="space-y-5">
-      {/* Capital gauge */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              Bucket capital ·{" "}
-              {capitalKnown ? (
-                inr(bucketCapital, { decimals: 0 })
-              ) : (
-                <>
-                  — <Link href="/settings" className="underline decoration-dotted underline-offset-2">set it in Settings</Link>
-                </>
-              )}
-            </span>
-            <span className="tabular-nums">
-              Deployed <span className="font-medium">{inrCompact(deployed)}</span>
-              {capitalKnown && (
-                <>
-                  {" "}· Available{" "}
-                  <span className={available >= 0 ? "text-profit" : "text-loss"}>{inrCompact(available)}</span>
-                </>
-              )}
-            </span>
-          </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-card-hover">
-            <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, capitalKnown ? (deployed / bucketCapital) * 100 : 0)}%` }} />
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Summary cards */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
@@ -346,6 +316,36 @@ export function TrackerClient({
         )}
       </section>
 
+      {/* Capital gauge */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">
+              Bucket capital ·{" "}
+              {capitalKnown ? (
+                inr(bucketCapital, { decimals: 0 })
+              ) : (
+                <>
+                  — <Link href="/settings" className="underline decoration-dotted underline-offset-2">set it in Settings</Link>
+                </>
+              )}
+            </span>
+            <span className="tabular-nums">
+              Deployed <span className="font-medium">{inrCompact(deployed)}</span>
+              {capitalKnown && (
+                <>
+                  {" "}· Available{" "}
+                  <span className={available >= 0 ? "text-profit" : "text-loss"}>{inrCompact(available)}</span>
+                </>
+              )}
+            </span>
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-card-hover">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, capitalKnown ? (deployed / bucketCapital) * 100 : 0)}%` }} />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Per-segment mini cards (active) */}
       {variant === "active" && segGroups.length > 0 && (
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -361,12 +361,6 @@ export function TrackerClient({
           ))}
         </section>
       )}
-
-      {/* MTM entry */}
-      <Card>
-        <CardHeader><CardTitle>Update MTM (manual / EOD)</CardTitle></CardHeader>
-        <CardContent><MtmForm /></CardContent>
-      </Card>
 
       {/* Positions table */}
       <Card className="p-0">
@@ -436,6 +430,12 @@ export function TrackerClient({
             </table>
           </div>
         </CardContent>
+      </Card>
+
+      {/* MTM entry */}
+      <Card>
+        <CardHeader><CardTitle>Update MTM (manual / EOD)</CardTitle></CardHeader>
+        <CardContent><MtmForm /></CardContent>
       </Card>
     </div>
   );

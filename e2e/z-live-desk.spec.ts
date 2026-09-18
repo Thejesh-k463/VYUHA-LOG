@@ -58,7 +58,20 @@ import { E2E_DB_PATH, ensureTrades, gotoHydrated, gotoImportReady } from "./help
  *
  * `z-` prefix: this spec seeds via `ensureTrades` and so must sort after
  * `import-dashboard.spec.ts` (AGENTS.md).
+ *
+ * REAL SCROLLBARS (v4.4.0). Headless Chromium launches with
+ * `--hide-scrollbars`, so a scrollbar there takes NO layout space and the
+ * box's `offsetHeight − clientHeight` (the desk's `boxChromeY`) can never move.
+ * Measured 2026-09-18 at 1280×420: widening the sidebar to 420 px overflowed
+ * the table (`scrollWidth > clientWidth`) yet chromeY stayed 2, so the stale
+ * `scrollPaddingEnd` this file must catch could not occur in the harness. The
+ * desktop app's Chromium draws the app's `scrollbar-width: thin` bar in real
+ * pixels (10 px here), and that is what a user hits. CSS and CDP
+ * `Emulation.setScrollbarsHidden` both left chromeY at 2; only dropping the
+ * launch flag gives the bar its width, and a launch option is worker-scoped,
+ * so it is set for this whole FILE rather than per test.
  */
+test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 
 /** The scrolling box that owns the sticky header — `tracker-client.tsx`. */
 const DESK = 'div[role="region"][aria-label="Open positions"]';
@@ -163,11 +176,19 @@ async function expectFocusedRowFullyVisible(page: Page, when: string): Promise<v
   await expect
     .poll(async () => {
       const row = await focused.boundingBox();
-      const box = await page.locator(DESK).boundingBox();
-      if (!row || !box) return null;
-      // > 0 means the row's bottom is above the box's bottom edge.
-      return box.y + box.height - (row.y + row.height);
-    }, { message: `${when}: the focused row's bottom must be inside the scroll box` })
+      if (!row) return null;
+      // The box's VISIBLE bottom — its client box, which excludes the bottom
+      // border AND any horizontal scrollbar. Measured against the border box
+      // (as this was until v4.4.0), a row whose last 10 px sat UNDER a
+      // horizontal scrollbar still counted as inside, and the stale
+      // `scrollPaddingEnd` the widened-sidebar cases below exist to catch
+      // passed with the fix reverted (2026-09-18).
+      const visibleBottom = await page
+        .locator(DESK)
+        .evaluate((el) => el.getBoundingClientRect().top + el.clientTop + el.clientHeight);
+      // > 0 means the row's bottom is above the box's visible bottom edge.
+      return visibleBottom - (row.y + row.height);
+    }, { message: `${when}: the focused row's bottom must be inside the scroll box's visible area` })
     .toBeGreaterThanOrEqual(-TOL);
 }
 
@@ -647,6 +668,165 @@ test("j and k clear the sticky header on the WINDOWED path too", async ({ page }
   }
   await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
   await expectFocusedRowFullyVisible(page, "after k back to the first row of a windowed desk");
+});
+
+/**
+ * ── The same geometry after the SIDEBAR is widened mid-desk (v4.4.0) ────────
+ *
+ * The desk's `theadHeight` and `boxChromeY` used to be measured by callback
+ * refs, which React runs on mount only. The resizable sidebar narrows `main`
+ * while the desk stays mounted: a narrower table box can wrap a <th> or grow a
+ * horizontal scrollbar, so `scrollPaddingStart` / `scrollPaddingEnd` went
+ * stale and j/k parked the focused row under the header or clipped its bottom
+ * — the two v4.0 shapes, reachable again without a single code change on the
+ * desk. Both readings are ResizeObserver-backed now; these two cases widen the
+ * sidebar AFTER the desk has mounted and measured, then re-run the geometry on
+ * both scroll paths.
+ *
+ * The widen goes through the sidebar's own keyboard path (End on the width
+ * separator) — the real control, and deterministic where a drag is not. The
+ * geometry the widen produced is recorded as an annotation.
+ *
+ * These cases depend on the file-level `test.use` at the top of this file that
+ * draws REAL scrollbars — see REAL SCROLLBARS in the header.
+ *
+ * THE VIEWPORT IS DERIVED, not fixed. At 1280×420 the table already
+ * overflowed at the DEFAULT sidebar width (measured 2026-09-18: chromeY 12 at
+ * mount and 12 after the widen), so the mount reading was right by accident
+ * and a reverted fix passed. The case needs a desk that FITS before the widen
+ * and OVERFLOWS after it, and the table's minimum width depends on the book and
+ * the platform's fonts — so it is measured, and the window is sized to clear it
+ * by half the widen (232 → 420 px is 188), then the desk is re-mounted there.
+ */
+const WIDEN_SLACK = 94;
+
+async function sizeViewportToOverflowOnWiden(page: Page, remount: () => Promise<void>): Promise<void> {
+  const desk = page.locator(DESK);
+  const vp = page.viewportSize();
+  expect(vp, "no viewport to resize").toBeTruthy();
+  const g = await desk.evaluate((el) => {
+    const table = el.querySelector("table") as HTMLTableElement;
+    // The table's min-content width: squeeze it, read it, put it back — all
+    // before the next frame, so nothing paints and no observer sees it.
+    const prev = table.style.width;
+    table.style.width = "1px";
+    const min = table.offsetWidth;
+    table.style.width = prev;
+    return { client: el.clientWidth, min };
+  });
+  // Everything between the window's edge and the box's content — sidebar,
+  // padding, borders, the vertical bar — is what the window adds to the box.
+  const overhead = vp!.width - g.client;
+  // ≥ 1060 so End reaches the full 420 px (the 640 px content floor).
+  const width = Math.max(1060, Math.ceil(g.min + overhead + WIDEN_SLACK));
+  await page.setViewportSize({ width, height: vp!.height });
+  await remount();
+  await expect
+    .poll(() => desk.evaluate((el) => el.scrollWidth - el.clientWidth), {
+      message: `the table must FIT before the widen (min ${g.min}px, window ${width}px), or the widen changes nothing`,
+    })
+    .toBeLessThanOrEqual(0);
+}
+
+async function widenSidebarMidDesk(page: Page): Promise<void> {
+  const aside = page.locator("aside");
+  const desk = page.locator(DESK);
+  const asideBefore = (await aside.boundingBox())?.width ?? 0;
+  const deskBefore = await desk.evaluate((el) => el.clientWidth);
+  const chromeBefore = await desk.evaluate((el) => (el as HTMLElement).offsetHeight - el.clientHeight);
+
+  await aside.getByRole("separator", { name: "Sidebar width" }).focus();
+  await page.keyboard.press("End");
+  await expect
+    .poll(async () => (await aside.boundingBox())?.width ?? 0, { message: "End did not widen the sidebar" })
+    .toBeGreaterThan(asideBefore + 100);
+  // The desk box narrowed by the same amount — the resize reached the desk…
+  await expect
+    .poll(() => desk.evaluate((el) => el.clientWidth), { message: "the desk box did not narrow" })
+    .toBeLessThan(deskBefore - 100);
+  // …and the table no longer fits it, which is what grows a horizontal bar.
+  await expect
+    .poll(() => desk.evaluate((el) => el.scrollWidth > el.clientWidth), { message: "the widen did not overflow the table" })
+    .toBe(true);
+
+  const after = await desk.evaluate((el) => ({
+    chromeY: (el as HTMLElement).offsetHeight - el.clientHeight,
+    overflowX: el.scrollWidth > el.clientWidth,
+    thead: el.querySelector("thead")?.getBoundingClientRect().height ?? 0,
+  }));
+  test.info().annotations.push({
+    type: "desk geometry after widening",
+    description: `box ${deskBefore}px → narrower; chromeY ${chromeBefore} → ${after.chromeY}, horizontal overflow ${after.overflowX}, thead ${after.thead}px`,
+  });
+
+  // Escape is the one key the desk honours from any target: it hands focus
+  // back to the scroll box, so j/k are the desk's again.
+  await page.keyboard.press("Escape");
+}
+
+test("j and k still clear the header after the sidebar is widened mid-desk (un-windowed)", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await gotoDesk(page);
+  await sizeViewportToOverflowOnWiden(page, () => gotoDesk(page));
+
+  const rows = page.locator(ROWS);
+  const n = await rows.count();
+  const overflow = await page.locator(DESK).evaluate((el) => el.scrollHeight - el.clientHeight);
+  expect(overflow, "the desk box must actually scroll or this test proves nothing").toBeGreaterThan(0);
+
+  // Focus a row FIRST, so the desk has mounted, measured and been used at the
+  // default width before the width changes underneath it.
+  await page.keyboard.press("j");
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
+  await widenSidebarMidDesk(page);
+
+  for (let i = 0; i < n; i++) await page.keyboard.press("j");
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", String(n - 1));
+  await expectFocusedRowFullyVisible(page, "widened sidebar: after j to the last row");
+
+  for (let i = 0; i < n - 1; i++) await page.keyboard.press("k");
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
+  await expectFocusedRowFullyVisible(page, "widened sidebar: after k back to the first row");
+});
+
+test("j and k still clear the header after the sidebar is widened mid-desk (WINDOWED)", async ({ page }) => {
+  await seedWindowedBook(page);
+  await page.setViewportSize({ width: 1280, height: 420 });
+  const rows = page.locator(ROWS);
+  const mountDesk = async () => {
+    await gotoHydrated(page, "/live");
+    await expect(rows.first()).toBeVisible();
+  };
+  await mountDesk();
+  await sizeViewportToOverflowOnWiden(page, mountDesk);
+  await expect(page.getByText(`${WINDOW_ROWS} of ${WINDOW_ROWS} open positions`)).toBeVisible();
+  await expect(page.getByText(/rows are windowed as you scroll/)).toBeVisible();
+  const mounted = await rows.count();
+  expect(mounted, "every row is mounted — the windowed path was never taken").toBeLessThan(WINDOW_ROWS);
+
+  await page.keyboard.press("j");
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
+  await widenSidebarMidDesk(page);
+
+  // Presses 2…WINDOW_ROWS: focus runs from row 1 to the last row, crossing the
+  // initially-mounted window on the way.
+  for (let i = 1; i < WINDOW_ROWS; i++) {
+    await page.keyboard.press("j");
+    if (i === mounted) {
+      await expectFocusedRowFullyVisible(page, `widened sidebar: after j crossed the window boundary ${await deskState(page)}`);
+    }
+  }
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", String(WINDOW_ROWS - 1));
+  await expectFocusedRowFullyVisible(page, `widened sidebar: after j to the last row of a windowed desk ${await deskState(page)}`);
+
+  for (let i = 0; i < WINDOW_ROWS - 1; i++) {
+    await page.keyboard.press("k");
+    if (i === WINDOW_ROWS - mounted) {
+      await expectFocusedRowFullyVisible(page, "widened sidebar: after k crossed the window boundary");
+    }
+  }
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
+  await expectFocusedRowFullyVisible(page, "widened sidebar: after k back to the first row of a windowed desk");
 });
 
 // ---------------------------------------------------------------------------

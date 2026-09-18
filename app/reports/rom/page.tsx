@@ -118,6 +118,20 @@ export default function RomReportPage() {
       />
       <div className="space-y-5 p-6">
         <ProGate>
+          {report.missingRates.length > 0 && (
+            <Card className="border-warning/40">
+              <CardContent className="flex items-start gap-2.5 p-4 text-sm">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+                <span>
+                  No margin rate configured for{" "}
+                  <span className="font-mono">{report.missingRates.join(", ")}</span> — 100% of value was
+                  assumed, which <b>understates</b> ROM for those trades. Set the real rates in{" "}
+                  <b>Settings → Margin</b> and this page recomputes.
+                </span>
+              </CardContent>
+            </Card>
+          )}
+
           {/* ── Headline ───────────────────────────────────────────────── */}
           <section className="grid grid-cols-2 gap-4 xl:grid-cols-5">
             <KpiCard
@@ -157,20 +171,6 @@ export default function RomReportPage() {
               <CardContent className="flex items-start gap-2.5 p-4 text-sm">
                 <Info className="mt-0.5 size-4 shrink-0 text-accent" />
                 <span>{verdict}</span>
-              </CardContent>
-            </Card>
-          )}
-
-          {report.missingRates.length > 0 && (
-            <Card className="border-warning/40">
-              <CardContent className="flex items-start gap-2.5 p-4 text-sm">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-                <span>
-                  No margin rate configured for{" "}
-                  <span className="font-mono">{report.missingRates.join(", ")}</span> — 100% of value was
-                  assumed, which <b>understates</b> ROM for those trades. Set the real rates in{" "}
-                  <b>Settings → Margin</b> and this page recomputes.
-                </span>
               </CardContent>
             </Card>
           )}

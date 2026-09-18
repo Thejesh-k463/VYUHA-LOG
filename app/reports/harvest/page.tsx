@@ -136,40 +136,6 @@ export default function HarvestPage() {
           fyEnd={fyEnd}
         />
 
-        {/* The levers a trade book can compute exactly. Deliberately no "sell
-            these" ranking: naming a security and prompting a transaction is
-            advice, not computation. See lib/analytics/tax-levers.ts. */}
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Card>
-            <CardHeader><CardTitle>Set-off: this year vs carried forward</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-xs text-muted-foreground">
-              <p>{setOff.rule}</p>
-              {setOff.finding && <p className="font-medium text-foreground">{setOff.finding}</p>}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>STT: deductible on one head, forfeited on another</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-xs text-muted-foreground">
-              {stt.total > 0 ? (
-                <>
-                  <p>
-                    <span className="font-medium text-profit">{inr(stt.deductible, { decimals: 0 })}</span> of STT/CTT
-                    sat on business-head legs across {stt.deductibleTrades} trades and is an allowable expense
-                    ({stt.deductibleSection}).{" "}
-                    <span className="font-medium text-loss">{inr(stt.forfeited, { decimals: 0 })}</span> sat on
-                    {" "}{stt.forfeitedTrades} delivery trades, where it is expressly not deductible
-                    ({stt.forfeitedSection}).
-                  </p>
-                  <p>The same levy, two treatments. Only the head decides which you get.</p>
-                </>
-              ) : (
-                <p>No STT recorded on closed trades yet.</p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
         {runway.rows.length > 0 && (
           <Card className="p-0">
             <CardHeader>
@@ -213,6 +179,40 @@ export default function HarvestPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* The levers a trade book can compute exactly. Deliberately no "sell
+            these" ranking: naming a security and prompting a transaction is
+            advice, not computation. See lib/analytics/tax-levers.ts. */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle>Set-off: this year vs carried forward</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-xs text-muted-foreground">
+              <p>{setOff.rule}</p>
+              {setOff.finding && <p className="font-medium text-foreground">{setOff.finding}</p>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>STT: deductible on one head, forfeited on another</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-xs text-muted-foreground">
+              {stt.total > 0 ? (
+                <>
+                  <p>
+                    <span className="font-medium text-profit">{inr(stt.deductible, { decimals: 0 })}</span> of STT/CTT
+                    sat on business-head legs across {stt.deductibleTrades} trades and is an allowable expense
+                    ({stt.deductibleSection}).{" "}
+                    <span className="font-medium text-loss">{inr(stt.forfeited, { decimals: 0 })}</span> sat on
+                    {" "}{stt.forfeitedTrades} delivery trades, where it is expressly not deductible
+                    ({stt.forfeitedSection}).
+                  </p>
+                  <p>The same levy, two treatments. Only the head decides which you get.</p>
+                </>
+              ) : (
+                <p>No STT recorded on closed trades yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="space-y-2 text-[0.6875rem] text-muted-foreground">
           <p>

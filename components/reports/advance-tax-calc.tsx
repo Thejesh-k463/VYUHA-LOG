@@ -64,6 +64,7 @@ export function AdvanceTaxCalc({
   fyStartMonth,
   harvestableLoss = 0,
   ledger,
+  ledgerSlot,
 }: {
   initialGains: number;
   today: string;
@@ -77,6 +78,12 @@ export function AdvanceTaxCalc({
    * the v3.5 one, unchanged.
    */
   ledger?: AdvanceTaxLedger;
+  /**
+   * The challan-ledger card, rendered by the SERVER page and handed in as a
+   * node. It sits between the schedule it feeds and the Assumptions form
+   * (v4.4.0 default order: what you owe first, the form that tunes it last).
+   */
+  ledgerSlot?: React.ReactNode;
 }) {
   const stored = parseStored(useStoredValue(STORE_KEY));
 
@@ -166,106 +173,6 @@ export function AdvanceTaxCalc({
 
   return (
     <div className="space-y-5">
-      <Card>
-        <CardHeader><CardTitle>Assumptions</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-5">
-            <div className="space-y-1">
-              <Label className="text-xs">Estimated taxable gains (FY)</Label>
-              {numIn(gains, (n) => save({ gains: n }))}
-              {usingSavedGains && (
-                <p className="text-[0.6875rem] text-warning">
-                  Using your saved figure —{" "}
-                  <button
-                    type="button"
-                    className="underline underline-offset-2 hover:text-foreground"
-                    onClick={() => save({ gains: undefined })}
-                  >
-                    reset to this FY&apos;s {inr(fyGains, { decimals: 0 })}
-                  </button>
-                </p>
-              )}
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Effective tax rate %</Label>
-              {numIn(ratePct, (n) => save({ ratePct: n }))}
-            </div>
-            {/* id, not a testid: the field swaps between an input and a
-                read-only ledger figure, and the e2e spec has to be able to ask
-                which one is on screen. */}
-            <div className="space-y-1" id="advance-tax-paid-field">
-              <Label className="text-xs">Advance tax paid so far</Label>
-              {ledgerActive ? (
-                <>
-                  <p className="flex h-8 items-center text-sm font-semibold tabular-nums">
-                    {inr(ledger.total, { decimals: 0 })}
-                  </p>
-                  <p className="max-w-64 text-[0.6875rem] text-muted-foreground">
-                    From your challan ledger: {inr(ledger.total, { decimals: 0 })} across {ledger.count} payment
-                    {ledger.count === 1 ? "" : "s"}. Each instalment below is measured against what stood paid on its
-                    OWN due date — edit the payments in the ledger beneath this calculator.
-                  </p>
-                  {savedPaidIgnored && (
-                    <p className="max-w-64 text-[0.6875rem] text-warning">
-                      Your saved figure of {inr(savedPaid, { decimals: 0 })} is IGNORED for {plan.fyLabel} — the dated
-                      ledger replaces it, because a date is what the instalment maths needs. It is still saved: remove
-                      every challan for this FY and this box goes back to that number.
-                    </p>
-                  )}
-                </>
-              ) : (
-                numIn(paid, (n) => save({ paid: n }))
-              )}
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">{deferment}(4) relief-eligible tax</Label>
-              {numIn(reliefTax, (n) => save({ reliefTax: n }))}
-              <p className="max-w-56 text-[0.6875rem] text-muted-foreground">
-                Tax on capital gains, dividend, casual income, or business income arising for the FIRST time, that the
-                shortfall traces to.
-              </p>
-            </div>
-          </div>
-          <div className="mt-3 space-y-1.5">
-            <label className="flex cursor-pointer items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={reliefPaidInFull}
-                onChange={(e) => save({ reliefPaidInFull: e.target.checked })}
-                className="mt-0.5 size-3.5"
-              />
-              <span>
-                The tax on that income was (or will be) paid in full in a remaining instalment or by 31 March — the{" "}
-                {deferment}(4) relief is conjunctive and does not arise without this.
-              </span>
-            </label>
-            <label className="flex cursor-pointer items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={presumptive}
-                onChange={(e) => save({ presumptive: e.target.checked })}
-                className="mt-0.5 size-3.5"
-              />
-              <span>
-                Presumptive taxation ({section(plan.fyLabel, "presumptive")}) elected — the whole advance tax then falls
-                due in one instalment, 100% by 15 March.
-              </span>
-            </label>
-          </div>
-          <p className="mt-2 text-[0.6875rem] text-muted-foreground">
-            Gains prefilled from realised FY P&amp;L in this journal. Rate is your blended effective rate (STCG 15/20%,
-            LTCG 12.5%, F&amp;O at slab) — adjust to your bracket. Inputs are saved on this device.
-            {ledgerActive && (
-              <>
-                {" "}
-                The paid figure is the exception: it comes from the challan ledger below, which is stored in the journal
-                and scoped to the selected account.
-              </>
-            )}
-          </p>
-        </CardContent>
-      </Card>
-
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard label={`Est. tax ${plan.fyLabel}`} valueNum={plan.estimatedAnnualTax} format="inr0" sub={`${ratePct}% of gains`} />
         <KpiCard label="Paid so far" value={`${plan.paidPct}%`} valueClassName={plan.paidPct >= 90 ? "text-profit" : plan.paidPct > 0 ? "text-warning" : "text-loss"} sub={inr(plan.taxPaidToDate, { decimals: 0 })} />
@@ -348,6 +255,108 @@ export function AdvanceTaxCalc({
           following year until you pay — on top of the deferment interest above.
         </div>
       )}
+
+      {ledgerSlot}
+
+      <Card>
+        <CardHeader><CardTitle>Assumptions</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-5">
+            <div className="space-y-1">
+              <Label className="text-xs">Estimated taxable gains (FY)</Label>
+              {numIn(gains, (n) => save({ gains: n }))}
+              {usingSavedGains && (
+                <p className="text-[0.6875rem] text-warning">
+                  Using your saved figure —{" "}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    onClick={() => save({ gains: undefined })}
+                  >
+                    reset to this FY&apos;s {inr(fyGains, { decimals: 0 })}
+                  </button>
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Effective tax rate %</Label>
+              {numIn(ratePct, (n) => save({ ratePct: n }))}
+            </div>
+            {/* id, not a testid: the field swaps between an input and a
+                read-only ledger figure, and the e2e spec has to be able to ask
+                which one is on screen. */}
+            <div className="space-y-1" id="advance-tax-paid-field">
+              <Label className="text-xs">Advance tax paid so far</Label>
+              {ledgerActive ? (
+                <>
+                  <p className="flex h-8 items-center text-sm font-semibold tabular-nums">
+                    {inr(ledger.total, { decimals: 0 })}
+                  </p>
+                  <p className="max-w-64 text-[0.6875rem] text-muted-foreground">
+                    From your challan ledger: {inr(ledger.total, { decimals: 0 })} across {ledger.count} payment
+                    {ledger.count === 1 ? "" : "s"}. Each instalment above is measured against what stood paid on its
+                    OWN due date — edit the payments in the ledger above this calculator.
+                  </p>
+                  {savedPaidIgnored && (
+                    <p className="max-w-64 text-[0.6875rem] text-warning">
+                      Your saved figure of {inr(savedPaid, { decimals: 0 })} is IGNORED for {plan.fyLabel} — the dated
+                      ledger replaces it, because a date is what the instalment maths needs. It is still saved: remove
+                      every challan for this FY and this box goes back to that number.
+                    </p>
+                  )}
+                </>
+              ) : (
+                numIn(paid, (n) => save({ paid: n }))
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">{deferment}(4) relief-eligible tax</Label>
+              {numIn(reliefTax, (n) => save({ reliefTax: n }))}
+              <p className="max-w-56 text-[0.6875rem] text-muted-foreground">
+                Tax on capital gains, dividend, casual income, or business income arising for the FIRST time, that the
+                shortfall traces to.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 space-y-1.5">
+            <label className="flex cursor-pointer items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={reliefPaidInFull}
+                onChange={(e) => save({ reliefPaidInFull: e.target.checked })}
+                className="mt-0.5 size-3.5"
+              />
+              <span>
+                The tax on that income was (or will be) paid in full in a remaining instalment or by 31 March — the{" "}
+                {deferment}(4) relief is conjunctive and does not arise without this.
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={presumptive}
+                onChange={(e) => save({ presumptive: e.target.checked })}
+                className="mt-0.5 size-3.5"
+              />
+              <span>
+                Presumptive taxation ({section(plan.fyLabel, "presumptive")}) elected — the whole advance tax then falls
+                due in one instalment, 100% by 15 March.
+              </span>
+            </label>
+          </div>
+          <p className="mt-2 text-[0.6875rem] text-muted-foreground">
+            Gains prefilled from realised FY P&amp;L in this journal. Rate is your blended effective rate (STCG 15/20%,
+            LTCG 12.5%, F&amp;O at slab) — adjust to your bracket. Inputs are saved on this device.
+            {ledgerActive && (
+              <>
+                {" "}
+                The paid figure is the exception: it comes from the challan ledger above, which is stored in the journal
+                and scoped to the selected account.
+              </>
+            )}
+          </p>
+        </CardContent>
+      </Card>
 
       {plan.notes.length > 0 && (
         <ul className="space-y-1.5 text-xs text-muted-foreground">

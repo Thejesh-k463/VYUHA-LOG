@@ -7,6 +7,8 @@ import { TelegramRunner } from "@/components/system/telegram-runner";
 import { AutoPullRunner } from "@/components/system/auto-pull-runner";
 import { BreachBanner } from "@/components/risk/breach-banner";
 import { ReviewOpenCard } from "@/components/review/review-open-card";
+import { SectionArrangeProvider } from "@/components/layout/section-stack";
+import { RearrangeControls } from "@/components/layout/rearrange-controls";
 import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { getDashboardTrades } from "@/lib/queries/trades";
@@ -66,8 +68,13 @@ export default function DashboardPage() {
       : null; // unmeasurable: the performance page explains; a badge can't say "—" honestly
   }
 
+  // The cockpit's cards are user-movable (DashboardClient's SectionStack,
+  // PAGE_SECTIONS.dashboard); the runners, the breach banner and the review
+  // nag stay pinned above them — a warning that can be dragged below the fold
+  // is a warning that was not given. No Rearrange on an empty book: the
+  // first-run branch renders no cards to move.
   return (
-    <>
+    <SectionArrangeProvider page="dashboard">
       <PageHeader
         title="Dashboard"
         description="Combined cockpit — P&L, risk and edge across both buckets."
@@ -76,6 +83,7 @@ export default function DashboardPage() {
             {goalBadge && <Badge variant="secondary">{goalBadge}</Badge>}
             <Badge variant="secondary">Total ₹{(total / 100000).toFixed(1)}L</Badge>
             <Badge variant="secondary">{dash.length} trades</Badge>
+            {dash.length > 0 && <RearrangeControls page="dashboard" />}
           </div>
         }
       />
@@ -97,6 +105,6 @@ export default function DashboardPage() {
           monthlyStretch={risk?.monthlyTargetStretch ?? 510000}
         />
       </div>
-    </>
+    </SectionArrangeProvider>
   );
 }

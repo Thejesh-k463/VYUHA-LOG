@@ -19,6 +19,7 @@ import {
 } from "./nav-config";
 import { useListDrag } from "./use-list-drag";
 import { useStoredValue, writeStored } from "./use-stored-value";
+import { SIDEBAR_MIN_W, useSidebarWidth } from "./use-sidebar-width";
 import { WORKSPACE_LABELS, screenVisible, type Workspace } from "@/lib/domain/workspace";
 import { cn } from "@/lib/utils";
 import { AccountSwitcher } from "@/components/system/account-switcher";
@@ -28,6 +29,15 @@ import { VyuhaMark } from "@/components/brand/mark";
 
 const COLLAPSE_KEY = "vyuha-sidebar-collapsed";
 const NAV_ORDER_KEY = "vyuha-nav-order";
+
+/**
+ * The narrowest sidebar that still shows the "Ctrl K" hint beside "Jump to…".
+ * Measured 2026-09-18 (e2e, 180 px): the button was 119 px wide and BOTH the
+ * label and the hint wrapped to two lines (46 px tall); the pair needs ~124 px
+ * of content, i.e. a ~203 px sidebar. Below this the hint is dropped — the
+ * button's tooltip still names the chord.
+ */
+const KBD_HINT_MIN_W = 208;
 
 /** C7 — live IST clock + NSE market-hours dot (Mon–Fri 09:15–15:30 IST).
  *  Client-only; renders nothing until mounted to avoid hydration drift. */
@@ -104,8 +114,11 @@ const NavRow = React.memo(function NavRow({
       // A drag that started on the grip must not navigate when the pointer
       // happens to lift over the link.
       onClick={(e) => { if (suppressNav) e.preventDefault(); }}
+      // `min-w-0` + a `truncate` label: the width is user-resizable down to
+      // 180 px, and without both the longest label ("Options Seller Journal")
+      // runs past the border and gives the nav a horizontal scrollbar.
       className={cn(
-        "flex flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+        "flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
         collapsed && "justify-center px-0",
         active
           ? "bg-[linear-gradient(90deg,rgba(45,212,191,0.14),rgba(45,212,191,0.04))] font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_14px_-6px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
@@ -113,7 +126,7 @@ const NavRow = React.memo(function NavRow({
       )}
     >
       <Icon className="size-4 shrink-0" />
-      {!collapsed && item.label}
+      {!collapsed && <span className="min-w-0 truncate">{item.label}</span>}
     </Link>
   );
   return (
@@ -288,7 +301,18 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
     [orderedGroups, orderedItems, shownList, isCurrent, navOrder, collapsed],
   );
 
-  const resetOrder = () => writeStored(NAV_ORDER_KEY, null);
+  // ── User-resizable width (v4.4.0) ─────────────────────────────────────────
+  // Per machine (`vyuha-sidebar-width`, {v:1, px}), clamped to the CURRENT
+  // window on every read, derived — never mirrored into state. Collapse stays
+  // independent: the rail is always 56 px and expanding restores this width.
+  const sidebarWidth = useSidebarWidth();
+
+  // ONE Reset for the sidebar's chrome: it clears the order AND the width, and
+  // is offered while either is stored.
+  const resetOrder = () => {
+    writeStored(NAV_ORDER_KEY, null);
+    sidebarWidth.reset();
+  };
 
   const toggleGroup = (group: string, open: boolean) =>
     persist({ ...envelope(), expanded: { ...(navOrder?.expanded ?? {}), [group]: open } });
@@ -388,7 +412,9 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
         // width is set in px because the sidebar is chrome — it should not
         // grow with the Comfortable density's larger root font, or the nav
         // eats the table it exists to navigate.
-        "flex h-screen shrink-0 flex-col border-r border-border transition-[width] duration-200",
+        // v4.4.0: the expanded width is user-set (inline style below, default
+        // still 232) — still px, for the same reason.
+        "relative flex h-screen shrink-0 flex-col border-r border-border transition-[width] duration-200",
         // Token-driven, NOT the spec's literal #0a101c→#070b13. Hard-coding
         // those left the sidebar dark navy while the rest of the app went
         // white in light mode — the same trap globals.css warns about for
@@ -397,8 +423,12 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
         // vs the spec's #070b13, two units of luminance apart and invisible)
         // and becomes a soft white gradient in light mode.
         "bg-[linear-gradient(180deg,var(--color-surface),var(--color-background))]",
-        collapsed ? "w-14" : "w-[232px]",
+        collapsed && "w-14",
+        // The 200 ms width transition is for the collapse toggle. Left on mid-
+        // drag it makes the edge trail the pointer and rubber-band on release.
+        sidebarWidth.dragging && "transition-none",
       )}
+      style={collapsed ? undefined : { width: sidebarWidth.width }}
     >
       <div className={cn("flex h-14 items-center gap-2 border-b border-border", collapsed ? "justify-center px-0" : "px-3")}>
         {/* Outline, not a text node: `व` is a tofu box on a machine with no
@@ -407,16 +437,18 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
         {!collapsed && (
           // The locked lockup: wordmark in the display face, caption in teal.
           // `nowrap` on both — at 232px a wrapped caption pushes the collapse
-          // button off the row.
+          // button off the row. `truncate` (nowrap + clip + ellipsis) since
+          // v4.4.0: at the 180 px minimum width a bare `nowrap` caption paints
+          // past the border, invisibly to any bounding-rect check.
           <div className="min-w-0 leading-tight">
             {/* text-foreground, not the spec's literal #f2f5f9: that hex is a
                 near-white for a dark ground, and on the now-themed light
                 sidebar the wordmark disappeared into the background. The token
                 resolves to #e9eef5 in dark — the same colour to the eye. */}
-            <div className="whitespace-nowrap font-display text-[14px] font-bold tracking-[0.14em] text-foreground">
+            <div className="truncate font-display text-[14px] font-bold tracking-[0.14em] text-foreground">
               VYUHA
             </div>
-            <div className="whitespace-nowrap text-[8.5px] uppercase tracking-[0.16em] text-primary">
+            <div className="truncate text-[8.5px] uppercase tracking-[0.16em] text-primary">
               Journal · Measure · Master
             </div>
           </div>
@@ -444,8 +476,10 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
             <Search className="size-3.5 shrink-0" />
             {!collapsed && (
               <>
-                <span>Jump to…</span>
-                <kbd className="ml-auto rounded border border-border bg-card-hover px-1 font-mono text-[10px]">Ctrl K</kbd>
+                <span className="min-w-0 truncate">Jump to…</span>
+                {sidebarWidth.width >= KBD_HINT_MIN_W && (
+                  <kbd className="ml-auto shrink-0 rounded border border-border bg-card-hover px-1 font-mono text-[10px]">Ctrl K</kbd>
+                )}
               </>
             )}
           </button>
@@ -581,7 +615,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
             <span className="flex items-center gap-1.5">
               <GripVertical className="size-3 opacity-50" /> drag to reorder
             </span>
-            {rawNavOrder !== null && (
+            {(rawNavOrder !== null || sidebarWidth.stored) && (
               <button type="button" onClick={resetOrder} className="ml-auto rounded px-1.5 py-1 hover:text-foreground">
                 Reset
               </button>
@@ -648,6 +682,33 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
           </DialogContent>
         )}
       </Dialog>
+
+      {/* The width handle. INSIDE this one <aside>: `e2e/helpers.ts` gates
+          every spec on `aside` + the clock, and a second <aside> breaks the
+          whole suite pointing at the clock. A 6 px target overhanging the 1 px
+          border, invisible until hovered or focused (like the row grips).
+          Keyboard: Arrow ±16, Shift+Arrow ±64, Home/End = min/max,
+          Enter/Space = reset; double-click resets too — a resize that is
+          pointer-only would add to the recorded sidebar accessibility debt. */}
+      {!collapsed && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Sidebar width"
+          aria-valuenow={sidebarWidth.width}
+          aria-valuemin={SIDEBAR_MIN_W}
+          aria-valuemax={sidebarWidth.max}
+          tabIndex={0}
+          onPointerDown={sidebarWidth.onPointerDown}
+          onKeyDown={sidebarWidth.onKeyDown}
+          onDoubleClick={sidebarWidth.reset}
+          style={{ touchAction: "none" }}
+          className={cn(
+            "absolute inset-y-0 right-0 z-20 -mr-0.5 w-1.5 cursor-col-resize transition-colors hover:bg-primary/40 focus-visible:bg-primary/60 focus-visible:outline-none",
+            sidebarWidth.dragging && "bg-primary/60",
+          )}
+        />
+      )}
     </aside>
   );
 }

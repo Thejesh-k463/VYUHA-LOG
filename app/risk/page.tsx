@@ -401,7 +401,7 @@ export default function RiskPage() {
           inputs={inputs}
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}
         />
-        <SebiRadarPanel report={radar} />
+        <MarginPanel summary={marginSummary} rates={marginRates} />
         {/* The page resolves the reference price (it owns the database) and
             hands it down; the chip writes a new one through
             `POST /api/risk/spot` (and "Keep my mark" through
@@ -409,7 +409,18 @@ export default function RiskPage() {
             action handed down from here — an action would remount the cockpit
             below and reset its open row (AGENTS.md, R7). */}
         <ExpiryObligations summary={settlement} spotRefs={spotRefs} spotCloseDismissed={spotCloseDismissed} />
-        <MarginPanel summary={marginSummary} rates={marginRates} />
+        <Card>
+          <CardHeader>
+            <CardTitle>Pre-trade limits check</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              What-if: test a prospective order against your per-trade cap, daily-loss stop, max-open, max-trades and
+              concentration limits (from Settings → Risk) before you place it.
+            </p>
+            <LimitCheck />
+          </CardContent>
+        </Card>
         <MtfDriftCard drift={mtfDriftRows} unpriced={unpricedMtf} bundleAsOf={MTF_BUNDLE_AS_OF} stale={mtfStale} />
         {exposures.length > 0 && (
           <VarPanel varResult={varResult} betaExp={betaExp} stress={stress} niftyDays={niftyReturns.length} />
@@ -431,18 +442,7 @@ export default function RiskPage() {
             </Card>
           </>
         )}
-        <Card>
-          <CardHeader>
-            <CardTitle>Pre-trade limits check</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-3 text-xs text-muted-foreground">
-              What-if: test a prospective order against your per-trade cap, daily-loss stop, max-open, max-trades and
-              concentration limits (from Settings → Risk) before you place it.
-            </p>
-            <LimitCheck />
-          </CardContent>
-        </Card>
+        <SebiRadarPanel report={radar} />
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader>

@@ -101,10 +101,10 @@ export default function EdgeReportPage() {
         <ProGate>
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />
+        <StopTuningCard tuning={tuning} />
         <SegmentDepthCard report={depth} />
         <ThemeEdgeCard report={themes} />
         <MaeMfeCard report={maeReport} />
-        <StopTuningCard tuning={tuning} />
       </ProGate>
       </div>
     </>

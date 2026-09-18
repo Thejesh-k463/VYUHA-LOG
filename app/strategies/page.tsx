@@ -279,14 +279,15 @@ export default function StrategiesPage() {
               rendered tree through `props.children` to reach the `groups` and
               `charts` the client is handed. */}
           <div className="space-y-5">
-            {/* The SEBI line, once, at the top — computed from SEBI_FNO_FACTS by
+            <StrategiesClient groups={groups} charts={charts} shelf={shelf} picker={picker} pro={pro} />
+
+            {/* The SEBI line, once, below the book (a compliance line, read once —
+                v4.4.0 default order) — computed from SEBI_FNO_FACTS by
                 B5's own function, so a revised study updates the sentence and
                 cannot leave a stale literal behind. */}
             <p className="rounded-md border border-border bg-card-hover/30 p-3 text-[0.6875rem] leading-relaxed text-muted-foreground">
               {sebiRealityLine(SEBI_FNO_FACTS)}
             </p>
-
-            <StrategiesClient groups={groups} charts={charts} shelf={shelf} picker={picker} pro={pro} />
 
             <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
               <span className="text-foreground">{STRATEGY_COPY.beforeCharges}</span> {STRATEGY_COPY.sttNote}

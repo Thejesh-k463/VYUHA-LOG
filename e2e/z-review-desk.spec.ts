@@ -46,6 +46,12 @@ test("the Process Score shows its arithmetic, never a bare number", async ({ pag
   await page.goto("/review");
   await page.waitForLoadState("networkidle");
 
+  // Scoped to the Process Score card by its own title, never by position: since
+  // v4.4.0 the review queue renders ABOVE this card, and a page-wide `.first()`
+  // would silently assert against whichever panel comes first.
+  const score = page.locator(".panel-luxe").filter({ has: page.getByText(/^This week — /) });
+  await expect(score).toHaveCount(1);
+
   // All five components, each with its own numerator over denominator.
   for (const label of [
     "SL or target recorded",
@@ -54,10 +60,10 @@ test("the Process Score shows its arithmetic, never a bare number", async ({ pag
     "Playbook rules followed",
     "Trades reviewed",
   ]) {
-    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+    await expect(score.getByText(label, { exact: true }).first()).toBeVisible();
   }
   // "n of m · pct" — the row form the panel promises.
-  await expect(page.getByText(/\d+ of \d+ · /).first()).toBeVisible();
+  await expect(score.getByText(/\d+ of \d+ · /).first()).toBeVisible();
   await expect(page.getByText("How each component is counted")).toBeVisible();
 });
 

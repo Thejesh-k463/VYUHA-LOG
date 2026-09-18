@@ -114,6 +114,10 @@ export default async function TradesPage({
     <>
       <PageHeader title="Trades" description="The journal — every leg with charges, R-multiple and tags." />
       <div className="space-y-5 p-6">
+        <AcquisitionPanel trades={pending} />
+
+        {!unmarkedHidden && <UnmarkedHoldingsPanel holdings={unmarked} fingerprint={unmarkedFp} />}
+
         <section className="grid grid-cols-2 gap-4 xl:grid-cols-5">
           <KpiCard label="Trades" valueNum={stats.count} format="int" sub={`${stats.open} open`} />
           <KpiCard label="Net P&L" valueNum={stats.net} format="inr0" valueClassName={stats.net >= 0 ? "text-profit" : "text-loss"} />
@@ -121,9 +125,6 @@ export default async function TradesPage({
           <KpiCard label="Total charges" valueNum={stats.charges} format="inr0" valueClassName="text-grad-gold" />
           <KpiCard label="Charges / gross" value={`${chargePct.toFixed(1)}%`} sub="charge leak" />
         </section>
-        <AcquisitionPanel trades={pending} />
-
-        {!unmarkedHidden && <UnmarkedHoldingsPanel holdings={unmarked} fingerprint={unmarkedFp} />}
 
         {/* IPO-allotted P&L, reported APART from trading edge. A listing-day
             pop is not a repeatable skill, and folding it into expectancy would

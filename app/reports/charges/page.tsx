@@ -64,9 +64,6 @@ export default function ChargesReportPage() {
           <KpiCard label="Avg break-even move" value={`${totals.breakevenPct}%`} sub="charges ÷ turnover" />
         </section>
 
-        <ChargeTable title="By segment" rows={bySeg} totals={totals} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-charges-by-segment" />
-        <ChargeTable title="By month" rows={byMonth} totals={totals} labelFor={(k) => k} exportName="vyuha-charges-by-month" />
-
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Peak-margin penalty leak</CardTitle>
@@ -109,10 +106,13 @@ export default function ChargesReportPage() {
             )}
             <p className="p-4 pt-2 text-[0.6875rem] text-muted-foreground">
               No feed reports SEBI peak-margin snapshots — brokers bill the penalty separately from brokerage/STT,
-              visible on your contract note. Logged manually, not counted in the charges tables above.
+              visible on your contract note. Logged manually, not counted in the charges tables below.
             </p>
           </CardContent>
         </Card>
+
+        <ChargeTable title="By segment" rows={bySeg} totals={totals} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-charges-by-segment" />
+        <ChargeTable title="By month" rows={byMonth} totals={totals} labelFor={(k) => k} exportName="vyuha-charges-by-month" />
       </ProGate>
       </div>
     </>

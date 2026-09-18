@@ -78,36 +78,38 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
     <div className="space-y-5">
       <KpiRow summary={summary} />
 
-      <div className="flex justify-end">
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm"><Plus className="size-4" /> Add IPO</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Add IPO</DialogTitle>
-              <DialogDescription>P&L is computed from applied → listing → exit, with sell charges & tax estimate.</DialogDescription>
-            </DialogHeader>
-            <IpoForm onDone={() => { setAddOpen(false); router.refresh(); }} />
-          </DialogContent>
-        </Dialog>
-      </div>
-
       <Card className="p-0">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>IPO applications</CardTitle>
-          <ExportButtons
-            filename="vyuha-ipos"
-            columns={EXPORT_COLS}
-            rows={rows.map((r) => ({
-              name: r.name, status: r.status, board: r.board, category: r.category ?? "",
-              appliedPrice: r.appliedPrice, discountPerShare: r.discountPerShare, effectiveCost: r.effectiveCost,
-              lotSize: r.lotSize, lotsApplied: r.lotsApplied, allottedQty: r.allottedQty,
-              listingPrice: r.listingPrice ?? "", exitPrice: r.exitPrice ?? "", listingGain: r.listingGain ?? "",
-              netPnl: r.realised ? r.netPnl : "", estTax: r.tax?.estTax ?? "", postTaxNet: r.tax?.postTaxNet ?? "",
-              returnPct: r.returnPct ?? "",
-            }))}
-          />
+          {/* The add action lives in the table's own header (v4.4.0 default
+              order) — a bare right-aligned button between the KPI strip and
+              the table read as a section of its own. */}
+          <div className="flex items-center gap-2">
+            <ExportButtons
+              filename="vyuha-ipos"
+              columns={EXPORT_COLS}
+              rows={rows.map((r) => ({
+                name: r.name, status: r.status, board: r.board, category: r.category ?? "",
+                appliedPrice: r.appliedPrice, discountPerShare: r.discountPerShare, effectiveCost: r.effectiveCost,
+                lotSize: r.lotSize, lotsApplied: r.lotsApplied, allottedQty: r.allottedQty,
+                listingPrice: r.listingPrice ?? "", exitPrice: r.exitPrice ?? "", listingGain: r.listingGain ?? "",
+                netPnl: r.realised ? r.netPnl : "", estTax: r.tax?.estTax ?? "", postTaxNet: r.tax?.postTaxNet ?? "",
+                returnPct: r.returnPct ?? "",
+              }))}
+            />
+            <Dialog open={addOpen} onOpenChange={setAddOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm"><Plus className="size-4" /> Add IPO</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Add IPO</DialogTitle>
+                  <DialogDescription>P&L is computed from applied → listing → exit, with sell charges & tax estimate.</DialogDescription>
+                </DialogHeader>
+                <IpoForm onDone={() => { setAddOpen(false); router.refresh(); }} />
+              </DialogContent>
+            </Dialog>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {rows.length === 0 ? (

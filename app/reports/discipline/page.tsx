@@ -114,8 +114,6 @@ export default function DisciplineReportPage() {
           />
         </section>
 
-        <SebiRealityCard reality={fnoReality} />
-
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Entry-time limit breaches</CardTitle>
@@ -160,6 +158,8 @@ export default function DisciplineReportPage() {
             )}
           </CardContent>
         </Card>
+
+        <SebiRealityCard reality={fnoReality} />
 
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">

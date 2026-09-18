@@ -174,13 +174,6 @@ export default function CashPage() {
           ))}
         </div>
 
-        <LedgerImport />
-
-        <Card>
-          <CardHeader><CardTitle>Add ledger entry</CardTitle></CardHeader>
-          <CardContent><LedgerForm /></CardContent>
-        </Card>
-
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Ledger</CardTitle>
@@ -189,6 +182,13 @@ export default function CashPage() {
           <CardContent className="p-0">
             <LedgerTable rows={display} total={s.totalCount} />
           </CardContent>
+        </Card>
+
+        <LedgerImport />
+
+        <Card>
+          <CardHeader><CardTitle>Add ledger entry</CardTitle></CardHeader>
+          <CardContent><LedgerForm /></CardContent>
         </Card>
 
         <p className="text-[0.6875rem] text-muted-foreground">

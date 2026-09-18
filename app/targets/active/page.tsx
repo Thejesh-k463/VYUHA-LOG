@@ -85,7 +85,6 @@ export default function TargetActivePage() {
     <>
       <PageHeader title="Target Tracker — Trade F&O" description="Daily max-loss cockpit, trade counters, per-segment limits, lot sizing." />
       <div className="space-y-5 p-6">
-        {activeGoal && goalProg && <GoalStrip goal={activeGoal} progress={goalProg} />}
         <TargetActiveClient
           daily={daily}
           limits={{
@@ -99,6 +98,7 @@ export default function TargetActivePage() {
           segLimits={segLimits}
           defaultRisk={risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? null}
           undatedActive={undatedActive}
+          goalStrip={activeGoal && goalProg ? <GoalStrip goal={activeGoal} progress={goalProg} /> : null}
         />
       </div>
     </>

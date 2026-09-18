@@ -109,6 +109,25 @@ const ROW_HEIGHT = 66;
 const THEAD_HEIGHT_FALLBACK = 40;
 
 /**
+ * Run `measure` now and again whenever `el` resizes; returns the disconnect.
+ *
+ * For the two scroll-geometry readings below. Measured on mount ONLY, both
+ * went stale when `main` changed width (the resizable sidebar, or the desktop
+ * window) — a <th> could wrap or a horizontal scrollbar appear, and j/k parked
+ * the focused row under the sticky header or clipped its bottom. The observer
+ * callback is not an effect, so its `setState` is the measurement landing,
+ * not state synced from state. No ResizeObserver (a server or jsdom render):
+ * the mount reading stands, exactly as before.
+ */
+function observeSize(el: HTMLElement, measure: () => void): () => void {
+  measure();
+  if (typeof ResizeObserver === "undefined") return () => {};
+  const ro = new ResizeObserver(() => measure());
+  ro.observe(el);
+  return () => ro.disconnect();
+}
+
+/**
  * A STABLE empty tick map, so `applyTicks(rows, ticks)` returns the server's
  * own array by identity until the first frame lands. A fresh `new Map()` per
  * render would make the memo below re-run on every commit.
@@ -368,9 +387,14 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   // Measured through a CALLBACK ref, not an effect: React runs it on mount and
   // on unmount, so the height lands without a `setState` inside a `useEffect`
   // keyed on other state (AGENTS.md — that pattern broke the Trades filter).
+  // …and RE-measured on every resize (v4.4.0): a mount-only reading goes stale
+  // the moment `main` changes width — a resized sidebar or desktop window —
+  // and `j` then parks the focused row under the header again. The observer
+  // lives inside the ref and is disconnected by the ref's own cleanup.
   const [theadHeight, setTheadHeight] = React.useState(THEAD_HEIGHT_FALLBACK);
   const theadRef = React.useCallback((el: HTMLTableSectionElement | null) => {
-    if (el) setTheadHeight(el.offsetHeight || THEAD_HEIGHT_FALLBACK);
+    if (!el) return;
+    return observeSize(el, () => setTheadHeight(el.offsetHeight || THEAD_HEIGHT_FALLBACK));
   }, []);
 
   // How much of the scroll box is NOT scrollable content area: its 1px top and
@@ -381,11 +405,17 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   // in the harness: offsetHeight 252, clientHeight 250 — the row's bottom sat
   // 1.5 px past the box (`Expected: >= -1  Received: -1.5`). Same callback-ref
   // pattern as the <thead> above, and for the same reason: no setState in an
-  // effect keyed on state.
+  // effect keyed on state. Observed for the same reason too: a narrower `main`
+  // can add a horizontal scrollbar, which grows this by the bar's height.
   const [boxChromeY, setBoxChromeY] = React.useState(0);
   const scrollBoxRef = React.useCallback((el: HTMLDivElement | null) => {
     scrollRef.current = el;
-    if (el) setBoxChromeY(Math.max(0, el.offsetHeight - el.clientHeight));
+    if (!el) return;
+    const disconnect = observeSize(el, () => setBoxChromeY(Math.max(0, el.offsetHeight - el.clientHeight)));
+    return () => {
+      disconnect();
+      scrollRef.current = null;
+    };
   }, []);
 
   React.useEffect(() => {
@@ -901,74 +931,6 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
         </div>
       )}
 
-      {/* ── Heat strip + sector concentration (Pro, Q55) ────────────────────── */}
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-[var(--radius-card)] border border-border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{DESK_COPY.heatTitle}</p>
-          {/* `heat === null` and `!pro` are the same state by construction —
-              the loader strips it — but the null is what the type forces us to
-              branch on, so the lock cannot be bypassed by a stale payload. */}
-          {!pro || heat === null ? (
-            <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-              <ProLock /> {DESK_COPY.proColumns}
-            </p>
-          ) : (
-            <>
-              <p className="mt-1 font-mono text-lg tabular-nums">{fmt.pct(heat.heatPpm)}</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {heat.capitalP === null ? DESK_COPY.heatNoCapital : `Open risk ${fmt.money(heat.openRiskP)} of ${fmt.money(heat.capitalP)}.`}
-              </p>
-              {/* `lockedInProfitP` has been computed since v4.0 and printed
-                  nowhere. It is the OTHER side of `max(riskAtStopP, 0)`: heat
-                  drops it so a winner cannot cancel another row's real risk,
-                  which is right, but dropping it off the SCREEN too lost a real
-                  figure. Stated on its own line, never netted into heat above.
-                  Pro, because the whole heat tile is (Q55) — this branch only
-                  runs inside `pro && heat !== null`. */}
-              <p className="text-[11px] text-muted-foreground">{lockedInAtStop(fmt.money(heat.lockedInProfitP))}</p>
-              {heat.rowsWithoutStop > 0 && (
-                <p className="text-[11px] text-muted-foreground">{DESK_COPY.heatNoStop(heat.rowsWithoutStop)}</p>
-              )}
-              {heat.ceilingPpm !== null && (
-                <p className="text-[11px] text-muted-foreground">Your ceiling is {fmt.pct(heat.ceilingPpm)}.</p>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="rounded-[var(--radius-card)] border border-border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{DESK_COPY.concentrationTitle}</p>
-          {!pro || concentration === null ? (
-            <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-              <ProLock /> {DESK_COPY.proColumns}
-            </p>
-          ) : concentration.length === 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">{DESK_COPY.concentrationEmpty}</p>
-          ) : (
-            <>
-              <ul className="mt-1 space-y-0.5">
-                {concentration.slice(0, 5).map((c) => (
-                  <li key={c.group ?? "unclassified"} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate">
-                      {c.group ?? "Unclassified"}{" "}
-                      {c.tier && (
-                        <Badge variant="secondary" size="xs">
-                          {c.tier}
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="font-mono tabular-nums">
-                      {fmt.pct(c.share.ppm)} <span className="text-muted-foreground">({c.constituents})</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-1 text-[11px] text-muted-foreground">{DESK_COPY.rotationCaveat}</p>
-            </>
-          )}
-        </div>
-      </div>
-
       {/* ── The tracker table ───────────────────────────────────────────────── */}
       <div
         ref={scrollBoxRef}
@@ -1091,6 +1053,74 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           onLab={() => openLab(expanded)}
         />
       )}
+
+      {/* ── Heat strip + sector concentration (Pro, Q55) ────────────────────── */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-[var(--radius-card)] border border-border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{DESK_COPY.heatTitle}</p>
+          {/* `heat === null` and `!pro` are the same state by construction —
+              the loader strips it — but the null is what the type forces us to
+              branch on, so the lock cannot be bypassed by a stale payload. */}
+          {!pro || heat === null ? (
+            <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <ProLock /> {DESK_COPY.proColumns}
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 font-mono text-lg tabular-nums">{fmt.pct(heat.heatPpm)}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {heat.capitalP === null ? DESK_COPY.heatNoCapital : `Open risk ${fmt.money(heat.openRiskP)} of ${fmt.money(heat.capitalP)}.`}
+              </p>
+              {/* `lockedInProfitP` has been computed since v4.0 and printed
+                  nowhere. It is the OTHER side of `max(riskAtStopP, 0)`: heat
+                  drops it so a winner cannot cancel another row's real risk,
+                  which is right, but dropping it off the SCREEN too lost a real
+                  figure. Stated on its own line, never netted into heat above.
+                  Pro, because the whole heat tile is (Q55) — this branch only
+                  runs inside `pro && heat !== null`. */}
+              <p className="text-[11px] text-muted-foreground">{lockedInAtStop(fmt.money(heat.lockedInProfitP))}</p>
+              {heat.rowsWithoutStop > 0 && (
+                <p className="text-[11px] text-muted-foreground">{DESK_COPY.heatNoStop(heat.rowsWithoutStop)}</p>
+              )}
+              {heat.ceilingPpm !== null && (
+                <p className="text-[11px] text-muted-foreground">Your ceiling is {fmt.pct(heat.ceilingPpm)}.</p>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="rounded-[var(--radius-card)] border border-border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{DESK_COPY.concentrationTitle}</p>
+          {!pro || concentration === null ? (
+            <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <ProLock /> {DESK_COPY.proColumns}
+            </p>
+          ) : concentration.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">{DESK_COPY.concentrationEmpty}</p>
+          ) : (
+            <>
+              <ul className="mt-1 space-y-0.5">
+                {concentration.slice(0, 5).map((c) => (
+                  <li key={c.group ?? "unclassified"} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate">
+                      {c.group ?? "Unclassified"}{" "}
+                      {c.tier && (
+                        <Badge variant="secondary" size="xs">
+                          {c.tier}
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="font-mono tabular-nums">
+                      {fmt.pct(c.share.ppm)} <span className="text-muted-foreground">({c.constituents})</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-muted-foreground">{DESK_COPY.rotationCaveat}</p>
+            </>
+          )}
+        </div>
+      </div>
 
       <footer className="border-t border-border pt-3 text-[11px] text-muted-foreground">
         <p>{DESK_COPY.disclaimer}</p>

@@ -56,23 +56,6 @@ export default function ExpiryPage() {
           />
         ) : (
           <>
-            <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <KpiCard label="Expiry-day concentration" value={`${s.concentrationPct}%`} sub={`${s.expiryDay.trades} of ${closedFno} F&O exits`} />
-              <KpiCard
-                label="Expiry edge"
-                value={`${signOf(s.netEdgeExpiry)}${inr(Math.abs(s.netEdgeExpiry), { decimals: 0 })}`}
-                valueClassName={s.netEdgeExpiry > 0 ? "text-profit" : s.netEdgeExpiry < 0 ? "text-loss" : ""}
-                sub="avg/trade vs other days"
-              />
-              <KpiCard label="Expiry-day net" valueNum={s.expiryDay.net} format="inr0" valueClassName={s.expiryDay.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.expiryDay.trades} trades`} />
-              <KpiCard label="Other-day net" valueNum={s.nonExpiry.net} format="inr0" valueClassName={s.nonExpiry.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.nonExpiry.trades} trades`} />
-            </section>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <BucketCard b={s.expiryDay} highlight />
-              <BucketCard b={s.nonExpiry} />
-            </div>
-
             <Card className="p-0">
               <CardHeader className="flex-row items-center justify-between">
                 <CardTitle>Upcoming expiries (open positions)</CardTitle>
@@ -106,6 +89,23 @@ export default function ExpiryPage() {
                 )}
               </CardContent>
             </Card>
+
+            <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <KpiCard label="Expiry-day concentration" value={`${s.concentrationPct}%`} sub={`${s.expiryDay.trades} of ${closedFno} F&O exits`} />
+              <KpiCard
+                label="Expiry edge"
+                value={`${signOf(s.netEdgeExpiry)}${inr(Math.abs(s.netEdgeExpiry), { decimals: 0 })}`}
+                valueClassName={s.netEdgeExpiry > 0 ? "text-profit" : s.netEdgeExpiry < 0 ? "text-loss" : ""}
+                sub="avg/trade vs other days"
+              />
+              <KpiCard label="Expiry-day net" valueNum={s.expiryDay.net} format="inr0" valueClassName={s.expiryDay.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.expiryDay.trades} trades`} />
+              <KpiCard label="Other-day net" valueNum={s.nonExpiry.net} format="inr0" valueClassName={s.nonExpiry.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.nonExpiry.trades} trades`} />
+            </section>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <BucketCard b={s.expiryDay} highlight />
+              <BucketCard b={s.nonExpiry} />
+            </div>
 
             <p className="text-[0.6875rem] text-muted-foreground">
               The expiry calendar is derived from the distinct expiry dates across your own F&O trades — a closed trade

@@ -5,7 +5,8 @@ import { gotoHydrated } from "./helpers";
  * Appearance settings: skin + tint intensity, panel style, custom theme.
  *
  * What is under test is the ROUND TRIP: the form previews on <html> at once,
- * "Save settings" persists through /api/settings, and a fresh server render
+ * "Save appearance" persists through /api/settings/appearance (its own save
+ * since v4.4.0 — the card sits last on the page), and a fresh server render
  * (app/layout.tsx → appearanceVars / appearanceClasses) puts the same thing
  * back on <html> as an inline style and classes. Live-preview correctness on
  * its own is a client concern the unit tests cover (lib/domain/appearance.ts);
@@ -24,12 +25,12 @@ const htmlStyle = async (page: Page) => (await html(page).getAttribute("style"))
 const htmlClass = async (page: Page) => (await html(page).getAttribute("class")) ?? "";
 
 async function save(page: Page) {
-  const btn = page.getByRole("button", { name: /^Save settings$/ });
+  const btn = page.getByRole("button", { name: /^Save appearance$/ });
   await btn.click();
   // The button flips to "Saving…" and back; the toast is transient. Waiting on
   // the button label being back is the deterministic signal that the POST
   // resolved (either way), and the reload below reads server truth.
-  await expect(btn).toHaveText(/^Save settings$/, { timeout: 15_000 });
+  await expect(btn).toHaveText(/^Save appearance$/, { timeout: 15_000 });
 }
 
 async function pickSkin(page: Page, label: string) {
