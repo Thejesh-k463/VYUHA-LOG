@@ -180,6 +180,30 @@ export function outcomeGroups(candidates: LensTrade[]): BatchGroup[] {
     }));
 }
 
+/**
+ * Each Outcome group's SHARE of the closed book (v4.4.0 fix list, owner 2026-09-18).
+ *
+ * The Outcome lens groups BY result, so a Win rate column there is a tautology:
+ * Winners always reads 100% and Losers 0% (the owner read that 0% as "no loss
+ * shown" — the loss is the row's net). What the grouping CAN say is how the
+ * closed trades divide: 33 of 42 = 79%, 9 of 42 = 21%.
+ *
+ * `closedCounts` is each group's closed-trade count, in row order. A group with
+ * no closed trade (Still open) is not a slice of the closed book, and a book with
+ * nothing closed has no denominator: both answer null, drawn "—" and never 0%
+ * (invariant 6). Counts are the user's own record, so this is free — it reads
+ * `LensTotals.closedCount`, which already crosses the free wire.
+ */
+export function outcomeShares(closedCounts: readonly number[]): (number | null)[] {
+  const closedBook = closedCounts.reduce((s, n) => s + n, 0);
+  return closedCounts.map((n) => (closedBook > 0 && n > 0 ? n / closedBook : null));
+}
+
+/** The group list's rate column per lens: Outcome states each group's share of the closed trades; every other lens its Win rate. */
+export function rateColumnOf(kind: LensKind): { key: "share" | "winRate"; label: string } {
+  return kind === "outcome" ? { key: "share", label: "Share of trades" } : { key: "winRate", label: "Win rate" };
+}
+
 // ── The registry ────────────────────────────────────────────────────────────
 
 /**

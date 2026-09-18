@@ -14,7 +14,7 @@ import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
 import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
-import { signalFromForm } from "@/lib/domain/signal";
+import { signalFromForm, parseFormNumber } from "@/lib/domain/signal";
 import { recordAudit } from "@/lib/audit";
 import { AccountRequiredError, getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import {
@@ -38,10 +38,61 @@ export type ActionState = {
   code?: "ACCOUNT_REQUIRED" | "STAGED";
 };
 
+/**
+ * A typed number, read by THE form-number rule (`parseFormNumber`, lib/domain/signal.ts —
+ * SIG-1) rather than by stripping every comma (v4.4.0 fix list): Indian "1,23,456.50" reads
+ * 123456.5, and a decimal-comma "14,48" is REFUSED instead of stored as 1448. Blank → 0, the
+ * forms' blank-means-0/null convention, unchanged. A refused value reads NaN here, and every
+ * action that calls this asks `numberProblem` first, so NaN never reaches a writer. Rupees and
+ * units at runtime (invariant 1) — nothing here converts to paise.
+ */
 const num = (v: FormDataEntryValue | null) => {
-  const x = Number(String(v ?? "").replace(/,/g, "").trim());
-  return Number.isFinite(x) ? x : 0;
+  const s = typedNumber(v);
+  if (s === "") return 0;
+  return parseFormNumber(s) ?? NaN;
 };
+/**
+ * The raw field, trimmed, with the HTML number input's leading-dot spelling (".5", "-.5" is a
+ * valid floating-point number there and is submitted as typed) given its zero. Not a second
+ * rule: commas, exponents and everything else stay `parseFormNumber`'s to accept or refuse.
+ */
+const typedNumber = (v: FormDataEntryValue | null) =>
+  String(v ?? "").trim().replace(/^([-+]?)\.(?=\d)/, (_m, sign: string) => `${sign}0.`);
+
+/** Every numeric field the trade forms post, with the label its refusal names. */
+const NUMBER_FIELDS: Record<string, string> = {
+  buyQty: "Buy qty",
+  avgBuyPrice: "Avg buy price",
+  sellQty: "Sell qty",
+  avgSellPrice: "Avg sell price",
+  exitPrice: "Exit price",
+  qty: "Quantity",
+  price: "Price",
+  closingPrice: "Closing price",
+  currentPrice: "Current price",
+  slPlanned: "SL",
+  trailingSl: "Trailing SL",
+  targetPlanned: "Target",
+  riskAmount: "Risk amount",
+  ownCapitalUsed: "Own capital used",
+  daysHeld: "Days held",
+  lotSize: "Lot size",
+};
+
+/**
+ * The refusal for the first numeric field the form-number rule cannot read, or null. Asked at
+ * the top of every action that reads `num()` / `ownCapital()`, before anything is written, so a
+ * refused value is a sentence naming its field — never 1448, and never a silent blank.
+ */
+function numberProblem(formData: FormData): string | null {
+  for (const [name, label] of Object.entries(NUMBER_FIELDS)) {
+    const s = typedNumber(formData.get(name));
+    if (s !== "" && parseFormNumber(s) == null) {
+      return `${label} “${String(formData.get(name)).trim()}” is not a number — a comma is read only as a thousands separator (1,448 or 1,23,456.50). Nothing was saved.`;
+    }
+  }
+  return null;
+}
 const str = (v: FormDataEntryValue | null) => {
   const s = String(v ?? "").trim();
   return s === "" ? null : s;
@@ -52,10 +103,10 @@ const str = (v: FormDataEntryValue | null) => {
  * price it. `num(...) || null` read that 0 as blank (X2, 4.3.0).
  */
 const ownCapital = (v: FormDataEntryValue | null) => {
-  const s = String(v ?? "").replace(/,/g, "").trim();
+  const s = typedNumber(v);
   if (s === "") return null;
-  const x = Number(s);
-  return Number.isFinite(x) ? x : null;
+  // The form-number rule too (a refused value was already answered by `numberProblem`).
+  return parseFormNumber(s);
 };
 
 /**
@@ -88,6 +139,8 @@ export async function createManualTrade(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const badNumber = numberProblem(formData);
+  if (badNumber) return { ok: false, message: badNumber };
   const base = ManualSchema.safeParse({
     broker: formData.get("broker"),
     tradingsymbol: formData.get("tradingsymbol"),
@@ -281,6 +334,8 @@ function revalidateAfterTradeChange() {
 /** Close an open position at an exit price/date — any segment (equity/MTF/options/futures). */
 export async function closeTradeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const id = Number(formData.get("tradeId"));
+  const badNumber = numberProblem(formData);
+  if (badNumber) return { ok: false, message: badNumber };
   const exitPrice = num(formData.get("exitPrice"));
   const exitDate = str(formData.get("exitDate"));
   if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
@@ -302,6 +357,8 @@ export async function closeTradeAction(_prev: ActionState, formData: FormData): 
 export async function updateTradeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const id = Number(formData.get("tradeId"));
   if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+  const badNumber = numberProblem(formData);
+  if (badNumber) return { ok: false, message: badNumber };
 
   const signal = signalFromFormData(formData);
   if (signal && !signal.ok) return { ok: false, message: signal.message };
@@ -375,6 +432,8 @@ export async function enableStagedAction(_prev: ActionState, formData: FormData)
  */
 export async function addEntryLegAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const id = Number(formData.get("tradeId"));
+  const badNumber = numberProblem(formData);
+  if (badNumber) return { ok: false, message: badNumber };
   const qty = num(formData.get("qty"));
   const price = num(formData.get("price"));
   const tradeDate = str(formData.get("tradeDate"));
@@ -415,6 +474,8 @@ export async function addEntryLegAction(_prev: ActionState, formData: FormData):
  */
 export async function addExitLegAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const id = Number(formData.get("tradeId"));
+  const badNumber = numberProblem(formData);
+  if (badNumber) return { ok: false, message: badNumber };
   const qty = num(formData.get("qty"));
   const price = num(formData.get("price"));
   const tradeDate = str(formData.get("tradeDate"));
@@ -451,6 +512,8 @@ export async function updateLegAction(_prev: ActionState, formData: FormData): P
   const legId = Number(formData.get("legId"));
   const tradeId = Number(formData.get("tradeId"));
   if (!Number.isFinite(legId)) return { ok: false, message: "Invalid leg." };
+  const badNumber = numberProblem(formData);
+  if (badNumber) return { ok: false, message: badNumber };
 
   const res = updateLeg(
     legId,
@@ -487,6 +550,8 @@ export async function applyStopAllAction(_prev: ActionState, formData: FormData)
   const hasSl = formData.has("slPlanned");
   const hasTsl = formData.has("trailingSl");
   if (!hasSl && !hasTsl) return { ok: false, message: "Nothing to apply." };
+  const badNumber = numberProblem(formData);
+  if (badNumber) return { ok: false, message: badNumber };
 
   const res = applyStopToOpenTranches(
     id,

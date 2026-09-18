@@ -87,8 +87,17 @@ export const HELP_ENTRIES: HelpEntry[] = [
   {
     href: "/strategies",
     title: "Option Strategies",
-    answers: "What do my open option legs add up to?",
+    answers: "What did the signals I traded on say, and what do my open option legs add up to?",
     body: [
+      // v4.4.0 fix list. The Signal book shipped in 4.3.0 as this screen's FIRST
+      // tab with no Help Desk entry. Facts from components/strategies/signal-book.tsx
+      // (the table, free; `withholdSignalAnalytics` withholds the three blocks
+      // server-side on a free build), components/trades/signal-section.tsx (the
+      // +30 / +60 / −25 prefill, options only on Add) and lib/analytics/signal-book.ts
+      // (`ADHERENCE_TOL_PCT` = 2 with the ₹0.05 floor; the day-range caveat).
+      "The first tab, Signal book, lists every option trade that recorded the signal it was taken on: the model (S1 or S2), call or put, the contract, spot, the S/R zone, distance and moneyness, strike OI and its change, OI value, the score, the T1 / T2 / SL ladder, how the trade exited, lots and net P&L. You record a signal on the Add trade form — F&O, Option, then Record the signal — or in the Signal section of the trade's Edit form. T1, T2 and SL are pre-filled at +30%, +60% and −25% of your entry, and you can change any of them. Anything you did not record shows as a dash, never as a zero; lots need a recorded lot size.",
+      "Vyuha does not produce the signal — it records the one you took and reads it back. The table is your own record and is free on every tier. The three read-backs under it are part of Vyuha Pro: rule adherence (did each exit match the level it claims, judged against that trade's own levels, within 2% of the level or ₹0.05, whichever is larger), edge by model, direction and exit (win rate, expectancy, and R measured on the signal's own SL), and how often the day's recorded range reached T1, T2 or the SL. The day's high and low are the whole session's range, not the range since entry, so a level the day reached may have been reached before the position existed, and the tab says so beside those figures.",
+      "The second tab, Structures you hold, is the catalogue of your open option legs:",
       // v4.3 wave 2. The old sentence said "by underlying and expiry", which
       // described a grouping the catalogue no longer uses: expiry became a LEG
       // attribute so a calendar stays one position instead of splitting in two.
@@ -105,7 +114,10 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "The grouping, the payoff curve and the gross figures — labelled before charges — are free for every book, and the sixteen shapes Vyuha named before 4.3 keep their names on the free tier wherever the legs still form one of them: a position in the underlying, long or short, or a second expiry can turn legs once named a long call, a short call, a long put or a short put into a covered call, a covered put, a protective put, a protective call, a calendar or a diagonal, and the free tier reads that book as its leg count. The other twenty-four names are part of Vyuha Pro: on the free tier a group matching one of them reads as its leg count rather than as a name. The shelf is Pro too — a selection of catalogue tiles pinned above the named groups, with undo, redo and restore-defaults — and so is the picker that edits it. Nothing here carries a name of your own: a shelf tile is a shape from the catalogue.",
       "Every one of the 40 shapes is written up in the Options section of the Help Desk — the legs, how the payoff is computed, who uses it and what it risks — free on every tier. A named card here links straight to its entry; a Custom card — a group that matches no shape, or a match whose name is withheld on the free tier — links to the top of the Options section.",
     ],
-    keywords: ["payoff", "straddle", "strangle", "iron condor", "spread", "breakeven", "catalogue", "shapes", "butterfly", "calendar", "synthetic", "jade lizard", "shelf"],
+    keywords: ["payoff", "straddle", "strangle", "iron condor", "spread", "breakeven", "catalogue", "shapes", "butterfly", "calendar", "synthetic", "jade lizard", "shelf", "signal", "signal book", "adherence", "t1", "open interest"],
+    refusals: [
+      "The Signal book generates no signal: Vyuha has no scanner, no zone engine, no OI feed and no alerts. It records the signal you traded on and reads your own record back.",
+    ],
   },
   {
     href: "/options-journal",

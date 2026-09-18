@@ -2164,6 +2164,15 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       if (lot.accountId <= 0 || (view > 0 && view !== lot.accountId)) {
         return { ok: false, code: "OTHER_ACCOUNT", message: "That position belongs to a different account from the one you are viewing. Nothing was changed." };
       }
+      // v4.4.0 fix list (wave 2P's recorded unreadable-lot finding) — the join
+      // prices from the LOT's stored dates (the rate epoch, the MTF day count),
+      // so a lot stored as '2026-02-31' or '9999-99-99' is refused here in the
+      // sentence the other three stored-date writers state, before the pair is
+      // re-derived: the pure rule reads only the ISO shape, so the first joined
+      // (0 days of interest from a day the row does not state) and the second
+      // was refused NO_PAIR, a reason that is not the reason. Nothing is written.
+      const badStored = storedDateProblem(lot);
+      if (badStored) return { ok: false, code: "BAD_DATE", message: badStored };
 
       // 1 — re-derive, over the lot's own book only (pairs never cross books).
       const sym = lot.tradingsymbol.trim().toUpperCase();

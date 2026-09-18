@@ -144,11 +144,11 @@ export const REGISTRY: FieldRule[] = [
     forbidden:
       "`new Date(rawDateField)` with neither a resolver in its provenance nor an emptiness guard over it; " +
       "a raw date field handed to a DAY COUNTER (`epochSpans`) with no resolver at all — it does not throw on a value it cannot read; " +
-      "a writer that prices from the STORED date columns (`closePosition`, `applyOverride`, `updateManualTrade`) with no `storedDateProblem` refusal in it",
+      "a writer that prices from the STORED date columns (`closePosition`, `applyOverride`, `updateManualTrade`, `closeStaleLot`) with no `storedDateProblem` refusal in it",
     allowed:
       "`new Date(exitIso)` after `resolveExitIso`, `new Date(t.buyDate)` under `if (!t.buyDate) return` or inside `t.buyDate ? … : 0`, " +
-      "`epochSpans(…, buyIso, today)` after `normalizeDate`, and `if (storedDateProblem(t)) return …` before any pricing in the three writers",
-    triggers: ["new Date(", "epochSpans(", "closePosition", "applyOverride", "updateManualTrade"],
+      "`epochSpans(…, buyIso, today)` after `normalizeDate`, and `if (storedDateProblem(t)) return …` before any pricing in the four writers",
+    triggers: ["new Date(", "epochSpans(", "closePosition", "applyOverride", "updateManualTrade", "closeStaleLot"],
     roots: ["lib", "app", "components"],
     provenance:
       "wave 2H new_defects[1] / wave 2I I1[1]: closePreviewBody took the holding period off the RAW exit field, " +
@@ -515,8 +515,12 @@ const DAY_COUNTERS = /^(epochSpans)$/;
  * the same docstring counted — took NaN into `computeCharges` for a stored
  * '9999-99-99' and died with `NOT NULL constraint failed:
  * trades.charges_total_paise`.
+ *
+ * The v4.4.0 fix list added the fourth: `closeStaleLot` (the Data Quality
+ * one-click close) prices from the LOT's stored buy date, and joined a lot stored
+ * as '2026-02-31' at 0 days of MTF interest — wave 2P's recorded finding.
  */
-const STORED_DATE_WRITERS = /^(closePosition|applyOverride|updateManualTrade)$/;
+const STORED_DATE_WRITERS = /^(closePosition|applyOverride|updateManualTrade|closeStaleLot)$/;
 
 function scanRawDate(sf: TS.SourceFile, file: string): Violation[] {
   const out: Violation[] = [];

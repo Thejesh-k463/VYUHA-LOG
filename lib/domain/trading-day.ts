@@ -265,8 +265,8 @@ export function unreadableStoredDateMessage(label: string, raw: string): string 
  * real day, or null when both are readable (or absent — a missing date is an
  * unanswered field, not an unreadable one, and keeps its 0-day path).
  *
- * ONE implementation for the three writers that price from those columns
- * (`closePosition`, `applyOverride`) and for the re-tag dialog, which states the
+ * ONE implementation for the writers that price from those columns
+ * (`closePosition`, `applyOverride`, and since v4.4.0 `closeStaleLot`) and for the re-tag dialog, which states the
  * same sentence rather than submitting a save that can only refuse.
  */
 export function storedDateProblem(t: { buyDate?: string | null; sellDate?: string | null }): string | null {

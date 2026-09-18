@@ -17,6 +17,10 @@ import { CATALOGUE } from "@/lib/analytics/strategy-catalogue";
 // today. `components/settings/live-feed-card.tsx` is owned by another builder
 // this wave and is not edited here.
 import { FEED_BLOCKED_HEALTH, REVIEW_CONSENT_CTA, feedBlockState } from "@/components/settings/live-feed-card";
+// READ-ONLY imports (v4.4.0 fix list): the Signal book's tolerance and prefill, so
+// the /strategies entry's figures are pinned against the code, not typed twice.
+import { ADHERENCE_TOL_PCT } from "@/lib/analytics/signal-book";
+import { prefillLadder } from "@/lib/domain/signal";
 
 /**
  * The help desk's one hard promise: it describes the app that exists. This
@@ -1013,5 +1017,39 @@ describe("the Settings entry states N25's restore rule for My Default Settings (
     expect(body).not.toMatch(/whole configuration back/);
     expect(body).toMatch(/one click returns your preferences and the margin and risk tables to that baseline\./);
     expect(body).toMatch(/Trades and journal data are never part of that restore\./);
+  });
+});
+
+/**
+ * v4.4.0 fix list — the Signal book (the FIRST tab on /strategies since 4.3.0)
+ * shipped with no Help Desk entry. It lives inside the /strategies entry: one
+ * entry per sidebar screen (the NAV join above), and a `#` href is a ghost. The
+ * figures are read from the code — the adherence tolerance from
+ * `ADHERENCE_TOL_PCT`, the prefill from `prefillLadder` — so a changed constant
+ * reddens the copy instead of silently outdating it.
+ */
+describe("the /strategies entry describes the Signal book tab", () => {
+  const entry = () => HELP_ENTRIES.find((e) => e.href === "/strategies")!;
+  const text = () => entry().body.join(" ");
+
+  it("names the tab, where a signal is recorded, and that the table is free while the read-backs are Pro", () => {
+    expect(text(), "the Signal book is not described at all").toMatch(/The first tab, Signal book, lists every option trade/);
+    expect(text(), "where a signal is recorded is not stated").toMatch(/Record the signal/);
+    expect(text(), "the free half is not stated").toMatch(/The table is your own record and is free on every tier\./);
+    expect(text(), "the Pro half is not stated").toMatch(/three read-backs under it are part of Vyuha Pro/);
+    expect(text(), "the second tab is not named").toMatch(/The second tab, Structures you hold/);
+    expect(entry().keywords).toEqual(expect.arrayContaining(["signal", "signal book", "adherence"]));
+  });
+
+  it("states the adherence tolerance and the prefill the code applies", () => {
+    expect(text()).toContain(`within ${ADHERENCE_TOL_PCT}% of the level or ₹0.05, whichever is larger`);
+    const p = prefillLadder(100)!;
+    const pct = (x: number) => Math.round(x - 100);
+    expect(text()).toContain(`pre-filled at +${pct(p.t1)}%, +${pct(p.t2)}% and −${-pct(p.sl)}% of your entry`);
+  });
+
+  it("says the day range may precede the entry, and that Vyuha produces no signal", () => {
+    expect(text()).toMatch(/whole session's range, not the range since entry/);
+    expect(entry().refusals?.join(" ") ?? "").toMatch(/generates no signal: Vyuha has no scanner, no zone engine, no OI feed and no alerts/);
   });
 });

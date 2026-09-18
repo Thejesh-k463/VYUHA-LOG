@@ -238,8 +238,7 @@ export function signalFromForm(get: (k: string) => string | null): SignalFormRes
     // judged the trade against that level for life. A comma is accepted only as a thousands
     // separator - Western (1,448) or Indian lakh grouping (3,00,000) - whose LAST group has three
     // digits; anything else is refused, as the header of this function promises.
-    const typed = raw.trim();
-    const n = FORM_NUMBER_RE.test(typed) ? Number(typed.replace(/,/g, "")) : NaN;
+    const n = parseFormNumber(raw) ?? NaN;
     if (!Number.isFinite(n)) return { ok: false, message: `${FIELD_LABELS[k]} “${raw}” is not a number. Nothing was saved.` };
     if (POSITIVE_FIELDS.includes(k) && !(n > 0)) return { ok: false, message: `${FIELD_LABELS[k]} must be greater than 0. Nothing was saved.` };
     if (NON_NEGATIVE_FIELDS.includes(k) && n < 0) return { ok: false, message: `${FIELD_LABELS[k]} cannot be negative. Nothing was saved.` };
@@ -289,6 +288,21 @@ export function prefillLadder(entry: number): { t1: number; t2: number; sl: numb
 /** What the FORM may type for a number: optional sign, plain digits or comma groups ending in a
  *  three-digit group (1,448 / 3,00,000), optional decimals. "14,48", "1e5" and "abc" are refused. */
 const FORM_NUMBER_RE = /^[-+]?(?:\d+|\d{1,3}(?:,\d{2,3})*,\d{3})(?:\.\d+)?$/;
+
+/**
+ * THE form-number rule (SIG-1), in one place: the Signal section above and the trade
+ * forms' qty / price / level fields (`app/trades/actions.ts`, v4.4.0 fix list) both read
+ * a typed number through it. Trimmed; a comma only as a thousands separator whose last
+ * group has three digits — Western 1,448 and Indian 1,23,456.50 read as the numbers they
+ * state — and anything else ("14,48", "1e5", "1,,448", "abc", blank) answers null rather
+ * than a number the user did not type.
+ */
+export function parseFormNumber(raw: string): number | null {
+  const typed = raw.trim();
+  if (!FORM_NUMBER_RE.test(typed)) return null;
+  const n = Number(typed.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
 const NUM = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?`;
 const SIGNED = String.raw`-?\d+(?:\.\d+)?`;
 // (.*) not (.+): a row whose tier cell is empty prints "#5 · " and is still a

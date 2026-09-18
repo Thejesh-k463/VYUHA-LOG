@@ -79,7 +79,7 @@ import { ShowMore, useRowWindow } from "@/components/ui/show-more";
 import { toast } from "@/components/ui/toaster";
 import { DeleteTradesDialog } from "@/components/trades/delete-trades-dialog";
 import { resolveDeleteScope, type DeletePreview } from "@/lib/domain/delete-scope";
-import { LENSES, lensDef, isLensKind, type LensKind, type LensTrade } from "@/lib/domain/lenses";
+import { LENSES, lensDef, isLensKind, outcomeShares, rateColumnOf, type LensKind, type LensTrade } from "@/lib/domain/lenses";
 // DELIBERATELY no computeKpis import: the KPI split is computed on the SERVER
 // (app/lenses/page.tsx via lib/domain/lens-edge.ts) so the Pro figures never
 // reach an unlicensed browser. Re-importing it here would turn the gate back
@@ -255,7 +255,7 @@ export function LensesClient({
                     onDelete={() => askDelete(open)}
                   />
                 ) : (
-                  <GroupList rows={rows} pro={pro} busy={busy} onOpen={openGroup} onDelete={askDelete} />
+                  <GroupList kind={kind} rows={rows} pro={pro} busy={busy} onOpen={openGroup} onDelete={askDelete} />
                 )}
               </div>
             )}
@@ -280,13 +280,16 @@ export function LensesClient({
 
 // ── The group list ──────────────────────────────────────────────────────────
 
-function GroupList({
+/** Exported for `tests/lenses-outcome-share.test.ts`, which renders it per lens. */
+export function GroupList({
+  kind,
   rows,
   pro,
   busy,
   onOpen,
   onDelete,
 }: {
+  kind: LensKind;
   rows: Row[];
   pro: boolean;
   /** The group key whose trades are being fetched, if any. */
@@ -300,6 +303,15 @@ function GroupList({
   // group's full membership, and the window never changes a figure, only how
   // many rows are mounted at once.
   const win = useRowWindow(rows);
+  // v4.4.0 fix list — on the Outcome lens the rate column is each group's share
+  // of the closed trades (a Win rate there is 100% / 0% by construction). Over
+  // EVERY row, not the rendered window: the denominator is the whole closed book.
+  // A projection of one count per group — nothing here mounts a row, which is
+  // what tests/render-windowing.test.ts guards.
+  const rateCol = rateColumnOf(kind);
+  const closedCounts = Array.from(rows, (r) => r.row.totals.closedCount);
+  const closedBook = closedCounts.reduce((s, n) => s + n, 0);
+  const shares = new Map(outcomeShares(closedCounts).map((s, i) => [rows[i].group.key, s]));
 
   if (rows.length === 0) {
     return <EmptyState variant="journal" title="Nothing to group yet" hint="Import a tradebook or add a trade by hand, and it will appear here." />;
@@ -327,7 +339,7 @@ function GroupList({
         <ReportTh align="right">Open</ReportTh>
         <ReportTh align="right">Net P&amp;L</ReportTh>
         <ReportTh align="right">Charges</ReportTh>
-        <ReportTh align="right">Win rate</ReportTh>
+        <ReportTh align="right">{rateCol.label}</ReportTh>
         <ReportTh align="right">Profit factor</ReportTh>
         <ReportTh align="right">Expectancy</ReportTh>
         <ReportTh align="right">Avg R</ReportTh>
@@ -337,6 +349,7 @@ function GroupList({
         {win.visible.map((row) => {
           const { group } = row;
           const { totals, edge } = row.row;
+          const share = shares.get(group.key) ?? null;
           return (
           <ReportTr key={group.key}>
             <ReportTd>
@@ -361,8 +374,16 @@ function GroupList({
             {/* `measurable` covers "nothing closed"; a closed book whose every
                 trade is unpriced has closedCount > 0 and a NULL rate, and pct()
                 is what draws that dash. */}
-            <EdgeCell edge={edge} measurable={totals.closedCount > 0}
-              render={(e) => pct(e.winRate == null ? null : e.winRate * 100, 0)} />
+            {rateCol.key === "share" ? (
+              // Counts, not edge: free on both licences, "—" when there is no
+              // closed trade to be a share of (invariant 6).
+              <ReportTd align="right" title={share == null ? undefined : `${totals.closedCount} of ${closedBook} closed trades`}>
+                {pct(share == null ? null : share * 100, 0)}
+              </ReportTd>
+            ) : (
+              <EdgeCell edge={edge} measurable={totals.closedCount > 0}
+                render={(e) => pct(e.winRate == null ? null : e.winRate * 100, 0)} />
+            )}
             <EdgeCell edge={edge} measurable={totals.closedCount > 0}
               render={(e) => (e.profitFactor == null ? "—" : num(e.profitFactor))} />
             <EdgeCell edge={edge} measurable={totals.closedCount > 0}
