@@ -31,6 +31,7 @@
  */
 
 import type { ChargeBreakdown } from "@/lib/engine/types";
+import { sameDay } from "@/lib/domain/trading-day";
 
 /**
  * Everything the charge engine is fed for a trade, as the SAVE resolves it —
@@ -144,8 +145,11 @@ export function chargeInputsChanged(stored: TradeChargeInputs, next: TradeCharge
   if (paise(stored.avgBuyPrice) !== paise(next.avgBuyPrice)) return true;
   if (paise(stored.avgSellPrice) !== paise(next.avgSellPrice)) return true;
   if (stored.buyQty !== next.buyQty || stored.sellQty !== next.sellQty) return true;
-  if ((stored.buyDate ?? null) !== (next.buyDate ?? null)) return true;
-  if ((stored.sellDate ?? null) !== (next.sellDate ?? null)) return true;
+  // D4 (wave 2P): the DAYS the two values state, not their bytes — a 4.2.x row
+  // holding '05-01-2026' beside the '2026-01-05' this save resolves is not a
+  // moved date, and re-pricing it replaced a broker-stated bill (F1).
+  if (!sameDay(stored.buyDate, next.buyDate)) return true;
+  if (!sameDay(stored.sellDate, next.sellDate)) return true;
   if (stored.isOpen !== next.isOpen) return true;
   if (stored.buyOrderCount !== next.buyOrderCount || stored.sellOrderCount !== next.sellOrderCount) return true;
   if (stored.fundedAmount == null || next.fundedAmount == null) return stored.fundedAmount !== next.fundedAmount;
@@ -209,8 +213,12 @@ export function patchMovesChargeInput(
   if (patch.sellQty !== undefined && patch.sellQty !== stored.sellQty) return true;
   if (patch.avgBuyPrice !== undefined && paise(patch.avgBuyPrice) !== paise(stored.avgBuyPrice)) return true;
   if (patch.avgSellPrice !== undefined && paise(patch.avgSellPrice) !== paise(stored.avgSellPrice)) return true;
-  if (patch.buyDate !== undefined && (patch.buyDate ?? null) !== (stored.buyDate ?? null)) return true;
-  if (patch.sellDate !== undefined && (patch.sellDate ?? null) !== (stored.sellDate ?? null)) return true;
+  // D4 (wave 2P): compared as the DAYS they state (`sameDay`, lib/domain/trading-day) —
+  // the parent of a ladder built from a legacy day-first leg held '20-01-2026'
+  // raw, and a notes-only save that resolves the same day to ISO was refused as
+  // a moved fill through every door.
+  if (patch.buyDate !== undefined && !sameDay(patch.buyDate, stored.buyDate)) return true;
+  if (patch.sellDate !== undefined && !sameDay(patch.sellDate, stored.sellDate)) return true;
   if (patch.fundedAmount !== undefined) {
     // A null (nobody priced it) and a stated 0 (paid for in full out of own
     // capital) are different facts — the `chargeInputsChanged` rule, verbatim.

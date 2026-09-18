@@ -490,6 +490,106 @@ describe("D17 · the editor refuses a stored date that states no day (dates-char
     expect(commit.updateManualTrade(id, { avgSellPrice: 160 }).ok).toBe(true);
     expect(tradeRow(id).mtfInterest).toBe(0);
   });
+
+  /**
+   * D7 (v4.3.0 fix wave 2P, dates-charges-ask#1, pre-existing) — the WHITESPACE
+   * hole D17's trim left. `updateManualTrade` counted days off the RAW strings
+   * (`buyDate && sellDate`), so a stored ' ' was PRESENT there and ABSENT to
+   * `storedDateProblem`: `new Date(' ')` is Invalid, NaN reached the engine, and
+   * the price patch below threw `NOT NULL constraint failed:
+   * trades.charges_total_paise`. `closePosition` and `applyOverride` billed the
+   * same row 0 days silently. ONE day count now (`calendarDaysHeld`,
+   * lib/domain/trading-day): a date that states no day counts zero everywhere.
+   * The stored ' ' itself is written back verbatim — no writer produces it, and
+   * a data fix for a shape nothing writes is a fix for nothing.
+   */
+  const whitespace = (symbol: string, over: Record<string, unknown> = {}) =>
+    trade(symbol, {
+      segment: "eq_mtf", buyDate: "2026-01-20", isOpen: false,
+      sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: " ",
+      mtfFundedAmount: 16000, mtfInterest: 20, grossPnl: 500, chargesTotal: 41.25, sttCtt: 15, netPnl: 458.75,
+      ...over,
+    });
+
+  it.each([
+    ["sellDate ' '", {}],
+    ["sellDate '\\t'", { sellDate: "\t" }],
+    ["buyDate ' '", { buyDate: " ", sellDate: "2026-03-02" }],
+    ["sellDate ''", { sellDate: "" }],
+  ] as const)("D7 · a price patch on a row storing %s saves at 0 days, no throw, the stored value written back", (_label, over) => {
+    const id = whitespace(`D7-${_label.replace(/\W/g, "")}`, over);
+    const before = tradeRow(id);
+    // THE assertion (on revert of `updateManualTrade`'s day count: throws
+    // `SqliteError: NOT NULL constraint failed: trades.charges_total_paise`).
+    const res = commit.updateManualTrade(id, { avgSellPrice: 160 });
+    expect([res.ok, res.message]).toEqual([true, "Trade updated."]);
+    const after = tradeRow(id);
+    expect([after.avgSellPrice, after.mtfInterest], "0 days billed").toEqual([160, 0]);
+    expect([after.buyDate, after.sellDate], "the stored values, verbatim").toEqual([before.buyDate, before.sellDate]);
+    // A notes-only save keeps the ' ' too and prices nothing.
+    expect(commit.updateManualTrade(id, { notes: "n" }).ok).toBe(true);
+    expect([tradeRow(id).sellDate, tradeRow(id).mtfInterest]).toEqual([before.sellDate, 0]);
+  });
+
+  it("D7 · closePosition and applyOverride bill the same whitespace row 0 days — the three writers agree by test", () => {
+    const open = trade("D7-CLOSE-WS", { segment: "eq_mtf", buyDate: " ", isOpen: true, mtfFundedAmount: 16000 });
+    const closed = commit.closePosition(open, 150, "2026-03-02");
+    expect(closed.ok, closed.message).toBe(true);
+    expect([tradeRow(open).isOpen, tradeRow(open).mtfInterest]).toEqual([false, 0]);
+
+    const retag = trade("D7-OVERRIDE-WS", {
+      segment: "eq_delivery", buyDate: "2026-01-20", isOpen: false,
+      sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "\t", mtfFundedAmount: 16000, grossPnl: 500, netPnl: 500,
+    });
+    expect(commit.applyOverride(retag, { segment: "eq_mtf" })).toBe(true);
+    expect([tradeRow(retag).segment, tradeRow(retag).mtfInterest]).toEqual(["eq_mtf", 0]);
+  });
+});
+
+/**
+ * D9 (v4.3.0 fix wave 2P, dates-charges-ask#3) — the server half: a date field
+ * ABSENT from the FormData (a stale tab, a non-dialog client) is "not mentioned",
+ * not "clear this". `updateTradeAction` read `str(null)` as null for both, so a
+ * stale tab that omitted the dates CLEARED a stored '9999-99-99' and re-priced the
+ * row; now the stored date is kept and D17's stored-sentence refusal answers. A
+ * BLANK field still clears (blank means clear, as every other field).
+ */
+describe("D9 · updateTradeAction: an absent date field keeps the stored date; a blank one clears it", () => {
+  let actions: typeof import("@/app/trades/actions");
+  beforeAll(async () => {
+    actions = await import("@/app/trades/actions");
+  });
+  const NO_STATE = { ok: false, message: "" };
+  const SENTENCE =
+    "This trade's stored buy date “9999-99-99” is not a real calendar day, so nothing can be priced from it. Correct the date in Edit trade first. Nothing was changed.";
+  const form = (id: number, fields: Record<string, string>) => {
+    const fd = new FormData();
+    fd.set("tradeId", String(id));
+    for (const [k, v] of Object.entries({ buyQty: "10", avgBuyPrice: "100", sellQty: "10", avgSellPrice: "160", sellDate: "2026-03-02", ...fields })) fd.set(k, v);
+    return fd;
+  };
+  const badStored = (symbol: string) =>
+    trade(symbol, {
+      segment: "eq_mtf", buyDate: "9999-99-99", isOpen: false,
+      sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02",
+      mtfFundedAmount: 16000, grossPnl: 500, chargesTotal: 41.25, sttCtt: 15, netPnl: 458.75,
+    });
+
+  it("a FormData that OMITS buyDate on the '9999-99-99' row + a price: {ok:false, the stored sentence}, the row byte-identical", async () => {
+    const id = badStored("D9-ABSENT");
+    const before = tradeRow(id);
+    const res = await actions.updateTradeAction(NO_STATE, form(id, {}));
+    // THE assertion (on revert: {ok:true}, buyDate null, avgSellPrice 160 — cleared and re-priced).
+    expect([res.ok, res.message]).toEqual([false, SENTENCE]);
+    expect(tradeRow(id)).toEqual(before);
+  });
+
+  it("a FormData with buyDate '' clears the date and saves — the deliberate act, unchanged", async () => {
+    const id = badStored("D9-BLANK");
+    const res = await actions.updateTradeAction(NO_STATE, form(id, { buyDate: "" }));
+    expect([res.ok, res.message]).toEqual([true, "Trade updated."]);
+    expect([tradeRow(id).buyDate, tradeRow(id).avgSellPrice]).toEqual([null, 160]);
+  });
 });
 
 /**
@@ -651,5 +751,70 @@ describe("D20 · a staged position's charges are written only by its ladder", ()
     expect(commit.applyOverride(id, { segment: "eq_mtf" })).toBe(false);
     expect(tradeRow(id)).toEqual(before);
     expect(overrides()).toBe(n);
+  });
+
+  /**
+   * D4 (v4.3.0 fix wave 2P, mtf-staged#3 ≡ dates-charges-ask#0) — the staged
+   * refusal compared the two dates BYTE for byte: a ladder whose first leg holds a
+   * legacy '20-01-2026' (a non-browser `addLeg` before wave 2M stored the typed
+   * value raw) carried that string onto the parent, and a notes-only save — through
+   * the stored strings, the dialog's form or the ISO day — was refused as "a staged
+   * position built from more than one fill…" (only a patch omitting the dates saved,
+   * and no UI sends one). `patchMovesChargeInput` now compares the DAYS the values
+   * state (`sameDay`), and the parent carries the ISO day after every rebuild.
+   */
+  it("D4 · a day-first ladder: a notes-only save lands through the stored strings, the ISO day and an omitting patch; a moved day is still refused", () => {
+    const id = trade("D4-DAYFIRST", { staged: true });
+    t.db
+      .insert(t.schema.tradeLegs)
+      .values([
+        { tradeId: id, kind: "entry", seq: 1, tradeDate: "20-01-2026", qty: 100, price: 100 },
+        { tradeId: id, kind: "entry", seq: 2, tradeDate: "10-02-2026", qty: 50, price: 110 },
+      ])
+      .run();
+    expect(staged.rebuildStagedTrade(id).ok).toBe(true);
+    // The legacy parent: the leg's raw string copied onto it (what every rebuild
+    // wrote before this wave; layer 2 now writes the ISO day, so it is planted).
+    t.db.update(t.schema.trades).set({ buyDate: "20-01-2026" }).where(eqOf(t.schema.trades.id, id)).run();
+    const before = tradeRow(id);
+    expect(before.buyDate).toBe("20-01-2026");
+    const fields = { buyQty: before.buyQty, avgBuyPrice: before.avgBuyPrice, sellQty: before.sellQty, avgSellPrice: before.avgSellPrice, sellDate: before.sellDate };
+
+    const direct = commit.updateManualTrade(id, { ...fields, buyDate: "20-01-2026", notes: "direct" });
+    const viaIso = commit.updateManualTrade(id, { ...fields, buyDate: "2026-01-20", notes: "iso" });
+    const datesOmitted = commit.updateManualTrade(id, { notes: "omitted" });
+    // THE assertion (on revert: [false, false, true] — refused as a moved fill).
+    expect([direct.ok, viaIso.ok, datesOmitted.ok], [direct.message, viaIso.message].join(" | ")).toEqual([true, true, true]);
+    expect(tradeRow(id).notes).toBe("omitted");
+    // Layer 2: the hand-back rebuilt the parent, which now carries the ISO day.
+    expect(tradeRow(id).buyDate).toBe("2026-01-20");
+    expect(tradeRow(id).chargesTotal).toBe(legTotal(id));
+    // The moved-fill refusal is intact: a REAL change of day is still refused.
+    const moved = commit.updateManualTrade(id, { ...fields, buyDate: "2026-01-21", notes: "moved" });
+    expect([moved.ok, moved.message.includes("staged position built from more than one fill")]).toEqual([false, true]);
+    expect(tradeRow(id).notes).toBe("omitted");
+  });
+
+  /**
+   * D4, the FLAT half — `chargeInputsChanged` compared the same two dates raw, and
+   * a 4.2.x imported holding holds '05-01-2026' in `trades.sell_date`: a notes-only
+   * save resolved it to ISO, read that as a moved input, re-priced the row and
+   * stripped the IPO sync's marker (a broker-stated bill replaced over a date that
+   * did not change — owner ruling F1). "One comparison rule, two questions."
+   */
+  it("D4 · a flat 4.2.x row with sell_date '05-01-2026': a notes-only save keeps every head and the marker, and stores the ISO day", () => {
+    const id = trade("D4-FLAT42", {
+      isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "05-01-2026",
+      grossPnl: 500, chargesTotal: 2.06, sttCtt: 2, gst: 0.01, exchangeTxn: 0.05, netPnl: 497.94, importNotes: NOTE,
+    });
+    const before = chargesOf(id);
+    // The editor sends every stored value back: the stored day-first string included.
+    const res = commit.updateManualTrade(id, { buyQty: 10, avgBuyPrice: 100, buyDate: "2026-01-20", sellQty: 10, avgSellPrice: 150, sellDate: "05-01-2026", notes: "n" });
+    expect(res.ok, res.message).toBe(true);
+    const after = tradeRow(id);
+    // THE assertions (on revert: sttCtt moves off 2 and the marker is gone).
+    expect(chargesOf(id)).toEqual(before);
+    expect(after.importNotes ?? "").toContain(NOTE);
+    expect([after.netPnl, after.notes, after.sellDate]).toEqual([497.94, "n", "2026-01-05"]);
   });
 });

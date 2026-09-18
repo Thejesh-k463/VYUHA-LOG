@@ -1,6 +1,6 @@
 "use client";
 
-import { todayIstIso, normalizeDate } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate, calendarDaysHeld } from "@/lib/domain/trading-day";
 import { useActionState, useEffect, useState } from "react";
 import { closeTradeAction, type ActionState } from "@/app/trades/actions";
 import { Input } from "@/components/ui/input";
@@ -43,11 +43,6 @@ export function resolveExitIso(exitDate: string): string | null {
   return normalizeDate(s);
 }
 
-/** T+1-through-settlement day count, as `closePosition` bills it; 0 without both dates. */
-function daysBetween(buyDate: string | null, exitIso: string | null): number {
-  if (!buyDate || !exitIso) return 0;
-  return Math.max(0, Math.floor((new Date(exitIso).getTime() - new Date(buyDate).getTime()) / 86400000));
-}
 
 /**
  * The /api/charges/preview body for closing `trade` at `exitPrice` — built from
@@ -94,7 +89,9 @@ export function closePreviewBody(
     // The RESOLVED exit date, the same one `dates` carries and `closePosition`
     // stores — never the raw field (I1 [1]). A date the save would refuse (L3)
     // bills no holding period; the dialog shows no preview for it at all.
-    daysHeld: daysBetween(trade.buyDate, resolveExitIso(exitDate)),
+    // D7 (wave 2P): the ONE day count `closePosition` bills by (lib/domain/trading-day)
+    // — a stored whitespace buy date counts 0 days in both halves, not NaN in one.
+    daysHeld: calendarDaysHeld(trade.buyDate, resolveExitIso(exitDate)),
     isOpen: false,
     buyDate: dates.buyDate,
     sellDate: dates.sellDate,

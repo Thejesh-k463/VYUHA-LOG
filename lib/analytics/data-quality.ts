@@ -22,6 +22,15 @@ export interface QualityIssue {
    * fact (distinct ids across every issue).
    */
   affectedCount?: number;
+  /**
+   * D6 (v4.3.0 wave 2P, re-check finding mtf-staged#5) — issues that are ONE gap
+   * split into two questions share ONE score cap. `scoreIssues` caps per
+   * `capGroup ?? code`, so an issue without one scores exactly as before (a group
+   * of one). Only `mtf_funding` / `mtf_funding_closed` carry it (D10 of 2O split
+   * one capped issue for copy and href reasons; the cap follows the gap, not the
+   * split); `tests/data-quality.test.ts` pins that no other issue does.
+   */
+  capGroup?: string;
 }
 
 export interface QualityTrade {
@@ -911,6 +920,38 @@ export interface IpoRecordFacts {
   exitDate?: string | null;
   /** Allotment day — the acquisition, and what the holding's buy day is compared to. */
   allotmentDate?: string | null;
+  // D11 (wave 2P, identity#1) — a GHOST: the record's reference names a trade
+  // id that NO row in the journal holds (the DB reader's LEFT JOIN found none).
+  // Kept, never nulled — a Trash-resident holding restored under the same id
+  // makes the link live again by identity (D4 of 2O). To the QUESTION it is
+  // unlinked; to a RESTORE it is not a candidate (`uniqueIpoRelinks`).
+  /** The trade id the record names when nothing holds it; null/absent = unlinked. */
+  holdingRef?: number | null;
+  /** For a ghost only: does that trade sit in Deleted items (restorable) or is it gone? */
+  holdingInTrash?: boolean;
+}
+
+/** A ghost candidate's own facts, carried per candidate on a pair (D11). */
+export interface IpoGhostFacts {
+  holdingRef: number;
+  holdingInTrash: boolean;
+}
+
+const ghostOf = (r: IpoRecordFacts): IpoGhostFacts | null =>
+  typeof r.holdingRef === "number" ? { holdingRef: r.holdingRef, holdingInTrash: r.holdingInTrash === true } : null;
+
+/**
+ * D11 — what a ghost record's note SAYS: where the holding is, that its exit is
+ * counted from the record itself (never twice through a trade that is not
+ * there), and what settles it. The two variants are the design review's copy.
+ */
+export function ipoGhostClause(recordId: number, name: string, g: IpoGhostFacts): string {
+  return g.holdingInTrash
+    ? `#${recordId} ${name} names holding #${g.holdingRef}, now in Deleted items — restore that envelope to re-link them; ` +
+        `until then its exit is counted from the record itself.`
+    : `#${recordId} ${name} names holding #${g.holdingRef}, no longer in the journal; its exit is counted from the record ` +
+        `itself — if the holding was entered again, the two state one sale twice: link them on IPOs when both are in one book, ` +
+        `otherwise remove one.`;
 }
 
 /** A holding flagged as an IPO allotment with no record pointing at it. */
@@ -1073,6 +1114,8 @@ export interface IpoOrphanPair {
   accountId?: number;
   /** D1 (wave 2N): does the holding record a sale? Absent = unstated. */
   holdingSold?: boolean;
+  /** D11 (wave 2P): per candidate, in the same order — its ghost facts, or null. */
+  ghosts?: (IpoGhostFacts | null)[];
 }
 
 /**
@@ -1125,8 +1168,15 @@ export function ipoOrphanPairs(
  */
 export function uniqueIpoRelinks(
   trades: readonly IpoHoldingFacts[],
-  records: readonly IpoRecordFacts[],
+  allRecords: readonly IpoRecordFacts[],
 ): { tradeId: number; ipoId: number }[] {
+  // D11 (wave 2P): a record that NAMES a holding — even one no row holds — is
+  // not a candidate a restore may re-point. That write would break the D4-of-2O
+  // envelope rule (the holding, restored later under its own id, re-links by
+  // identity); only the QUESTION sees a ghost. The DB reader behind a restore
+  // (`lib/trash.ts`) already hands in `isNull(trade_id)` rows only; this is the
+  // pure layer's own rule, so no caller can hand one in by accident.
+  const records = allRecords.filter((r) => ghostOf(r) === null);
   const pairs = ipoOrphanPairs(trades, records);
   const claims = new Map<number, number>();
   for (const p of pairs) for (const id of p.recordIds) claims.set(id, (claims.get(id) ?? 0) + 1);
@@ -1194,6 +1244,7 @@ export function ipoAskPairs(
       holdingSold: typeof t.sellQty === "number" ? t.sellQty > 0 : undefined,
       matched: cands.map((_, k) => k < matching.length),
       exited: cands.map(statesAnExit),
+      ghosts: cands.map(ghostOf),
     });
   }
   return out;
@@ -1218,6 +1269,13 @@ export function ipoAskPairs(
  * An UNSTATED `holdingSold` reads exactly as before.
  */
 export function ipoOrphanNote(p: IpoOrphanPair & { matched?: boolean[]; exited?: boolean[] }): string {
+  // D11 (wave 2P): per ghost candidate, where its holding is (see `ipoGhostClause`).
+  const ghosts = p.recordIds
+    .map((id, k) => {
+      const g = p.ghosts?.[k];
+      return g ? `${ipoGhostClause(id, p.recordNames[k], g)} ` : "";
+    })
+    .join("");
   const named = (k: number) => `#${p.recordIds[k]} ${p.recordNames[k]}${p.matched?.[k] ? " (matches this holding)" : ""}`;
   const list = (ks: number[]) => {
     const all = ks.map(named);
@@ -1246,6 +1304,7 @@ export function ipoOrphanNote(p: IpoOrphanPair & { matched?: boolean[]; exited?:
     `${many ? "state" : "states"} an exit with no holding attached (${list(exited)}). ` +
     consequence +
     also +
+    ghosts +
     `Open IPOs and set the holding on the record that is its own.`
   );
 }
@@ -1265,12 +1324,17 @@ export function ipoOrphanGroupNote(pairs: readonly IpoAskPair[]): string {
   const holdings = pairs.map((p) => `#${p.tradeId} (${p.symbol})`);
   const shown = (xs: string[]) => xs.slice(0, 5).join(", ") + (xs.length > 5 ? ` and ${xs.length - 5} more` : "");
   const seen = new Map<number, string>();
+  // D11 (wave 2P): each ghost record's clause once, whichever pair carries it.
+  const ghostClauses = new Map<number, string>();
   for (const p of pairs) {
     p.recordIds.forEach((id, k) => {
       if (p.exited[k] && !seen.has(id)) seen.set(id, `#${id} ${p.recordNames[k]}`);
+      const g = p.ghosts?.[k];
+      if (g && !ghostClauses.has(id)) ghostClauses.set(id, ipoGhostClause(id, p.recordNames[k], g));
     });
   }
   const records = [...seen.values()];
+  const ghosts = [...ghostClauses.values()].map((c) => `${c} `).join("");
   const n = holdings.length;
   const m = records.length;
   return (
@@ -1281,16 +1345,24 @@ export function ipoOrphanGroupNote(pairs: readonly IpoAskPair[]): string {
     `${n === 1 ? "this holding's" : "any of these holdings'"}, so nothing here can be paired without you naming it. ` +
     `A holding that sold, beside a record that states an exit, is one sale counted twice — in the capital summary, ` +
     `the tax pack, the ITR export and both AIS sides — until one names the other. ` +
+    ghosts +
     `Open IPOs and set the holding on the record that is its own.`
   );
 }
 
 const ISSUE_WEIGHT = { critical: 12, warning: 6, info: 2 } as const;
 
-/** The completeness score for a set of issues. Capped per issue so one gap
- *  cannot swamp the whole score, and floored at 0. */
+/** The completeness score for a set of issues. Capped per issue — per GAP, where
+ *  one gap is stated as two issues (`capGroup`, D6 wave 2P) — so one gap cannot
+ *  swamp the whole score, and floored at 0. */
 export function scoreIssues(issues: QualityIssue[]): number {
-  const penalty = issues.reduce((s, x) => s + Math.min(30, x.count * ISSUE_WEIGHT[x.severity]), 0);
+  const byGroup = new Map<string, number>();
+  for (const x of issues) {
+    const key = x.capGroup ?? x.code;
+    byGroup.set(key, (byGroup.get(key) ?? 0) + x.count * ISSUE_WEIGHT[x.severity]);
+  }
+  let penalty = 0;
+  for (const raw of byGroup.values()) penalty += Math.min(30, raw);
   return Math.max(0, 100 - penalty);
 }
 
@@ -1352,18 +1424,22 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
   // D7 (wave 2N) — the detail says what the missing amount COSTS the user, now
   // that nothing estimates it: /equity, the leverage ratio and the /risk margin
   // check all leave the row out rather than price it at the margin default.
-  add({ code: "mtf_funding", severity: "warning", title: "MTF positions without funded principal", detail: "Interest, leverage and own-capital return need the broker-funded amount — own capital, leverage and the margin check leave the row out until it is recorded.", count: mtf.length, href: "/equity?funding=mtf" }, mtf.map((t) => t.id));
+  // D6 (wave 2P): both MTF codes share one 30-point cap (`capGroup`) — the split
+  // changed the copy and the href, not the score.
+  add({ code: "mtf_funding", severity: "warning", title: "MTF positions without funded principal", detail: "Interest, leverage and own-capital return need the broker-funded amount — own capital, leverage and the margin check leave the row out until it is recorded.", count: mtf.length, href: "/equity?funding=mtf", capGroup: "mtf_funding" }, mtf.map((t) => t.id));
 
   // The CLOSED half (owner decision (a), wave 2O): the row stays listed, because a
   // realised net P&L the journal knows is stated too high would otherwise go
   // unsaid (invariant 6's other half), and the remedy is real — recording the
   // amount in the trade editor moves a charge input and re-prices the closed row.
   //
-  // `info`, not `warning`: splitting one capped issue into two raises the penalty
-  // ceiling from 30 to 60 points, and a second warning would re-floor the score
-  // exactly as six of them did in wave 2L (the counted-once#3 lesson). The href is
-  // the only query shape `parseTradesQuery` honours (lib/domain/trades-query.ts —
-  // there is no `ids` key), and the copy names the superset it lands on.
+  // `info`, not `warning`: a closed row costs 2 points to an open row's 6. It
+  // shares the open code's 30-point cap (`capGroup`, D6 wave 2P): `info` halved
+  // the RATE, not the ceiling, so 15 closed rows alone reached a second cap and a
+  // 5-open / 15-closed imported book scored 40 where the pre-2O single issue over
+  // the same 20 rows scored 70. The href is the only query shape
+  // `parseTradesQuery` honours (lib/domain/trades-query.ts — there is no `ids`
+  // key), and the copy names the superset it lands on.
   const mtfClosed = unpricedMtf.filter((t) => !t.isOpen);
   add(
     {
@@ -1374,6 +1450,7 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
         "No financing cost is billed on these rows, so their net P&L is stated higher than it was; record the funded amount in the trade editor to bill it — listed among your closed MTF trades.",
       count: mtfClosed.length,
       href: "/trades?segment=eq_mtf&view=closed",
+      capGroup: "mtf_funding",
     },
     mtfClosed.map((t) => t.id),
   );
@@ -1429,6 +1506,30 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
       pairs.map((p) => p.tradeId),
     );
   }
+
+  // D11 (wave 2P, identity#1) — a record whose reference names a trade NO row
+  // holds is named in its OWN book, whether or not any holding is a candidate:
+  // the finding's shape (the re-imported holding in ANOTHER book) can pair with
+  // nothing here (`sameBook`, invariant 8), so without this the double count
+  // stayed record-side silent. `info`, one issue, `count` = ghosts; `ids` are
+  // the RECORD ids (what /ipos lists). No `capGroup` — a group of one (D6).
+  const ghosts = (i.unlinkedIpoRecords ?? []).filter((r) => ghostOf(r) !== null);
+  const ghostLines = ghosts.map((r) => ipoGhostClause(r.id, r.name, ghostOf(r)!));
+  add(
+    {
+      code: "ipo_record_ghost",
+      severity: "info",
+      title: "IPO records naming a holding that is not in the journal",
+      detail:
+        `${ghosts.length === 1 ? "An exited IPO record names" : `${ghosts.length} exited IPO records name`} a holding the ` +
+        `journal no longer holds; each counts its own exit once until the holding is back or the link is remade. ` +
+        ghostLines.slice(0, 5).join(" ") +
+        (ghostLines.length > 5 ? ` And ${ghostLines.length - 5} more.` : ""),
+      count: ghosts.length,
+      href: IPO_LINK_HREF,
+    },
+    ghosts.map((r) => r.id),
+  );
 
   add({ code: "stale_mtm", severity: "info", title: "Stale MTM marks", detail: "Refresh or confirm prices before relying on unrealised P&L and breach alerts.", count: i.staleMtmCount, href: "/risk" });
   add({ code: "missing_attachment", severity: "warning", title: "Attachment records with missing files", detail: "The journal points to images that are no longer present on disk.", count: i.missingAttachmentFiles, href: "/backup" });

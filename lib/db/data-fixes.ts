@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { dedupHash, PAYTM_BROKER } from "@/lib/import/dedup";
 import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
+import { normalizeDate } from "@/lib/domain/trading-day";
 
 /**
  * Data fixes — one-shot row rewrites that SQL alone cannot express.
@@ -20,6 +21,7 @@ import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
 
 export const PAYTM_DEDUP_FIX = "paytm-dedup-isin-v1";
 export const IPO_ACCOUNT_REHOME_FIX = "ipo-account-rehome-v1";
+export const LEG_TRADE_DATE_ISO_FIX = "leg-trade-date-iso-v1";
 
 export interface DataFixResult {
   name: string;
@@ -178,9 +180,48 @@ function applyIpoAccountRehome(sqlite: Database.Database): DataFixResult {
   return result;
 }
 
+/**
+ * LEG-TRADE-DATE-ISO (v4.3.0 wave 2P, D4 layer 3) — rewrite every
+ * `trade_legs.trade_date` that states a readable day in a spelling other than
+ * ISO ('20-01-2026' → '2026-01-20').
+ *
+ * `addLeg` / `updateLeg` have stored the normalised day since wave 2M and the
+ * import's `writeLadder` since v2.85.0, but a leg written by a non-browser
+ * `addLeg` before 2M (it stored the typed value raw through v4.2.0) or restored
+ * from a hand-edited backup still holds the day-first spelling. `sortLegs`
+ * orders by seq; the rewrite exists for the readers that compare or parse the
+ * leg date as ISO — the scaling replay window (`app/reports/scaling/page.tsx`,
+ * a string `>= from` / `<= to` window that a day-first `to` empties), the
+ * replay chart's `time` (lightweight-charts drops an unparsable time silently),
+ * the ladder's date cell — none of which a rebuild touches. It moves no money
+ * and triggers no rebuild (DECISIONS 2026-08-30 decision 6).
+ *
+ * An UNREADABLE value ('2026-02-31', 'not-a-date') is left exactly as stored:
+ * it stays `validateLegs`'s to refuse by name at the ladder's next rebuild — a
+ * fix must not invent a day (invariant 6). Idempotent (an ISO value normalises
+ * to itself and is skipped); re-run after a backup restore like the other two.
+ * A Trash restore replays legs verbatim and runs no fix — such a leg is covered
+ * by layers 1–2 (the parent writes ISO on rebuild, the compares read days) until
+ * its next `updateLeg` stores the day; accepted.
+ */
+function applyLegTradeDateIso(sqlite: Database.Database): DataFixResult {
+  const result: DataFixResult = { name: LEG_TRADE_DATE_ISO_FIX, applied: true, rekeyed: 0, skippedCollisions: 0 };
+  const rows = sqlite.prepare("SELECT id, trade_date FROM trade_legs ORDER BY id").all() as { id: number; trade_date: string | null }[];
+  const rewrite = sqlite.prepare("UPDATE trade_legs SET trade_date = ? WHERE id = ?");
+  for (const r of rows) {
+    if (r.trade_date == null) continue;
+    const iso = normalizeDate(r.trade_date);
+    if (iso == null || iso === r.trade_date) continue;
+    rewrite.run(iso, r.id);
+    result.rekeyed++;
+  }
+  return result;
+}
+
 const FIXES: { name: string; apply: (sqlite: Database.Database) => DataFixResult }[] = [
   { name: PAYTM_DEDUP_FIX, apply: applyPaytmDedupIsin },
   { name: IPO_ACCOUNT_REHOME_FIX, apply: applyIpoAccountRehome },
+  { name: LEG_TRADE_DATE_ISO_FIX, apply: applyLegTradeDateIso },
 ];
 
 /**

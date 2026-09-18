@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
@@ -61,6 +61,10 @@ const ACC_NOLINK = 951; // D1 (2N): a 4.3 delete that broke NO link states `ipoR
 const ACC_XLINK = 952; //  D4 (2O): the purged book whose record names ANOTHER book's holding
 const ACC_XHOLD = 953; //  D4 (2O): the book that holds it
 const ACC_XLEDGER = 954; // D4 (2O): the ledger half of the same gate
+const ACC_GHOST_REC = 955; // D11 (2P): the purged book whose record names a holding DELETED since — still in Trash
+const ACC_GHOST_HOLD = 956; // D11 (2P): the book that held it
+const ACC_GONE_REC = 957; //  D11 (2P): the same, with the holding's envelope PURGED and the file re-imported
+const ACC_GONE_HOLD = 958; //  D11 (2P): the book that re-imports it
 
 const TRADE_NET = 490.25; // 10 × (150 − 100) − 9.75 of charges, as the row states them
 
@@ -220,6 +224,10 @@ beforeAll(async () => {
       { id: ACC_XLINK, name: "legacy-ipo cross-book record", isDefault: false },
       { id: ACC_XHOLD, name: "legacy-ipo cross-book holding", isDefault: false },
       { id: ACC_XLEDGER, name: "legacy-ipo ledger refs", isDefault: false },
+      { id: ACC_GHOST_REC, name: "ghost-ref record (holding in Trash)", isDefault: false },
+      { id: ACC_GHOST_HOLD, name: "ghost-ref holding (in Trash)", isDefault: false },
+      { id: ACC_GONE_REC, name: "ghost-ref record (holding gone)", isDefault: false },
+      { id: ACC_GONE_HOLD, name: "ghost-ref holding (re-imported)", isDefault: false },
     ])
     .run();
 }, 120_000);
@@ -717,5 +725,139 @@ describe("D4 · a purged book's record naming ANOTHER book's holding comes back 
     expect(refOf(mine), "its trade did not come back, so it names nothing").toBeNull();
     expect(refOf(theirs), "a reference this delete never touched is replayed verbatim").toBe(foreign);
     expect(back.message).toContain("1 ledger entry came back without its trade reference");
+  });
+});
+
+/**
+ * D11 (v4.3.0 fix wave 2P, re-check finding identity#1) — a record whose trade
+ * reference names NO row in the journal is UNLINKED to Data Quality.
+ *
+ * D4 (2O) replays a purged book's `ipos` row verbatim when its `trade_id` names
+ * a holding in ANOTHER book — correct, because a Trash-resident holding restored
+ * later makes the link live again by identity with no write. But the holding
+ * may have been DELETED since, so the reference names an id no trade holds, and
+ * `getUnlinkedExitedIpoRecords` keyed on `isNull(trade_id)` hid such a record
+ * from every question. While the holding sits in Trash the numbers are right
+ * (the record counts its own exit once); once its envelope is purged and the
+ * file re-imported (fresh row, fresh id) All accounts states that sale TWICE and
+ * only the holding-side `ipo_link` said so. Reader-side fix: the query LEFT
+ * JOINs `trades`, a ghost is listed with `holdingRef` / `holdingInTrash`, the
+ * book raises `ipo_record_ghost` (info) naming where the holding is, and a
+ * restore never re-points a ghost (`uniqueIpoRelinks` leaves it out). No writer
+ * of `ipos.trade_id` changes.
+ */
+describe("D11 · a record whose reference names no row in the journal is UNLINKED to Data Quality", () => {
+  const report = (view: number) => {
+    selectAccount(view);
+    return dq.getDataQualityReport();
+  };
+  const codesIn = (view: number) => report(view).issues.map((x) => x.code);
+  const ghostIn = (view: number) => report(view).issues.find((x) => x.code === "ipo_record_ghost");
+  const ghostsListedIn = (view: number) => {
+    selectAccount(view);
+    return dq
+      .getUnlinkedExitedIpoRecords()
+      .filter((r) => r.holdingRef != null)
+      .map((r) => ({ id: r.id, holdingRef: r.holdingRef, holdingInTrash: r.holdingInTrash }));
+  };
+  const itrIn = (view: number, mine: string[]) => {
+    selectAccount(view);
+    return taxItr.getItrExportRows().map((r) => r.scrip).filter((s) => mine.includes(s)).sort();
+  };
+
+  it("(c2) the holding in Deleted items: listed with holdingInTrash true, named in its own book, counted once — and restoring the holding relinks by identity", () => {
+    const T = holding(ACC_GHOST_HOLD, "GHOST");
+    const R = ipoRecord(ACC_GHOST_REC, "GHOST", T);
+    const MINE = ["GHOST", "GHOST (IPO)"];
+
+    selectAccount(1);
+    const purge = accDel.deleteAccount({ accountId: ACC_GHOST_REC, mode: "purge", connections: "delete" });
+    expect(purge.ok, purge.message).toBe(true);
+    selectAccount(ACC_GHOST_HOLD);
+    const cut = del.deleteTradesByIds([T], "D11: the holding goes after the purge", "test");
+    expect([cut.ok, tradeExists(T)], cut.message).toEqual([true, false]);
+    const back = trash.restoreTrashSnapshot(purge.snapshotId!, "D11 probe");
+    expect(back.ok, back.message).toBe(true);
+    expect(linkOf(R), "replayed verbatim (D4 of 2O): the reference is KEPT").toBe(T);
+
+    // THE assertion (on revert: `isNull(trade_id)` hides the ghost — `[]`).
+    expect(ghostsListedIn(ACC_GHOST_REC)).toEqual([{ id: R, holdingRef: T, holdingInTrash: true }]);
+    expect(ghostsListedIn(0)).toContainEqual({ id: R, holdingRef: T, holdingInTrash: true });
+    const issue = ghostIn(ACC_GHOST_REC);
+    expect(issue, "raised in the record's OWN book, no candidate needed").toBeDefined();
+    expect([issue!.severity, issue!.capGroup, issue!.href, issue!.count, issue!.ids]).toEqual(["info", undefined, "/ipos", 1, [R]]);
+    expect(issue!.detail).toContain(`#${R} GHOST names holding #${T}, now in Deleted items — restore that envelope to re-link them; until then its exit is counted from the record itself`);
+    expect(ghostIn(0)?.ids, "and in All accounts").toContain(R);
+    expect(codesIn(ACC_GHOST_HOLD), "never in the holding's book").not.toContain("ipo_record_ghost");
+    expect(codesIn(ACC_GHOST_REC), "no unlinked holding shares the book, so no pair question").not.toContain(`ipo_record_link:account:${ACC_GHOST_REC}`);
+    // Every money reader: the record counts its own exit, once (the holding is not in the journal).
+    expect(itrIn(ACC_GHOST_REC, MINE)).toEqual(["GHOST (IPO)"]);
+    expect(itrIn(0, MINE)).toEqual(["GHOST (IPO)"]);
+    selectAccount(0);
+    expect(capitalOf().ipoRealised).toBeGreaterThan(0);
+
+    // `trashedTradeIds` over the two envelopes now in Trash (E_B and E_T)…
+    expect([...trash.trashedTradeIds(new Set([T, 987654321]))]).toEqual([T]);
+    // …and an empty set reads no folder at all: a book with no ghost pays no disk read.
+    const spy = vi.spyOn(fs, "readdirSync");
+    expect(trash.trashedTradeIds(new Set()).size).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+
+    // Restore E_T: the same id comes back, so the link is live by identity — not listed, counted once through the holding.
+    const backT = trash.restoreTrashSnapshot(cut.snapshotId!, "D11 probe");
+    expect([backT.ok, backT.restored], backT.message).toEqual([true, 1]);
+    expect(linkOf(R)).toBe(T);
+    expect(ghostsListedIn(0).some((r) => r.id === R)).toBe(false);
+    expect(codesIn(ACC_GHOST_REC)).not.toContain("ipo_record_ghost");
+    expect(itrIn(0, MINE), "All accounts: the holding is counted, the record is not").toEqual(["GHOST"]);
+  });
+
+  it("(c3) the holding's envelope purged and the file re-imported: the double count is named on BOTH sides, and a same-book twin gets the pair question too", () => {
+    const T = holding(ACC_GONE_HOLD, "GONE");
+    const R = ipoRecord(ACC_GONE_REC, "GONE", T);
+    const MINE = ["GONE", "GONE (IPO)"];
+
+    selectAccount(1);
+    const purge = accDel.deleteAccount({ accountId: ACC_GONE_REC, mode: "purge", connections: "delete" });
+    expect(purge.ok, purge.message).toBe(true);
+    selectAccount(ACC_GONE_HOLD);
+    const cut = del.deleteTradesByIds([T], "D11: the holding goes, then its envelope", "test");
+    expect(cut.ok, cut.message).toBe(true);
+    expect(trash.purgeTrashSnapshot(cut.snapshotId!).ok).toBe(true);
+    const back = trash.restoreTrashSnapshot(purge.snapshotId!, "D11 probe");
+    expect(back.ok, back.message).toBe(true);
+    expect([linkOf(R), tradeExists(T)], "a reference to nothing, kept").toEqual([T, false]);
+
+    expect(ghostsListedIn(ACC_GONE_REC)).toEqual([{ id: R, holdingRef: T, holdingInTrash: false }]);
+    expect(ghostIn(ACC_GONE_REC)!.detail).toContain(
+      `#${R} GONE names holding #${T}, no longer in the journal; its exit is counted from the record itself — if the holding was entered again, the two state one sale twice: link them on IPOs when both are in one book, otherwise remove one`,
+    );
+    expect(itrIn(0, MINE), "before the re-import: once, by the record").toEqual(["GONE (IPO)"]);
+
+    // The file re-imported: a fresh row under a fresh id.
+    const fresh = holding(ACC_GONE_HOLD, "GONE");
+    expect(fresh).not.toBe(T);
+    expect(itrIn(0, MINE), "one sale, stated twice — what the report must now say on both sides").toEqual(["GONE", "GONE (IPO)"]);
+    // THE assertion (on revert: the record's book → no ipo_record_ghost, All → 'ipo_link' only).
+    expect(codesIn(ACC_GONE_REC)).toContain("ipo_record_ghost");
+    expect(codesIn(ACC_GONE_HOLD)).toContain("ipo_link");
+    expect(codesIn(ACC_GONE_HOLD)).not.toContain("ipo_record_ghost");
+    const all = codesIn(0);
+    expect(all).toContain("ipo_record_ghost");
+    expect(all).toContain("ipo_link");
+    // A record never pairs across books (invariant 8): no pair question names the other book's fresh row.
+    expect(all).not.toContain(`ipo_record_link:${fresh}`);
+
+    // Same-book (c3): the fresh row entered in the RECORD's own book — the pair
+    // question fires beside the ghost issue, and its note says where the holding went.
+    const twin = holding(ACC_GONE_REC, "GONE");
+    const own = report(ACC_GONE_REC);
+    const pair = own.issues.find((x) => x.code === `ipo_record_link:${twin}`);
+    expect(pair, "the record's facts match the twin").toBeDefined();
+    expect(pair!.detail).toContain(`#${R} GONE (matches this holding)`);
+    expect(pair!.detail).toContain(`#${R} GONE names holding #${T}, no longer in the journal`);
+    expect(own.issues.map((x) => x.code)).toContain("ipo_record_ghost");
+    expect(linkOf(R), "and nothing wrote the link: the question is the user's to answer").toBe(T);
   });
 });

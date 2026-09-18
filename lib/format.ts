@@ -118,3 +118,14 @@ export function fmtDate(iso: string | null | undefined): string {
     year: "numeric",
   }).format(d);
 }
+
+/**
+ * A count and its noun-phrase as ONE string, so noun and verb agree together
+ * (D12, v4.3.0 wave 2P): `plural(1, "row that states", "rows that state")` →
+ * "1 row that states". The Effective-leverage hint pluralised the noun on the
+ * count and left the verb singular ("over the 1 row that state own capital");
+ * passing the WHOLE phrase is what stops the two halves drifting apart.
+ */
+export function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}

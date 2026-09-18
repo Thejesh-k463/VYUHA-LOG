@@ -108,6 +108,60 @@ describe("MTF interest", () => {
     const r = findRates(rates, "groww", "eq_mtf", "NSE", "2026-06-15");
     expect(mtfRateFor(999999999, r)).toBe(0.1495);
   });
+
+  /**
+   * D3 (v4.3.0 fix wave 2P, mtf-staged#2) — a TIERED broker's slab is evaluated on
+   * `slabBasis` (the row's whole stated principal) when the caller states one, and
+   * on the funded amount otherwise. The staged ladder hands each tranche its SHARE
+   * as `fundedAmount` and the row's principal as `slabBasis`; every flat caller
+   * hands one principal and no basis, so its figure is unchanged.
+   */
+  it("D3 · slabBasis picks the slab; absent, the funded amount does (every flat caller unchanged)", () => {
+    const r = findRates(rates, "dhan", "eq_mtf", "NSE", "2026-06-15");
+    const bill = (mtf: NonNullable<Parameters<typeof computeCharges>[0]["mtf"]>) =>
+      computeCharges({ segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, mtf }, r).mtfInterest;
+    // A 4,00,000 share of an 8,00,000 row, 19 days: the ≤10L slab (13.49%), not the ≤5L one.
+    // THE assertion (on revert: 2600.66 — 12.49% on the share's own size).
+    expect(bill({ fundedAmount: 400000, daysHeld: 19, slabBasis: 800000 })).toBe(2808.88);
+    expect(bill({ fundedAmount: 400000, daysHeld: 19 })).toBe(2600.66);
+    // Interest is still on the SHARE, only the rate is looked up on the basis.
+    expect(bill({ fundedAmount: 400000, daysHeld: 19, slabBasis: 800000 })).toBe(Math.round((400000 * 0.1349 * 19) / 365 * 100) / 100);
+    // A straddling flat amount is unchanged when no basis is stated.
+    expect(bill({ fundedAmount: 800000, daysHeld: 19 })).toBe(5617.75);
+    // Paytm's middle band is the dearest: a 75,000 share of a 1,50,000 row is 9.99%, not 7.99%.
+    const p = findRates(rates, "paytm", "eq_mtf", "NSE", "2026-06-15");
+    const paytm = (mtf: NonNullable<Parameters<typeof computeCharges>[0]["mtf"]>) =>
+      computeCharges({ segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, mtf }, p).mtfInterest;
+    expect(paytm({ fundedAmount: 75000, daysHeld: 19, slabBasis: 150000 })).toBe(Math.round((75000 * 0.0999 * 19) / 365 * 100) / 100);
+    expect(paytm({ fundedAmount: 75000, daysHeld: 19 })).toBe(Math.round((75000 * 0.0799 * 19) / 365 * 100) / 100);
+  });
+
+  /**
+   * D1 (v4.3.0 fix wave 2P, mtf-staged#0 — owner ruling 2O row 1: "no stored money on
+   * a closed trade moves without the owner's say-so") — a CARRY sets the interest and
+   * the pledge to the figures a closed null-funded ladder stored before 4.3.0, and
+   * GST covers the carried pledge through the one base that knows what GST covers
+   * (invariant 3: the ladder restates no statutory rule). Nothing is estimated:
+   * `mtfRateFor` is not consulted for a carry.
+   */
+  it("D1 · a carry sets interest and pledge; GST covers the carried pledge; no carry + 0 bills nothing", () => {
+    const r = findRates(rates, "zerodha", "eq_mtf", "NSE", "2026-06-15");
+    const base = { segment: "eq_mtf" as const, buyValue: 10000, sellValue: 0, buyQty: 100, sellQty: 0 };
+    const none = computeCharges({ ...base, mtf: { fundedAmount: 0, daysHeld: 14, pledgeScrips: 1 } }, r);
+    const carried = computeCharges({ ...base, mtf: { fundedAmount: 0, daysHeld: 14, pledgeScrips: 1, carry: { mtfInterest: 44.8, pledgeCharges: 30 } } }, r);
+    // The existing rule: 0 funded, no carry → neither interest nor pledge.
+    expect([none.mtfInterest, none.pledgeCharges]).toEqual([0, 0]);
+    // THE assertion (on revert: [0, 0] — the carry is ignored and the estimate released).
+    expect([carried.mtfInterest, carried.pledgeCharges]).toEqual([44.8, 30]);
+    // GST on the carried pledge, at the card's rate, on top of the same base.
+    expect(carried.gst).toBe(Math.round((none.gst + r.gstPct * 30) * 100) / 100);
+    expect(carried.total).toBe(Math.round((none.total + 44.8 + 30 + r.gstPct * 30) * 100) / 100);
+    // A carry beside a positive funded amount still carries (the ladder never
+    // builds that shape — a stated principal is billed by the D3 rule — but the
+    // engine's rule is the carry, not an estimate).
+    const both = computeCharges({ ...base, mtf: { fundedAmount: 5000, daysHeld: 14, pledgeScrips: 1, carry: { mtfInterest: 1, pledgeCharges: 2 } } }, r);
+    expect([both.mtfInterest, both.pledgeCharges]).toEqual([1, 2]);
+  });
 });
 
 describe("Groww floor brokerage", () => {

@@ -16,7 +16,7 @@ import { eq, and, ne, or, sql, isNull, inArray, notInArray } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
-import { todayIstIso, normalizeDate, storedDateProblem } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate, storedDateProblem, calendarDaysHeld, sameDay } from "@/lib/domain/trading-day";
 import { closingAggregate } from "@/lib/domain/close-aggregate";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
@@ -38,7 +38,7 @@ import { sellChargerFor } from "@/lib/queries/ipos";
 // so the editor's own save hands them back to it. Server-only, like this module and
 // `lib/queries/ipos` above; `lib/queries/staged.ts` imports nothing from here, so
 // the graph stays acyclic.
-import { rebuildStagedTrade } from "@/lib/queries/staged";
+import { rebuildStagedTrade, legCountOf, hasLadder } from "@/lib/queries/staged";
 import { chargeInputsChanged, chargeInputsOf, patchMovesChargeInput, statesNoCharges, storedCharges } from "@/lib/domain/trade-edit";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
@@ -1908,8 +1908,8 @@ export function closePosition(
   // its legs — re-opening it and erasing the realised P&L (measured
   // 2026-09-15). The ladder's own exit records the leg, prices each tranche
   // and keeps R frozen at the first entry (invariant 4). Nothing is written.
-  const legCount = db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
-  if (t.staged || legCount > 0) {
+  // D5 (wave 2P): the ONE leg-count predicate (`hasLadder`, lib/queries/staged).
+  if (hasLadder(t, tradeId)) {
     return {
       ok: false,
       code: "STAGED",
@@ -1971,10 +1971,9 @@ export function closePosition(
     // No extra "-1": that undercounted every position by one day of interest.
     // D3 — through the same calendar the refusal above read it by: a day-first
     // '15-07-2026' is a real day the row states, and `new Date` cannot read it.
-    const buyIso = normalizeDate(t.buyDate);
-    const days = buyIso
-      ? Math.max(0, Math.floor((new Date(exitDateIso).getTime() - new Date(buyIso).getTime()) / 86400000))
-      : 0;
+    // D7 (wave 2P) — the ONE day count (`calendarDaysHeld`, lib/domain/trading-day)
+    // the three writers, the ladder, the one-click close and both dialogs share.
+    const days = calendarDaysHeld(t.buyDate, exitDateIso);
     // Q-A: interest 0 on an unstated principal — AND NO PLEDGE CHARGE EITHER, which
     // is the RECORDED DEVIATION (DECISIONS 2026-09-16, wave 2N; D12, wave 2O). This
     // comment used to claim the pledge fee "still billed", because pledging the
@@ -2264,9 +2263,10 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
         // manual close beside it leaves null and bills 0 for: two doors, one
         // row, two answers.
         const funded = lot.mtfFundedAmount;
-        const days = lot.buyDate
-          ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(lot.buyDate).getTime()) / 86400000))
-          : 0;
+        // D7 (wave 2P) — the ONE day count; a lot whose stored buy date is
+        // whitespace counts 0 days here as it does in `closePosition`, rather than
+        // NaN into the engine and a NOT NULL throw out of the one-click close.
+        const days = calendarDaysHeld(lot.buyDate, exitDate);
         const m = computeCharges(
           { segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, buyOrderCount: 0, sellOrderCount: 0, mtf: { fundedAmount: funded ?? 0, daysHeld: days, pledgeScrips: 1 } },
           r,
@@ -2476,7 +2476,9 @@ export function updateManualTrade(
   // against 15,499.50; notes, setup tag, stop, target, risk and the mark were all
   // unsaveable through both doors). `patchMovesChargeInput` (lib/domain/trade-edit,
   // the same paisa comparison) asks only of the fields THIS patch carries.
-  const legCount = db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
+  // D5 (wave 2P): `legCountOf` is the ONE leg-count query; the hand-back at the
+  // end of this save needs the count itself, so the predicate is spelt out here.
+  const legCount = legCountOf(tradeId);
   const isStaged = t.staged || legCount > 0;
   const stagedFillMoved =
     isStaged &&
@@ -2535,9 +2537,13 @@ export function updateManualTrade(
   }
   // Same T+1-through-day-before-settlement convention as close/accrual; open
   // trades accrue nothing here — the daily job takes over from the next run.
-  const daysHeld = isMtf && !isOpen && buyDate && sellDate
-    ? Math.max(0, Math.floor((new Date(sellDate).getTime() - new Date(buyDate).getTime()) / 86400000))
-    : 0;
+  // D7 (wave 2P) — through the ONE day count. This copy tested the raw strings
+  // for emptiness, so a stored ' ' (which `storedDateProblem` above reads as
+  // ABSENT) was PRESENT here: `new Date(' ')` is Invalid, NaN reached the engine
+  // and the write died with `NOT NULL constraint failed: trades.charges_total_paise`
+  // — the D17 throw, through the whitespace hole D17's trim left. Zero days now,
+  // the answer `closePosition` and `applyOverride` already gave that row.
+  const daysHeld = isMtf && !isOpen ? calendarDaysHeld(buyDate, sellDate) : 0;
 
   // D4 (v4.3.0 wave 2N, ipo#2) — DOES THIS SAVE CHANGE ANYTHING THE ENGINE IS FED?
   //
@@ -2614,8 +2620,10 @@ export function updateManualTrade(
   // so the buy leg counts too unless the row reads long. An edit that touches
   // no exit-leg field (notes, tags, levels, the other leg of a long) keeps it.
   const readsLong = t.buyQty > t.sellQty || (t.buyQty === t.sellQty && !!t.buyDate && !!t.sellDate && t.buyDate < t.sellDate);
-  const sellLegChanged = sellQty !== t.sellQty || avgSellPrice !== t.avgSellPrice || sellDate !== t.sellDate;
-  const buyLegChanged = buyQty !== t.buyQty || avgBuyPrice !== t.avgBuyPrice || buyDate !== t.buyDate;
+  // D4 (wave 2P): a date is "changed" when the DAY it states moved (`sameDay`),
+  // not when a legacy '05-01-2026' is re-stored as '2026-01-05' by this save.
+  const sellLegChanged = sellQty !== t.sellQty || avgSellPrice !== t.avgSellPrice || !sameDay(sellDate, t.sellDate);
+  const buyLegChanged = buyQty !== t.buyQty || avgBuyPrice !== t.avgBuyPrice || !sameDay(buyDate, t.buyDate);
   const exitLegChanged = isOpen !== t.isOpen || sellLegChanged || (!readsLong && buyLegChanged);
 
   // L3 (v4.3.0 wave 2L) — a save that PRICES the row makes the charges on it THIS
@@ -2731,8 +2739,8 @@ export function applyOverride(
   // not written either, so "nothing was changed" is the fact. The re-tag dialog can
   // reach a staged row (nothing gates it) and `overrideTrade` discards the boolean,
   // exactly as it does for the stored-date refusal above.
-  const stagedLegs = db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
-  if (t.staged || stagedLegs > 0) return false;
+  // D5 (wave 2P): the ONE leg-count predicate (`hasLadder`, lib/queries/staged).
+  if (hasLadder(t, tradeId)) return false;
 
   const segment = ov.segment ?? (ov.isMtf ? "eq_mtf" : (t.segment as Segment));
   const exchange = ov.exchange ?? (t.exchange as Exchange);
@@ -2779,11 +2787,8 @@ export function applyOverride(
   // takes over from its next run, per-epoch.
   // D3 — both ends through the shared calendar (the guard above refused a stored
   // value it cannot read, so these resolve or the row states no date at all).
-  const buyIso = normalizeDate(t.buyDate);
-  const sellIso = normalizeDate(t.sellDate);
-  const daysHeld = isMtf && !t.isOpen && buyIso && sellIso
-    ? Math.max(0, Math.floor((new Date(sellIso).getTime() - new Date(buyIso).getTime()) / 86400000))
-    : 0;
+  // D7 (wave 2P) — the ONE day count, `calendarDaysHeld`.
+  const daysHeld = isMtf && !t.isOpen ? calendarDaysHeld(t.buyDate, t.sellDate) : 0;
   const charges = computeCharges(
     {
       segment,

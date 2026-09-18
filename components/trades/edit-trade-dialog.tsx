@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
-import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
+import { normalizeDate, unreadableDateMessage, calendarDaysHeld, unreadableStoredDate } from "@/lib/domain/trading-day";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { toast } from "@/components/ui/toaster";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
@@ -114,7 +114,8 @@ export function editPreviewBody(trade: Trade, f: EditPreviewFields) {
     // (the pledge charge stands). The route prices this preview the same way,
     // so the dialog cannot show a figure the save will not store.
     mtfFundingUnstated: trade.segment === "eq_mtf" && trade.mtfFundedAmount == null && f.ownCapitalUsed == null,
-    daysHeld: !isOpen && buyIso && sellIso ? Math.max(0, Math.floor((new Date(sellIso).getTime() - new Date(buyIso).getTime()) / 86400000)) : 0,
+    // D7 (wave 2P): the ONE day count `updateManualTrade` bills by.
+    daysHeld: !isOpen ? calendarDaysHeld(f.buyDate, f.sellDate) : 0,
     isOpen,
     // The dates the save will STORE (`normalizeDate` at both ends), so the route
     // prices at the same epoch it does — `pricingDate` reads the sell date, else
@@ -200,7 +201,21 @@ export function EditTradeDialog({
   // syncing state in an effect): the sentence the Save would answer for a date
   // this dialog cannot read. While it stands there is no figure to show, because
   // there is no save to preview.
-  const dateProblem = editDateProblem(buyDate || null, sellDate || null);
+  //
+  // D9 (v4.3.0 wave 2P): the STORED row is asked first. A `<input type="date">`
+  // holding '9999-99-99' is shown BLANK by the browser, so the sent-value sentence
+  // ("The buy date “9999-99-99” is not a real calendar day… Nothing was changed.")
+  // stood beside an empty field and an enabled Save — and pressing it posted the
+  // blank, which the server read as "clear this" and re-priced the row: the
+  // opposite of the promise on screen. While the user has not typed over the
+  // stored value the dialog states the stored problem in its own words and Save
+  // waits; once the state differs from the stored raw — a typed day, or a
+  // deliberate clear — the sent-value rule governs, as for every other field.
+  const storedBad = unreadableStoredDate(trade);
+  const storedUnfixed = storedBad != null && (storedBad.label === "buy date" ? buyDate : sellDate).trim() === storedBad.raw;
+  const dateProblem = storedUnfixed
+    ? `This trade's stored ${storedBad.label} “${storedBad.raw}” is not a real calendar day, so the field shows blank. Enter the day it was to save this trade.`
+    : editDateProblem(buyDate || null, sellDate || null);
 
   // Unrealized P&L at the entered current price — informational only, never
   // merged into the entry-cost figure below. This was the reported bug: a
@@ -383,7 +398,7 @@ export function EditTradeDialog({
 
       <DialogFooter>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
-        <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</Button>
+        <Button type="submit" disabled={pending || storedUnfixed}>{pending ? "Saving…" : "Save changes"}</Button>
       </DialogFooter>
     </form>
   );

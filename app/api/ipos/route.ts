@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { accounts, ipos, tradeLegs, trades } from "@/lib/db/schema";
+import { accounts, ipos, trades } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import {
   hasSyncChargesNote,
@@ -15,11 +15,12 @@ import {
   type LinkedSync,
 } from "@/lib/analytics/ipo-link";
 import { ipoChargeFactsOf, ipoHoldingCharges, isPriceableExitDate, type IpoInput } from "@/lib/analytics/ipo";
-import { normalizeDate } from "@/lib/domain/trading-day";
+import { dayOf, normalizeDate } from "@/lib/domain/trading-day";
 import type { ChargeBreakdown } from "@/lib/engine/types";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import { sellChargerFor } from "@/lib/queries/ipos";
+import { hasLadder } from "@/lib/queries/staged";
 
 export const runtime = "nodejs";
 
@@ -54,11 +55,13 @@ function revalidate() {
  * made a notes-only save of a laddered link 409 STAGED and of a sold holding 409
  * "has a sale recorded in Trades" (ipo#0, the exact no-way-out L3 removed). ONE
  * fold, applied to BOTH sides, so a pure re-normalisation is no change at all.
+ *
+ * D4 / D8 (wave 2P): the fold is `dayOf` (lib/domain/trading-day), shared with
+ * `sellLegIsIpoExit` and the trade editor, and a BLANK folds to null on both
+ * sides. The private copy here handed '' back as '', so a stored '' / ' ' exit
+ * date beside the null the form sends read as a different sale and a notes-only
+ * save was a 409 "sale recorded in Trades" — the L3 no-way-out class again.
  */
-const day = (v: unknown): string | null => {
-  const s = (v ?? null) as string | null;
-  return s == null ? null : normalizeDate(s) ?? s;
-};
 
 /**
  * Push the IPO's numbers onto the holding it is linked to.
@@ -80,9 +83,9 @@ function linkInput(values: Record<string, unknown>): IpoLinkInput {
     allotted: Boolean(values.allotted),
     listingPrice: (values.listingPrice ?? null) as number | null,
     exitPrice: (values.exitPrice ?? null) as number | null,
-    allotmentDate: day(values.allotmentDate),
-    listingDate: day(values.listingDate),
-    exitDate: day(exitDate),
+    allotmentDate: dayOf(values.allotmentDate as string | null),
+    listingDate: dayOf(values.listingDate as string | null),
+    exitDate: dayOf(exitDate),
     // Computed on the RAW value, BEFORE the fold above: a date the row never held
     // readably cannot be the date the sync wrote (Y2), and the fold must not take
     // that allowance away from the very rows it exists for.
@@ -133,7 +136,8 @@ const accountName = (id: number) =>
 function holdingIsStaged(tradeId: number, accountId: number): boolean {
   const row = db.select({ staged: trades.staged }).from(trades).where(inAccount(tradeId, accountId)).get();
   if (!row) return false; // not this account's row: nothing is written to it at all
-  return row.staged || db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length > 0;
+  // D5 (wave 2P): the ONE leg-count predicate (`hasLadder`, lib/queries/staged).
+  return hasLadder(row, tradeId);
 }
 /**
  * L3 (v4.3.0 wave 2L): the refusal no longer names UNLINKING as the way out.
@@ -202,7 +206,7 @@ function syncWritesSellDate(tradeId: number, accountId: number, values: Record<s
   // the pairing had just stopped refusing (409) was refused here instead (400),
   // over a day the holding already carries. A REAL change of day is still a new
   // write, and an unreadable stored value still compares to itself.
-  return row.isOpen || day(row.sellDate) !== day(patch.sellDate);
+  return row.isOpen || dayOf(row.sellDate) !== dayOf(patch.sellDate);
 }
 
 /**
@@ -463,7 +467,6 @@ export async function POST(req: Request) {
   const appliedDateRaw = strOrNull(body.appliedDate);
   const allotmentDateRaw = strOrNull(body.allotmentDate);
   const listingDateRaw = strOrNull(body.listingDate);
-  const storedDay = (raw: string | null): string | null => (raw == null ? null : normalizeDate(raw) ?? raw);
   const typedDays = [
     { label: "applied date", column: "appliedDate" as const, raw: appliedDateRaw },
     { label: "allotment date", column: "allotmentDate" as const, raw: allotmentDateRaw },
@@ -490,9 +493,9 @@ export async function POST(req: Request) {
     allottedQty: allotted ? num(body.allottedQty) : 0,
     listingPrice: numOrNull(body.listingPrice),
     exitPrice: numOrNull(body.exitPrice),
-    appliedDate: storedDay(appliedDateRaw),
-    allotmentDate: storedDay(allotmentDateRaw),
-    listingDate: storedDay(listingDateRaw),
+    appliedDate: dayOf(appliedDateRaw),
+    allotmentDate: dayOf(allotmentDateRaw),
+    listingDate: dayOf(listingDateRaw),
     exitDate,
     notes: strOrNull(body.notes),
   };

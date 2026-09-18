@@ -766,6 +766,7 @@ describe("S5 · the restore re-key skips a frozen lot (F1 close-open-lots → F1
     expect(results.map((r) => [r.name, r.applied])).toEqual([
       ["paytm-dedup-isin-v1", true],
       ["ipo-account-rehome-v1", true],
+      ["leg-trade-date-iso-v1", true], // 2P D4 layer 3: the leg-date ISO rewrite, registered third
     ]);
     expect(results[0].rekeyed, "no frozen row may be re-keyed").toBe(0);
 

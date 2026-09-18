@@ -680,6 +680,101 @@ describe("G3 — a STAGED parent: the ladder prices it, and the dialog shows the
     expect([shown.breakdown.total, shown.netPnl, shown.grossPnl], "preview ≠ save").toEqual([before.chargesTotal, before.netPnl, before.grossPnl]);
     expect(row(id), "nothing was written").toEqual(before);
   });
+
+  /**
+   * D1 (v4.3.0 fix wave 2P, mtf-staged#0 — owner ruling 2O row 1). A CLOSED
+   * null-funded ladder that stored the pre-4.3.0 estimate: the dialog showed the
+   * stored heads (`keptCharges`) while the save's hand-back to the ladder released
+   * ₹80.20 of interest, pledge and GST — preview ≠ post-save by exactly that. The
+   * rebuild now carries the stored figures (`mtfCarry`), so the three agree.
+   */
+  it("D1 · a CLOSED legacy null-funded ladder: preview (kept) ≡ pre-save stored ≡ post-save stored", async () => {
+    const id = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", segment: "eq_mtf", symbol: `D1LEGACY${++seq}`, tradingsymbol: `D1LEGACY${seq}`,
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: BUY_ISO, buyOrderCount: 1,
+          sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null, sellOrderCount: 0, isOpen: true, mtfFundedAmount: null,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    expect(stagedQ.convertToStaged(id).ok).toBe(true);
+    expect(stagedQ.addLeg({ tradeId: id, kind: "exit", tradeDate: "2026-07-29", qty: 100, price: 110, direction: "long" }).ok).toBe(true);
+    const fresh = row(id);
+    expect([fresh.isOpen, fresh.mtfFundedAmount, fresh.mtfInterest]).toEqual([false, null, 0]);
+    // The pre-4.3.0 ladder's state: 14 days on the 8,000 estimate (44.80), one
+    // pledge+unpledge (30) and GST on it (5.40) — on the parent and the entry leg.
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const legs = t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, id)).all();
+    const entry = legs.find((l) => l.kind === "entry")!;
+    t.db.update(t.schema.tradeLegs).set({ chargesTotal: r2(entry.chargesTotal + 80.2) }).where(eq(t.schema.tradeLegs.id, entry.id)).run();
+    t.db
+      .update(t.schema.trades)
+      .set({ mtfInterest: 44.8, pledgeCharges: 30, gst: r2(fresh.gst + 5.4), chargesTotal: r2(fresh.chargesTotal + 80.2), netPnl: r2(fresh.netPnl - 80.2) })
+      .where(eq(t.schema.trades.id, id))
+      .run();
+    const before = row(id);
+    const stored = headsOf(before as unknown as Record<string, unknown>);
+
+    const shown = await previewFull(editPreviewBody(wire(id), untouched(id)));
+    const res = commit.updateManualTrade(id, { ...untouched(id), notes: "journal only" });
+    expect(res.ok, res.message).toBe(true);
+    const after = row(id);
+
+    expect(shown.keptCharges).toBe(true);
+    expect(headsOf(shown.breakdown), "preview ≠ the stored bill").toEqual(stored);
+    // THE assertion (on revert: mtfInterest 0, pledge 0, total −80.20, net +80.20 after the save).
+    expect(headsOf(after as unknown as Record<string, unknown>), "the save released a closed row's stored estimate").toEqual(stored);
+    expect([shown.breakdown.total, shown.netPnl], "preview ≠ save").toEqual([after.chargesTotal, after.netPnl]);
+    expect([after.chargesTotal, after.netPnl]).toEqual([before.chargesTotal, before.netPnl]);
+  });
+
+  /**
+   * D4 (v4.3.0 fix wave 2P). A ladder whose legacy parent holds the leg's raw
+   * '20-01-2026': the dialog's preview mirrored the save's refusal (`keptReason` =
+   * the staged sentence), so preview = save, both wrong the same way. Now the
+   * dates compare as days: the preview says the ladder prices it, and the save lands.
+   */
+  it("D4 · a day-first ladder: preview ≡ save, and keptReason names the ladder, not the refusal", async () => {
+    const id = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", symbol: `D4DAYFIRST${++seq}`, tradingsymbol: `D4DAYFIRST${seq}`, staged: true,
+          buyQty: 150, avgBuyPrice: 103.33, buyValue: 15500, buyDate: "20-01-2026", buyOrderCount: 2,
+          sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null, sellOrderCount: 0, isOpen: true,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    t.db
+      .insert(t.schema.tradeLegs)
+      .values([
+        { tradeId: id, kind: "entry", seq: 1, tradeDate: "20-01-2026", qty: 100, price: 100 },
+        { tradeId: id, kind: "entry", seq: 2, tradeDate: "10-02-2026", qty: 50, price: 110 },
+      ])
+      .run();
+    expect(stagedQ.rebuildStagedTrade(id).ok).toBe(true);
+    // The legacy parent, planted: the raw string every rebuild copied before this wave.
+    t.db.update(t.schema.trades).set({ buyDate: "20-01-2026" }).where(eq(t.schema.trades.id, id)).run();
+    const before = row(id);
+    expect(wire(id).buyDate).toBe("20-01-2026");
+
+    const shown = await previewFull(editPreviewBody(wire(id), untouched(id)));
+    const res = commit.updateManualTrade(id, { ...untouched(id), notes: "journal only" });
+    // THE assertions (on revert: keptReason is the "staged position built from more
+    // than one fill" refusal and the save answers {ok:false} — preview = save, both wrong).
+    expect(res.ok, res.message).toBe(true);
+    expect(shown.keptCharges).toBe(true);
+    expect(shown.keptReason ?? "").toContain("ladder");
+    expect(shown.keptReason ?? "").not.toContain("built from more than one fill");
+    const after = row(id);
+    expect(headsOf(shown.breakdown)).toEqual(headsOf(after as unknown as Record<string, unknown>));
+    expect(headsOf(after as unknown as Record<string, unknown>)).toEqual(headsOf(before as unknown as Record<string, unknown>));
+    expect([after.notes, after.buyDate], "saved, and the parent carries the ISO day").toEqual(["journal only", "2026-01-20"]);
+  });
 });
 
 describe("G3 — the dimensions of the matrix are the real ones", () => {

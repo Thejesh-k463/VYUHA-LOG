@@ -162,6 +162,9 @@ beforeAll(async () => {
     // D4 (fix wave 2O, re-check finding identity#0): the un-merge that CANNOT
     // bring the duplicate back, so the record it named has no holding to name.
     [36, "D4 legacy holder"], [37, "D4 taken target"], [38, "D4 taken source"],
+    // D10 (fix wave 2P, re-check finding identity#0 cosmetic): the same shape
+    // with NO other unlinked holding in the book, so the report has nothing to ask.
+    [39, "D10 purged book"],
   ] as [number, string][]) {
     t.db.insert(t.schema.accounts).values({ id, name }).run();
   }
@@ -640,5 +643,42 @@ describe("D4 · a skipped IPO record whose duplicate CANNOT come back is restore
     const issue = askAbout(36, strayIpo);
     expect(issue?.title, "the record is a candidate again").toBe("IPO records not linked to their holdings");
     expect(issue!.ids).toContain(heldElsewhere);
+  });
+});
+
+/**
+ * D10 (v4.3.0 fix wave 2P, re-check finding identity#0 cosmetic) — the restore's
+ * clause said "Data Quality asks which holding is its own", but `ipoAskPairs`
+ * raises a question only beside an UNLINKED IPO HOLDING of the book, and in this
+ * shape the holding is precisely what did not come back: with no other such
+ * holding in the book the report says NOTHING about the record (the D4 case
+ * above plants D4HOLD to give the question a holding to name). The numbers were
+ * right — the record counts its own exit once; only the sentence over-promised.
+ * It now names what the user can act on: the record's own exit is what is
+ * counted, and /ipos links it again once the holding is back.
+ */
+describe("D10 · the restore message says what happens to an unlinked record, not what Data Quality does not ask", () => {
+  it("names the record's own exit and /ipos, and the report agrees — no holding to name, so no question", () => {
+    const holdingId = closedTrade(39, "D10HOLD", { acquisition: "ipo", acquisitionPrice: 100, acquisitionDate: "2026-02-20" });
+    const record = exitedIpo(39, "D10HOLD", holdingId);
+    select(1);
+    const res = mod.deleteAccount({ accountId: 39, mode: "purge", connections: "delete" });
+    expect(res.ok, res.message).toBe(true);
+    // The freed id, taken by an unrelated closed trade in another book.
+    closedTrade(1, "D10OTHER", { id: holdingId });
+
+    const back = trash.restoreTrashSnapshot(res.snapshotId!, "D10 probe");
+    expect([back.restored, back.skipped.length], back.message).toEqual([0, 1]);
+    expect(linkOf(record), "the holding it named is not in the journal, so it names nothing").toEqual([39, null]);
+    expect(back.message).toContain("1 IPO record came back unlinked");
+    // THE assertion (on revert: the clause promises a question the report never raises).
+    expect(back.message).not.toContain("Data Quality asks");
+    expect(back.message).toContain("its exit is counted from the record itself");
+    expect(back.message).toContain("linked again on IPOs once the holding is back");
+
+    select(39);
+    const codes = dq.getDataQualityReport().issues.map((x) => x.code);
+    expect(codes.filter((c) => c.startsWith("ipo_record")), "the message and the report agree: nothing is asked").toEqual([]);
+    expect(realisedIn(39), "the record's own exit, counted once, by the record").toEqual({ equityRealised: 0, ipoRealised: 482.6, totalRealised: 482.6 });
   });
 });

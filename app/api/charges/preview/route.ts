@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tradeLegs, trades } from "@/lib/db/schema";
+import { trades } from "@/lib/db/schema";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { hasLadder } from "@/lib/queries/staged";
 import { chargeInputsChanged, chargeInputsOf, patchMovesChargeInput, statesNoCharges, storedCharges } from "@/lib/domain/trade-edit";
 import type { ChargeBreakdown } from "@/lib/engine/types";
 import { classify } from "@/lib/engine/classify";
@@ -124,11 +125,11 @@ function keptCharges(
   // `editPreviewBody` sends `buyValue = buyQty × avgBuyPrice` (15,499.4999…), so
   // the flat predicate below could never answer "kept" for a ladder either.
   //
-  // THE SAME PREDICATE AS THE SAVE (`t.staged || legCount > 0`) and the same
-  // question asked of the PATCH (`patchMovesChargeInput`, lib/domain/trade-edit),
-  // so the two doors cannot drift.
-  const legCount = db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
-  if (t.staged || legCount > 0) {
+  // THE SAME PREDICATE AS THE SAVE (`hasLadder`, lib/queries/staged — D5, wave 2P:
+  // one leg-count question for every door) and the same question asked of the
+  // PATCH (`patchMovesChargeInput`, lib/domain/trade-edit), so the two doors
+  // cannot drift.
+  if (hasLadder(t, tradeId)) {
     const stagedRow = t as unknown as Record<string, unknown>;
     // Own capital is NOT asked here, though the save asks it: the body carries a
     // figure the dialog DERIVED from the stored one when the field was left

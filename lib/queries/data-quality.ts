@@ -2,8 +2,9 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { db, attachmentsDir } from "@/lib/db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { instruments, ipos, mtmPrices, tradeAttachments, tradeLegs } from "@/lib/db/schema";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { instruments, ipos, mtmPrices, tradeAttachments, tradeLegs, trades } from "@/lib/db/schema";
+import { trashedTradeIds } from "@/lib/trash";
 import {
   assessDataQuality,
   saleJournalFields,
@@ -98,10 +99,23 @@ function staleViewsOf(all: ReturnType<typeof getTrades>): StaleOpenView[] {
  * `getTrades()` scope the same report is built from: in one book the pairs are
  * that book's, and in the All-accounts view each pair is still within one
  * account, because the match itself requires the same `account_id`.
+ *
+ * D11 (v4.3.0 wave 2P, identity#1) — a reference that names NO row in the
+ * journal is unlinked to the question. A purged book's record naming a holding
+ * in ANOTHER book is replayed verbatim on restore (D4 of 2O — a Trash-resident
+ * holding restored later makes the link live again by identity, so the
+ * reference must be KEPT), but that holding may have been deleted since; keyed
+ * on `isNull(trade_id)` alone such a record was invisible here while its
+ * re-imported holding counted the same sale again. So `trades` is LEFT JOINed
+ * and a row is listed when either the reference is null or nothing holds it.
+ * A ghost carries `holdingRef` (the id it names) and `holdingInTrash`, resolved
+ * through ONE `trashedTradeIds` read and only when at least one ghost exists.
+ * Reader-side only: no writer of `ipos.trade_id` changes, and `lib/trash.ts`'s
+ * own restore read stays `isNull` — a ghost is never a restore's to re-point.
  */
 export function getUnlinkedExitedIpoRecords(): IpoRecordFacts[] {
   const accountId = getSelectedAccountId();
-  const where = and(isNull(ipos.tradeId), eq(ipos.allotted, true));
+  const where = and(or(isNull(ipos.tradeId), isNull(trades.id)), eq(ipos.allotted, true));
   const q = db
     .select({
       id: ipos.id,
@@ -117,9 +131,16 @@ export function getUnlinkedExitedIpoRecords(): IpoRecordFacts[] {
       exitPrice: ipos.exitPrice,
       exitDate: ipos.exitDate,
       allotmentDate: ipos.allotmentDate,
+      // D11 — the id the record names when nothing holds it (null when unlinked).
+      holdingRef: ipos.tradeId,
     })
-    .from(ipos);
-  return (accountId > 0 ? q.where(and(where, eq(ipos.accountId, accountId))) : q.where(where)).all();
+    .from(ipos)
+    .leftJoin(trades, eq(trades.id, ipos.tradeId));
+  const rows = (accountId > 0 ? q.where(and(where, eq(ipos.accountId, accountId))) : q.where(where)).all();
+  const ghostIds = new Set(rows.map((r) => r.holdingRef).filter((x): x is number => x != null));
+  if (ghostIds.size === 0) return rows;
+  const inTrash = trashedTradeIds(ghostIds);
+  return rows.map((r) => (r.holdingRef == null ? r : { ...r, holdingInTrash: inTrash.has(r.holdingRef) }));
 }
 
 export function getDataQualityReport(now = new Date()) {

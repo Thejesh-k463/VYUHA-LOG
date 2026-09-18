@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { trades as tradesTable, tradeLegs } from "@/lib/db/schema";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, type RatesMap } from "@/lib/engine/rates";
-import { todayIstIso, normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
+import { todayIstIso, normalizeDate, unreadableDateMessage, calendarDaysHeld } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeRates } from "@/lib/engine/types";
 import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
@@ -95,6 +95,25 @@ export function loadLegs(tradeId: number): DbLegRow[] {
     .all() as DbLegRow[];
 }
 
+/**
+ * D5 (v4.3.0 fix wave 2P) — ONE leg-count question. The query below was copied
+ * six times across the editor, the close, the override, the preview route, the
+ * /ipos route and the IPO push (`t.staged || legCount > 0`), and the accrual job
+ * had none: it rebuilt a `staged`-flagged row with ZERO legs from an empty
+ * ladder on every /equity render (`buyQty / buyValue / chargesTotal / netPnl → 0`).
+ * `closeStaleLot` keeps its own copy inside its transaction — a transaction
+ * cannot borrow a non-transactional helper — and `tests/wave2p-mtf-dates.test.ts`
+ * pins that this literal appears nowhere else.
+ */
+export function legCountOf(tradeId: number): number {
+  return db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
+}
+
+/** Is this row a ladder — flagged staged, or holding any leg at all? */
+export function hasLadder(t: { staged?: boolean | null }, tradeId: number): boolean {
+  return !!t.staged || legCountOf(tradeId) > 0;
+}
+
 /** DB rows → the pure module's Leg shape. Money columns already read as
  *  rupees (the moneyPaise custom type converts at the column boundary), so no
  *  scaling happens here — doing it twice was a real bug once. */
@@ -163,13 +182,35 @@ export interface PricedLeg {
  * No margin_config read is left in the ladder's pricing path, so no stored
  * figure moves when that table moves.
  *
- * KNOWN, ACCEPTED ARTEFACT: STT and stamp duty round to the nearest rupee. A
- * round-trip priced in one call rounds once per statutory head; the same trade
- * priced as two legs rounds twice, so converting an existing trade to staged
- * mode can move its total by up to about ₹2 in the worst case. Measured across
- * every segment on real journal data the observed drift was ≤ ₹1.11. The
- * per-leg figure is the more accurate of the two — statutory charges really
- * are levied per execution — so this is not corrected back.
+ * KNOWN, ACCEPTED ARTEFACT: STT and stamp duty round to the nearest rupee, and
+ * MTF interest (D3, wave 2P) rounds to the paisa PER TRANCHE. A round-trip
+ * priced in one call rounds once per statutory head; the same trade priced as
+ * two legs rounds twice, so converting an existing trade to staged mode can
+ * move its total by up to about ₹2 in the worst case. Measured across every
+ * segment on real journal data the observed drift was ≤ ₹1.11; for MTF
+ * interest it is at most a paisa per extra tranche (dhan 8L in two same-day
+ * tranches: 2 × 2,808.88 = 5,617.76 beside the job's 5,617.75). The per-leg
+ * figure is the more accurate of the two — statutory charges really are levied
+ * per execution — so this is not corrected back.
+ *
+ * D3 (wave 2P): a TIERED broker's slab is evaluated on the row's whole STATED
+ * principal (`slabBasis`), and each tranche bills its share at that rate — the
+ * slab is the broker's price for the size of the book it finances, not for
+ * the journal's bookkeeping unit. Rating each share on its own size under-priced
+ * a Dhan row straddling a boundary by ₹416.43 and made the figure depend on how
+ * many fills a position happened to have.
+ *
+ * D1 (wave 2P, owner ruling 2O row 1 — "no stored money on a closed trade moves
+ * without the owner's say-so"): `ctx.mtfCarry` is the interest and pledge a
+ * CLOSED null-funded ladder stored before 4.3.0. It is apportioned across the
+ * entry tranches — interest by tranche value × the tranche's own billed days
+ * (the two factors the estimate was computed from; value alone when every
+ * weight is 0), pledge equally (the legacy ladder billed one pledge+unpledge per
+ * entry leg) — remainder on the last tranche, so Σ shares is the stored figure
+ * to the paisa (invariant 1) and parent = Σ legs (invariant 5). The engine bills
+ * the carry as is and derives GST on the carried pledge itself (invariant 3);
+ * every OTHER head is priced fresh from the fills. Never applied beside a stated
+ * principal: a stated principal is billed by the D3 rule.
  */
 export function priceLegs(
   legs: Leg[],
@@ -180,6 +221,8 @@ export function priceLegs(
     direction: Direction;
     mtfFundedAmount?: number | null;
     asOf?: string;
+    /** D1 — the stored MTF figures of a closed null-funded ladder, kept through this rebuild. */
+    mtfCarry?: { mtfInterest: number; pledgeCharges: number } | null;
   },
   ratesMap: RatesMap,
 ): PricedLeg[] {
@@ -190,6 +233,9 @@ export function priceLegs(
   // MTF: work out how long each entry tranche's funded money was outstanding.
   const mtfDaysByLeg = new Map<number, number>();
   const mtfFundedByLeg = new Map<number, number>();
+  const mtfCarryByLeg = new Map<number, { mtfInterest: number; pledgeCharges: number }>();
+  // D3: the principal the slab is evaluated on — the row's, for every tranche.
+  const slabBasis = ctx.mtfFundedAmount ?? undefined;
   if (ctx.segment === "eq_mtf") {
     const pos = summarise(legs, ctx.direction);
     const asOf = ctx.asOf ?? todayIstIso();
@@ -241,12 +287,37 @@ export function priceLegs(
       // NaN all the way into the INSERT. `validateLegs` now refuses either before a
       // write, so an unresolvable leg date is unreachable through the writers; it
       // counts ZERO days here rather than inventing one (invariant 6).
+      // D7 (wave 2P) — the ONE day count every writer prices by (`calendarDaysHeld`,
+      // lib/domain/trading-day): 0 for a date that states no day. Both ends are
+      // resolved here first (tests/readers-follow-writers.test.ts pins the read
+      // half by name), and the shared count is idempotent over an ISO day.
       const legDay = normalizeDate(leg.tradeDate);
       const endDay = normalizeDate(end) ?? asOf;
-      const days = legDay
-        ? Math.max(0, Math.floor((new Date(endDay).getTime() - new Date(legDay).getTime()) / 86400000))
-        : 0;
-      mtfDaysByLeg.set(leg.id, days);
+      mtfDaysByLeg.set(leg.id, legDay ? calendarDaysHeld(legDay, endDay) : 0);
+    }
+    // D1 — the carry, only when the row states NO principal (see the header).
+    if (stated == null && ctx.mtfCarry && entries.length > 0) {
+      const carry = ctx.mtfCarry;
+      const byDays = entries.map((l) => (entryValue.get(l.id) ?? 0) * (mtfDaysByLeg.get(l.id) ?? 0));
+      const totalByDays = byDays.reduce((s, w) => s + w, 0);
+      // Value × days is what the legacy estimate was computed from; value alone
+      // when every tranche billed 0 days (all on asOf), so the split still exists.
+      const weights = totalByDays > 0 ? byDays : entries.map((l) => entryValue.get(l.id) ?? 0);
+      const totalWeight = weights.reduce((s, w) => s + w, 0);
+      let interestAllocated = 0;
+      let pledgeAllocated = 0;
+      entries.forEach((leg, i) => {
+        const last = i === entries.length - 1;
+        const interest = last
+          ? r2(carry.mtfInterest - interestAllocated)
+          : totalWeight > 0
+            ? r2((carry.mtfInterest * weights[i]) / totalWeight)
+            : 0;
+        const pledge = last ? r2(carry.pledgeCharges - pledgeAllocated) : r2(carry.pledgeCharges / entries.length);
+        interestAllocated = r2(interestAllocated + interest);
+        pledgeAllocated = r2(pledgeAllocated + pledge);
+        mtfCarryByLeg.set(leg.id, { mtfInterest: interest, pledgeCharges: pledge });
+      });
     }
   }
 
@@ -257,6 +328,7 @@ export function priceLegs(
 
     const mtfDays = mtfDaysByLeg.get(shape.legId);
     const mtfFunded = mtfFundedByLeg.get(shape.legId);
+    const mtfCarry = mtfCarryByLeg.get(shape.legId);
 
     const breakdown = computeCharges(
       {
@@ -273,10 +345,16 @@ export function priceLegs(
         // `lib/engine/charges.ts:106` gates both on the same `fundedAmount > 0`
         // (the recorded deviation, DECISIONS 2026-09-16 wave 2N; billing pledge
         // alone would need an engine change, which was not made).
+        //
+        // D1: a CLOSED null-funded ladder's stored estimate reaches the engine as a
+        // `carry` (fundedAmount 0, nothing rated). D3: a stated tranche carries the
+        // row's principal as `slabBasis`, so the slab is the row's, the share its own.
         mtf:
-          ctx.segment === "eq_mtf" && mtfFunded != null && mtfDays != null
-            ? { fundedAmount: mtfFunded, daysHeld: mtfDays, pledgeScrips: 1 }
-            : null,
+          ctx.segment === "eq_mtf" && mtfDays != null && mtfCarry
+            ? { fundedAmount: 0, daysHeld: mtfDays, pledgeScrips: 1, carry: mtfCarry }
+            : ctx.segment === "eq_mtf" && mtfFunded != null && mtfDays != null
+              ? { fundedAmount: mtfFunded, daysHeld: mtfDays, pledgeScrips: 1, ...(slabBasis != null ? { slabBasis } : {}) }
+              : null,
       },
       legRates,
     );
@@ -377,6 +455,27 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction, asOf?
   const dir: Direction = direction ?? directionOf(t as never, legs);
   const ratesMap = loadRatesMap();
 
+  // D1 (v4.3.0 wave 2P, mtf-staged#0 — OWNER RULING 2O row 1: "leave the closed
+  // rows alone — no stored money on a closed trade moves without the owner's
+  // say-so"). A staged parent that is CLOSED as stored, states no funded amount
+  // and holds an MTF figure keeps that figure through THIS rebuild — the editor's
+  // hand-back on a notes-only save, a leg-note edit, a stop edit, a conversion —
+  // where it used to be released (+₹80.20 of interest, pledge and its GST on the
+  // finding's row, from a save that touched only the notes). An OPEN one still
+  // bills 0 (Q-A). The gate is the STORED `isOpen`, deliberately: a row closed
+  // BEFORE 4.3.0 is the ruling's row; an open legacy row whose closing exit leg
+  // triggers this rebuild is open at that moment, so it is released and closes at
+  // 0 — a row closed after 4.3.0 is not protected. Two consequences, accepted:
+  // a `deleteLeg` / `updateLeg` that RE-OPENS such a ladder applies the carry to
+  // the reopened row and the job's next run releases it once (edit-and-undo loses
+  // it); and a closed row stating 0 with a pre-2O estimate is not this class (a
+  // stated 0 is a statement) and is released on its next rebuild. The
+  // `mtfFundedAmount == null` read is the null-vs-0 idiom every reader keeps.
+  const mtfCarry =
+    t.segment === "eq_mtf" && !t.isOpen && t.mtfFundedAmount == null && (t.mtfInterest > 0 || t.pledgeCharges > 0)
+      ? { mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges }
+      : null;
+
   // 1) Price each fill.
   const priced = priceLegs(
     legs,
@@ -386,6 +485,7 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction, asOf?
       exchange: t.exchange as Exchange,
       direction: dir,
       mtfFundedAmount: t.mtfFundedAmount,
+      mtfCarry,
       ...(asOf ? { asOf } : {}),
     },
     ratesMap,

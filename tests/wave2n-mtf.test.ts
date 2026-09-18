@@ -220,7 +220,7 @@ describe("D7 — the KPI dialog's three MTF money rows come from ONE set (close-
     // from the one this note names.
     expect(lines(/ownCapNote/), "a money row is rendered without saying what it left out").toBe(5);
     expect(text, "the Broker-funded row states the set it describes").toMatch(/every MTF row that states funding/);
-    expect(text, "the leverage row states its own inputs").toMatch(/that state own capital/);
+    expect(text, "the leverage row states its own inputs").toMatch(/"row that states", "rows that state"\)\} own capital/); // 2P D12: the plural() helper states noun and verb
     expect(text, "the dialog never states the financing it excluded without counting it").toMatch(/not in these figures/i);
   });
 

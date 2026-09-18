@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
@@ -117,6 +117,43 @@ import type { ParsedFile } from "@/lib/import/types";
  *   H14 lib/import/cross-source.ts (HEAD) -> "the list is bounded in LINES:
  *         expected [ 30, +0, undefined ] to deeply equal [ 12, +0, 18 ]"
  *
+ * ── WAVE 2P (2026-09-18) — the ONE seam pass over B2P-MTF-DATES (D1–D9) and
+ *    B2P-IDENTITY (D10–D12). Same method: ONE side aliased onto `git show HEAD:<path>`
+ *    through a deleted tests/zzprobe-2p.vitest.config.ts; no product file touched.
+ *
+ *  #     | crossing value                       | producer                                           | consumer                                                  | unit / shape                     | test
+ * -------|--------------------------------------|----------------------------------------------------|-----------------------------------------------------------|----------------------------------|------
+ *  2P-S1 | QualityIssue.capGroup beside a       | lib/analytics/data-quality.ts:1429/:1453 (D6) and  | scoreIssues :1358 -> report.score -> app/data-quality/    | points; ONE 30 cap for the two   | H6 2P-S1
+ *        |   group-less `ipo_record_ghost`      |   :1520 (D11); holdingRef from lib/queries/        |   page.tsx's header                                       |   MTF codes, the ghost's own 2   |
+ *        |                                      |   data-quality.ts:135 (D11's LEFT JOIN)            |                                                           |                                  |
+ *  2P-S2 | dayOf(v): ISO day | raw | null       | lib/domain/trading-day.ts:205 (D4)                 | lib/analytics/ipo-link.ts:257 sellLegIsIpoExit (D8) AND   | a blank is null on both sides,   | H10 2P-S2
+ *        |                                      |                                                    |   app/api/ipos/route.ts:86-88,:209 the route's fold       |   and null is nobody's exit      |
+ *  2P-S3 | mtf.carry (₹ interest + pledge)      | lib/queries/staged.ts:299 priceLegs (D1)           | the preview route ≡ updateManualTrade's hand-back         | ₹ to the paisa                   | ALREADY PINNED: tests/preview-equals-save-matrix.test.ts
+ *        |                                      |                                                    |                                                           |                                  |   "D1 · a CLOSED legacy null-funded ladder…" — not duplicated
+ *  2P-S4 | legCountOf(id) and the rebuild's     | lib/queries/staged.ts:108 (D5)                     | lib/jobs/mtf-accrual.ts:71,:85 (D5, D2) and               | a count; a throw that must not   | H7 2P-S4
+ *        |   throw                              |                                                    |   lib/import/commit.ts:2481/:2690                         |   leave the job's loop           |
+ *  2P-S5 | an ABSENT date field = `undefined`   | app/trades/actions.ts:291,:294 (D9)                | lib/import/commit.ts:2546 calendarDaysHeld (D7) ≡ the     | stored ' ' kept verbatim; 0      | H12 2P-S5 (+ the H12 pin
+ *        |   (the stored value is kept)         |                                                    |   dialog's editPreviewBody :118 and its Save (D9)         |   days, never NaN                |   moved: stored sentence, Save disabled)
+ *
+ *   RED ON REVERT, verbatim (HEAD = bf9e44a):
+ *   2P-S1 lib/analytics/data-quality.ts (HEAD) and lib/queries/data-quality.ts (HEAD), each alone -> "exactly the
+ *           three questions this book raises: expected [ …(2) ] to deeply equal [ …(3) ]"
+ *   2P-S2 lib/analytics/ipo-link.ts (HEAD) -> "the holding is byte-identical: expected { id: 1, … } to deeply equal …"
+ *           (realisedPct null -> 50: a notes-only save synced onto a sale that is not the IPO's)
+ *         app/api/ipos/route.ts (HEAD) -> "The linked holding has a sale recorded in Trades… expected [ 409, false ]
+ *           to deeply equal [ 200, true ]"
+ *         NOTE: the builder's own route cases (tests/ipo-charger-dates.test.ts "D8 · …", 5 cases) stay GREEN with
+ *           ipo-link.ts alone reverted — they are red on the route's side only.
+ *   2P-S4 lib/jobs/mtf-accrual.ts (HEAD) ALONE -> "the run survives a ladder it cannot price: expected [Function] to
+ *           not throw an error but 'Error: No charge_config for sahi / default / eq_mtf / NSE' was thrown" — and
+ *           the three older H7 cases stay green under that revert, which is seams #1 confirmed
+ *         lib/queries/staged.ts (HEAD) -> "TypeError: legCountOf is not a function"
+ *   2P-S5 lib/import/commit.ts (HEAD) -> "SqliteError: NOT NULL constraint failed: trades.charges_total_paise"
+ *         app/trades/actions.ts (HEAD) -> "a field the form never mentioned is kept as stored: expected [ null, null ]
+ *           to deeply equal [ '2026-08-01', ' ' ]"
+ *   H12   components/trades/edit-trade-dialog.tsx (HEAD) -> "the dialog's own sentence over the stored value: expected
+ *           '<form …' to contain 'This trade's stored buy date “9999-99-99” …'"
+ *
  * SEAM DEFECTS found by a pass are REPORTED to the orchestrator, never fixed here.
  *
  * ONE temp database for this file (AGENTS.md Testing). Each seam owns its accounts.
@@ -190,7 +227,10 @@ const H12_ACC = 1817; // H12: a stored date that states no day
 const H13_ACC = 1818; // H13: one scrip, two incoming rows, the same five figures
 const H14_ACC = 1819; // H14: thirty colliding rows of ONE symbol
 const H7_NOTE = 1820; // H7: the same ladder, saved with nothing but a note
-const ACCOUNTS = [H1_ACC, H2_ACC, H3_ACC, H5_LEG, H5_TGT, H5_SRC, H5_PA, H5_PB, H6_ACC, H7_ACC, H7_STATED, H8_ACC, H9_ACC, H10_ACC, H11_ACC, H12_ACC, H13_ACC, H14_ACC, H7_NOTE];
+const H6_CAP = 1821; //  2P-S1: 5 open + 15 closed unpriced MTF rows beside a ghost IPO record
+const H7_LEGACY = 1822; // 2P-S4: a no-fill staged row and an unpriceable ladder AHEAD of a legacy estimate
+const H12_WS = 1823; //  2P-S5: a stored whitespace sell date, saved by a form that does not mention it
+const ACCOUNTS = [H1_ACC, H2_ACC, H3_ACC, H5_LEG, H5_TGT, H5_SRC, H5_PA, H5_PB, H6_ACC, H7_ACC, H7_STATED, H8_ACC, H9_ACC, H10_ACC, H11_ACC, H12_ACC, H13_ACC, H14_ACC, H7_NOTE, H6_CAP, H7_LEGACY, H12_WS];
 
 // ONE temp database for this file. Measured locally 2026-09-16 (vitest's own
 // per-test times, 18 `it`s): the slowest three are H2 304 ms (six lenses grouped
@@ -952,6 +992,78 @@ describe("H6 · one Data Quality report over a 3-open / 3-closed unpriced MTF bo
     expect(groupedAt, "the grouped question is on the page").toBeGreaterThan(-1);
     expect(html.slice(groupedAt, groupedAt + 260), "the badge says what the detail says").toContain(">3<");
   });
+
+  /**
+   * 2P-S1 — D6's `capGroup` (B2P-MTF-DATES) × D11's `ipo_record_ghost`
+   * (B2P-IDENTITY), two builders in ONE file, over a report the REAL query built
+   * (lib/queries/data-quality.ts's LEFT JOIN is what makes the record a ghost).
+   * 5 open × 6 + 15 closed × 2 = 60 raw points that share ONE 30-point cap; the
+   * ghost is a group of one and costs its own 2 — under no cap but its own.
+   */
+  it("2P-S1 · a 5-open / 15-closed unpriced book beside a ghost IPO record scores 68: the two MTF codes share ONE cap, and the ghost costs its own 2 outside it", async () => {
+    freezeAt("2026-09-08T09:30:00.000Z");
+    const OPEN = [0, 1, 2, 3, 4].map((i) => `H6CAPO${i}`);
+    const SHUT = [0, 1, 2, 3, 4].map((i) => `H6CAPS${i}`);
+    // The temp journal's instrument master is empty, so the fixture states its own
+    // ten scrips: the report below must raise the three questions under test and
+    // no fourth, or the exact score would be a figure about the fixture.
+    t.db.insert(t.schema.instruments).values([...OPEN, ...SHUT].map((symbol) => ({ symbol, name: symbol }))).run();
+    for (let i = 0; i < 15; i++) {
+      if (i < 5) {
+        insertTrade({
+          accountId: H6_CAP, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: OPEN[i], tradingsymbol: OPEN[i],
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", buyOrderCount: 1, isOpen: true,
+          slPlanned: 90, riskAmount: 1000, closingPrice: 105, markedAt: "2026-09-08",
+        });
+      }
+      insertTrade({
+        accountId: H6_CAP, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: SHUT[i % 5], tradingsymbol: SHUT[i % 5],
+        buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: `2026-0${5 + (i % 3)}-01`, buyOrderCount: 1, slPlanned: 90, riskAmount: 1000,
+        sellQty: 100, avgSellPrice: 110, sellValue: 11000, sellDate: `2026-0${5 + (i % 3)}-15`, sellOrderCount: 1,
+        grossPnl: 1000, chargesTotal: 20, netPnl: 980, isOpen: false,
+      });
+    }
+    // The record names a holding NO row in the journal holds (D11's shape: kept,
+    // never nulled). Only the query's LEFT JOIN can know that.
+    const GONE = 9_182_101;
+    const ghostId = t.db
+      .insert(t.schema.ipos)
+      .values({ accountId: H6_CAP, name: "H6 Ghost Issue", appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate: "2026-03-02", allotmentDate: "2026-02-20", tradeId: GONE })
+      .returning({ id: t.schema.ipos.id })
+      .get()!.id;
+    selectAccount(H6_CAP);
+
+    const report = dqQueries.getDataQualityReport();
+    const byCode = (c: string) => report.issues.find((x) => x.code === c);
+    // THE PRODUCER halves, as the report carries them across: D6's group on the
+    // two MTF codes and ONLY those; D11's ghost with none.
+    expect(report.issues.map((x) => [x.code, x.severity, x.count, x.capGroup ?? null]), "exactly the three questions this book raises").toEqual([
+      ["mtf_funding", "warning", 5, "mtf_funding"],
+      ["mtf_funding_closed", "info", 15, "mtf_funding"],
+      ["ipo_record_ghost", "info", 1, null],
+    ]);
+    expect(byCode("ipo_record_ghost")!.ids, "the ghost names the RECORD (what /ipos lists)").toEqual([ghostId]);
+    expect(byCode("ipo_record_ghost")!.detail, "…and where its holding is").toContain(`names holding #${GONE}, no longer in the journal`);
+
+    // THE CONSUMER: the real scorer over the real report. THE assertion —
+    //   lib/analytics/data-quality.ts reverted: 40 (two caps of 30, no ghost);
+    //   lib/queries/data-quality.ts reverted (`isNull(trade_id)` alone): 70, the ghost unseen;
+    //   a ghost that INHERITED the MTF group (the rebase hazard): 70, its 2 swallowed by the cap.
+    expect(report.score, "one 30-point cap for the one gap, plus the ghost's own 2").toBe(68);
+    const { scoreIssues, crossAccountIssues } = dq;
+    expect(scoreIssues(report.issues.filter((x) => x.code !== "ipo_record_ghost")), "the ghost moves the score by its own weight and nothing else").toBe(70);
+    expect(scoreIssues([byCode("mtf_funding")!, byCode("ipo_record_ghost")!]), "…and it is never counted INTO the MTF cap (30 + 2, not min(30, 32))").toBe(68);
+
+    // …and the page draws that figure (its own superset) with all three questions.
+    const brokerIdentity = await import("@/lib/import/broker-identity");
+    const superset = [
+      ...report.issues,
+      ...crossAccountIssues({ duplicateConnections: brokerIdentity.listDuplicateConnections(), duplicateTradeGroups: brokerIdentity.listDuplicateTradeGroups() }),
+    ];
+    const html = renderToStaticMarkup(dataQualityPage() as React.ReactElement);
+    expect(html, "the header states the page's own score").toContain(`${scoreIssues(superset)}/100`);
+    expect(html, "the ghost's question is on the page").toContain("IPO records naming a holding that is not in the journal");
+  });
 });
 
 // ============================================================================
@@ -1134,6 +1246,85 @@ describe("H7 · a staged MTF ladder through every door that touches its interest
     expect(patched.message, "…and says where the fill is edited").toContain("staged position built from more than one fill");
     expect(row(ladder), "nothing was written").toEqual(before);
   });
+
+  /**
+   * 2P-S4 — THE H7 RE-PROOF (wave 2P designs, "seams #1"): the three cases above
+   * stay green when lib/jobs/mtf-accrual.ts ALONE is reverted, because no fixture
+   * of theirs separates the job from the ladder it calls. This sequence does. ONE
+   * run of the job over a book where a `staged`-flagged row with NO fills (D5) and
+   * a ladder no rate card prices (D2 — its broker's eq_mtf card is taken out for
+   * the length of this case and put back) sit AHEAD of a legacy ladder still
+   * carrying the pre-4.3.0 estimate:
+   *
+   *   job-only revert (HEAD's job, this wave's ladder) → the no-fill row is
+   *     rewritten from an empty ladder and the sahi throw escapes the loop, so the
+   *     legacy row behind it is never released;
+   *   ladder-only revert (HEAD's staged.ts) → `legCountOf` does not exist for the
+   *     job or the editor to ask.
+   */
+  it("2P-S4 · the legacy-estimate sequence in ONE run: a no-fill staged row and an unpriceable ladder ahead of it are left exactly as they are, the 71.38 estimate behind them is still released through the ladder, and the editor's note rewrites neither", async () => {
+    freezeAt("2026-08-20T09:30:00.000Z");
+    selectAccount(H7_LEGACY);
+    const baseline = accrual.accrueMtfInterest("2026-08-20").skipped;
+    const base = { accountId: H7_LEGACY, bucket: "equity", segment: "eq_mtf", buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", buyOrderCount: 1, isOpen: true };
+    // (1) flagged staged, no leg at all — it claims a ladder it does not have.
+    const noFills = insertTrade({ ...base, broker: "zerodha", symbol: "H7NOFILLS", tradingsymbol: "H7NOFILLS", staged: true, mtfFundedAmount: 5000, chargesTotal: 20, netPnl: -20 });
+    // (2) a real one-leg ladder whose broker has no eq_mtf rate card for any day.
+    // No other row in this file is sahi's; the card is put back below (H9 reads every broker's).
+    const cfg = t.schema.chargeConfig;
+    const sahiCard = t.db.select().from(cfg).where(and(eq(cfg.broker, "sahi"), eq(cfg.segment, "eq_mtf"))).all();
+    expect(sahiCard.length, "the card this case takes out exists to be put back").toBeGreaterThan(0);
+    t.db.delete(cfg).where(and(eq(cfg.broker, "sahi"), eq(cfg.segment, "eq_mtf"))).run();
+    let unpriced = 0;
+    // The sahi ladder leaves with this case and its card comes back, red or green:
+    // /equity (H8) runs the same job and /reports/broker-compare (H9) reads every card.
+    onTestFinished(() => {
+      t.db.delete(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, unpriced)).run();
+      t.db.delete(t.schema.trades).where(eq(t.schema.trades.id, unpriced)).run();
+      t.db.insert(cfg).values(sahiCard).run();
+    });
+    unpriced = insertTrade({ ...base, broker: "sahi", symbol: "H7SAHI", tradingsymbol: "H7SAHI", staged: true, mtfFundedAmount: 5000, chargesTotal: 12, netPnl: -12 });
+    t.db.insert(t.schema.tradeLegs).values({ tradeId: unpriced, kind: "entry", seq: 1, tradeDate: "2026-08-01", qty: 100, price: 100, chargesTotal: 12 }).run();
+    // (3) the legacy ladder: the estimate on the parent AND on the leg that priced it.
+    const legacy = insertTrade({ ...base, broker: "zerodha", symbol: "H7LEGACY", tradingsymbol: "H7LEGACY" });
+    expect(staged.convertToStaged(legacy).ok).toBe(true);
+    const leg = staged.loadLegs(legacy)[0]!;
+    t.db.update(t.schema.tradeLegs).set({ chargesTotal: 71.38 }).where(eq(t.schema.tradeLegs.id, leg.id)).run();
+    t.db.update(t.schema.trades).set({ mtfInterest: 71.38, chargesTotal: 71.38, netPnl: -71.38 }).where(eq(t.schema.trades.id, legacy)).run();
+    const before = { noFills: row(noFills)!, unpriced: row(unpriced)! };
+    const money = (id: number) => {
+      const r = row(id)!;
+      return [r.buyQty, r.buyValue, r.chargesTotal, r.netPnl, r.mtfFundedAmount];
+    };
+
+    // THE JOB. THE assertion (lib/jobs/mtf-accrual.ts reverted ALONE: "the run
+    // survives a ladder it cannot price: expected [Function] to not throw an
+    // error but 'Error: No charge_config for sahi / …' was thrown" — and with the
+    // throw caught by hand, "[0, 0, 0, 0, 5000]" for the no-fill row).
+    let run: ReturnType<typeof accrual.accrueMtfInterest> | undefined;
+    expect(() => { run = accrual.accrueMtfInterest("2026-08-20"); }, "the run survives a ladder it cannot price").not.toThrow();
+    expect(money(noFills), "a row with no fills is not rewritten from an empty ladder").toEqual([100, 10000, 20, -20, 5000]);
+    expect([row(noFills), row(unpriced)], "both are left EXACTLY as they were").toEqual([before.noFills, before.unpriced]);
+    expect(run!.skipped - baseline, "…and the run says it skipped them").toBe(2);
+    // The row BEHIND the two: released through the ladder, legs and parent together.
+    expect(billed(legacy), "the estimate is out of the row the failing ones sat ahead of").toEqual([null, 0]);
+    const [p, l, n] = parentVsLegs(legacy);
+    expect([p, n, (p as number) < 71.38], "parent = Σ legs after the release, and the 71.38 really left").toEqual([l, 1, true]);
+
+    // THE EDITOR (commit.ts, the other reader of `legCountOf`): a note on the
+    // no-fill row is saved and nothing is rebuilt from the ladder it does not have…
+    const noted = importer.updateManualTrade(noFills, { notes: "a note on a row with no fills" });
+    expect([noted.ok, row(noFills)!.notes], noted.message).toEqual([true, "a note on a row with no fills"]);
+    expect(money(noFills), "the editor did not hand it to an empty ladder either").toEqual([100, 10000, 20, -20, 5000]);
+    // …a note on the released ladder puts no estimate back, and the next run is idle.
+    const saved = await actions.updateTradeAction(NO_STATE, editorForm(H7_LEGACY, legacy, { notes: "typed in the dialog" }));
+    expect([saved.ok, saved.message]).toEqual([true, "Trade updated."]);
+    expect(billed(legacy), "a note does not bill a principal nobody recorded").toEqual([null, 0]);
+    const again = accrual.accrueMtfInterest("2026-08-20");
+    expect([again.updated, again.skipped - baseline], "idempotent: nothing to update, the same two skipped").toEqual([0, 2]);
+    expect(parentVsLegs(legacy)[0], "parent = Σ legs, three doors later").toBe(parentVsLegs(legacy)[1]);
+
+  });
 });
 
 // ============================================================================
@@ -1211,7 +1402,7 @@ describe("H8 · one figure and one reason per row (deriveOpenPositions → /equi
     expect(trackerSrc, "and never the own-capital subset again").not.toMatch(/const mtfFunded = ownCap\.funded/);
     expect(trackerSrc, "the Broker-funded row is the same figure, and says its set").toContain('{ label: "Broker-funded", value: inr(mtfFunded.funded, { decimals: 0 })');
     expect(trackerSrc, "…as n of m").toContain("every MTF row that states funding — ${mtfFunded.stated} of ${mtfFunded.stated + mtfFunded.unstated}");
-    expect(trackerSrc, "and the leverage row states its own, different inputs").toContain("over the ${ownCap.stating} ${ownCap.stating === 1 ? \"row\" : \"rows\"} that state own capital");
+    expect(trackerSrc, "and the leverage row states its own, different inputs").toContain("over the ${plural(ownCap.stating, \"row that states\", \"rows that state\")} own capital"); // 2P D12: noun and verb agree, from lib/format plural()
 
     // CONSUMER 3 — /targets' MTF card: the same helper, so one figure.
     const card = findElem(targetsPage(), (e) => !!(e.props as { mtf?: { unstated?: number } }).mtf);
@@ -1365,6 +1556,71 @@ describe("H10 · a 4.2.x legacy pair (the SAME day-first string in ipos.exit_dat
     expect(t.db.select().from(t.schema.ipos).all().find((r) => r.id === record)!.tradeId, "…still linked to the same holding").toBe(held);
     expect(ipoQueries.getIpoTradeLinks().get(held), "and the holding still carries its badge").toBe(record);
   });
+
+  /**
+   * 2P-S2 — D4's `dayOf` (lib/domain/trading-day.ts) read by BOTH D8 readers at
+   * once: `sellLegIsIpoExit` (lib/analytics/ipo-link.ts — a blank is NOBODY's
+   * exit) and the route's own fold (app/api/ipos/route.ts — a stored blank is the
+   * null the form sends). The builder's route cases (tests/ipo-charger-dates.test.ts
+   * "D8 · …") stay GREEN with ipo-link.ts alone reverted — their holdings state a
+   * day or a ' ', and HEAD's fold never equated ' ' with null — so the shape that
+   * separates the two halves is this one: a closed holding whose sell date was
+   * CLEARED (null — what the editor's "blank means clear" leaves) beside a record
+   * storing a whitespace exit date, same quantity and price.
+   */
+  it("2P-S2 · a closed holding with NO sell date beside a record storing a blank exit date: a notes-only save is 200 and touches nothing (a blank is nobody's exit, on both sides of the route), while an unreadable byte-identical pair is still one sale", async () => {
+    freezeAt("2026-09-08T09:30:00.000Z");
+    selectAccount(H10_ACC);
+    const pair = (symbol: string, sellDate: string | null, exitDate: string | null) => {
+      const held = insertTrade({
+        accountId: H10_ACC, broker: "zerodha", bucket: "equity", segment: "eq_delivery", symbol, tradingsymbol: symbol,
+        buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2019-01-10", buyOrderCount: 1,
+        sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate, sellOrderCount: 1,
+        grossPnl: 500, chargesTotal: 2.06, sttCtt: 2, netPnl: 497.94, isOpen: false,
+        acquisition: "ipo", acquisitionPrice: 100, acquisitionDate: "2019-01-10",
+      });
+      const record = t.db
+        .insert(t.schema.ipos)
+        .values({ accountId: H10_ACC, name: symbol, appliedPrice: 100, lotSize: 10, lotsApplied: 1, allotted: true, allottedQty: 10, listingPrice: 130, exitPrice: 150, exitDate, allotmentDate: "2019-01-10", tradeId: held })
+        .returning({ id: t.schema.ipos.id })
+        .get()!.id;
+      return { held, record };
+    };
+    const form = (id: number, name: string, over: Record<string, unknown>) => ({
+      id, name, broker: "zerodha", exchange: "NSE", board: "mainboard", category: "", discountPerShare: "",
+      appliedPrice: "100", lotSize: "10", lotsApplied: "1", allotted: true, allottedQty: 10, listingPrice: "130",
+      exitPrice: "150", appliedDate: "", allotmentDate: "2019-01-10", listingDate: "", notes: "", ...over,
+    });
+    const recordRow = (id: number) => t.db.select().from(t.schema.ipos).all().find((r) => r.id === id)!;
+
+    // THE CONSUMER: the form re-sends the stored blank; nothing but the note moved.
+    const blank = pair("H10BLANK", null, " ");
+    const before = row(blank.held)!;
+    const res = await ipoRoute.POST(json("/api/ipos", form(blank.record, "H10BLANK", { exitDate: " ", notes: "a note, nothing else" })));
+    const answer = (await res.json()) as { ok: boolean; message?: string };
+    // THE assertion —
+    //   lib/analytics/ipo-link.ts reverted: 200, but "the holding is byte-identical" fails — null ≡ null read the sale as the
+    //     IPO's own, so a notes-only save SYNCED onto the holding (realisedPct null → 50);
+    //   app/api/ipos/route.ts reverted:     [409, false] "The linked holding has a sale recorded in Trades…" (' ' ≠ null read as a changed exit).
+    expect([res.status, answer.ok], answer.message ?? "").toEqual([200, true]);
+    expect(row(blank.held), "the holding is byte-identical").toEqual(before);
+    expect([recordRow(blank.record).notes, recordRow(blank.record).exitDate], "the note saved and the blank healed to null").toEqual(["a note, nothing else", null]);
+
+    // …and THE PRODUCER's rule on its own, over the values the route handed it.
+    const facts = { appliedPrice: 100, allottedQty: 10, allotted: true, listingPrice: 130, exitPrice: 150, exitDate: null, allotmentDate: "2019-01-10" };
+    expect(
+      [null, "", " "].map((d) => ipoLink.sellLegIsIpoExit(facts, { sellQty: 10, avgSellPrice: 150, sellDate: d })),
+      "a sale that states no day is nobody's exit, however the blank is spelt",
+    ).toEqual([false, false, false]);
+
+    // THE CONTROL (Y2/D13, unchanged by the blank rule and by the fold's new trim):
+    // an UNREADABLE byte-identical pair is still one sale, so a price correction syncs.
+    const same = pair("H10SAME", "2026-02-31", "2026-02-31");
+    const fixed = await ipoRoute.POST(json("/api/ipos", form(same.record, "H10SAME", { exitDate: "2026-02-31", exitPrice: "160" })));
+    const fixedBody = (await fixed.json()) as { ok: boolean; message?: string };
+    expect([fixed.status, fixedBody.ok], fixedBody.message ?? "").toEqual([200, true]);
+    expect([row(same.held)!.avgSellPrice, row(same.held)!.sellDate], "the correction reached the holding, its stored day left as stored").toEqual([160, "2026-02-31"]);
+  });
 });
 
 // ============================================================================
@@ -1503,11 +1759,78 @@ describe("H12 · the third writer of one rule (updateManualTrade → app/trades/
     expect(typeof problem, "and the dialog's own date guard is exported for it").toBe("function");
     expect(problem!(w.buyDate, w.sellDate), "…and it refuses the same pair, so no preview is built").toBeTruthy();
 
-    // Once the stored date states a day, the same patch prices normally.
-    t.db.update(t.schema.trades).set({ buyDate: "2026-08-01" }).where(eq(t.schema.trades.id, bad)).run();
-    const ok = importer.updateManualTrade(bad, { avgSellPrice: 175 });
-    expect([ok.ok, row(bad)!.avgSellPrice], ok.message).toEqual([true, 175]);
+    // PIN MOVED — D9 (wave 2P): the dialog rendered on this very wire row states
+    // the STORED problem in its own words (the browser shows the field BLANK) and
+    // Save waits. On revert of components/trades/edit-trade-dialog.tsx: the
+    // SENT-value sentence beside an enabled button, whose press posted the blank.
+    const { unreadableStoredDate } = await import("@/lib/domain/trading-day");
+    expect(unreadableStoredDate(w), "the rule's PARTS, off the wire row").toEqual({ label: "buy date", raw: "9999-99-99" });
+    const html = unescape(renderToStaticMarkup(React.createElement(Dialog, null, React.createElement(EditTradeDialog, { trade: w, onDone: () => {} }))));
+    expect(html, "the dialog's own sentence over the stored value").toContain("This trade's stored buy date “9999-99-99” is not a real calendar day, so the field shows blank. Enter the day it was to save this trade.");
+    expect(html, "…not the sent-value one").not.toContain(unreadableDateMessage("buy date", "9999-99-99"));
+    expect(/<button\b[^>]*type="submit"[^>]*>/.exec(html)?.[0] ?? "", "Save waits for a day").toMatch(/\sdisabled=""/);
+
+    // THE WAY OUT THE SENTENCE NAMES, through both halves: the user types the day
+    // into that dialog's own form and the action saves it and prices the real days.
+    const fixed = await actions.updateTradeAction(NO_STATE, editorForm(H12_ACC, bad, { buyDate: "2026-08-01", avgSellPrice: "175" }));
+    expect([fixed.ok, fixed.message], "a typed day is the way out").toEqual([true, "Trade updated."]);
+    expect([row(bad)!.buyDate, row(bad)!.avgSellPrice], "the day and the price both landed").toEqual(["2026-08-01", 175]);
     expect(row(bad)!.mtfInterest > 0, "and a real day bills the real days").toBe(true);
+    const healed = unescape(renderToStaticMarkup(React.createElement(Dialog, null, React.createElement(EditTradeDialog, { trade: wireTrade(H12_ACC, bad), onDone: () => {} }))));
+    expect(/<button\b[^>]*type="submit"[^>]*>/.exec(healed)?.[0] ?? "<none>", "and Save is live again on the healed row").not.toMatch(/\sdisabled(?:=""|>|\s)/);
+  });
+
+  /**
+   * 2P-S5 — D7 (`calendarDaysHeld`, one day count) × D9 (an ABSENT date field is
+   * "not mentioned"). Each is right alone; together they open a path neither
+   * builder's cases walk: D9 makes a form that omits the dates KEEP the stored
+   * value, so a stored ' ' now reaches `updateManualTrade`'s day count — the very
+   * value D7 exists for. (D9 alone: `NOT NULL constraint failed:
+   * trades.charges_total_paise`. D7 alone: the stale tab CLEARS the stored value.)
+   * And the dialog on that row: a whitespace date is an unanswered field, not an
+   * unreadable one — no sentence, Save live, and its preview bills the 0 days the
+   * save stores.
+   */
+  it("2P-S5 · a row storing a whitespace sell date: a form that does not MENTION the dates saves at 0 days with the stored value kept, the dialog's Save stays live, and its preview is the bill the save stores", async () => {
+    freezeAt("2026-09-08T09:30:00.000Z");
+    chargesPreview = await import("@/app/api/charges/preview/route");
+    selectAccount(H12_WS);
+    const ws = insertTrade({
+      accountId: H12_WS, broker: "zerodha", bucket: "equity", segment: "eq_mtf", symbol: "H12WS", tradingsymbol: "H12WS",
+      buyQty: 100, avgBuyPrice: 160, buyValue: 16000, buyDate: "2026-08-01", buyOrderCount: 1, mtfFundedAmount: 12000,
+      sellQty: 100, avgSellPrice: 170, sellValue: 17000, sellDate: " ", sellOrderCount: 1,
+      grossPnl: 1000, chargesTotal: 40, mtfInterest: 20, netPnl: 960, isOpen: false,
+    });
+
+    // READER — the dialog, off the wire row: nothing to refuse, Save live.
+    const w = wireTrade(H12_WS, ws);
+    expect(w.sellDate, "the wire carries the stored whitespace as stored").toBe(" ");
+    const html = unescape(renderToStaticMarkup(React.createElement(Dialog, null, React.createElement(EditTradeDialog, { trade: w, onDone: () => {} }))));
+    expect(html, "a whitespace date is unanswered, not unreadable").not.toContain("is not a real calendar day");
+    expect(/<button\b[^>]*type="submit"[^>]*>/.exec(html)?.[0] ?? "<none>", "Save is live").not.toMatch(/\sdisabled(?:=""|>|\s)/);
+
+    // THE PREVIEW the dialog sends for a price correction on that row (D7, client half).
+    const build = exported(editDialog, "editPreviewBody") as (t: WireTrade, f: unknown) => unknown;
+    const body = build(w, { buyQty: 100, avgBuyPrice: 160, sellQty: 100, avgSellPrice: 175, buyDate: "2026-08-01", sellDate: " ", ownCapitalUsed: null });
+    expect((body as { daysHeld: number }).daysHeld, "the dialog counts the days the save counts").toBe(0);
+    const res = await chargesPreview.POST(json("/api/charges/preview", JSON.parse(JSON.stringify(body))));
+    const shown = (await res.json()) as { breakdown: Record<string, number>; netPnl: number };
+    expect(res.status, JSON.stringify(shown)).toBe(200);
+
+    // THE WRITER, through D9's door: a FormData that omits BOTH date fields.
+    const fd = editorForm(H12_WS, ws, { avgSellPrice: "175" });
+    fd.delete("buyDate");
+    fd.delete("sellDate");
+    // THE assertion (lib/import/commit.ts's day count reverted: "SqliteError: NOT
+    // NULL constraint failed: trades.charges_total_paise"; app/trades/actions.ts
+    // reverted: "expected [ null, null ] to deeply equal [ '2026-08-01', ' ' ]" — the
+    // stale tab CLEARED both stored dates).
+    const saved = await actions.updateTradeAction(NO_STATE, fd);
+    expect([saved.ok, saved.message], "0 days, not NaN").toEqual([true, "Trade updated."]);
+    const after = row(ws)!;
+    expect([after.buyDate, after.sellDate], "a field the form never mentioned is kept as stored").toEqual(["2026-08-01", " "]);
+    expect([after.avgSellPrice, after.mtfInterest], "the price landed, and a day nobody states bills no days").toEqual([175, 0]);
+    expect([shown.breakdown.mtfInterest, shown.breakdown.total, shown.netPnl], "preview ≡ save, to the paisa").toEqual([0, after.chargesTotal, after.netPnl]);
   });
 });
 

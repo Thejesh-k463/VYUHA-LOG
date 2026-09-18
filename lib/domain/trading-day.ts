@@ -185,6 +185,55 @@ export function normalizeDate(s: string | null): string | null {
 }
 
 /**
+ * D4 / D8 (v4.3.0 fix wave 2P) — THE ONE FOLD for "which day does this value state".
+ *
+ * A stored or typed date compares as the ISO DAY it states, not as its bytes: a
+ * 4.2.x row holds '20-01-2026' where a save resolves '2026-01-20', and a byte
+ * compare read that as a moved fill (the staged refusal), a moved charge input
+ * (a flat re-price that dropped the IPO sync's marker) and a NEW sell date.
+ * Three private copies of this fold existed (`lib/analytics/ipo-link.ts`, twice in
+ * `app/api/ipos/route.ts`) and two of them handed '' back as '' — so a blank
+ * stored IPO exit date compared unequal to the null the form sends, and a
+ * notes-only save was a 409 "sale recorded in Trades" (D8).
+ *
+ *   readable      → the ISO day (whatever the spelling);
+ *   unreadable    → the raw, trimmed value — it compares only to itself (D13's
+ *                   rule: a byte-identical unreadable pair is still one pair);
+ *   blank / null  → null — a value that states no day is the same absence as
+ *                   a null, on BOTH sides of every compare.
+ */
+export function dayOf(v: string | null | undefined): string | null {
+  if (v == null) return null;
+  const raw = v.trim();
+  if (raw === "") return null;
+  return normalizeDate(raw) ?? raw;
+}
+
+/** Do two values state the same day (or the same absence of one)? */
+export const sameDay = (a: string | null | undefined, b: string | null | undefined): boolean => dayOf(a) === dayOf(b);
+
+/**
+ * D7 (v4.3.0 fix wave 2P) — THE ONE DAY COUNT for every writer that prices from
+ * two trade dates: T+1 settlement start through the day before sale proceeds
+ * settle = exactly (to − from) calendar days, confirmed against Dhan's MTF
+ * documentation (no extra "-1": that undercounted every position by a day).
+ *
+ * Both ends resolve through `normalizeDate` (which trims), and a date that states
+ * no day — blank, whitespace, unreadable, null — counts ZERO days rather than
+ * inventing one (invariant 6). Five copies of this expression existed and one of
+ * them (`updateManualTrade`) tested the raw string for emptiness, so a stored ' '
+ * read as PRESENT there and as ABSENT to `storedDateProblem`: NaN reached the
+ * engine and the write died on `NOT NULL constraint failed`. The other readers
+ * billed 0 days for the same row. Now all of them answer 0.
+ */
+export function calendarDaysHeld(from: string | null | undefined, to: string | null | undefined): number {
+  const a = normalizeDate(from ?? null);
+  const b = normalizeDate(to ?? null);
+  if (!a || !b) return 0;
+  return Math.max(0, Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000));
+}
+
+/**
  * The refusal a writer states for a date it was GIVEN and cannot read — commit.ts's
  * `unreadableDate` wording, in one place both a pure module and a client component
  * can reach (`lib/domain/staged.ts#validateLegs`, the trade editor's preview).
@@ -221,9 +270,23 @@ export function unreadableStoredDateMessage(label: string, raw: string): string 
  * same sentence rather than submitting a save that can only refuse.
  */
 export function storedDateProblem(t: { buyDate?: string | null; sellDate?: string | null }): string | null {
+  const bad = unreadableStoredDate(t);
+  return bad ? unreadableStoredDateMessage(bad.label, bad.raw) : null;
+}
+
+/**
+ * D9 (v4.3.0 fix wave 2P) — the PARTS `storedDateProblem` states: which column,
+ * and the raw (trimmed) value it holds. One rule, two sentences: the writers and
+ * the re-tag dialog state the sentence above; the trade editor — the one place
+ * the date can be corrected — states its own, because the browser shows a date
+ * input holding '9999-99-99' as BLANK, and the user must be told the field is
+ * not empty but unreadable. Null when both dates are readable or absent (a
+ * whitespace value is an unanswered field, not an unreadable one).
+ */
+export function unreadableStoredDate(t: { buyDate?: string | null; sellDate?: string | null }): { label: "buy date" | "sell date"; raw: string } | null {
   for (const [label, value] of [["buy date", t.buyDate], ["sell date", t.sellDate]] as const) {
     const raw = (value ?? "").trim();
-    if (raw !== "" && normalizeDate(raw) == null) return unreadableStoredDateMessage(label, raw);
+    if (raw !== "" && normalizeDate(raw) == null) return { label, raw };
   }
   return null;
 }

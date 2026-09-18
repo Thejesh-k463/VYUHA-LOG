@@ -7803,3 +7803,37 @@ whole file at one timestamp — id is the only order that survives). `tests/clos
 ₹5,903.23 · net ₹3,06,434.27 · 33 W / 9 L (78.6%) · charges leak 1.89%. At 5 lots the ₹17.50 PHOENIXLTD trade (#30) turns
 net-positive because the flat ₹40 brokerage is spread over five lots → 34 W / 8 L (81.0%), net ₹3,83,538.39; the owner asked for
 78.6%, so 4 lots. `scripts/seed-options-account.ts --lots N` sizes the what-if book; the live journal stays at one lot.
+
+## 2026-09-18 — v4.3.0 fix wave 2P BUILT (thirteenth session): D1–D12, the last fix wave of 4.3.0; no re-check follows it, by the owner's instruction
+
+**What was built.** The twelve designs of `wave2p-designs.md` as revised by `wave2p-design-review.md` (7 BUILD, 5 REVISE, every
+REVISE adopted verbatim; D7 NARROW — `calendarDaysHeld` at eight sites, the unreadable-lot throw in `closeStaleLot` recorded, not
+built; D11 with the extra `ipo_record_ghost` report code). Two builders in sequence (B2P-MTF-DATES D1–D9, then B2P-IDENTITY
+D10–D12), one seam pass, one gate. D1 a closed null-funded staged MTF ladder keeps its stored estimate through every door; D2 the
+accrual job skips a ladder it cannot price and still accrues every later row (`skipped` in its result); D3 a tiered broker's slab
+is read on the row's whole stated principal; D4 one day fold (`dayOf` / `sameDay`), the ladder's parent carries the ISO day, and
+the data fix `leg-trade-date-iso-v1` rewrites readable non-ISO leg dates; D5 one leg-count predicate (`legCountOf` / `hasLadder`);
+D6 the two MTF Data Quality codes share one 30-point cap (`capGroup`); D7 one day-count rule; D8 a blank exit date on either side
+is nobody's exit; D9 the editor states the stored-date problem and Save waits; D10 the restore message; D11 a ghost IPO reference
+is reported in the record's own book; D12 `plural()` in `lib/format.ts`.
+
+**Measured and accepted: per-leg paisa rounding of MTF interest.** The engine rounds per leg, the job rounds the whole: dhan 4L @
+13.49% × 19 d = 2808.88 per tranche, Σ 5617.76, against the job's 5617.75. `|Σ per-leg − job| ≤ 0.01 × (tranches − 1)` for
+same-day tranches is the pinned bound — the same accepted artefact as STT's (`lib/queries/staged.ts` header). Rejected: forcing the
+ladder to the job's figure (the remainder would have to be invented on one leg).
+
+**Two D1 sequences accepted, stated in the code comment.** A closed ladder re-opened by `deleteLeg` / `updateLeg` and re-closed
+BEFORE the job runs loses its estimate (edit-and-undo; 06-ANSWERS 2O Q-A); a closed row STATING a funded amount of 0 with a
+pre-2O estimate is released on its next rebuild — a stated 0 is a statement.
+
+**The session's own findings.** (1) The second builder was cut off by a usage limit while waiting on its gate; its code was
+complete — verified by reading the tree and running the gate, not by relaunching it. (2) Seven pins outside any builder's set
+moved and were moved by the orchestrator: fixF F33 (D9's sentence), fix1 S5 (a third data-fix name), fixH:1214 and
+wave2n-mtf:223 (D12's sentence), plus the seam tester's H12. (3) The README arithmetic the first builder used was off by one: this
+machine runs 22 owner-broker-file cases CI does not (9,548 local on `bf9e44a` against CI's 9,526), not 21.
+(4) `tests/seams-v42-fix2.test.ts` S7a timed out at 5 s once under a gate running beside two agents and passed alone — load, not
+a defect. (5) Seam-pass test-integrity finding, LOW, recorded: the five D8 route cases in `tests/ipo-charger-dates.test.ts` stay
+green with `lib/analytics/ipo-link.ts` reverted alone; the seam case H10 · 2P-S2 now covers that half through the route.
+Boundaries with no seam case: D10's message clause, D3's `slabBasis` through a tiered broker's job + ladder together.
+
+**Gate.** `npm run verify` EXIT 0 — 435 files / 9,638 passed / 35 skipped on the owner's machine (9,616 expected on CI; README says 9616 / 435); typecheck 0; lint 3 pre-existing warnings; build compiled.

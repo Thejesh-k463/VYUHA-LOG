@@ -17,7 +17,13 @@ export interface ChargeInputPaise {
   sellQty: number;
   buyOrderCount?: number;
   sellOrderCount?: number;
-  mtf?: { fundedAmount: number; daysHeld: number; pledgeScrips?: number } | null; // fundedAmount in paise
+  mtf?: {
+    fundedAmount: number; // paise
+    daysHeld: number;
+    pledgeScrips?: number;
+    slabBasis?: number; // paise — D3: the principal the slab is looked up on
+    carry?: { mtfInterest: number; pledgeCharges: number }; // paise — D1: stored money, billed as is
+  } | null;
 }
 
 export interface ChargeBreakdownPaise {
@@ -103,11 +109,22 @@ export function computeChargesPaise(input: ChargeInputPaise, rates: ChargeRates)
 
   let mtfInterest = 0;
   let pledgeCharges = 0;
-  if (input.segment === "eq_mtf" && input.mtf && input.mtf.fundedAmount > 0) {
-    const rate = mtfRateFor(toRupees(input.mtf.fundedAmount), rates);
-    mtfInterest = Math.round((input.mtf.fundedAmount * rate * Math.max(0, input.mtf.daysHeld)) / 365);
-    const scrips = input.mtf.pledgeScrips ?? 1;
-    pledgeCharges = Math.round((P(rates.pledgeCharge) + P(rates.unpledgeCharge)) * scrips);
+  if (input.segment === "eq_mtf" && input.mtf) {
+    if (input.mtf.carry) {
+      // D1 (wave 2P): a CLOSED null-funded ladder's stored estimate, carried as
+      // stored money — nothing is rated, nothing is estimated (owner ruling 2O
+      // row 1). The GST base below still covers this pledge, as it covers any.
+      mtfInterest = Math.round(input.mtf.carry.mtfInterest);
+      pledgeCharges = Math.round(input.mtf.carry.pledgeCharges);
+    } else if (input.mtf.fundedAmount > 0) {
+      // D3 (wave 2P): the slab is the broker's price for the SIZE of the book it
+      // finances, so it is looked up on `slabBasis` (a staged row's whole stated
+      // principal) when the caller states one; the interest is still on the SHARE.
+      const rate = mtfRateFor(toRupees(input.mtf.slabBasis ?? input.mtf.fundedAmount), rates);
+      mtfInterest = Math.round((input.mtf.fundedAmount * rate * Math.max(0, input.mtf.daysHeld)) / 365);
+      const scrips = input.mtf.pledgeScrips ?? 1;
+      pledgeCharges = Math.round((P(rates.pledgeCharge) + P(rates.unpledgeCharge)) * scrips);
+    }
   }
 
   const gst = Math.round(rates.gstPct * (brokerage + exchangeTxn + sebi + ipft + dpForGst + pledgeCharges));
@@ -130,7 +147,15 @@ export function computeCharges(input: ChargeInput, rates: ChargeRates): ChargeBr
       buyOrderCount: input.buyOrderCount,
       sellOrderCount: input.sellOrderCount,
       mtf: input.mtf
-        ? { fundedAmount: P(input.mtf.fundedAmount), daysHeld: input.mtf.daysHeld, pledgeScrips: input.mtf.pledgeScrips }
+        ? {
+            fundedAmount: P(input.mtf.fundedAmount),
+            daysHeld: input.mtf.daysHeld,
+            pledgeScrips: input.mtf.pledgeScrips,
+            ...(input.mtf.slabBasis != null ? { slabBasis: P(input.mtf.slabBasis) } : {}),
+            ...(input.mtf.carry
+              ? { carry: { mtfInterest: P(input.mtf.carry.mtfInterest), pledgeCharges: P(input.mtf.carry.pledgeCharges) } }
+              : {}),
+          }
         : null,
     },
     rates,

@@ -19,7 +19,7 @@ import {
   statesOwnCapital,
   type OpenPosition,
 } from "@/lib/analytics/positions";
-import { inr, inrCompact, num } from "@/lib/format";
+import { inr, inrCompact, num, plural } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 
 const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -258,7 +258,7 @@ export function TrackerClient({
                 ? [{
                     label: "MTF-funded positions",
                     value: `${positions.filter((p) => fundingSide(p) === "broker").length}`,
-                    hint: ownCap.unstatedWhy.unpriced > 0 ? `${ownCap.unstatedWhy.unpriced} MTF ${ownCap.unstatedWhy.unpriced === 1 ? "row states" : "rows state"} no funded amount yet` : undefined,
+                    hint: ownCap.unstatedWhy.unpriced > 0 ? `${plural(ownCap.unstatedWhy.unpriced, "MTF row states", "MTF rows state")} no funded amount yet` : undefined,
                   }]
                 : []),
             ],
@@ -308,7 +308,7 @@ export function TrackerClient({
             format="inrCompact"
             sub={
               mtfFunded.unstated > 0
-                ? `Accrued int. ${inrCompact(mtfInterest)} · ${mtfFunded.unstated} ${mtfFunded.unstated === 1 ? "row states" : "rows state"} no funding`
+                ? `Accrued int. ${inrCompact(mtfInterest)} · ${plural(mtfFunded.unstated, "row states", "rows state")} no funding`
                 : `Accrued int. ${inrCompact(mtfInterest)}`
             }
             valueClassName="text-grad-gold"
@@ -326,12 +326,12 @@ export function TrackerClient({
                 // is summed with anything (close-readers#2's arithmetic property).
                 { label: "Broker-funded", value: inr(mtfFunded.funded, { decimals: 0 }), tone: "loss", hint: `every MTF row that states funding — ${mtfFunded.stated} of ${mtfFunded.stated + mtfFunded.unstated}` },
                 { label: "Your own capital", value: inr(ownCap.total, { decimals: 0 }), hint: ownCapNote ?? undefined },
-                { label: "Effective leverage", value: ownCap.total > 0 ? `${((ownCap.total + ownCap.funded) / ownCap.total).toFixed(2)}×` : "—", hint: `over the ${ownCap.stating} ${ownCap.stating === 1 ? "row" : "rows"} that state own capital: ${inr(ownCap.funded, { decimals: 0 })} funded + ${inr(ownCap.total, { decimals: 0 })} own${ownCapNote ? ` · ${ownCapNote}` : ""}` },
+                { label: "Effective leverage", value: ownCap.total > 0 ? `${((ownCap.total + ownCap.funded) / ownCap.total).toFixed(2)}×` : "—", hint: `over the ${plural(ownCap.stating, "row that states", "rows that state")} own capital: ${inr(ownCap.funded, { decimals: 0 })} funded + ${inr(ownCap.total, { decimals: 0 })} own${ownCapNote ? ` · ${ownCapNote}` : ""}` },
                 // …and what those three left out is stated, never estimated.
                 ...(mtfRowsOut.length > 0
                   ? [{
                       label: "Not in these figures",
-                      value: `${mtfRowsOut.length} MTF ${mtfRowsOut.length === 1 ? "row" : "rows"}`,
+                      value: plural(mtfRowsOut.length, "MTF row", "MTF rows"),
                       hint: `${ownCapNote ?? ""}${outInterest > 0 ? ` · ${inr(outInterest, { decimals: 0 })} of interest on them is still counted below` : ""}`,
                     }]
                   : []),

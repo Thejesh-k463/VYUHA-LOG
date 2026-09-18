@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 
 /**
@@ -35,6 +35,7 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 let t: TempDb;
 let accrueMtfInterest: typeof import("@/lib/jobs/mtf-accrual").accrueMtfInterest;
 let staged: typeof import("@/lib/queries/staged");
+let commit: typeof import("@/lib/import/commit");
 
 // Measured locally 2026-09-15: migrate + seed + the one dynamic import ~1.6 s,
 // inside the 3 s local hook budget. The raised timeout is for the Windows runner
@@ -43,6 +44,7 @@ beforeAll(async () => {
   t = await openTempDb("mtf-accrual-unpriced", { seed: true });
   ({ accrueMtfInterest } = await import("@/lib/jobs/mtf-accrual"));
   staged = await import("@/lib/queries/staged");
+  commit = await import("@/lib/import/commit");
 }, 120_000);
 afterAll(() => t?.cleanup());
 
@@ -54,12 +56,12 @@ const funding = (id: number) => {
 };
 
 /** An OPEN Zerodha MTF buy leg, 1 Aug; the job below runs it to 20 Aug (19 days). */
-const openMtf = (symbol: string, qty: number, mtfFundedAmount: number | null) =>
+const openMtf = (symbol: string, qty: number, mtfFundedAmount: number | null, broker = "zerodha") =>
   t.db
     .insert(t.schema.trades)
     .values(
       tradeRow({
-        broker: "zerodha",
+        broker,
         segment: "eq_mtf",
         symbol,
         tradingsymbol: symbol,
@@ -259,5 +261,247 @@ describe("D6 — the accrual job never patches a staged parent; the ladder price
     expect(parentCharges(laddered)).toBe(legCharges(laddered));
     // …and re-running the job changes nothing (the ladder is idempotent).
     expect(accrueMtfInterest("2026-08-20").updated).toBe(0);
+  });
+});
+
+// ===========================================================================
+// v4.3.0 fix wave 2P — B2P-MTF-DATES (D1, D2, D3, D5)
+// ===========================================================================
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const legsOf = (id: number) => t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, id)).all();
+/** Σ of the ladder's own per-leg charges, which the parent must equal (invariant 5). */
+const ladderCharges = (id: number) => r2(legsOf(id).reduce((s, l) => s + l.chargesTotal, 0));
+/** [interest, pledge, charges, net] as stored. */
+const money = (id: number) => {
+  const r = row(id);
+  return [r.mtfInterest, r.pledgeCharges, r.chargesTotal, r.netPnl];
+};
+
+/**
+ * D1 (mtf-staged#0, a SILENT WRONG NUMBER — OWNER RULING 2O row 1: "leave the closed
+ * rows alone — no stored money on a closed trade moves without the owner's say-so").
+ *
+ * `updateManualTrade` hands a staged parent back to `rebuildStagedTrade` on every
+ * save, notes included (D20), and the ladder billed a null principal NOTHING (Q-A)
+ * — so a row closed BEFORE 4.3.0 with the old estimate stored (14 days on the 8,000
+ * estimate: 44.80 of interest, 30 of pledge, 5.40 of GST on that pledge = ₹80.20)
+ * was released by a save that touched only the notes: measured
+ * {before:[44.8,166.53,833.47], after:[0,86.33,913.67]}. The ruling protects all
+ * three heads. The rebuild now carries the STORED figures of a closed null-funded
+ * ladder through every door (`mtfCarry`), apportioned across the legs so that
+ * parent = Σ legs holds (invariant 5) and Σ shares is the stored figure to the
+ * paisa (invariant 1).
+ */
+describe("D1 — a CLOSED staged null-funded row keeps the estimate it stored before 4.3.0, through every door", () => {
+  const EXTRA = 80.2; // 44.80 interest + 30 pledge + 5.40 GST on the pledge
+  /**
+   * The finding's row: open 100 @100 on 1 Aug, converted, exited 100 @110 on 15 Aug
+   * — CLOSED at 0 interest under 4.3.0 — then the pre-4.3.0 ladder's state written
+   * over it: the estimate on the parent AND on the entry leg it billed it on.
+   */
+  const legacyClosedLadder = (symbol: string) => {
+    const id = openMtf(symbol, 100, null);
+    expect(staged.convertToStaged(id).ok).toBe(true);
+    expect(staged.addLeg({ tradeId: id, kind: "exit", tradeDate: "2026-08-15", qty: 100, price: 110, direction: "long" }).ok).toBe(true);
+    const fresh = row(id);
+    expect([fresh.isOpen, fresh.mtfFundedAmount, fresh.mtfInterest, fresh.pledgeCharges]).toEqual([false, null, 0, 0]);
+    expect(fresh.chargesTotal).toBe(ladderCharges(id));
+    const entry = legsOf(id).find((l) => l.kind === "entry")!;
+    t.db.update(t.schema.tradeLegs).set({ chargesTotal: r2(entry.chargesTotal + EXTRA) }).where(eq(t.schema.tradeLegs.id, entry.id)).run();
+    t.db
+      .update(t.schema.trades)
+      .set({ mtfInterest: 44.8, pledgeCharges: 30, gst: r2(fresh.gst + 5.4), chargesTotal: r2(fresh.chargesTotal + EXTRA), netPnl: r2(fresh.netPnl - EXTRA) })
+      .where(eq(t.schema.trades.id, id))
+      .run();
+    expect(row(id).chargesTotal, "the legacy state is internally consistent").toBe(ladderCharges(id));
+    return id;
+  };
+
+  it("(1) a notes-only editor save moves nothing: interest, pledge, charges and net stand, parent = Σ legs", () => {
+    const id = legacyClosedLadder("D1NOTES");
+    const before = money(id);
+    expect(before.slice(0, 2)).toEqual([44.8, 30]);
+
+    const res = commit.updateManualTrade(id, { notes: "journal only" });
+    expect([res.ok, res.message]).toEqual([true, "Trade updated."]);
+
+    // THE assertion (on revert: [0, 0, before[2] − 80.2, before[3] + 80.2] — the
+    // estimate released by a save that touched only the notes).
+    expect(money(id), "a closed row's stored money moved on a notes-only save").toEqual(before);
+    expect(row(id).chargesTotal).toBe(ladderCharges(id));
+    expect(row(id).notes).toBe("journal only");
+    // …and a second save is idempotent.
+    expect(commit.updateManualTrade(id, { notes: "journal only, again" }).ok).toBe(true);
+    expect(money(id)).toEqual(before);
+  });
+
+  it("(2) a leg NOTE edit on the same row moves nothing either", () => {
+    const id = legacyClosedLadder("D1LEGNOTE");
+    const before = money(id);
+    const entry = legsOf(id).find((l) => l.kind === "entry")!;
+    expect(staged.updateLeg(entry.id, { note: "why I bought" }, "long").ok).toBe(true);
+    expect(money(id)).toEqual(before);
+    expect(row(id).chargesTotal).toBe(ladderCharges(id));
+  });
+
+  it("(2b) a leg PRICE edit re-prices the statutory heads (the user's act) and keeps the carried interest and pledge", () => {
+    const id = legacyClosedLadder("D1LEGPRICE");
+    const before = row(id);
+    const exit = legsOf(id).find((l) => l.kind === "exit")!;
+    expect(staged.updateLeg(exit.id, { price: 120 }, "long").ok).toBe(true);
+    const after = row(id);
+    expect([after.mtfInterest, after.pledgeCharges], "the carry stays").toEqual([44.8, 30]);
+    expect(after.grossPnl, "the fill really moved").toBe(2000);
+    expect(after.sttCtt, "…and the statutory heads with it").not.toBe(before.sttCtt);
+    expect(after.chargesTotal).toBe(ladderCharges(id));
+  });
+
+  it("(3) two job runs leave it untouched — a closed row is never selected", () => {
+    const id = legacyClosedLadder("D1JOB");
+    const before = money(id);
+    expect(accrueMtfInterest("2026-08-20").updated).toBe(0);
+    expect(accrueMtfInterest("2026-08-20").updated).toBe(0);
+    expect(money(id)).toEqual(before);
+  });
+
+  it("(4) a closed null-funded row storing 0/0 gets no carry and stays 0", () => {
+    const id = openMtf("D1ZERO", 100, null);
+    expect(staged.convertToStaged(id).ok).toBe(true);
+    expect(staged.addLeg({ tradeId: id, kind: "exit", tradeDate: "2026-08-15", qty: 100, price: 110, direction: "long" }).ok).toBe(true);
+    const before = money(id);
+    expect(before.slice(0, 2)).toEqual([0, 0]);
+    expect(commit.updateManualTrade(id, { notes: "n" }).ok).toBe(true);
+    expect(money(id)).toEqual(before);
+  });
+
+  it("(6) an OPEN legacy row closed by an exit leg is NOT protected: it closes at 0 (Q-A)", () => {
+    const id = openMtf("D1OPENCLOSE", 100, null);
+    expect(staged.convertToStaged(id).ok).toBe(true);
+    const entry = legsOf(id)[0];
+    t.db.update(t.schema.tradeLegs).set({ chargesTotal: 71.38 }).where(eq(t.schema.tradeLegs.id, entry.id)).run();
+    t.db.update(t.schema.trades).set({ mtfInterest: 71.38, chargesTotal: 71.38, netPnl: -71.38 }).where(eq(t.schema.trades.id, id)).run();
+    expect(staged.addLeg({ tradeId: id, kind: "exit", tradeDate: "2026-08-15", qty: 100, price: 110, direction: "long" }).ok).toBe(true);
+    expect([row(id).isOpen, row(id).mtfInterest, row(id).pledgeCharges]).toEqual([false, 0, 0]);
+    expect(row(id).chargesTotal).toBe(ladderCharges(id));
+  });
+
+  it("(7) convertToStaged on a CLOSED flat legacy null-funded row keeps closePosition's old estimate", () => {
+    const id = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", segment: "eq_mtf", symbol: "D1FLAT", tradingsymbol: "D1FLAT",
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", buyOrderCount: 1,
+          sellQty: 100, avgSellPrice: 110, sellValue: 11000, sellDate: "2026-08-15", sellOrderCount: 1,
+          isOpen: false, mtfFundedAmount: null, grossPnl: 1000,
+          mtfInterest: 44.8, pledgeCharges: 30, gst: 5.4, chargesTotal: 166.53, netPnl: 833.47,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    expect(staged.convertToStaged(id).ok).toBe(true);
+    // THE assertion (on revert: [0, 0] — the conversion released the estimate).
+    expect([row(id).mtfInterest, row(id).pledgeCharges]).toEqual([44.8, 30]);
+    expect(row(id).chargesTotal).toBe(ladderCharges(id));
+    expect(row(id).isOpen).toBe(false);
+  });
+});
+
+/**
+ * D3 (mtf-staged#2, pre-existing) — a TIERED broker's slab is evaluated on the
+ * row's whole stated principal, so a staged Dhan row stating 8,00,000 in two
+ * same-day tranches bills (to the per-leg paisa rounding the ladder's header
+ * accepts) what its flat twin bills through the job: 13.49%, not 12.49% twice.
+ */
+describe("D3 — a staged dhan row stating 8,00,000 in two same-day tranches ≡ its flat twin through the job", () => {
+  it("Σ per-leg is within a paisa per extra tranche of the job's whole-leg figure (was ₹416.43 under)", () => {
+    const laddered = openMtf("D3STAGED", 4000, 800000, "dhan");
+    expect(staged.convertToStaged(laddered).ok).toBe(true);
+    expect(staged.addLeg({ tradeId: laddered, kind: "entry", tradeDate: "2026-08-01", qty: 4000, price: 100, direction: "long" }).ok).toBe(true);
+    const flat = openMtf("D3FLAT", 8000, 800000, "dhan");
+
+    accrueMtfInterest("2026-08-20");
+
+    expect(row(flat).mtfInterest, "the job: 8,00,000 × 13.49% × 19 ÷ 365").toBe(5617.75);
+    // THE assertion (on revert: 5201.32 — each 4,00,000 share at the ≤5L slab).
+    expect(row(laddered).mtfInterest).toBe(5617.76);
+    expect(r2(Math.abs(row(laddered).mtfInterest - row(flat).mtfInterest))).toBeLessThanOrEqual(0.01);
+    expect(row(laddered).chargesTotal).toBe(ladderCharges(laddered));
+  });
+});
+
+/**
+ * D5 (mtf-staged#4) — the job asked no leg-count question before rebuilding a
+ * `staged` row: `validateLegs([])` returns no problem, so a staged-flagged row
+ * with ZERO legs was rewritten from an EMPTY ladder on every /equity render
+ * (`buyQty / buyValue / chargesTotal / netPnl → 0`). One predicate (`legCountOf`)
+ * for the job and the six editor-side sites; such a row is left exactly as it is
+ * and counted in D2's `skipped`.
+ */
+describe("D5 — a staged-flagged row with no legs is left exactly as it is, and counted as skipped", () => {
+  it("the finding's row is byte-identical after the job", () => {
+    const id = t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          broker: "zerodha", segment: "eq_mtf", symbol: "D5NOLEGS", tradingsymbol: "D5NOLEGS", staged: true,
+          buyQty: 100, avgBuyPrice: 100, buyValue: 10000, buyDate: "2026-08-01", buyOrderCount: 1,
+          isOpen: true, mtfFundedAmount: 5000, chargesTotal: 20, netPnl: -20,
+        }),
+      )
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const before = row(id);
+    const shape = () => {
+      const r = row(id);
+      return [r.buyQty, r.buyValue, r.isOpen, r.chargesTotal, r.mtfFundedAmount];
+    };
+    expect(shape()).toEqual([100, 10000, true, 20, 5000]);
+
+    const res = accrueMtfInterest("2026-08-20");
+
+    // THE assertion (on revert: [0, 0, true, 0, 5000] — rewritten from an empty ladder).
+    expect(shape()).toEqual([100, 10000, true, 20, 5000]);
+    expect(row(id)).toEqual(before);
+    expect(res.skipped, "the skip is observable").toBe(1);
+  });
+});
+
+/**
+ * D2 (mtf-staged#1, medium) — `findRates` THROWS when no eq_mtf epoch covers
+ * `today` for a staged row's broker, and the staged branch had no try/catch (the
+ * flat branch has one): the throw escaped `accrueMtfInterest`, /equity swallowed
+ * it, and NO row after the failing one accrued — flat rows with a STATED
+ * principal included — with nothing on screen. The staged branch now takes the
+ * flat branch's guard: the row is left exactly as it is (accruing at a
+ * neighbouring rate would invent a number, invariant 6), the loop continues, and
+ * the skip is counted. LAST in this file: it deletes upstox's eq_mtf rates.
+ */
+describe("D2 — the job survives a staged row it cannot price, and every later row still accrues", () => {
+  it("upstox-staged (no epoch) then zerodha-flat: no throw, zerodha 30.40, skipped + 1, the upstox row byte-identical", () => {
+    const ups = openMtf("D2UPSTOX", 100, 4000, "upstox");
+    expect(staged.convertToStaged(ups).ok).toBe(true);
+    // A run while the epoch exists: the baseline skip count of this database.
+    const baseline = accrueMtfInterest("2026-08-20");
+    const upsBefore = row(ups);
+    expect(upsBefore.mtfInterest).toBeGreaterThan(0);
+
+    t.db
+      .delete(t.schema.chargeConfig)
+      .where(and(eq(t.schema.chargeConfig.broker, "upstox"), eq(t.schema.chargeConfig.segment, "eq_mtf")))
+      .run();
+    const zer = openMtf("D2ZERODHA", 100, 4000);
+
+    // THE assertion (on revert: throws "No charge_config for upstox / default / eq_mtf / NSE"
+    // and the zerodha row reads 0).
+    let res: ReturnType<typeof accrueMtfInterest> | undefined;
+    expect(() => { res = accrueMtfInterest("2026-08-20"); }).not.toThrow();
+    expect(row(zer).mtfInterest, "the row AFTER the failing one still accrues").toBe(30.4);
+    expect(res!.skipped).toBe(baseline.skipped + 1);
+    expect(row(ups), "the unpriceable row is left exactly as it was").toEqual(upsBefore);
+    // Idempotent: the same again.
+    const again = accrueMtfInterest("2026-08-20");
+    expect([again.updated, again.skipped]).toEqual([0, baseline.skipped + 1]);
   });
 });

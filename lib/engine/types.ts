@@ -198,6 +198,21 @@ export interface ChargeInput {
     fundedAmount: number;
     daysHeld: number;
     pledgeScrips?: number;
+    /**
+     * D3 (v4.3.0 wave 2P): the principal the broker's SLAB is evaluated on, when
+     * it is not `fundedAmount` — a staged ladder bills each tranche its share of
+     * the row's stated principal, at the rate the WHOLE principal earns. Absent,
+     * the slab is looked up on `fundedAmount` (every flat caller).
+     */
+    slabBasis?: number;
+    /**
+     * D1 (v4.3.0 wave 2P, owner ruling 2O row 1): the interest and pledge a
+     * CLOSED null-funded ladder stored before 4.3.0, carried through a rebuild
+     * as stored money rather than re-estimated or released. When present the
+     * engine bills exactly these two figures and consults no rate; GST still
+     * covers the carried pledge through the one base that knows what GST covers.
+     */
+    carry?: { mtfInterest: number; pledgeCharges: number };
   } | null;
 }
 

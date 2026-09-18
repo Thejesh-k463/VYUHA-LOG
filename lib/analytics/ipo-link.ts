@@ -33,7 +33,7 @@
  */
 
 import { isPriceableExitDate } from "@/lib/analytics/ipo";
-import { normalizeDate } from "@/lib/domain/trading-day";
+import { dayOf } from "@/lib/domain/trading-day";
 
 export interface IpoLinkInput {
   /** Issue price per share actually applied at. */
@@ -220,11 +220,14 @@ const sameNumber = (a: number, b: number) => Math.abs(a - b) < 1e-9;
  * `linkedSyncFor` dropped from 'sync' to 'refuse' and an exit-PRICE correction was
  * answered 409 where the pre-wave route saved it and synced (dates-charges#0).
  *
- * `?? v` keeps a value the calendar cannot read AS IT IS, so a byte-identical
+ * The fold keeps a value the calendar cannot read AS IT IS, so a byte-identical
  * unreadable pair still compares equal exactly as before, and the fold is
  * idempotent for the already-ISO value the route hands in.
+ *
+ * D4 / D8 (wave 2P): the fold is `dayOf` in `lib/domain/trading-day` — ONE copy,
+ * shared with the route and the editor — and a BLANK states no day (null), where
+ * the private copy here handed '' back as ''.
  */
-const dayOf = (v: string | null | undefined): string | null => (v == null ? null : normalizeDate(v) ?? v);
 
 /**
  * X1 (v4.3.0 wave 2H seam fix 5): is this trade's sell leg exactly the exit this
@@ -236,14 +239,22 @@ const dayOf = (v: string | null | undefined): string | null => (v == null ? null
  *
  * D13 (wave 2O): the two dates are compared as the DAYS they state (`dayOf`), not
  * as strings — D2's own rule at the seam D2 did not walk.
+ *
+ * D8 (wave 2P): a BLANK on EITHER side is nobody's exit. The sync never writes a
+ * close without a readable date (`syncClosesUndated` refuses it), so a dateless
+ * sale cannot be the sync's own — and reading (null, null) as "the same day"
+ * turned a notes-only save over such a pair into a 400 "needs a readable exit
+ * date" on a write the save never meant to make. An unreadable byte-identical
+ * pair still compares equal (Y2). `ignoreDate` is unchanged.
  */
 export function sellLegIsIpoExit(i: IpoLinkInput, trade: LinkedSellLeg, ignoreDate = false): boolean {
   const p = tradePatchFromIpo(i);
   if (!p || p.sellQty == null || p.avgSellPrice == null) return false;
+  const soldOn = dayOf(trade.sellDate);
   return (
     sameNumber(Number(trade.sellQty) || 0, p.sellQty) &&
     sameNumber(Number(trade.avgSellPrice) || 0, p.avgSellPrice) &&
-    (ignoreDate || dayOf(trade.sellDate) === dayOf(p.sellDate))
+    (ignoreDate || (soldOn != null && soldOn === dayOf(p.sellDate)))
   );
 }
 

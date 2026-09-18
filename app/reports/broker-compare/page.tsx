@@ -1,4 +1,4 @@
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso, calendarDaysHeld } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,13 +21,6 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-// T+1 settlement start through the day before sale proceeds settle = exactly
-// (end − buyDate) calendar days — confirmed against Dhan's MTF documentation.
-function heldDays(buyDate: string | null, sellDate: string | null, today: string): number {
-  if (!buyDate) return 0;
-  const end = sellDate ?? today;
-  return Math.max(0, Math.floor((new Date(end).getTime() - new Date(buyDate).getTime()) / 86400000));
-}
 
 export default function BrokerComparePage() {
   const today = todayIstIso();
@@ -74,7 +67,10 @@ export default function BrokerComparePage() {
             // counting it would drop the row's priceable brokerage and STT as well
             // and blank `cheapest` / `maxSaving` for the whole report.
             fundedAmount: t.mtfFundedAmount ?? 0,
-            daysHeld: heldDays(t.buyDate, t.sellDate, today),
+            // D7 (wave 2P): the ONE day count every writer prices by (T+1 through
+            // settlement, lib/domain/trading-day); an open row is held to today, and
+            // a stored date that states no day counts zero rather than NaN.
+            daysHeld: calendarDaysHeld(t.buyDate, t.sellDate ?? today),
             pledgeScrips: 1,
           }
         : null,

@@ -5,6 +5,7 @@ import {
   assessDataQuality,
   crossAccountIssues,
   ipoAskPairs,
+  ipoOrphanGroupNote,
   ipoOrphanNote,
   ipoOrphanPairs,
   ipoRecordMatchesHolding,
@@ -1385,5 +1386,111 @@ describe("D10 — a closed MTF row's unrecorded funding is its own INFO item, wi
     // disclosure the user may never act on (the counted-once#3 lesson, wave 2L).
     expect(scoreIssues(r.issues)).toBe(76);
     expect(r.score).toBe(76);
+  });
+
+  /**
+   * D6 (v4.3.0 fix wave 2P, mtf-staged#5) — the two MTF codes share ONE 30-point
+   * cap. `info` halved the closed code's RATE, not the ceiling: 15 closed rows reach
+   * their own 30-point cap, so an imported MTF book of 5 open + 15 closed unpriced
+   * rows scored 40 where the pre-2O single issue over the same 20 rows scored 70.
+   * `scoreIssues` now caps per `capGroup ?? code`; the split changed the copy and
+   * the href, not the score.
+   */
+  it("D6 · 5 open + 15 closed unpriced MTF rows cost ONE cap (30), not two: score 70", () => {
+    const book = [
+      ...[1, 2, 3, 4, 5].map(openUnpriced),
+      ...[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(closedUnpriced),
+    ];
+    const r = assessDataQuality(inputs({ trades: book }));
+    expect([find(r, "mtf_funding")!.count, find(r, "mtf_funding_closed")!.count]).toEqual([5, 15]);
+    // THE assertion (on revert: 40 — min(30, 30) + min(30, 30) = 60 off).
+    expect(scoreIssues(r.issues)).toBe(70);
+    expect(r.score).toBe(70);
+    // The page re-scores `report.issues ∪ crossAccountIssues` (app/data-quality/page.tsx);
+    // a cross-account issue carries no capGroup, so it is a group of one, as before.
+    const pageIssues = [...r.issues, ...crossAccountIssues({ duplicateConnections: [connGroup()], duplicateTradeGroups: [tradeGroup()] })];
+    expect(scoreIssues(pageIssues)).toBe(70 - 12 - 24);
+    // 0 + 20 and 20 + 0 reach the same ceiling; 0 + 5 costs 10.
+    expect(assessDataQuality(inputs({ trades: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25].map(closedUnpriced) })).score).toBe(70);
+    expect(assessDataQuality(inputs({ trades: [1, 2, 3, 4, 5].map(openUnpriced) })).score).toBe(70);
+    expect(assessDataQuality(inputs({ trades: [6, 7, 8, 9, 10].map(closedUnpriced) })).score).toBe(90);
+  });
+
+  it("D6 · ONLY the two mtf_funding* codes carry a capGroup — no later issue inherits a cap by accident", () => {
+    const everything = assessDataQuality(
+      inputs({
+        trades: [
+          openUnpriced(1),
+          closedUnpriced(2),
+          trade({ id: 3, acquisition: "ipo", acquisitionPrice: null }),
+          trade({ id: 4, instrumentType: "option", expiry: null }),
+          trade({ id: 5, isOpen: true, closingPrice: null, slPlanned: null, riskAmount: null, symbol: "ZZZ" }),
+        ],
+        staleMtmCount: 2,
+        missingAttachmentFiles: 1,
+      }),
+    );
+    expect(everything.issues.length).toBeGreaterThan(4);
+    const grouped = everything.issues.filter((x) => x.capGroup != null).map((x) => [x.code, x.capGroup]);
+    expect(grouped).toEqual([
+      ["mtf_funding", "mtf_funding"],
+      ["mtf_funding_closed", "mtf_funding"],
+    ]);
+  });
+});
+
+/**
+ * D11 (v4.3.0 fix wave 2P, re-check finding identity#1) — a record whose
+ * reference names NO row in the journal (`holdingRef` set: the DB reader's LEFT
+ * JOIN found no trade) is a QUESTION candidate and never a RESTORE's: a restore
+ * that re-pointed it would break the D4-of-2O envelope rule (a Trash-resident
+ * holding restored later makes the link live again by identity). Its own book
+ * raises `ipo_record_ghost` — info, no `capGroup` (D6's "only two codes" pin),
+ * `count` = ghosts, `ids` = record ids, href /ipos — whether or not any holding
+ * is a candidate, with the copy saying where the holding is.
+ */
+describe("D11 · a record whose reference names no row in the journal (holdingRef)", () => {
+  const held = (id: number, over: Partial<QualityTrade> = {}) =>
+    trade({ id, acquisition: "ipo", acquisitionPrice: 100, accountId: 7, symbol: "GHOSTCO", tradingsymbol: "GHOSTCO", buyQty: 10, sellQty: 10, ...over });
+  const rec = (id: number, over: Partial<IpoRecordFacts> = {}): IpoRecordFacts =>
+    ({ id, accountId: 7, name: "GHOSTCO", allottedQty: 10, allotted: true, exitPrice: 150, ...over });
+  const ghost = (id: number, holdingInTrash: boolean) => rec(id, { holdingRef: 77, holdingInTrash });
+
+  it("is a QUESTION candidate (marked, matched) and NOT a uniqueIpoRelinks candidate", () => {
+    expect(ipoAskPairs([held(3)], [ghost(12, false)]).map((p) => [p.tradeId, p.recordIds, p.matched])).toEqual([[3, [12], [true]]]);
+    // THE assertion (on revert: [{ tradeId: 3, ipoId: 12 }] — a write onto a reference the restore must keep).
+    expect(uniqueIpoRelinks([held(3)], [ghost(12, false)])).toEqual([]);
+    expect(uniqueIpoRelinks([held(3)], [ghost(12, true)])).toEqual([]);
+    expect(uniqueIpoRelinks([held(3)], [rec(12)]), "the same record with no reference is written").toEqual([{ tradeId: 3, ipoId: 12 }]);
+    // A ghost beside a genuinely unlinked record does not make the pairing ambiguous for the restore:
+    // it was never the restore's to weigh (the DB reader hands the restore `isNull(trade_id)` rows only).
+    expect(uniqueIpoRelinks([held(3)], [rec(12), ghost(13, false)])).toEqual([{ tradeId: 3, ipoId: 12 }]);
+  });
+
+  it("the two copy variants travel through the pair note, per ghost candidate", () => {
+    const inTrash = ipoOrphanNote(ipoAskPairs([held(3)], [ghost(12, true)])[0]);
+    expect(inTrash).toContain("#12 GHOSTCO names holding #77, now in Deleted items — restore that envelope to re-link them; until then its exit is counted from the record itself.");
+    const gone = ipoOrphanNote(ipoAskPairs([held(3)], [ghost(12, false)])[0]);
+    expect(gone).toContain(
+      "#12 GHOSTCO names holding #77, no longer in the journal; its exit is counted from the record itself — if the holding was entered again, the two state one sale twice: link them on IPOs when both are in one book, otherwise remove one.",
+    );
+    expect(ipoOrphanNote(ipoAskPairs([held(3)], [rec(12)])[0]), "a record with no reference says nothing about one").not.toContain("names holding");
+    // Grouped (no candidate matches): the same clause once per ghost record.
+    const grouped = ipoOrphanGroupNote(ipoAskPairs([held(3, { symbol: "OTHER", tradingsymbol: "OTHER" })], [ghost(12, true)]));
+    expect(grouped).toContain("#12 GHOSTCO names holding #77, now in Deleted items");
+  });
+
+  it("ipo_record_ghost: info, no capGroup, count = ghosts, ids = record ids, href /ipos — raised with NO holding in the book", () => {
+    const r = assessDataQuality(inputs({ trades: [], unlinkedIpoRecords: [ghost(12, true), ghost(13, false), rec(14)] }));
+    const issue = find(r, "ipo_record_ghost");
+    expect(issue).toBeDefined();
+    expect([issue!.severity, issue!.capGroup, issue!.count, issue!.ids, issue!.href]).toEqual(["info", undefined, 2, [12, 13], "/ipos"]);
+    expect(issue!.detail).toContain("#12 GHOSTCO names holding #77, now in Deleted items");
+    expect(issue!.detail).toContain("#13 GHOSTCO names holding #77, no longer in the journal");
+    expect(issue!.detail, "the genuinely unlinked record is not a ghost").not.toContain("#14");
+    // A book with no ghost raises nothing, and the score is untouched.
+    const none = assessDataQuality(inputs({ trades: [], unlinkedIpoRecords: [rec(14)] }));
+    expect(find(none, "ipo_record_ghost")).toBeUndefined();
+    expect([none.score, r.score]).toEqual([100, 96]);
   });
 });

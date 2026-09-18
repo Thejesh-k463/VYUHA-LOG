@@ -1229,6 +1229,57 @@ describe("IPO-EXITDATE · an unreadable exit date is refused on the way in and s
     expect([r.isOpen, r.sellQty, r.sellValue, r.grossPnl]).toEqual([true, 0, 0, 0]);
     expect([r.chargesTotal, r.sttCtt, r.brokerage, r.mtfInterest]).toEqual([40, 0, 0, 40]);
   });
+
+  /**
+   * D8 (v4.3.0 fix wave 2P, dates-charges-ask#2, pre-existing) — the route's
+   * private `day()` fold handed '' back as '' while `strOrNull(body.exitDate)`
+   * made the request's side null, so `samePatch` read a stored blank exit date
+   * beside the form's null as a DIFFERENT sale: a notes-only save of a record
+   * linked to a closed holding sold another day was a 409 "The linked holding has
+   * a sale recorded in Trades…" (the L3 no-way-out class). The fold is now `dayOf`
+   * (lib/domain/trading-day) on both sides — a blank states no day — so the 409
+   * is reserved for a save that changes what the sync would write. The save
+   * stores null in place of the blank: the row heals on its first save.
+   */
+  it.each([["''", ""], ["' '", " "], ["'\\t'", "\t"]])(
+    "D8 · a stored %s exit date beside a closed holding sold another day: a notes-only save is 200 'left as it is', the record's date null after",
+    async (_label, blank) => {
+      const sym = `D8-BLANK-${blank.length}${blank === "\t" ? "T" : ""}`;
+      const held = openTrade(sym, { isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", grossPnl: 500, chargesTotal: 2.06, netPnl: 497.94 });
+      const before = tradeRow(held);
+      const id = legacy(sym, blank, { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: held });
+
+      const res = await post(formPayload(id, sym, { exitPrice: "150", exitDate: blank, notes: "n" }));
+      // THE assertion (on revert: 409 "The linked holding has a sale recorded in Trades…").
+      const body = (await res.json()) as { ok: boolean; message: string };
+      expect([res.status, body.ok], body.message).toEqual([200, true]);
+      expect(body.message).toContain("was left as it is");
+      expect(tradeRow(held), "the holding byte-identical").toEqual(before);
+      expect(named(sym).map((r) => [r.notes, r.exitDate])).toEqual([["n", null]]);
+    },
+  );
+
+  it("D8 · the control: an exit-PRICE change over that same sale is still a 409", async () => {
+    const held = openTrade("D8-CONTROL", { isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: "2026-03-02", grossPnl: 500, netPnl: 500 });
+    const before = tradeRow(held);
+    const id = legacy("D8-CONTROL", "", { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: held });
+    const res = await post(formPayload(id, "D8-CONTROL", { exitPrice: "160", exitDate: "", notes: "n" }));
+    expect(res.status).toBe(409);
+    expect(tradeRow(held)).toEqual(before);
+    expect(named("D8-CONTROL").map((r) => [r.notes, r.exitPrice])).toEqual([[null, 150]]);
+  });
+
+  it("D8 · a holding sold on a whitespace day beside a dateless record: nobody's exit, so a notes-only save is 'leave' → 200", async () => {
+    const held = openTrade("D8-WS-HOLDING", { isOpen: false, sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: " ", grossPnl: 500, netPnl: 500 });
+    const before = tradeRow(held);
+    const id = legacy("D8-WS-HOLDING", null as unknown as string, { exitPrice: 150, listingPrice: 130, allotmentDate: "2019-01-10", tradeId: held });
+    const res = await post(formPayload(id, "D8-WS-HOLDING", { exitPrice: "150", exitDate: "", notes: "n" }));
+    // The review's sequence: reading (blank, null) as "the same day" made this a
+    // 'sync' and then a 400 "needs a readable exit date" on a notes-only save.
+    expect(res.status).toBe(200);
+    expect(tradeRow(held)).toEqual(before);
+    expect(named("D8-WS-HOLDING").map((r) => r.notes)).toEqual(["n"]);
+  });
 });
 
 /**

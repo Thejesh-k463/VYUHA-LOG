@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { trades, tradeLegs, ipos as iposTable } from "@/lib/db/schema";
+import { trades, ipos as iposTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { commitManualTrade, applyOverride, closePosition, updateManualTrade, type UpdateTradeFields } from "@/lib/import/commit";
 import { deleteTradesByIds, deleteImportBatch } from "@/lib/queries/delete";
@@ -22,6 +22,7 @@ import {
   deleteLeg,
   applyStopToOpenTranches,
   convertToStaged,
+  hasLadder,
 } from "@/lib/queries/staged";
 
 export type ActionState = {
@@ -277,13 +278,20 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
   const id = Number(formData.get("tradeId"));
   if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
 
+  // D9 (v4.3.0 wave 2P) — a date field ABSENT from the form (a stale tab, a
+  // non-dialog client) is "not mentioned" (`undefined` in UpdateTradeFields), not
+  // "clear this": the stored date is kept and a stored value that states no day
+  // takes D17's refusal instead of being silently cleared and re-priced. A BLANK
+  // field still clears, as every other field does. The rule is dates-only by
+  // design: an absent `sellQty` still resolves to 0 through `num()` and re-opens
+  // the row, so a stale tab is not otherwise safe.
   const fields: UpdateTradeFields = {
     buyQty: num(formData.get("buyQty")),
     avgBuyPrice: num(formData.get("avgBuyPrice")),
-    buyDate: str(formData.get("buyDate")),
+    buyDate: formData.has("buyDate") ? str(formData.get("buyDate")) : undefined,
     sellQty: num(formData.get("sellQty")),
     avgSellPrice: num(formData.get("avgSellPrice")),
-    sellDate: str(formData.get("sellDate")),
+    sellDate: formData.has("sellDate") ? str(formData.get("sellDate")) : undefined,
     slPlanned: num(formData.get("slPlanned")) || null,
     trailingSl: num(formData.get("trailingSl")) || null,
     targetPlanned: num(formData.get("targetPlanned")) || null,
@@ -579,7 +587,8 @@ export async function pushTradeToIpoAction(_prev: ActionState, formData: FormDat
   // allotment with no knowledge of legs and no leg write, so a staged holding
   // would stop being the sum of its ladder. Refused at both doors (the other is
   // POST /api/ipos), in the shape closePosition's own STAGED refusal uses.
-  if (row.staged || db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, id)).all().length > 0) {
+  // D5 (wave 2P): the ONE leg-count predicate (`hasLadder`, lib/queries/staged).
+  if (hasLadder(row, id)) {
     return {
       ok: false,
       code: "STAGED",

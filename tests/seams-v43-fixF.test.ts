@@ -3339,7 +3339,7 @@ describe("F33 · a legacy row whose stored sell date is not a calendar day, open
     const html = renderToStaticMarkup(React.createElement(Dialog, null, React.createElement(EditTradeDialog, { trade: w, onDone: () => {} })));
     const sentence = unescape(html).includes("is not a real calendar day");
     expect(sentence, "the refusal is rendered, derived — no state, no effect").toBe(true);
-    expect(unescape(html)).toContain("The sell date “2026-02-31” is not a real calendar day");
+    expect(unescape(html)).toContain("This trade's stored sell date “2026-02-31” is not a real calendar day, so the field shows blank. Enter the day it was to save this trade.");
     expect(unescape(html), "…and no live figure beside it").not.toContain("Brokerage");
 
     // 3. The SAVE, through the real action, on the same value the form holds.

@@ -310,11 +310,41 @@ describe("linkedSyncFor — a holding with a sale recorded in Trades is never re
     expect(sellLegIsIpoExit(folded, { ...legacySale, sellDate: "2026-02-21" })).toBe(false);
     expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: "2026-02-30" }, { ...legacySale, sellDate: "2026-02-30" })).toBe(true);
     expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: "2026-02-30" }, { ...legacySale, sellDate: null })).toBe(false);
-    // Neither side states a day at all: the quantity and price decide, as before.
-    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: null }, { ...legacySale, sellDate: null })).toBe(true);
+    // PIN MOVED — D8 (wave 2P): neither side states a day → NOBODY's exit. The sync
+    // never writes a close without a readable date (`syncClosesUndated` refuses it),
+    // so a dateless sale cannot be the sync's own; reading (null, null) as "the same
+    // day" sent a notes-only save over such a pair to that 400 (was: true).
+    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: null }, { ...legacySale, sellDate: null })).toBe(false);
     // A sale corrected in Trades to ANOTHER day is still not the exit — the
     // recorded Y2 gap this design does not re-open (DECISIONS 7421-7423).
     expect(linkedSyncFor({ stored: folded, next: { ...folded, exitPrice: 160 }, trade: { ...legacySale, sellDate: "12-03-2026" } })).toBe("refuse");
+  });
+
+  /**
+   * D8 (v4.3.0 fix wave 2P, dates-charges-ask#2) — a BLANK states no day, on both
+   * sides. The route's private fold handed '' back as '', so a stored '' exit date
+   * beside the null the form sends compared unequal in `samePatch` and a
+   * notes-only save was a 409 "sale recorded in Trades". Now the fold is the one
+   * `dayOf` (lib/domain/trading-day): blank → null, and a blank on EITHER side of
+   * `sellLegIsIpoExit` is nobody's exit.
+   */
+  it("D8 · a blank exit date is the same absence as null; a blank on either side is nobody's exit", () => {
+    // THE assertion (on revert: 'refuse' — the 409 on a save that changed only the notes).
+    expect(linkedSyncFor({ stored: { ...unsold, exitDate: "" }, next: { ...unsold, exitDate: null }, trade: soldInTrades })).toBe("leave");
+    expect(linkedSyncFor({ stored: { ...unsold, exitDate: " " }, next: { ...unsold, exitDate: null }, trade: soldInTrades })).toBe("leave");
+    // …while a real change over the same sale is still refused.
+    expect(linkedSyncFor({ stored: { ...unsold, exitDate: "" }, next: { ...unsold, exitDate: null, exitPrice: 160 }, trade: soldInTrades })).toBe("refuse");
+
+    // A holding sold on a blank day beside a record with no exit day: qty and price
+    // match, yet nobody's exit — the sync cannot have written a dateless close.
+    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: null }, { ...soldInTrades, sellDate: " " })).toBe(false);
+    expect(sellLegIsIpoExit({ ...soldOnIpos, exitDate: "" }, { ...soldInTrades, sellDate: "2026-03-02" })).toBe(false);
+    // …so `linkedSyncFor` answers 'leave' for a notes-only save over that pair, not 'sync'.
+    const blankHolding = { ...soldInTrades, sellDate: " " };
+    const dateless = { ...soldOnIpos, exitDate: null };
+    expect(linkedSyncFor({ stored: dateless, next: dateless, trade: blankHolding })).toBe("leave");
+    // `ignoreDate` (Y2's door) is untouched by the blank rule.
+    expect(sellLegIsIpoExit(dateless, blankHolding, true)).toBe(true);
   });
 
   it("no second writer: the recompute that re-read gross against a kept sale is gone", () => {

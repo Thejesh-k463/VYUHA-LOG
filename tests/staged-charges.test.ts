@@ -312,6 +312,90 @@ describe("D6/D7 · the staged ladder bills interest on the STATED funded amount,
     expect(sum(both), "Σ per-leg interest = the job's whole-leg figure").toBeCloseTo(interestFor(3000, 45), 2);
   });
 
+  /**
+   * D3 (v4.3.0 fix wave 2P, mtf-staged#2 — a SILENT WRONG NUMBER, pre-existing).
+   * The engine picked the slab for the SHARE: a Dhan row stating 8,00,000 in two
+   * 4,00,000 tranches was rated at the ≤5L slab (12.49%) on each, ₹416.43 under the
+   * accrual job's 13.49% on the whole principal — and the ladder's figure depended on
+   * how many fills a position happened to have. The slab is now evaluated on the
+   * STATED principal (`slabBasis`), each tranche billed its share at that rate.
+   *
+   * THE PIN, as the design review corrected it: per-leg PAISA ROUNDING is the
+   * header's known, accepted artefact — dhan 4L @13.49% × 19d = round(280,887.67p)
+   * = 2,808.88 each, Σ 5,617.76, where the job rounds once: 5,617.75. So each
+   * tranche is pinned to the engine's own figure at the row's rate, and same-day
+   * Σ per-leg is within 0.01 × (tranches − 1) of the job's whole-leg figure.
+   */
+  it("D3 · a TIERED broker's slab is evaluated on the whole stated principal; each tranche bills its share at that rate", () => {
+    const D_ASOF = "2026-08-20";
+    const D_DAY = "2026-08-01"; // 19 days
+    const at = (broker: string, funded: number, days: number, slabBasis?: number) =>
+      computeCharges(
+        { segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, mtf: { fundedAmount: funded, daysHeld: days, pledgeScrips: 1, ...(slabBasis != null ? { slabBasis } : {}) } },
+        findRates(ratesMap, broker as never, "eq_mtf", "NSE", D_ASOF),
+      ).mtfInterest;
+    const on = (broker: string, legs: Leg[], funded: number) =>
+      staged.priceLegs(legs, { broker: broker as never, segment: "eq_mtf", exchange: "NSE", direction: "long", asOf: D_ASOF, mtfFundedAmount: funded }, ratesMap)
+        .map((p) => p.breakdown.mtfInterest);
+
+    // Dhan, two same-day tranches of 4,00,000 on a stated 8,00,000.
+    const dhan = on("dhan", ladder(entry(4000, 100, D_DAY), entry(4000, 100, D_DAY)), 800000);
+    // THE assertion (on revert: [2600.66, 2600.66] — 12.49% on each share's own size).
+    expect(dhan).toEqual([at("dhan", 400000, 19, 800000), at("dhan", 400000, 19, 800000)]);
+    expect(dhan).toEqual([2808.88, 2808.88]);
+    expect(dhan[0]).not.toBe(at("dhan", 400000, 19));
+    // Σ per-leg vs the job's whole-leg figure: within the per-leg rounding artefact.
+    const job = at("dhan", 800000, 19);
+    expect(job).toBe(5617.75);
+    expect(Math.round(Math.abs(sum(dhan) - job) * 100) / 100).toBeLessThanOrEqual(0.01 * (dhan.length - 1));
+
+    // Different-day tranches: each its OWN days at the row's slab, Σ = Σᵢ interest(shareᵢ, daysᵢ).
+    const split = on("dhan", ladder(entry(4000, 100, D_DAY), entry(4000, 100, "2026-08-10")), 800000);
+    expect(split).toEqual([at("dhan", 400000, 19, 800000), at("dhan", 400000, 10, 800000)]);
+
+    // Paytm's middle band (≤1Cr, 9.99%) is the DEAREST: 1,50,000 over two 75,000
+    // tranches is rated 9.99% on both, not the ≤1L band's 7.99%.
+    const paytm = on("paytm", ladder(entry(750, 100, D_DAY), entry(750, 100, D_DAY)), 150000);
+    expect(paytm).toEqual([at("paytm", 75000, 19, 150000), at("paytm", 75000, 19, 150000)]);
+    expect(paytm[0]).not.toBe(at("paytm", 75000, 19));
+    expect(at("paytm", 75000, 19, 150000)).toBeGreaterThan(at("paytm", 75000, 19));
+  });
+
+  /**
+   * D1 (v4.3.0 fix wave 2P, mtf-staged#0 — owner ruling 2O row 1). A CLOSED staged
+   * row that states no funded amount and stored an MTF estimate before 4.3.0 keeps
+   * it through every rebuild: `rebuildStagedTrade` hands `priceLegs` the stored
+   * figures as `mtfCarry`, and the ladder apportions the INTEREST across the entry
+   * tranches by value × billed days (the two factors the estimate was computed
+   * from) and the PLEDGE equally, remainder on the last tranche — so Σ shares is
+   * the stored figure to the paisa (invariant 1) and parent = Σ legs (invariant 5).
+   */
+  it("D1 · a carry over two tranches sums to the stored figure to the paisa, weighted by value × days, remainder on the last", () => {
+    const legs = ladder(entry(100, 200, A_DAY), entry(50, 210, B_DAY)); // 20,000 × 45d, 10,500 × 36d
+    const priced = staged.priceLegs(legs, { ...ctx(null), mtfCarry: { mtfInterest: 44.8, pledgeCharges: 30 } }, ratesMap);
+    const interest = priced.map((p) => p.breakdown.mtfInterest);
+    const pledge = priced.map((p) => p.breakdown.pledgeCharges);
+    // 44.8 × 900,000 ÷ 1,278,000 = 31.55; the remainder 13.25 on the last tranche.
+    // THE assertion (on revert: [0, 0] — the carry is ignored and the estimate released).
+    expect(interest).toEqual([31.55, 13.25]);
+    expect(sum(interest)).toBe(44.8);
+    expect(pledge).toEqual([15, 15]);
+    expect(sum(pledge)).toBe(30);
+    // GST on the carried pledge is the engine's, not the ladder's: each leg's GST
+    // exceeds the same leg priced with no carry by exactly 18% of its pledge share.
+    const bare = staged.priceLegs(legs, ctx(null), ratesMap);
+    priced.forEach((p, i) => {
+      expect(p.breakdown.gst).toBe(Math.round((bare[i].breakdown.gst + mtfRates().gstPct * pledge[i]) * 100) / 100);
+    });
+    // A carry beside a STATED principal is ignored — the D3 rule bills it.
+    const stated = staged.priceLegs(legs, { ...ctx(3000), mtfCarry: { mtfInterest: 44.8, pledgeCharges: 30 } }, ratesMap);
+    expect(stated.map((p) => p.breakdown.mtfInterest)).toEqual([interestFor(1967.21, 45), interestFor(1032.79, 36)]);
+    // Zero days everywhere (every tranche on asOf) → weighted by value alone.
+    const today = ladder(entry(100, 200, ASOF), entry(50, 210, ASOF));
+    const flat = staged.priceLegs(today, { ...ctx(null), mtfCarry: { mtfInterest: 30.5, pledgeCharges: 0 } }, ratesMap).map((p) => p.breakdown.mtfInterest);
+    expect(flat).toEqual([20, 10.5]);
+  });
+
   it("a PARTLY consumed tranche accrues its whole share to asOf; a fully consumed one stops on the day it closed", () => {
     const partly = ladder(entry(100, 200, A_DAY), exit(40, 210, "2026-09-01"));
     const closed = ladder(entry(100, 200, A_DAY), exit(100, 210, "2026-09-01"));

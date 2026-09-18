@@ -37,7 +37,7 @@
  *    R comparable between a single-shot trade and a pyramided one.
  */
 
-import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
+import { dayOf, normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
 
 export type LegKind = "entry" | "exit";
 export type Direction = "long" | "short";
@@ -690,8 +690,13 @@ export function parentAggregate(legs: Leg[], direction: Direction): ParentAggreg
       : entryQty > 0 ? r2(entryValue / entryQty) : 0,
     sellValue: r2(isLong ? exitValue : entryValue),
     sellOrderCount: Math.max(1, isLong ? exits.length : entries.length),
-    buyDate: isLong ? (firstEntry?.tradeDate ?? null) : (lastExit?.tradeDate ?? null),
-    sellDate: isLong ? (lastExit?.tradeDate ?? null) : (firstEntry?.tradeDate ?? null),
+    // D4 (wave 2P): the parent carries the ISO DAY, not the leg's raw bytes. After
+    // `validateLegs` every leg date is readable, so `dayOf` is the ISO day here (its
+    // `?? raw` half is for the type only); a legacy day-first leg written before
+    // wave 2M normalised leg dates no longer reaches the parent as '20-01-2026',
+    // which the editor then read as a moved fill on every notes-only save.
+    buyDate: isLong ? dayOf(firstEntry?.tradeDate) : dayOf(lastExit?.tradeDate),
+    sellDate: isLong ? dayOf(lastExit?.tradeDate) : dayOf(firstEntry?.tradeDate),
     entryTime: firstEntry?.tradeTime ?? null,
     exitTime: lastExit?.tradeTime ?? null,
     isOpen: !pos.isClosed,

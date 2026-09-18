@@ -270,6 +270,29 @@ export function listTrashSnapshots(): TrashSummary[] {
   return out.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
 }
 
+/**
+ * D11 (v4.3.0 wave 2P, identity#1) — which of `ids` name a trade that sits in
+ * Deleted items. Trash is folders of envelopes, not a table (`writeTrashSnapshot`),
+ * so this is the `listTrashSnapshots` read — every envelope parsed once, its
+ * `trades[].id` compared. Data Quality calls it ONCE per report and ONLY when an
+ * IPO record's reference names no row in the journal (a ghost), so a book with
+ * none pays no disk read: an empty set returns before the folder is opened.
+ */
+export function trashedTradeIds(ids: ReadonlySet<number>): Set<number> {
+  const out = new Set<number>();
+  if (ids.size === 0 || !fs.existsSync(trashDir)) return out;
+  for (const entry of fs.readdirSync(trashDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const env = readEnvelope(entry.name);
+    if (!env) continue;
+    for (const row of env.trades) {
+      const id = row.id;
+      if (typeof id === "number" && ids.has(id)) out.add(id);
+    }
+  }
+  return out;
+}
+
 export interface TrashRestoreResult {
   ok: boolean;
   restored: number;
@@ -965,12 +988,22 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   }
   // D4 (wave 2O) — a link this restore could not make is SAID, not guessed. The
   // rows themselves came back (they are the user's own records); what they no
-  // longer state is a holding, which is exactly what Data Quality asks about.
+  // longer state is a holding.
+  //
+  // D10 (wave 2P, identity#0 cosmetic) — the sentence names what the user can
+  // ACT on, not a question Data Quality may never raise: `ipoAskPairs` asks only
+  // beside an unlinked IPO HOLDING of the book, and in this shape the holding is
+  // precisely what did not come back — with no other such holding the report is
+  // silent, and the numbers are right (the record counts its own exit once,
+  // `lib/queries/ipos.ts` `ipoIdsCountedThroughTrades`). What IS reachable: /ipos
+  // lists the record unlinked and can link it; a later restore of the holding's
+  // own envelope re-links it through `ipoRefs` above.
   if (unlinkedIpos > 0) {
     message +=
       ` ${unlinkedIpos} IPO record${unlinkedIpos === 1 ? "" : "s"} came back unlinked because the holding ` +
-      `${unlinkedIpos === 1 ? "it names" : "they name"} could not be restored — Data Quality asks which holding ` +
-      `${unlinkedIpos === 1 ? "is its own" : "each one is"}.`;
+      `${unlinkedIpos === 1 ? "it names" : "they name"} could not be restored; ` +
+      `${unlinkedIpos === 1 ? "its" : "their"} exit is counted from the record itself, and ` +
+      `${unlinkedIpos === 1 ? "it" : "they"} can be linked again on IPOs once the holding is back.`;
   }
   if (unlinkedLedger > 0) {
     message +=

@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { epochSpans } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
-import { rebuildStagedTrade } from "@/lib/queries/staged";
+import { rebuildStagedTrade, legCountOf } from "@/lib/queries/staged";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -15,22 +15,30 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * Daily MTF interest accrual. Recomputes accrued interest for every OPEN eq_mtf
  * position from T+1 (buy date) to `today`, updating charges_total and net_pnl.
  * Idempotent — safe to run on every app open (it recomputes, not increments).
+ *
+ * `skipped` (D2, wave 2P) counts the staged rows this run left exactly as they
+ * were: a ladder the domain refused, a ladder that could not be priced (no rate
+ * epoch covers `today` for its broker), and a staged-flagged row with no legs
+ * (D5). The job surfaced no skip before, so a whole book silently stopping was
+ * observable to nobody.
  */
 export function accrueMtfInterest(today = todayIstIso()): {
   updated: number;
   totalAccrued: number;
+  skipped: number;
 } {
   const open = db
     .select()
     .from(trades)
     .where(and(eq(trades.segment, "eq_mtf"), eq(trades.isOpen, true)))
     .all();
-  if (open.length === 0) return { updated: 0, totalAccrued: 0 };
+  if (open.length === 0) return { updated: 0, totalAccrued: 0, skipped: 0 };
 
   const rates = loadRatesMap();
   // No margin_config read: nothing here estimates a funded amount any more (Q-A).
   let updated = 0;
   let totalAccrued = 0;
+  let skipped = 0;
 
   for (const t of open) {
     // D6 (OWNER RULING 2O row 1 / mtf#0, a silent wrong number) — A STAGED ROW'S
@@ -53,10 +61,39 @@ export function accrueMtfInterest(today = todayIstIso()): {
     // exactly what the owner ruled: one priced before 4.3.0 keeps its earlier
     // estimate, and the release notes say so.
     if (t.staged) {
-      const res = rebuildStagedTrade(t.id, undefined, today);
+      // D5 (wave 2P) — ONE leg-count question before any rebuild (`legCountOf`,
+      // the predicate the editor-side doors share). `validateLegs([])` returns no
+      // problem, so a staged-flagged row with ZERO legs was rewritten from an
+      // EMPTY ladder on every /equity render (buyQty / buyValue / chargesTotal /
+      // netPnl → 0). Such a row is left EXACTLY as it is — not accrued flat
+      // either: it claims a ladder it does not have, and a flat figure on it
+      // would be the second writer D6 removed.
+      if (legCountOf(t.id) === 0) {
+        skipped++;
+        continue;
+      }
+      // D2 (wave 2P) — the same guard the flat path's `epochSpans` block has:
+      // `findRates` THROWS when no eq_mtf epoch covers `today` for this row's
+      // broker (an expired epoch with no successor; sahi, which seeds none), and
+      // the throw used to escape this job — /equity swallowed it, and NO row
+      // after the failing one accrued, flat rows with a STATED principal
+      // included, with nothing on screen. Accruing at a neighbouring rate would
+      // invent a number (invariant 6); the row is left alone and the loop goes
+      // on. The throw happens inside `priceLegs`, before the rebuild's
+      // transaction opens, so nothing is written for this row.
+      let res: ReturnType<typeof rebuildStagedTrade>;
+      try {
+        res = rebuildStagedTrade(t.id, undefined, today);
+      } catch {
+        skipped++;
+        continue;
+      }
       // A ladder the domain refuses (an unreadable leg date, an over-sold fill)
       // is left exactly as it is — `rebuildStagedTrade` writes nothing then.
-      if (!res.ok) continue;
+      if (!res.ok) {
+        skipped++;
+        continue;
+      }
       const after = db.select().from(trades).where(eq(trades.id, t.id)).get();
       const interest = after?.mtfInterest ?? t.mtfInterest;
       if (interest !== t.mtfInterest) {
@@ -144,5 +181,5 @@ export function accrueMtfInterest(today = todayIstIso()): {
     updated++;
     totalAccrued += interest;
   }
-  return { updated, totalAccrued: r2(totalAccrued) };
+  return { updated, totalAccrued: r2(totalAccrued), skipped };
 }
