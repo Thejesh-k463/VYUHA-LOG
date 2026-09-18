@@ -734,6 +734,14 @@ export function reconcileFrom(
   };
 }
 
+/**
+ * Every contract-note source. A note's charges belong to ONE trading day and
+ * are compared against that day's positions; read as a ledger line they would
+ * be summed across the year under the wrong heading. v4.4.0 added the Groww
+ * and Upstox notes beside Dhan's.
+ */
+const CONTRACT_NOTE_SOURCE_IDS = new Set(["dhan-contract-note", "groww-contract-note", "upstox-contract-note"]);
+
 /** A contract note's charge key -> the book's own column for the same money. */
 const NOTE_CHARGE_COLUMNS: Record<string, keyof ReconcileTrade> = {
   brokerage: "brokerage",
@@ -807,7 +815,7 @@ function chargeLines(refs: ReferenceRowRecord[], ctx: ChargeContext): ReconcileC
       // last year's fees belongs to last year.
       const fy = fyOfDate(r.asOf);
       group(dp, `${bk}|${fy ?? "undated"}`, r, fy, { charges: r.figures.charges ?? 0, qty: r.figures.qty ?? 0 });
-    } else if (r.sourceId === "dhan-contract-note") {
+    } else if (CONTRACT_NOTE_SOURCE_IDS.has(r.sourceId)) {
       const date = r.asOf ?? "undated";
       group(notes, `${bk}|${date}`, r, fyOfDate(r.asOf), { [r.key]: r.figures.amount ?? 0 });
     } else {

@@ -10,6 +10,8 @@ import type { ParseContext } from "@/lib/import/types";
 import { detectUpstoxLedger, parseUpstoxLedger, type ParsedCashFile } from "@/lib/import/parsers/upstox-ledger";
 import { detectAngelOneLedger, parseAngelOneLedger } from "@/lib/import/parsers/angelone-ledger";
 import { detectDhanDpCharges, parseDhanDpChargesWorkbook } from "@/lib/import/parsers/dhan-dp-charges";
+import { detectZerodhaLedger, parseZerodhaLedger } from "@/lib/import/parsers/zerodha-ledger";
+import { detectGrowwLedger, parseGrowwLedger } from "@/lib/import/parsers/groww-ledger";
 import { persistReference } from "@/lib/import/commit";
 import type { ReferenceRow } from "@/lib/import/types";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
@@ -122,6 +124,10 @@ const WORKBOOK_CASH_SOURCES: {
   { detect: detectUpstoxLedger, parse: parseUpstoxLedger },
   { detect: detectAngelOneLedger, parse: (c) => ({ ...parseAngelOneLedger(c), broker: "angelone", sourceId: "angelone-ledger" }) },
   { detect: detectDhanDpCharges, parse: parseDpChargesAsCash },
+  // v4.4.0: both registered sources say "upload it on the Cash & Ledger
+  // screen" — the door they name has to be open.
+  { detect: detectZerodhaLedger, parse: parseZerodhaLedger },
+  { detect: detectGrowwLedger, parse: parseGrowwLedger },
 ];
 
 /** Read whichever cash file was uploaded. */
@@ -140,7 +146,7 @@ function readCashFile(filename: string, bytes: Buffer): CashParse {
   return {
     rows: [], mtfInterestTotal: 0, unclassified: [], openingBalance: null, from: null, to: null,
     warnings: [
-      `No cash-file parser recognised ${filename}. The Cash & Ledger screen reads Dhan's ledger and dividend payout CSVs, Dhan's DP charges report, the Upstox ledger workbook and the Angel One account statement -- a file it cannot recognise is refused rather than read as something it is not.`,
+      `No cash-file parser recognised ${filename}. The Cash & Ledger screen reads Dhan's ledger and dividend payout CSVs, Dhan's DP charges report, the Upstox ledger workbook, the Angel One account statement, the Zerodha Console ledger and the Groww fund ledger -- a file it cannot recognise is refused rather than read as something it is not.`,
     ],
   };
 }

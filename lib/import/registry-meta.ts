@@ -39,11 +39,18 @@ export const IMPORT_SOURCES: readonly ImportSourceMeta[] = [
   { sourceId: "dhan-contract-note", label: "Dhan Contract Note (PDF) — adds fill times to trades already imported, never creates them", broker: "dhan", tab: "transactions", hint: "Dhan contract note (fill times)" },
   { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", broker: "groww", tab: "pnl", hint: "Groww XLSX" },
   { sourceId: "groww-orders", label: "Groww Stocks Order History (XLSX)", broker: "groww", tab: "transactions", hint: "Groww order history" },
+  // v4.4.0 parser wave — each VERIFIED against one real owner export
+  // (docs/BROKER_FORMATS.md) and pinned in tests/golden-books.test.ts against
+  // the broker's own stated figures. None of the four creates a trade.
+  { sourceId: "groww-ledger", label: "Groww Balance Statement — fund ledger (XLSX) — feeds the Cash & Ledger screen, does not import trades", broker: "groww", tab: "pnl", hint: "Groww fund ledger (→ Cash & Ledger)" },
+  { sourceId: "groww-contract-note", label: "Groww Contract Note, equity (PDF) — adds fill times to trades already imported, never creates them", broker: "groww", tab: "transactions", hint: "Groww contract note (fill times)" },
   { sourceId: "zerodha", label: "Zerodha Tradebook / Console (CSV/XLSX)", broker: "zerodha", tab: "both", hint: "Zerodha tradebook / Console" },
+  { sourceId: "zerodha-ledger", label: "Zerodha Console Ledger (XLSX) — feeds the Cash & Ledger screen, does not import trades", broker: "zerodha", tab: "pnl", hint: "Zerodha ledger (→ Cash & Ledger)" },
   { sourceId: "angelone", label: "Angel One Tradebook / P&L (CSV/XLSX)", broker: "angelone", tab: "both", hint: "Angel One" },
   { sourceId: "angelone-taxpnl", label: "Angel One Tax P&L (XLSX)", broker: "angelone", tab: "pnl", hint: "Angel One tax P&L" },
   { sourceId: "upstox", label: "Upstox Tradebook / P&L (CSV/XLSX)", broker: "upstox", tab: "both", hint: "Upstox" },
   { sourceId: "upstox-ledger", label: "Upstox Ledger (XLSX) — feeds the Cash & Ledger screen, does not import trades", broker: "upstox", tab: "pnl", hint: "Upstox ledger (→ Cash & Ledger)" },
+  { sourceId: "upstox-contract-note", label: "Upstox Contract Note, equity (PDF) — adds fill times to trades already imported, never creates them", broker: "upstox", tab: "transactions", hint: "Upstox contract note (fill times)" },
   { sourceId: "angelone-ledger", label: "Angel One Account Statement (XLSX) — feeds the Cash & Ledger screen, does not import trades", broker: "angelone", tab: "pnl", hint: "Angel One statement (→ Cash & Ledger)" },
   { sourceId: "angelone-pnl-statement", label: "Angel One P&L Statement (XLSX) — broker-stated P&L reference, does not import trades", broker: "angelone", tab: "pnl", hint: "Angel One P&L statement (reference)" },
   { sourceId: "paytm-tradebook", label: "Paytm Money Tradebook (XLSX)", broker: "paytm", tab: "transactions", hint: "Paytm Money tradebook" },

@@ -1,0 +1,170 @@
+NSE-EQ
+ACC000000	* Trading Back-office Code (if different from UCC)
+SETTLEMENT NO.
+SETTLEMENT DATE
+CLEARING HOUSE
+DELIVERY SETTLEMENT NO
+GST TAX INVOICE NO
+GST TAX INVOICE DATE
+NSE-EQ
+Rolling (T1)/2026163
+31/08/2026
+NCL
+Rolling (T1)/2026163
+NSE/00000000
+28/08/2026
+DIRECTORS / AUTHORISED SIGNATORY :
+RAVI KUMAR / AMIT LALAN / AMIT SHAH
+Compliance Officer : Mr. Kapil Jaikalyani
+Email Id: user@example.com
+Tel No.: 022-61309999
+CONTRACT NOTE CUM TAX INVOICE
+Tax Invoice Under Section 31 of GST Act (Original for recipient/ Duplicate for supplier)
+UPSTOX SECURITIES PRIVATE LIMITED
+(Formerly EPX Uptech Private Limited)
+Dealing Office: 30th Floor, Sunshine Tower,
+Senapati Bapat Marg, Dadar (W), Mumbai 400013
+Tel: 61309999 Website: www.upstox.com Investor Grievance - user@example.com
+SEBI REG:INZ000315837 CIN:U65100DL2021PTC376860
+BSE-EQ BSE-F&O BSE-CUR NSE-EQ NSE-F&O NSE-CUR NSE-COM MCX-COM
+SEBI REGN. NO.:
+INZ000315837
+SEBI REGN. NO.:
+INZ000315837
+SEBI REGN. NO.:
+INZ000315837
+SEBI REGN. NO.:
+INZ000315837
+SEBI REGN. NO.:
+INZ000315837
+SEBI REGN. NO.:
+INZ000315837
+SEBI REGN. NO.:
+INZ000315837
+SEBI REGN. NO.:
+INZ000315837
+CLG. NO.: 6155 CLG. NO.: 6155 CLG. NO.: 6155 CLG. NO.: 13942 CLG. NO.: 13942 CLG. NO.: 13942 CLG. NO.: 13942 CLG. NO.: 46510
+Contract Note No. : 00000000
+Trading Code: ACC000000
+Trade Date : 28/08/2026
+REDACTED NAME
+REDACTED ADDRESS
+REDACTED ADDRESS
+REDACTED ADDRESS
+PAN OF CLIENT : AAAAA0000A
+GST Identification No :
+UCC OF CLIENT : ACC000000
+Resident
+Sir/ Madam,
+I / We have this day done by your order and on your account the following transactions:
+Security Description BUY SELL Net Obligation for ISIN
+(Before Levies) (Rs.) *
+ISIN
+Security
+Name /
+Symbol
+Quantity WAP (across
+exchanges)
+Brokerage
+per Share
+(Rs.)
+WAP after
+brokerage
+(Rs.)
+Total BUY Value
+after brokerage Quantity
+WAP
+(across
+exchanges)
+Brokerage
+per Share
+(Rs.)
+WAP after
+brokerage
+(Rs.)
+Total SELL
+Value after
+brokerage
+Net
+Quantity
+Net
+Obligation
+for ISIN
+INE372C01037 PRECISIO
+WIR 3 443.3000 443.3000 1329.90 -3 442.9500 442.9500 -1328.85 0 1.05
+* Exchange-wise details of orders and trades provided in separate annexure.
+Obligation Details
+EQ-CASH (Rs.) TOTAL (Net) (Rs.)
+PAY IN / ( PAY OUT ) OBLIGATION 1.05 1.05
+Brokerage Charges 2.66 2.66
+
+-- 1 of 3 --
+
+DIRECTOR/AUTHORISED SIGNATORY
+PAN: AAAAA0000A
+GSTIN of Trading Member : 27AAAAA0000A1ZP
+Description of Service : STOCK BROKER
+Accounting code of services : 997152
+Yours faithfully,
+For UPSTOX SECURITIES PRIVATE LIMITED
+EQ-CASH (Rs.) TOTAL (Net) (Rs.)
+[IGST 18% On Brokerage] 0.48 0.48
+[IGST 18% On Charges] 0.01 0.01
+[STT-Round off] -0.33 -0.33
+[STT-SQUP] 0.33 0.33
+[TURNOVER CHG] 0.08 0.08
+Net amount (-) receivable by Client / (+) payable by Client (Rs.) 4.28 4.28
+GST Taxable Value of Supply:- Brokerage: Rs. 2.66 = Total: Rs.	,[TURNOVER CHG*] :Rs. 0.08 2.74
+CGST:-Central GST; SGST: - State GST; IGST:-Integrated GST; UTT: - Union Territory Tax. Details of trade-wise levies shall be provided on request.
+Turnover Chg: Exchange Transaction Charges; SEBI Fees: SEBI Turnover Fees; STT: Securities Transaction Tax
+The purchase of Rights Entitlements Scrips (REs) only gives them the right to participate in the ongoing Rights Issue of the concerned	Disclaimer:
+company by making an application with the requisite application money or renouncing the REs before the issue closes. REs which are neither subscribed by
+making an application with the requisite application money nor renounced, on or before the Issue Closing Date shall lapse and Shall be extinguished after
+the Issue Closing Date.
+NSE exchange transaction/turnover charges include contributions to the Investor Protection Fund Trust (IPFT).
+* These trades indicates square-off by UPSTOX SECURITIES PRIVATE LIMITED
+** These trades indicate Rights Entitlement trades.
+WAP (Weighted Average Price) = Total Trade Value for ISIN across exchanges (Buy or Sell) / Total Number of shares across exchanges (Bought or Sold)
+Transactions mentioned in this contract note cum bill shall be governed and subject to the Rules, Bye-laws, Regulations and Circulars of the respective
+Exchanges on which trades have been executed and Securities and Exchange Board of India issued from time to time. It shall also be subject to the
+relevant Acts, Rules, Regulations, Directives, Notifications, Guidelines (including GST Laws) & Circulars issued by SEBI / Government of India / State
+Governments and Union Territory Governments issued from time to time. The Exchanges provide Complaint Resolution, Arbitration and Appellate
+arbitration facilities at the Regional Arbitration Centres (RAC). The client may approach its nearest centre, details of which are available on respective
+Exchange’s website. Please visit www.nseindia.com for NSE, www.bseindia.com for BSE and www.msei.in for MSEI.
+Date : 28/08/2026
+Place : Mumbai
+From 19-Jul-2025, broking operations of RKSV Commodities India Pvt. Ltd. were transferred to Upstox Securities Pvt. Ltd.
+
+-- 2 of 3 --
+
+Annexure A
+Order
+No.
+Order
+Time
+Trade
+No.
+Trade
+Time
+Security / Contract Description Buy
+Sell
+(B/S)
+Quantity Gross Rate
+/Trade Price
+per
+Unit (Rs.)
+Net Rate
+per Unit
+(Rs.)
+Net Total (Before
+Levies)
+(Rs.)
+Remarks
+EQ-CASH
+1200000038507282 11:55:42 404283923 11:55:42 PRECISIO WIR [INE372C01037] B 3 443.3000 443.3000 1329.90 NSE
+1200000038664383 11:56:42 404303228 11:56:42 PRECISIO WIR [INE372C01037] S -3 442.9500 442.9500 -1328.85 NSE
+1200000038664383 Brokerage Charges B 1 0.0000 1.3300 1.33
+1200000038507282 Brokerage Charges B 1 0.0000 1.3300 1.33
+
+-- 3 of 3 --
+

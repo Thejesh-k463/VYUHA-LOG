@@ -23,6 +23,10 @@ import { detectUpstoxLedger, parseUpstoxLedgerSource } from "./parsers/upstox-le
 import { detectAngelOneLedger, parseAngelOneLedgerSource } from "./parsers/angelone-ledger";
 import { detectAngelOnePnlStatement, parseAngelOnePnlStatementSource } from "./parsers/angelone-pnl-statement";
 import { detectGenericTable, parseGenericTable } from "./parsers/generic-table";
+import { detectZerodhaLedger, parseZerodhaLedgerSource } from "./parsers/zerodha-ledger";
+import { detectGrowwLedger, parseGrowwLedgerSource } from "./parsers/groww-ledger";
+import { detectGrowwContractNote, parseGrowwContractNote } from "./parsers/groww-contract-note";
+import { detectUpstoxContractNote, parseUpstoxContractNote } from "./parsers/upstox-contract-note";
 
 export interface DetectedParser {
   sourceId: string;
@@ -74,6 +78,10 @@ const PARSERS: Record<string, (ctx: ParseContext) => Promise<ParsedFile> | Parse
   "dhan-dp-charges": parseDhanDpCharges,
   "dhan-holdings": parseDhanHoldings,
   "dhan-contract-note": parseDhanContractNote,
+  "zerodha-ledger": parseZerodhaLedgerSource,
+  "groww-ledger": parseGrowwLedgerSource,
+  "groww-contract-note": parseGrowwContractNote,
+  "upstox-contract-note": parseUpstoxContractNote,
   pdf: parsePdf,
   "generic-table": parseGenericTable,
 };
@@ -106,6 +114,10 @@ const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
   "dhan-dp-charges": detectDhanDpCharges,
   "dhan-holdings": detectDhanHoldings,
   "dhan-contract-note": detectDhanContractNote,
+  "zerodha-ledger": detectZerodhaLedger,
+  "groww-ledger": detectGrowwLedger,
+  "groww-contract-note": detectGrowwContractNote,
+  "upstox-contract-note": detectUpstoxContractNote,
   pdf: detectPdf,
   "generic-table": detectGenericTable,
 };

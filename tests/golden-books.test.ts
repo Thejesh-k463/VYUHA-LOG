@@ -4,6 +4,13 @@ import path from "node:path";
 import { buildContext, rankParsers } from "@/lib/import/detect";
 import type { ParsedFile } from "@/lib/import/types";
 import { parseDhanDividend, parseDhanLedger } from "@/lib/import/parsers/dhan-ledger";
+import { parseZerodhaLedger } from "@/lib/import/parsers/zerodha-ledger";
+import { parseGrowwLedger } from "@/lib/import/parsers/groww-ledger";
+import { parseUpstox, upstoxOptionContract } from "@/lib/import/parsers/angelone-upstox";
+import { parseUpstoxLedger } from "@/lib/import/parsers/upstox-ledger";
+import { parseGrowwContractNote, readGrowwContractNoteText } from "@/lib/import/parsers/groww-contract-note";
+import { parseUpstoxContractNote, readUpstoxContractNoteText } from "@/lib/import/parsers/upstox-contract-note";
+import { classify } from "@/lib/engine/classify";
 import { fyOfDate } from "@/lib/analytics/ais";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
@@ -427,12 +434,21 @@ const GOLDEN: Golden[] = [
   {
     file: "upstox-trade-2026-08-28_2026-09-04.xlsx",
     parser: "upstox", minScore: 0.75,
-    shape: { sourceRows: null, closed: 4, open: 0, openingSells: 0 },
+    // RE-DERIVED 2026-09-18 (v4.4.0, the Upstox F&O grammar): 4 → 5 positions. The six F&O rows used to
+    // group under the bare `Company` cell, so the NIFTY 24000 PE and the NIFTY 24350 CE were ONE "NIFTY"
+    // position (and BSX a stock). They are now three contracts — OPT NIFTY 01 Sep 2026 24000 PE,
+    // OPT NIFTY 01 Sep 2026 24350 CE, OPT SENSEX 03 Sep 2026 78300 CE — beside GNG and PRECISIO.
+    // Gross is unchanged by construction (the same fills: −6.40 − 1.05 − 84.50 − 58.50 + 15.00 = −135.45).
+    shape: { sourceRows: null, closed: 5, open: 0, openingSells: 0 },
     reference: null,
     charges: { mode: "engine" },
-    // C-8: charges 136.45 → 136.47, net −271.90 → −271.92; no broker-stated charges (a trade report states none) — NSE cash at FA73061's rate.
-    commit: { net: -271.92, gross: -135.45, charges: 136.47 },
-    note: "Trade report, 11 execution rows → 4 positions; the parser sets no `sourceRows`, so the screen cannot say '11 executions → 4 positions' for this file (noted, not pinned as a defect — no rule requires it). No reference: a trade report states neither P&L nor charges.",
+    // RE-DERIVED 2026-09-18: charges 136.47 → 220.21, net −271.92 → −355.66. The equity half is unchanged
+    // (GNG 35.39 + PRECISIO 28.06 = 63.45); the three options, priced as NSE cash until now (73.02), are
+    // priced at Upstox's index-option rate card: 53.24 + 51.93 + 51.59 = 156.76 (per position, pinned in
+    // the v4.4.0 describe below). Our arithmetic, not a broker statement — see that describe for how far
+    // it sits from Upstox's own F&O bill.
+    commit: { net: -355.66, gross: -135.45, charges: 220.21 },
+    note: "Trade report, 11 execution rows → 5 positions (2 equity round trips, 3 option contracts — the 2026-09-16 re-download of the same window carries the identical 11 rows); the parser sets no `sourceRows`. No reference: a trade report states neither P&L nor charges. It carries no product column either, so the engine prices both same-day equity round trips as delivery (PRECISIO 28.06, where Upstox's own contract note and realised P&L state 3.23 intraday).",
   },
   {
     file: "upstox-ledger-2025-07-19_2026-09-04.xlsx",
@@ -440,6 +456,22 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
     reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
     note: "Ledger (4 data rows, wallet/narration/debit/credit). FLIPPED 2026-09-04: the v3.9 `upstox-ledger` parser claims it and feeds the Cash & Ledger screen. It reads cash postings, never trades — no positions, no P&L, no charges on any trade — so every figure below is zero because the file is not a book. The parser sets no `sourceRows` (it counts ledger lines, not executions), so that stays null.",
+  },
+
+  // ── v4.4.0 parser wave: the two new ledgers (cash files, never a book) ─────
+  {
+    file: "zerodha-ledger-2025-01-01_2026-08-01.xlsx",
+    parser: "zerodha-ledger", minScore: 0.9,
+    shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
+    reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
+    note: "Zerodha Console ledger (Funds → Statement, sheet Equity, 4 entries between an Opening and a Closing Balance row). A cash file: it feeds the Cash & Ledger screen and books no trade, so every figure here is zero; its own conservation — opening + credits − debits = every Net Balance and the closing balance, to the paisa — is pinned in the v4.4.0 describe below.",
+  },
+  {
+    file: "groww-ledger-2025-01-01_2026-01-30.xlsx",
+    parser: "groww-ledger", minScore: 0.9,
+    shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
+    reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
+    note: "Groww balance statement (Client Fund Ledger, 447 entries, 18 segment types). A cash file: it feeds the Cash & Ledger screen and books no trade, so every figure here is zero; the statement's own running balance, entry to entry in posting order, is pinned in the v4.4.0 describe below.",
   },
 ];
 
@@ -787,4 +819,291 @@ describe("Zerodha: both tax P&Ls into ONE account — the exit date owns the FY"
     const [fy2425, fy2526] = batches;
     for (const r of nifty) expect(r.importBatchId).toBe(fyOfDate(r.sellDate!) === "2024-25" ? fy2425 : fy2526);
   });
+});
+
+// ── v4.4.0 PARSER WAVE — each format against the BROKER'S OWN stated figures ──
+//
+// Owner ruling (06-ANSWERS "Parser-wave release ruling"): every new format
+// ships with a pin against what the broker's own document states, on the
+// redacted fixture (runs on CI), plus a parity leg that re-reads the REAL file
+// from tests/fixtures/private/ and requires the identical result (skipped, not
+// failed, where the real file is absent). A contract note is a PDF whose text
+// is the fixture (scripts/fixtures/redact-contract-note.mjs), so its parity
+// leg re-extracts the real PDF's text through the parser's own async path.
+
+const PRIVATE = path.join(process.cwd(), "tests", "fixtures", "private");
+const havePrivate = (f: string) => fs.existsSync(path.join(PRIVATE, f));
+const redactedText = (f: string) => fs.readFileSync(path.join(DIR, f), "utf8");
+
+describe("v4.4.0 · Zerodha Console ledger — opening + credits − debits = every Net Balance, to the paisa", () => {
+  const FILE = "zerodha-ledger-2025-01-01_2026-08-01.xlsx";
+  const parsed = parseZerodhaLedger(buildContext("export.xlsx", fs.readFileSync(path.join(DIR, FILE))));
+
+  it("reads the four entries between the file's own Opening and Closing Balance rows", () => {
+    expect(parsed.openingBalance).toBe(0);
+    expect(parsed.closingBalance).toBe(0.0016);
+    expect(parsed.refused).toEqual([]);
+    expect(parsed.rows.map((r) => [r.date, r.amount, r.kind, r.balance])).toEqual([
+      ["2025-06-23", -15.045, "charge", -15.045], // DP charges on a LICI sale
+      ["2025-06-23", 23176.1204, "realised_pnl", 23161.0754], // net settlement 2025118
+      ["2025-06-25", -23070.4338, "realised_pnl", 90.6416], // net settlement 2025120
+      ["2025-07-04", -90.64, "withdrawal", 0.0016], // quarterly settlement paid back to the bank
+    ]);
+  });
+
+  it("the chain holds at EVERY row and lands on the stated closing balance exactly", () => {
+    // Zero breaks = each stated Net Balance is opening + Σ(credit − debit) so far, at the four
+    // decimals Zerodha states; the closing row is then that same chain's last value.
+    expect(parsed.balanceBreaks).toEqual([]);
+    const derived = parsed.rows.reduce((s, r) => Math.round((s + r.amount) * 1e4) / 1e4, parsed.openingBalance!);
+    expect(derived).toBe(parsed.closingBalance);
+    expect(parsed.warnings.some((w) => /^Reconciled: opening Rs0 \+ 4 entries = closing Rs0\.0016/.test(w))).toBe(true);
+  });
+
+  it.skipIf(!havePrivate(FILE))("the REAL export parses identically to its redacted copy", () => {
+    const real = parseZerodhaLedger(buildContext("export.xlsx", fs.readFileSync(path.join(PRIVATE, FILE))));
+    expect(real.rows).toEqual(parsed.rows);
+    expect([real.openingBalance, real.closingBalance, real.balanceBreaks]).toEqual([parsed.openingBalance, parsed.closingBalance, parsed.balanceBreaks]);
+  });
+});
+
+describe("v4.4.0 · Groww fund ledger — 447 entries, the stated balance chains entry to entry", () => {
+  const FILE = "groww-ledger-2025-01-01_2026-01-30.xlsx";
+  const parsed = parseGrowwLedger(buildContext("export.xlsx", fs.readFileSync(path.join(DIR, FILE))));
+
+  it("reads all 447 entries, refuses none, and dates them by settlement day", () => {
+    expect(parsed.rows).toHaveLength(447);
+    expect(parsed.refused).toEqual([]);
+    expect([parsed.from, parsed.to]).toEqual(["2025-01-02", "2026-01-16"]);
+    const kinds: Record<string, number> = {};
+    for (const r of parsed.rows) kinds[r.kind] = (kinds[r.kind] ?? 0) + 1;
+    expect(kinds).toEqual({ deposit: 22, withdrawal: 16, realised_pnl: 111, adjustment: 101, mtf_interest: 158, charge: 39 });
+    expect(parsed.unclassified).toEqual([]);
+    // MTF interest = the 158 INTEREST_ACCRUED debits, and nothing else (delayed-payment charges are not MTF financing).
+    expect(parsed.mtfInterestTotal).toBe(45891.62);
+  });
+
+  it("every stated balance is the previous posting's balance + credit − debit — zero breaks", () => {
+    // The balance before the first entry is the first balance less its movement (the file states
+    // no opening row); the last posting ends on the statement's newest balance, 0.
+    expect(parsed.balanceBreaks).toEqual([]);
+    expect(parsed.derivedOpening).toBe(81.52);
+    expect(parsed.closingBalance).toBe(0);
+    const derived = parsed.rows.reduce((s, r) => r2(s + r.amount), parsed.derivedOpening!);
+    expect(derived).toBe(parsed.closingBalance);
+    let running = parsed.derivedOpening!;
+    for (const r of parsed.rows) {
+      running = r2(running + r.amount);
+      expect(running, `${r.date} ${r.narration}`).toBe(r.balance);
+    }
+  });
+
+  it("each entry keeps a unique Cash & Ledger identity (the route dedups on date|paise|narration[0:60])", () => {
+    const keys = new Set(parsed.rows.map((r) => `${r.date}|${Math.round(r.amount * 100)}|${r.narration.slice(0, 60)}`));
+    expect(keys.size).toBe(447);
+  });
+
+  it.skipIf(!havePrivate(FILE))("the REAL export parses to the same entries (identity tokens aside)", () => {
+    const real = parseGrowwLedger(buildContext("export.xlsx", fs.readFileSync(path.join(PRIVATE, FILE))));
+    const strip = (rs: typeof parsed.rows) => rs.map(({ narration: _n, ...rest }) => rest);
+    expect(strip(real.rows)).toEqual(strip(parsed.rows));
+    expect([real.derivedOpening, real.closingBalance, real.balanceBreaks.length]).toEqual([81.52, 0, 0]);
+  });
+});
+
+describe("v4.4.0 · Upstox trade report F&O rows — the verified option grammar", () => {
+  const FILE = "upstox-trade-2026-08-28_2026-09-04.xlsx";
+  const REAL = "upstox-trade-2026-08-09_2026-09-16.xlsx"; // the 2026-09-16 re-download: the same 11 rows
+  const parse = (dir: string, f: string) => parseUpstox(buildContext("export.xlsx", fs.readFileSync(path.join(dir, f))));
+  const trades = parse(DIR, FILE).trades;
+  const fo = trades.filter((x) => x.tradingsymbol.startsWith("OPT "));
+
+  it("the six F&O rows become three contracts in the grammar every other broker's options use", () => {
+    expect(fo.map((x) => [x.tradingsymbol, x.buyQty, x.avgBuyPrice, x.sellQty, x.avgSellPrice, x.exchangeHint, r2(x.grossPnl)])).toEqual([
+      ["OPT NIFTY 01 Sep 2026 24000 PE", 65, 38, 65, 36.7, "NSE", -84.5],
+      ["OPT NIFTY 01 Sep 2026 24350 CE", 65, 32.3, 65, 31.4, "NSE", -58.5],
+      ["OPT SENSEX 03 Sep 2026 78300 CE", 20, 90.05, 20, 90.8, "BSE", 15],
+    ]);
+    expect(fo.map((x) => [x.entryTime, x.exitTime])).toEqual([["11:37", "11:38"], ["11:41", "11:43"], ["11:46", "11:49"]]);
+    // No row is left on the bare underlying, and none carries the "unverified" flag any more.
+    expect(trades.map((x) => x.tradingsymbol).filter((s) => s === "NIFTY" || s === "BSX")).toEqual([]);
+    expect(trades.flatMap((x) => x.importNotes ?? []).filter((n) => /unverified/.test(n))).toEqual([]);
+  });
+
+  it("classify reads each name as an index option with its own strike, expiry and side of the book", () => {
+    expect(fo.map((x) => {
+      const c = classify({ tradingsymbol: x.tradingsymbol, exchangeHint: x.exchangeHint, productHint: x.productHint });
+      return [c.segment, c.symbol, c.expiry, c.strike, c.optionType, c.exchange];
+    })).toEqual([
+      ["index_option", "NIFTY", "2026-09-01", 24000, "PE", "NSE"],
+      ["index_option", "NIFTY", "2026-09-01", 24350, "CE", "NSE"],
+      ["index_option", "SENSEX", "2026-09-03", 78300, "CE", "BSE"],
+    ]);
+  });
+
+  it("each contract is priced at the index-option rate card (engine), and the gap to Upstox's own F&O bill is measured", () => {
+    // Per position, the engine's charges — the figures the 220.21 commit pin above sums. Before the
+    // grammar the three options were one "NIFTY" and one "BSX" line priced as NSE cash (73.02 in all).
+    const rows = commitMod.previewParsedFile({ ...parse(DIR, FILE), trades: fo }, null, 1).rows;
+    expect(rows.map((r) => [r.tradingsymbol, r.segment, r.exchange, r2(r.chargesTotal)])).toEqual([
+      ["OPT NIFTY 01 Sep 2026 24000 PE", "index_option", "NSE", 53.24],
+      ["OPT NIFTY 01 Sep 2026 24350 CE", "index_option", "NSE", 51.93],
+      ["OPT SENSEX 03 Sep 2026 78300 CE", "index_option", "BSE", 51.59],
+    ]);
+    const engine = sum(rows.map((r) => r.chargesTotal));
+    expect(engine).toBe(156.76);
+    // MEASURED, not pinned as correct: Upstox's own ledger for the same day (committed fixture) debits
+    // ONE F&O bill of 354.57 for trade date 28-08-2026. Less the options' gross (−128.00) that bill
+    // carries 226.57 of charges — 69.81 above the engine, ~Rs 11.6 per order over six orders. Our
+    // rate card has Upstox F&O brokerage at Rs 20 flat per order; the bill is consistent with Rs 30
+    // (6 × 10 × 1.18 GST = 70.80). A charge_config question for the owner, not a parser one.
+    const ledger = parseUpstoxLedger(buildContext("export.xlsx", fs.readFileSync(path.join(DIR, "upstox-ledger-2025-07-19_2026-09-04.xlsx"))));
+    const foBill = ledger.rows.filter((r) => /· FO · Order · BILL POSTING$/.test(r.narration));
+    expect(foBill.map((r) => [r.date, r.amount])).toEqual([["2026-08-28", -354.57]]);
+    const foGross = sum(fo.map((x) => x.grossPnl));
+    expect(foGross).toBe(-128);
+    expect(r2(-foBill[0]!.amount + foGross)).toBe(226.57);
+    expect(r2(226.57 - engine)).toBe(69.81);
+  });
+
+  it("a row outside the verified grammar is REFUSED (stays flagged), never guessed", () => {
+    const base = { underlying: "NIFTY", instrumentType: "European Put", strike: "24000", expiry: "01-09-2026", tradeDate: "28-08-2026" };
+    expect(upstoxOptionContract(base)?.tradingsymbol).toBe("OPT NIFTY 01 Sep 2026 24000 PE");
+    expect(upstoxOptionContract({ ...base, underlying: "BSX", instrumentType: "European Call" })?.tradingsymbol).toBe("OPT SENSEX 01 Sep 2026 24000 CE");
+    // A future, an American option, a blank or zero strike, an ISO or slashed expiry, a month 13,
+    // an expiry BEFORE the trade (month-first 01-09 would be 9 January): each is null.
+    for (const bad of [
+      { instrumentType: "Future" }, { instrumentType: "American Call" }, { strike: "" }, { strike: "0" },
+      { expiry: "2026-09-01" }, { expiry: "01/09/2026" }, { expiry: "01-13-2026" }, { tradeDate: "02-09-2026" },
+      { underlying: "NIFTY 50" },
+    ]) expect(upstoxOptionContract({ ...base, ...bad }), JSON.stringify(bad)).toBeNull();
+  });
+
+  it.skipIf(!havePrivate(REAL))("the 2026-09-16 real export yields the identical positions", () => {
+    const strip = (ts: typeof trades) => ts.map(({ sourceFile: _s, ...rest }) => rest);
+    expect(strip(parse(PRIVATE, REAL).trades)).toEqual(strip(trades));
+  });
+});
+
+describe("v4.4.0 · Groww equity contract note — fills reconcile to the note's own Net Obligation", () => {
+  const TXT = "groww-contract-note-2026-01-05.txt";
+  const PDF = "groww-contract-note-2026-01-05.pdf";
+  const note = readGrowwContractNoteText(redactedText(TXT));
+
+  it("reads every fill: 713 across 14 ISINs, 23 of them BSE fills whose 19-digit order numbers wrap", () => {
+    expect(note.date).toBe("2026-01-05");
+    expect(note.fills).toHaveLength(713);
+    expect(note.unreadable).toEqual([]);
+    expect(new Set(note.fills.map((f) => f.isin)).size).toBe(14);
+    expect(note.fills.every((f) => f.isin && /^IN[A-Z0-9]{10}$/.test(f.isin))).toBe(true);
+    const bse = note.fills.filter((f) => f.exchange === "BSE");
+    expect(bse).toHaveLength(23);
+    expect(bse.every((f) => f.orderNo.length === 19)).toBe(true);
+  });
+
+  it("Σ sells − Σ buys = the stated Pay In / Pay Out Obligation, and less the stated charges = the stated Net Amount — to the paisa", () => {
+    expect(note.reconciliation).toEqual({
+      fills: 713,
+      buyValue: 6616367.71,
+      sellValue: 6625181.7,
+      fillsNet: 8813.99,
+      statedObligation: 8813.99,
+      charges: { brokerage: 560, exchangeTxn: 397.86, gst: 177.08, stt: 1655, sebi: 13.24, stamp: 198, ipft: 12.65 },
+      chargesTotal: 3013.83,
+      statedNet: 5800.16,
+      obligationGap: 0,
+      netGap: 0,
+    });
+    // The charge lines travel as broker-stated reference rows, positive costs, dated to the note.
+    expect(note.reference.map((r) => [r.key, r.figures.amount, r.asOf])).toContainEqual(["stt", 1655, "2026-01-05"]);
+    // One enrichment per fill, addressed by ISIN — never a trade.
+    expect(note.enrich).toHaveLength(713);
+    // Every per-ISIN block sums to its own `Total <ISIN>` line, and the fills to the annexure's `Net Total`.
+    expect(note.warnings.filter((w) => /do not sum to their own Total|annexure's own Net Total/.test(w))).toEqual([]);
+  });
+
+  it.skipIf(!havePrivate(PDF))("the REAL PDF, through the registered parser, gives the identical fills and figures", async () => {
+    const file = await parseGrowwContractNote(buildContext("export.pdf", fs.readFileSync(path.join(PRIVATE, PDF))));
+    expect(file.trades).toEqual([]);
+    expect(file.enrich).toEqual(note.enrich);
+    expect(file.reference).toEqual(note.reference);
+    expect(file.warnings.some((w) => /^Reconciled to the paisa: 713 fills net Rs8813\.99/.test(w))).toBe(true);
+  }, 60_000);
+});
+
+describe("v4.4.0 · Upstox equity contract note — fills reconcile to the note's own obligation and net amount", () => {
+  const TXT = "upstox-contract-note-2026-08-28.txt";
+  const PDF = "upstox-contract-note-2026-08-28.pdf";
+  const note = readUpstoxContractNoteText(redactedText(TXT));
+
+  it("reads the PRECISIO WIR round trip and nothing else", () => {
+    expect(note.date).toBe("2026-08-28");
+    expect(note.unreadable).toEqual([]);
+    expect(note.fills.map((f) => [f.description, f.isin, f.side, f.qty, f.price, f.tradeTime, f.exchange])).toEqual([
+      ["PRECISIO WIR", "INE372C01037", "buy", 3, 443.3, "11:55:42", "NSE"],
+      ["PRECISIO WIR", "INE372C01037", "sell", 3, 442.95, "11:56:42", "NSE"],
+    ]);
+  });
+
+  it("obligation −1.05 and net −4.28 (payable) are met to the paisa — and agree with Upstox's own realised P&L", () => {
+    expect(note.reconciliation).toEqual({
+      fills: 2,
+      buyValue: 1329.9,
+      sellValue: 1328.85,
+      fillsNet: -1.05,
+      statedObligation: -1.05,
+      charges: { brokerage: 2.66, gst: 0.49, stt: 0, exchangeTxn: 0.08 },
+      chargesTotal: 3.23,
+      statedNet: -4.28,
+      obligationGap: 0,
+      netGap: 0,
+    });
+    // The same round trip in the realised-P&L export pinned above states gross −1.05, charges
+    // 3.23, net −4.28. Two Upstox documents, one reader each, one answer.
+    const pnl = GOLDEN.find((g) => g.file === "upstox-realised-pnl-2026-08-28_2026-09-04.xlsx")!.reference!;
+    expect([note.reconciliation.fillsNet, note.reconciliation.chargesTotal, note.reconciliation.statedNet]).toEqual([pnl.gross, pnl.charges, pnl.net]);
+  });
+
+  it.skipIf(!havePrivate(PDF))("the REAL PDF, through the registered parser, gives the identical fills and figures", async () => {
+    const file = await parseUpstoxContractNote(buildContext("export.pdf", fs.readFileSync(path.join(PRIVATE, PDF))));
+    expect(file.trades).toEqual([]);
+    expect(file.enrich).toEqual(note.enrich);
+    expect(file.reference).toEqual(note.reference);
+  }, 60_000);
+});
+
+describe("v4.4.0 · the notes against the books they enrich (commit, one account each)", () => {
+  const asFile = (sourceId: string, broker: "groww" | "upstox", n: ReturnType<typeof readUpstoxContractNoteText>): ParsedFile => ({
+    sourceId, broker, format: "contract-note", trades: [], enrich: n.enrich, reference: n.reference, warnings: n.warnings, sourceRows: n.fills.length,
+  });
+  const outcome = (warnings: string[] | undefined) => {
+    const m = /aggregated into (\d+) contract-days?: applied (\d+), already had times (\d+), unmatched (\d+)/.exec((warnings ?? []).join("\n"));
+    return m ? { days: +m[1]!, applied: +m[2]!, alreadyHad: +m[3]!, unmatched: +m[4]! } : null;
+  };
+
+  it("the Upstox note lands on the Upstox trade report's PRECISIO position and on Broker Truth as a NOTE line", async () => {
+    newAccount(3001, "v440-upstox-note");
+    const book = "upstox-trade-2026-08-28_2026-09-04.xlsx";
+    const ctx = buildContext(book, fs.readFileSync(path.join(DIR, book)));
+    commitMod.commitParsedFile(await rankParsers(ctx)[0].parse(ctx), book, null, 3001);
+    const before = tradesMod.getJournalTrades().length;
+    const res = commitMod.commitParsedFile(asFile("upstox-contract-note", "upstox", readUpstoxContractNoteText(redactedText("upstox-contract-note-2026-08-28.txt"))), "note.pdf", null, 3001);
+    expect(tradesMod.getJournalTrades()).toHaveLength(before); // a note never creates a trade
+    expect(outcome(res.warnings)).toMatchObject({ days: 2, unmatched: 0 });
+    const refq = await import("@/lib/queries/reference");
+    const line = refq.reconcile(3001).charges.find((c) => c.kind === "note");
+    expect(line, "the Upstox note's charges read as a contract-note line").toBeTruthy();
+    expect([line!.label, line!.sourceId, line!.stated.total]).toEqual(["Contract note - 2026-08-28", "upstox-contract-note", 3.23]);
+  });
+
+  it("the Groww note lands on the Groww order history by ISIN — every contract-day matched", async () => {
+    newAccount(3002, "v440-groww-note");
+    const book = "groww-orders-2025-04-01_2026-03-31.xlsx";
+    const ctx = buildContext(book, fs.readFileSync(path.join(DIR, book)));
+    commitMod.commitParsedFile(await rankParsers(ctx)[0].parse(ctx), book, null, 3002);
+    const before = tradesMod.getJournalTrades().length;
+    const res = commitMod.commitParsedFile(asFile("groww-contract-note", "groww", readGrowwContractNoteText(redactedText("groww-contract-note-2026-01-05.txt"))), "note.pdf", null, 3002);
+    expect(tradesMod.getJournalTrades()).toHaveLength(before);
+    expect(outcome(res.warnings)).toMatchObject({ days: 28, unmatched: 0 });
+  }, 60_000);
 });

@@ -26,11 +26,20 @@ codes, PANs and names). This document deliberately contains **no identifiers**.
 > now pins two POPULATED Upstox exports: a realised-P&L export whose single row is
 > checked against Upstox's own stated figures (gross −1.05, net −4.28, charges
 > 3.23, met to the paisa by the engine's estimate), and a trade report of 11
-> executions → 4 positions committing net −271.92 (a trade report states neither
-> P&L nor charges, so that one pins our own arithmetic, not the broker's). Upstox
+> executions → 5 positions committing net −355.66 (a trade report states neither
+> P&L nor charges, so that one pins our own arithmetic, not the broker's; it was
+> 4 positions / −271.92 until v4.4.0 verified the F&O grammar and the three option
+> contracts stopped being priced as NSE cash). Upstox
 > value behaviour is therefore VERIFIED for the realised-P&L export and pinned for
-> the trade report; the Upstox ledger still has no parser. What the data
+> the trade report; the Upstox ledger has had a parser since v3.9. What the data
 > changed is recorded per broker below and in DECISIONS.md 2026-08-20.
+>
+> **2026-09-18 — the v4.4.0 parser wave** (owner files received 2026-09-16, each
+> read with the repo's own `xlsx` / `pdf-parse`): the Zerodha Console ledger, the
+> Groww fund ledger, the Groww and Upstox EQUITY contract notes, and the Upstox
+> trade report's F&O rows. Each is pinned in `tests/golden-books.test.ts` against
+> the broker's OWN stated figures (running balance, obligation, net amount) and
+> has rows in `tests/import-detection-matrix.test.ts`. Sections below.
 
 ---
 
@@ -59,6 +68,10 @@ format needs an **in-content fingerprint**. Every file examined has one:
 | Dhan Realised P&L (`.xls`) | segment-summary header `Segment | Buy Value | … | Net P&L` + the legal name `Raise Securities Private Limited` in the footer (the file never says "Dhan") |
 | Dhan Ledger (CSV) | header `Posting Date, Posting reference, Description, Narration, Credit, Debit, Net Balance` — `Posting reference` is Dhan's phrasing |
 | Dhan Dividend payout (CSV) | header `Date, Scrip Name, Dividend Per Share, Quantity, Dividend Paid` under a `Dividend payout report` title |
+| Zerodha Console ledger (v4.4.0) | cost centre suffixed ` - Z` (`NSE-EQ - Z`) on the entry rows under the `Particulars … Net Balance` header — the same Console suffix as the P&L's charge heads; the header alone claims nothing (real filename `ledger-<id>.xlsx` names no broker) |
+| Groww fund ledger (v4.4.0) | Segment Type values Groww names after itself (`GROWW_UPI`, `GROWW_WITHDRAW`) under the `Transaction Date … Balance (Rs.)` header, or `Groww` in the filename (`Groww_Balance_Statement_…`) |
+| Groww contract note, PDF (v4.4.0) | NO page text names Groww (the logo is an image): the legal name sits in the UNCOMPRESSED signature dictionary — `/Name (DS GROWW INVEST TECH PRIVATE LIMITED 1)` — beside `/Reason (Contract-note-verification)`; both halves required |
+| Upstox contract note, PDF (v4.4.0) | metadata names nobody (`/Title (Contract Note)`, as Dhan's does); `UPSTOX SECURITIES PRIVATE LIMITED` is standard-font `Tj` page text inside a FlateDecode stream, read synchronously by `pdfInflatedText` — plus a contract-note marker |
 
 ---
 
@@ -147,6 +160,30 @@ and values (delisted/merged scrips) — skipped, not imported as empty trades.
 - Detection trap this format exposed: the trade table and the fingerprint live
   on DIFFERENT sheets, so a first-sheet-only `toMatrix` scored it 0 and the
   file fell to the column mapper. Detection reads all sheets now.
+
+### Console ledger (`ledger-<client>.xlsx`) → `zerodha-ledger` — VERIFIED 2026-09-18 (v4.4.0)
+Console → Funds → Statement. One real export (6 rows, 2025-06-23 → 2025-07-04);
+redacted copy `tests/fixtures/redacted/zerodha-ledger-2025-01-01_2026-08-01.xlsx`.
+Sheet `Equity` (the segment pulled), **data from column B**: `Client ID` on
+row 7, `Ledger for Equity from <yyyy-mm-dd> to <yyyy-mm-dd>` on row 11, the
+header on **row 15** (the owner manifest's "row 4" counts differently — the
+parser searches for the header):
+```
+Particulars | Posting Date | Cost Center | Voucher Type | Debit | Credit | Net Balance
+```
+Then an `Opening Balance` row (Net Balance only), the entries, and a
+`Closing Balance` row. Posting dates are ISO text; money is NUMERIC to FOUR
+decimals (a DP charge of `15.045`, a settlement of `23176.1204`). Voucher types
+seen: `Journal Entry` (DP charges), `Book Voucher` (net settlement per
+settlement number), `Bank Payments` (the quarterly settlement paid back — its
+narration says "settlement", so the voucher type is read before the narration).
+**Pin:** opening 0 + Σ(credit − debit) equals every row's stated Net Balance and
+the stated closing balance 0.0016, exactly at four decimals. A cash file: it
+feeds the Cash & Ledger screen and imports no trade. The DB stores whole paise,
+so a four-decimal entry rounds at that boundary (15.045 → 15.04/15.05).
+**Fingerprint:** the ` - Z` cost centre (`NSE-EQ - Z`) on at least one entry,
+or `zerodha`/`kite` in the filename. The embedded `zerodha-logo` picture is
+not used: SheetJS drops drawings on rewrite, so a redacted copy cannot carry it.
 
 ---
 
@@ -342,11 +379,13 @@ Three real exports examined 2026-08-20 were **all schema-only** (that account ha
 no trades). A fourth and fifth, examined 2026-09-04, are POPULATED and pinned by
 `tests/golden-books.test.ts` — a realised-P&L export checked against Upstox's own
 stated figures (gross −1.05, net −4.28, charges 3.23, met to the paisa) and a trade
-report of 11 executions → 4 positions committing net −271.92. So the layouts below
+report of 11 executions → 5 positions committing net −355.66 (4 positions / −271.92
+until v4.4.0 — see the F&O grammar below). So the layouts below
 are VERIFIED, and value behaviour is VERIFIED for the realised-P&L export and pinned
 (against our own arithmetic, not a broker statement) for the trade report; the
-ledger parser shipped in v3.9 (`upstox-ledger`); the F&O tradingsymbol grammar (:358-360) is
-pinnable from the 2026-09-16 trade report with 6 NIFTY option rows (`BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md`). Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
+ledger parser shipped in v3.9 (`upstox-ledger`); the F&O tradingsymbol grammar is
+VERIFIED 2026-09-18 from the 2026-09-16 trade report (six option rows, below), and
+the EQUITY contract note has a parser as of v4.4.0 (below). Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
 `realizedPnL_EQ_<from>_To_<to>_<code>.xlsx`, `ledger_<from>_To_<to>_trading_<code>.xlsx`.
 **Fingerprint: `UPSTOX SECURITIES PRIVATE LIMITED` in A1** (then `(Formerly …)`,
 `Dealing Office …`, `UCC`/`Name`/… label rows, `Report Time Period`, `Generated On`).
@@ -358,9 +397,28 @@ Date | Company | Amount | Exchange | Segment | Scrip Code | Instrument Type |
 Strike Price | Expiry | Trade Num | Trade Time | Side | Quantity | Price
 ```
 `Company` is the name column (used as the symbol); `Trade Time` is a separate
-time column; `Instrument Type` / `Strike Price` / `Expiry` carry F&O — the
-tradingsymbol grammar for those rows is unverified, so such rows are flagged.
-No product column.
+time column; `Instrument Type` / `Strike Price` / `Expiry` carry F&O. No product
+column.
+
+**F&O grammar — VERIFIED 2026-09-18** against a populated report (11 executions,
+6 of them F&O; the 2026-09-16 re-download carries the same 11 rows as the
+committed `upstox-trade-2026-08-28_2026-09-04.xlsx`). An F&O row reads:
+`Company` = the underlying as Upstox codes it (`NIFTY`; `BSX` for SENSEX — BSE's
+own contract code), `Exchange` = `FON` (NSE F&O) or `FOB` (BSE F&O), `Segment` =
+`FO`, `Instrument Type` = `European Put` / `European Call`, `Strike Price` a plain
+number (`24000`, `78300`), `Expiry` `dd-mm-yyyy` text, day-first like `Date`
+(01-09-2026 is a Tuesday, NIFTY's expiry; 03-09-2026 a Thursday, SENSEX's).
+`upstoxOptionContract` (`lib/import/parsers/angelone-upstox.ts`) turns such a row
+into the canonical name every other broker's options land as —
+`OPT NIFTY 01 Sep 2026 24000 PE`, `OPT SENSEX 03 Sep 2026 78300 CE` — BEFORE
+grouping, so a PE and a CE on one underlying are two positions. Anything outside
+that grammar (a future, an American option, a blank/zero strike, a non-`dd-mm-yyyy`
+expiry, an expiry before the trade date) keeps its row flagged, never guessed.
+Pinned in `tests/golden-books.test.ts` (three contracts, classify →
+`index_option`, and per-position charges). Measured against Upstox's own
+ledger for the same day: its F&O bill (354.57) carries 226.57 of charges where
+our rate card computes 156.76 — see that describe; a rate-card question, not a
+grammar one.
 
 ### Realised P&L — sheet `REALIZED_PNL`, header on row 22
 Preceded by `Segment | EQ`, a `P&L Summary` block (`Gross P&L`, `Net P&L`) and a
@@ -376,6 +434,30 @@ Long Term | Speculation | Turn Over
 The schema-only sample carries `Wallet | TRADING` and **no column header at
 all** — nothing to map, so no parser claims THAT copy, by design. A populated
 export does have the header row and is read by `upstox-ledger` (below).
+
+### Contract note cum tax invoice, EQUITY (PDF) → `upstox-contract-note` — VERIFIED 2026-09-18 (v4.4.0)
+`CW_T_<ucc>_<yyyymmdd>_<EXCH>_<contract no>.pdf`, 3 pages, unprotected. One real
+note (NSE-EQ, 28-08-2026, 2 fills — the PRECISIO WIR round trip); the committed
+fixture is its `pdf-parse` TEXT with identity tokenised
+(`tests/fixtures/redacted/upstox-contract-note-2026-08-28.txt`, made by
+`scripts/fixtures/redact-contract-note.mjs`; the note number recurs as the GST
+invoice number `NSE/<number>` and is zeroed in both places). Annexure A, one line
+per fill: `<order no> <time> <trade no> <time> <name> [<ISIN>] <B|S> <qty> <gross
+rate> <net rate> <net total> <NSE|BSE>`. Upstox signs a SELL negative in both
+quantity and value, and a positive obligation / net amount is PAYABLE by the
+client. The obligation block (`PAY IN / ( PAY OUT ) OBLIGATION`, `Brokerage
+Charges`, `[bracketed]` charge lines, `Net amount (-) receivable … / (+) payable
+…`) is split by a page footer. **Pin:** Σ sells − Σ buys = the stated obligation
+(−1.05) and, less the stated charges (3.23), the stated net (−4.28), to the
+paisa — the same three figures Upstox's realised-P&L export states for that round
+trip. A note NEVER creates trades: it emits fill-time enrichments and charge
+reference rows. EQUITY only — no F&O-day note has been seen, and a line without
+an `[ISIN]` stays unread (the conservation check then shows the gap).
+**Fingerprint:** the metadata names nobody (`/Title (Contract Note)`, as Dhan's
+does); `UPSTOX SECURITIES PRIVATE LIMITED` (or the RKSV predecessor) is `Tj`
+page text in a FlateDecode stream, inflated synchronously by `pdfInflatedText`
+(`lib/import/parsers/pdf-bytes.ts`), plus a contract-note marker. 0.95 under a
+neutral name, 1.00 with `upstox` in it — above the generic `pdf` source's 0.90.
 
 ---
 
@@ -397,6 +479,69 @@ Three traps:
 
 ### Stocks — P&L (XLSX) — supported
 Sheets `Trade Level` (+ `Scrip Level`). Parsed by `lib/import/parsers/groww-xlsx.ts`.
+
+### Balance statement — client fund ledger (`Groww_Balance_Statement_<ucc>_<from>_<to>.xlsx`) → `groww-ledger` — VERIFIED 2026-09-18 (v4.4.0)
+Groww → Reports → Transactions → Groww Balance statement. One real export: 447
+entries, 02-01-2025 → 14-01-2026 (settlement dates to 16-01-2026); redacted copy
+`tests/fixtures/redacted/groww-ledger-2025-01-01_2026-01-30.xlsx` (the UCC and
+the MTF account number inside `Bill/Chq No.` tokenised). Sheet
+`Client Fund Ledger`: `Client Name` / `Unique Client Code` / `Backoffice Client
+Code` / `PAN` on rows 1-4, `Statement of Accounts of Funds for the period from
+dd/mm/yyyy to …` on row 6, the header on **row 8**:
+```
+Transaction Date | Settlement Date | Clearing Corporation/Clearing Member |
+Segment Type | Settlement No. | Bill/Chq No. | Transaction Type |
+Particulars / Narration | Voucher No. | Debit (Rs.) | Credit (Rs.) | Balance (Rs.)
+```
+Dates `dd-mm-yyyy`; money numeric; `Particulars / Narration` is `N/A` on every
+row, so the machine-readable `Segment Type` classifies (18 seen:
+`STOCKS_SETTLEMENT`, `GROWW_UPI`, `GROWW_WITHDRAW`, `INTEREST_ACCRUED` — the MTF
+interest —, `DELAYED_PAYMENT_CHARGES` — a charge, NOT MTF interest —, the MTF
+funding mechanics `FUNDING_PROVIDED` / `TURNOVER_*` / `CC_RELEASED` /
+`CHANGE_IN_CC` / `M2M_*` as adjustments, …). The trailing dispute note is prose,
+not a row. **The order trap:** rows are sorted by SETTLEMENT date, newest first,
+with zero exceptions — but within one settlement day the display order is not
+the posting order: read bottom-up the balance chain breaks at 102 of 447 rows
+(33 rows sit out of transaction-date order too). Within each settlement day the
+parser places each entry where it starts from the balance the previous one ended
+on (`postingOrder`); across all settlement days that leaves ZERO breaks, and a row
+no placement can chain would be reported, not forced. The file states no opening
+row; the balance before the first entry (81.52) is derived, and reported as
+derived. **Pin:** 447 entries, zero breaks — every stated balance is the previous
+posting's balance + credit − debit, ending on the statement's newest balance
+(0). A cash file: Cash & Ledger screen only, no trades.
+**Fingerprint:** Segment Type values Groww names after itself (`GROWW_UPI`,
+`GROWW_WITHDRAW`), or `groww` in the filename. The header shape alone claims
+nothing.
+
+### Contract note, EQUITY (`Contract_Note_<ucc>_<dd-Mon-yyyy>.pdf`) → `groww-contract-note` — VERIFIED 2026-09-18 (v4.4.0)
+One real note: 30 pages, unprotected, trade date 05-01-2026, **713 fills** over
+14 ISINs on NSE and BSE; the committed fixture is its `pdf-parse` TEXT with
+identity tokenised (`tests/fixtures/redacted/groww-contract-note-2026-01-05.txt`;
+the state of supply is kept, the address is not). Page 2 is a per-ISIN summary;
+page 3 the obligation block (`Pay In / Pay Out Obligation (before Brokerage)`,
+the charge lines printed NEGATIVE = payable, `Net Amount Receivable / Payable By
+Client`); Annexure A one line per fill — `<order no> <time> <trade no> <time>
+<company name> <NSE|BSE> <B|S> <qty> <gross rate> <net rate> <net total>` — in
+per-ISIN blocks closed by `Total <ISIN> <net qty> <net value>`, then `Net Total`.
+Groww signs a SELL with a negative quantity and a POSITIVE value; a positive
+obligation is RECEIVABLE. Fill lines name the company, never a ticker — the ISIN
+comes from the block's Total line. **Trap:** a BSE order number is 19 digits and
+`pdf-parse` wraps it inside its cell (`1767587900687199` / `282 10:14:32 …`); 23
+fills arrive split, and a reader that does not re-join them loses them SILENTLY
+(the second half does not even look like a fill) — only the conservation check
+shows it. **Pin:** Σ sells − Σ buys = the stated obligation 8,813.99, and less
+the stated charges (3,013.83: brokerage 560, exchange 397.86, IGST 177.08, STT
+1,655, SEBI 13.24, stamp 198, IPFT 12.65) = the stated net 5,800.16, to the
+paisa; every per-ISIN block sums to its own Total line. EQUITY only — the owner
+never traded F&O on Groww; a derivative-looking line is refused. Emits
+enrichments (matched by ISIN to the Groww order history) and charge reference
+rows; never a trade.
+**Fingerprint:** no page text names Groww (the logo is an image). The legal
+name is in the UNCOMPRESSED signature dictionary — `/Name (DS GROWW INVEST TECH
+PRIVATE LIMITED 1)` — beside `/Reason (Contract-note-verification)`; both the
+name and a contract-note marker are required. 0.95 under a neutral name, 1.00
+with `groww` in it.
 
 ---
 

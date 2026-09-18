@@ -69,7 +69,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     title: "Zerodha",
     summary: "Tradebook and Console P&L by file; today's executions over Kite Connect or OpenAlgo.",
     channels: ["files", "api", "openalgo"],
-    formats: sources("zerodha"),
+    formats: sources("zerodha", "zerodha-ledger"),
     steps: [
       "As of Aug 2026: log in at console.zerodha.com → Reports → Tradebook, pick the segment and date range, and download the file. The P&L statement is under Reports → P&L.",
       "The tradebook carries no charge columns — charges come from the Console P&L or a contract note, and Vyuha computes them from your rate card either way.",
@@ -114,7 +114,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     title: "Groww",
     summary: "Stocks P&L and order history by file; same-day pulls only through OpenAlgo.",
     channels: ["files", "openalgo"],
-    formats: sources("groww-xlsx", "groww-orders"),
+    formats: sources("groww-xlsx", "groww-orders", "groww-ledger", "groww-contract-note"),
     steps: [
       "As of Aug 2026: Groww (app or web) → your account → Reports → Stocks — the Stocks P&L statement and the Order History both download as XLSX.",
       "The order history has no price column (price is derived as value ÷ quantity) and no charges at all — charges come from the P&L statement or a contract note.",
@@ -161,7 +161,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     title: "Upstox",
     summary: "Trade report and realised P&L by file; a year-long read-only Analytics token for the API, or OpenAlgo.",
     channels: ["files", "api", "openalgo"],
-    formats: sources("upstox", "upstox-ledger"),
+    formats: sources("upstox", "upstox-ledger", "upstox-contract-note"),
     steps: [
       "As of Aug 2026: account.upstox.com → Reports — the trade report and the realised P&L download as XLSX. The filenames name no broker; Vyuha recognises the files by the legal name inside them.",
       "As of Sep 2026 the ledger (XLSX) is read too. It feeds the Cash & Ledger screen and imports no trades. A ledger export with no header row is left to the column mapper rather than half-read.",

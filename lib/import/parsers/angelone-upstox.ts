@@ -113,6 +113,10 @@ function colFinder(header: string[]) {
 function exchangeFrom(raw: string): Exchange | null {
   const s = norm(raw);
   if (!s) return null;
+  // Upstox's F&O exchange codes, verified on a real trade report (2026-09-16):
+  // `FON` for NSE F&O (NIFTY options), `FOB` for BSE F&O (SENSEX options).
+  if (s === "fon") return "NSE";
+  if (s === "fob") return "BSE";
   if (s.startsWith("mcx")) return "MCX";
   if (s.startsWith("bse") || s.startsWith("bfo")) return "BSE";
   if (s.startsWith("nse") || s.startsWith("nfo") || s.startsWith("cds")) return "NSE";
@@ -198,13 +202,66 @@ function detectFor(broker: Broker, nameRe: RegExp, ctx: ParseContext): number {
 }
 
 /** Instrument-type values that mean "plain equity" in an Upstox trade report.
- *  Anything else (FUTIDX/OPTSTK/FUT/OPT/CE/PE) is F&O, and this parser has
- *  never seen a real F&O row — so it flags rather than guesses a symbol. */
+ *  Anything else is F&O: an OPTION row in the verified grammar below becomes
+ *  a contract name, anything else (a future, an unseen label) is flagged
+ *  rather than guessed. */
 const EQUITY_INSTRUMENTS = new Set(["eq", "equity", "eqty", "stock", "stocks", "cash"]);
 const isEquityInstrument = (raw: string) => {
   const s = norm(raw);
   return !s || EQUITY_INSTRUMENTS.has(s);
 };
+
+/**
+ * Upstox writes a BSE index contract under BSE's own contract code, not the
+ * index name: `BSX` for SENSEX. Verified on the 2026-09-16 trade report — a
+ * `BSX` European Call on exchange `FOB`, strike 78,300, expiring Thursday
+ * 03-09-2026 (SENSEX's weekly expiry day), traded beside NIFTY strikes
+ * 24,000-24,350 (the SENSEX/NIFTY ratio). Only a code seen on a real file is
+ * translated; any other is kept as printed.
+ */
+const UPSTOX_UNDERLYING: Record<string, string> = { BSX: "SENSEX" };
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * One Upstox trade-report OPTION row → the canonical contract name every
+ * other broker's options land as (`OPT NIFTY 01 Sep 2026 24000 PE`, the
+ * grammar `classify` reads). VERIFIED 2026-09-16 on a populated report: six
+ * rows, `Instrument Type` = `European Put` / `European Call`, `Strike Price`
+ * a plain number, `Expiry` dd-mm-yyyy (day-first like the report's `Date`
+ * column; 01-09-2026 is a Tuesday, NIFTY's expiry day). Returns null — and the
+ * row stays flagged — for anything outside that grammar: a future, a blank
+ * or zero strike, an unreadable expiry, or an expiry BEFORE the trade date
+ * (an option cannot trade after it expires, so that reading is refused).
+ */
+export function upstoxOptionContract(p: {
+  underlying: string;
+  instrumentType: string;
+  strike: string;
+  expiry: string;
+  tradeDate: string;
+}): { tradingsymbol: string; note: string } | null {
+  const it = norm(p.instrumentType ?? "");
+  const optionType = it === "europeancall" ? "CE" : it === "europeanput" ? "PE" : null;
+  if (!optionType) return null;
+  const strike = Number(String(p.strike ?? "").replace(/[,₹\s]/g, ""));
+  if (!Number.isFinite(strike) || strike <= 0) return null;
+  const e = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(p.expiry ?? "").trim());
+  if (!e) return null;
+  const month = Number(e[2]), day = Number(e[1]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const expiryIso = `${e[3]}-${e[2]}-${e[1]}`;
+  const t = /^(\d{2})-(\d{2})-(\d{4})/.exec(String(p.tradeDate ?? "").trim());
+  if (t && `${t[3]}-${t[2]}-${t[1]}` > expiryIso) return null;
+  const code = String(p.underlying ?? "").trim().toUpperCase();
+  const underlying = UPSTOX_UNDERLYING[code] ?? code;
+  if (!/^[A-Z0-9&-]+$/.test(underlying)) return null;
+  const tradingsymbol = `OPT ${underlying} ${e[1]} ${MON[month - 1]} ${e[3]} ${strike} ${optionType}`;
+  const via = underlying !== code ? ` (${code} is BSE's contract code for ${underlying})` : "";
+  return {
+    tradingsymbol,
+    note: `Upstox F&O row: ${String(p.instrumentType).trim()}, strike ${strike}, expiry ${String(p.expiry).trim()} on ${code}${via} read as ${tradingsymbol}`,
+  };
+}
 
 function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
   const label = broker === "angelone" ? "Angel One" : "Upstox";
@@ -325,7 +382,31 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
       // date where the side should be — a row without a Buy/Sell is not a row.
       if (tradesHistory && !/^(b|s)/.test(norm(r[cSide]))) continue;
       sourceRows++;
-      const symbol = tradesHistory ? canonicalAngelContract(rawSymbol) : rawSymbol;
+      let symbol = tradesHistory ? canonicalAngelContract(rawSymbol) : rawSymbol;
+      // An Upstox F&O row in the VERIFIED option grammar becomes its contract
+      // name BEFORE grouping, so a PE and a CE on the same underlying are two
+      // positions, not one. Anything outside the grammar stays flagged.
+      let foNote: string | null = null;
+      if (cInstrType >= 0 && !isEquityInstrument(r[cInstrType] ?? "")) {
+        const read = upstoxOptionContract({
+          underlying: rawSymbol,
+          instrumentType: r[cInstrType] ?? "",
+          strike: cStrike >= 0 ? r[cStrike] ?? "" : "",
+          expiry: cExpiry >= 0 ? r[cExpiry] ?? "" : "",
+          tradeDate: cDate >= 0 ? r[cDate] ?? "" : "",
+        });
+        if (read) {
+          symbol = read.tradingsymbol;
+          foNote = read.note;
+        } else {
+          foNote =
+            `Upstox F&O row: instrument type ${(r[cInstrType] ?? "").trim() || "—"}, ` +
+            `strike ${(cStrike >= 0 ? r[cStrike] : "").trim() || "—"}, ` +
+            `expiry ${(cExpiry >= 0 ? r[cExpiry] : "").trim() || "—"} — outside the option grammar ` +
+            `verified on a real Upstox report (European Call/Put, strike, dd-mm-yyyy expiry); tradingsymbol grammar ` +
+            `unverified for this row; check the classification`;
+        }
+      }
       const product = cProduct >= 0 ? r[cProduct] : "";
       const key = `${symbol}|${product}`;
       const acc = groups.get(key) ?? {
@@ -379,14 +460,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
           continue;
         }
       }
-      if (cInstrType >= 0 && !isEquityInstrument(r[cInstrType] ?? "")) {
-        const note =
-          `Upstox F&O row: instrument type ${(r[cInstrType] ?? "").trim() || "—"}, ` +
-          `strike ${(cStrike >= 0 ? r[cStrike] : "").trim() || "—"}, ` +
-          `expiry ${(cExpiry >= 0 ? r[cExpiry] : "").trim() || "—"} — tradingsymbol grammar ` +
-          `unverified against a real row; check the classification`;
-        if (!acc.notes.includes(note)) acc.notes.push(note);
-      }
+      if (foNote && !acc.notes.includes(foNote)) acc.notes.push(foNote);
       if (side.startsWith("b")) {
         acc.buyQty += qty;
         acc.buyVal += qty * price;

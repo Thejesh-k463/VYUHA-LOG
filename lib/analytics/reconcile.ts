@@ -263,6 +263,9 @@ export const RECONCILE_SOURCE_IDS = [
 export const RECONCILE_CHARGE_SOURCE_IDS = [
   "dhan-contract-note",
   "angelone-ledger",
+  // v4.4.0: the two equity contract notes state their own charges the same way.
+  "groww-contract-note",
+  "upstox-contract-note",
 ] as const;
 
 /**

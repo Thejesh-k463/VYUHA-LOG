@@ -20,6 +20,11 @@ import { detectPaytmRealisedPnl } from "@/lib/import/parsers/paytm-realised-pnl"
 import { detectUpstoxLedger } from "@/lib/import/parsers/upstox-ledger";
 import { detectAngelOneLedger } from "@/lib/import/parsers/angelone-ledger";
 import { detectAngelOnePnlStatement } from "@/lib/import/parsers/angelone-pnl-statement";
+import { detectZerodhaLedger } from "@/lib/import/parsers/zerodha-ledger";
+import { detectGrowwLedger } from "@/lib/import/parsers/groww-ledger";
+import { detectGrowwContractNote } from "@/lib/import/parsers/groww-contract-note";
+import { detectUpstoxContractNote } from "@/lib/import/parsers/upstox-contract-note";
+import { deflateSync } from "node:zlib";
 import { ownerContext, ownerFiles } from "./helpers/owner-broker-files";
 
 /**
@@ -87,6 +92,16 @@ const FIXTURES: { file: string; broker: string; expect: string; label: string }[
   // tradewise table + the "- Z" heads.
   { file: "zerodha-taxpnl-fy2425.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha Console tax P&L (FY24-25, F&O + empty Currency/Commodity sections)" },
   { file: "zerodha-taxpnl-fy2526.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha Console tax P&L (FY25-26, single F&O section)" },
+  // ── 2026-09-18, the v4.4.0 parser wave: redacted copies of real owner
+  // exports (BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md), each pinned
+  // against the broker's own stated figures in tests/golden-books.test.ts.
+  // All load NEUTRAL: the Zerodha ledger's real name (`ledger-<id>.xlsx`) and
+  // the Upstox report's (`trade_<from>_<to>_<id>.xlsx`) name no broker, so the
+  // claim must come from content — the ` - Z` cost centre, Groww's own
+  // `GROWW_*` segment types, Upstox's legal name in A1.
+  { file: "zerodha-ledger-2025-01-01_2026-08-01.xlsx", broker: "zerodha", expect: "zerodha-ledger", label: "Zerodha Console ledger (Funds statement)" },
+  { file: "groww-ledger-2025-01-01_2026-01-30.xlsx", broker: "groww", expect: "groww-ledger", label: "Groww fund ledger (balance statement)" },
+  { file: "upstox-trade-2026-08-28_2026-09-04.xlsx", broker: "upstox", expect: "upstox", label: "Upstox trade report with F&O rows (FON/FOB)" },
 ];
 
 /**
@@ -112,7 +127,7 @@ const havePrivate = PRIVATE.every((p) => fs.existsSync(path.join(PRIVATE_DIR, p.
 
 // The 2026-08-20 batch is loaded under a NEUTRAL filename so that a claim can
 // only come from the file's content — the real exports name no broker.
-const NEUTRAL = new Set(["paytm-tradebook-v2.xlsx", "paytm-equity-pnl.xls", "zerodha-tradebook-console.xlsx", "zerodha-console-pnl-cola.xlsx", "upstox-trade-report.xlsx", "upstox-realized-pnl.xlsx", "upstox-ledger.xlsx", "zerodha-taxpnl-fy2425.xlsx", "zerodha-taxpnl-fy2526.xlsx"]);
+const NEUTRAL = new Set(["paytm-tradebook-v2.xlsx", "paytm-equity-pnl.xls", "zerodha-tradebook-console.xlsx", "zerodha-console-pnl-cola.xlsx", "upstox-trade-report.xlsx", "upstox-realized-pnl.xlsx", "upstox-ledger.xlsx", "zerodha-taxpnl-fy2425.xlsx", "zerodha-taxpnl-fy2526.xlsx", "zerodha-ledger-2025-01-01_2026-08-01.xlsx", "groww-ledger-2025-01-01_2026-01-30.xlsx", "upstox-trade-2026-08-28_2026-09-04.xlsx"]);
 const load = (file: string) =>
   buildContext(NEUTRAL.has(file) ? "export" + path.extname(file) : file, fs.readFileSync(path.join(DIR, file)));
 
@@ -200,6 +215,15 @@ const CROSS_DETECTORS: {
   { name: "detectUpstoxLedger", broker: "upstox", container: "binary", fn: detectUpstoxLedger },
   { name: "detectAngelOneLedger", broker: "angelone", container: "binary", fn: detectAngelOneLedger },
   { name: "detectAngelOnePnlStatement", broker: "angelone", container: "binary", fn: detectAngelOnePnlStatement },
+  // 2026-09-18, v4.4.0: two workbook ledgers (`if (ctx.text != null ||
+  // !ctx.buffer) return 0`) and two PDF contract notes. The note detectors
+  // return 0 on any non-`.pdf` name, so against the workbook fixtures above
+  // their zero is decided by EXTENSION, not content — their content-decided
+  // refusals are the PDF block below and the owner's real PDFs.
+  { name: "detectZerodhaLedger", broker: "zerodha", container: "binary", fn: detectZerodhaLedger },
+  { name: "detectGrowwLedger", broker: "groww", container: "binary", fn: detectGrowwLedger },
+  { name: "detectGrowwContractNote", broker: "groww", container: "binary", fn: detectGrowwContractNote },
+  { name: "detectUpstoxContractNote", broker: "upstox", container: "binary", fn: detectUpstoxContractNote },
 ];
 const readsText = (c: Container) => c === "text" || c === "both";
 const readsBinary = (c: Container) => c === "binary" || c === "both";
@@ -390,6 +414,14 @@ const OWNER_PATTERNS: { pattern: RegExp; broker: string; expect: string }[] = [
   // deliberately not listed here because under a neutral name it scores 0.75
   // on content alone, below this block's 0.9 floor for a named real export.
   { pattern: /^ACCOUNT 2=3-PAYTM MONEY-LARGE DATA\.xls$/, broker: "paytm", expect: "paytm-realised-pnl" },
+  // ── 2026-09-18, v4.4.0: the four new formats' REAL files, by the broker's
+  // own filename shape. Anchored so none can swallow a sibling: the Dhan note
+  // is `<code>_Contract_Note_…` (a leading underscore the Groww note lacks),
+  // the Upstox ledger is `ledger_…` (underscore; Zerodha's is `ledger-<id>`).
+  { pattern: /^ledger-[A-Z0-9]+\.xlsx$/, broker: "zerodha", expect: "zerodha-ledger" },
+  { pattern: /^Groww_Balance_Statement_.*\.xlsx$/, broker: "groww", expect: "groww-ledger" },
+  { pattern: /^Contract_Note_\d+_\d{2}-[A-Za-z]{3}-\d{4}\.pdf$/, broker: "groww", expect: "groww-contract-note" },
+  { pattern: /^CW_T_.*\.pdf$/, broker: "upstox", expect: "upstox-contract-note" },
 ];
 describe("the owner's real Dhan and Angel One exports route to their own source", () => {
   for (const p of OWNER_PATTERNS) {
@@ -440,6 +472,118 @@ describe("no detector claims another broker's REAL file (owner's folder)", () =>
       }
     }
   }
+});
+
+/**
+ * CONTRACT-NOTE PDFs ON CI (2026-09-18, v4.4.0).
+ *
+ * A real note is identity from end to end, so no PDF is committed — the
+ * golden pins read its redacted TEXT, and the owner-folder block above reads
+ * the real bytes where they exist. Detection, though, reads BYTES, and three
+ * PDF detectors now compete for every `.pdf`. So each broker's VERIFIED
+ * fingerprint (docs/BROKER_FORMATS.md) is carried by a minimal synthetic PDF
+ * exactly where the real one carries it:
+ *   - Groww: the legal name in the uncompressed signature dictionary;
+ *   - Upstox: the legal name as `Tj` page text inside a FlateDecode stream
+ *     (its metadata says only `Contract Note`, the same as Dhan's);
+ *   - Dhan: the legal entity in the uncompressed document metadata;
+ * and a fourth note names nobody at all. Each detector claims its own and
+ * scores 0 on the other two; nobody claims the nameless one, which falls to
+ * the generic PDF reader (text plus a question).
+ */
+describe("contract-note PDFs: each detector claims only its own broker's note", () => {
+  const pdf = (header: string, pageText: string | null): Buffer => {
+    const parts: Buffer[] = [Buffer.from(`%PDF-1.7\n1 0 obj\n<< ${header} >>\nendobj\n`, "latin1")];
+    if (pageText != null) {
+      const body = deflateSync(Buffer.from(`BT /F1 9 Tf 20 800 Td ${pageText} ET`, "latin1"));
+      parts.push(Buffer.from(`2 0 obj\n<< /Length ${body.length} /Filter /FlateDecode >>\nstream\n`, "latin1"), body, Buffer.from("\nendstream\nendobj\n", "latin1"));
+    }
+    parts.push(Buffer.from("%%EOF\n", "latin1"));
+    return Buffer.concat(parts);
+  };
+  const NOTES: { broker: string; expect: string; bytes: Buffer }[] = [
+    {
+      broker: "groww", expect: "groww-contract-note",
+      bytes: pdf("/Type /Sig /Name (DS GROWW INVEST TECH PRIVATE LIMITED 1) /Reason (Contract-note-verification)", "(Trade Date 05-01-2026) Tj"),
+    },
+    {
+      broker: "upstox", expect: "upstox-contract-note",
+      bytes: pdf("/Title (Contract Note) /Producer (iText)", "(CONTRACT NOTE CUM TAX INVOICE) Tj (UPSTOX SECURITIES PRIVATE LIMITED) Tj"),
+    },
+    {
+      broker: "dhan", expect: "dhan-contract-note",
+      bytes: pdf("/Title (Contract Note) /Author (Raise Securities Private Limited)", "(CONTRACT NOTE) Tj"),
+    },
+  ];
+  const PDF_DETECTORS = [
+    { broker: "groww", fn: detectGrowwContractNote },
+    { broker: "upstox", fn: detectUpstoxContractNote },
+    { broker: "dhan", fn: detectDhanContractNote },
+  ];
+
+  for (const n of NOTES) {
+    it(`${n.broker}'s note routes to ${n.expect} under a neutral name, and every other note detector scores 0`, () => {
+      const ctx = buildContext("export.pdf", n.bytes);
+      const ranked = rankParsers(ctx);
+      expect(ranked[0].sourceId).toBe(n.expect);
+      expect(ranked[0].confidence).toBeGreaterThanOrEqual(0.95);
+      for (const d of PDF_DETECTORS.filter((x) => x.broker !== n.broker)) expect(d.fn(ctx)).toBe(0);
+    });
+  }
+
+  it("a note that names no broker is claimed by nobody — the generic PDF reader asks", () => {
+    const ctx = buildContext("Contract_Note_05-Jan-2026.pdf", pdf("/Title (Contract Note) /Producer (iText)", "(CONTRACT NOTE CUM TAX INVOICE) Tj (Net Amount Receivable) Tj"));
+    for (const d of PDF_DETECTORS) expect(d.fn(ctx)).toBe(0);
+    expect(rankParsers(ctx).filter((r) => r.confidence > 0)[0]?.sourceId).toBe("pdf");
+  });
+
+  it("a broker's name WITHOUT a contract-note marker is not a note either", () => {
+    // A Groww-signed or Upstox-drawn PDF of some other kind must not be read
+    // as a note: both halves of the fingerprint are required.
+    const growwOther = buildContext("export.pdf", pdf("/Type /Sig /Name (DS GROWW INVEST TECH PRIVATE LIMITED 1) /Reason (Statement-verification)", "(Holdings) Tj"));
+    const upstoxOther = buildContext("export.pdf", pdf("/Title (Statement) /Producer (iText)", "(UPSTOX SECURITIES PRIVATE LIMITED) Tj (Holdings statement) Tj"));
+    expect(detectGrowwContractNote(growwOther)).toBe(0);
+    expect(detectUpstoxContractNote(upstoxOther)).toBe(0);
+  });
+});
+
+/**
+ * THE LEDGERS' NAME RULE (2026-09-18, v4.4.0). A ledger's header — date,
+ * narration, debit, credit, balance — is every broker's, so the header alone
+ * claims nothing: the Zerodha ledger needs its ` - Z` cost centre (or the
+ * name in the filename), the Groww ledger its own `GROWW_*` segment types (or
+ * the name in the filename). Same header, name removed → 0; name restored → a
+ * claim. Rows are synthetic; the header cells are the verified ones.
+ */
+describe("a ledger's header shape alone is never a claim", () => {
+  const book = (rows: (string | number)[][]) => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Sheet1");
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  };
+  const Z_HEAD = ["Particulars", "Posting Date", "Cost Center", "Voucher Type", "Debit", "Credit", "Net Balance"];
+  const zRows = (cost: string) => book([Z_HEAD, ["Opening Balance", "", "", "", "", "", 0], ["DP Charges", "2025-06-23", cost, "Journal Entry", 15.045, 0, -15.045]]);
+  const G_HEAD = ["Transaction Date", "Settlement Date", "Clearing Corporation/Clearing Member", "Segment Type", "Settlement No.", "Bill/Chq No.", "Transaction Type", "Particulars / Narration", "Voucher No.", "Debit (Rs.)", "Credit (Rs.)", "Balance (Rs.)"];
+  const gRows = (seg: string) => book([G_HEAD, ["02-01-2025", "02-01-2025", "N/A", seg, "N/A", "N/A", "JV", "N/A", "DEP1", 0, 11000, 11081.52]]);
+
+  it("Zerodha: no ` - Z` cost centre and no name → 0; the cost centre alone → a claim", () => {
+    expect(detectZerodhaLedger(buildContext("export.xlsx", zRows("NSE-EQ")))).toBe(0);
+    expect(detectZerodhaLedger(buildContext("export.xlsx", zRows("NSE-EQ - Z")))).toBeGreaterThanOrEqual(0.9);
+    expect(detectZerodhaLedger(buildContext("zerodha-ledger.xlsx", zRows("NSE-EQ")))).toBe(1);
+  });
+
+  it("Groww: no GROWW_* segment and no name → 0; the segment alone → a claim", () => {
+    expect(detectGrowwLedger(buildContext("export.xlsx", gRows("UPI")))).toBe(0);
+    expect(detectGrowwLedger(buildContext("export.xlsx", gRows("GROWW_UPI")))).toBeGreaterThanOrEqual(0.9);
+    expect(detectGrowwLedger(buildContext("Groww_Balance_Statement.xlsx", gRows("UPI")))).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("the nameless copies fall to nothing broker-named", () => {
+    for (const ctx of [buildContext("export.xlsx", zRows("NSE-EQ")), buildContext("export.xlsx", gRows("UPI"))]) {
+      const top = rankParsers(ctx).filter((r) => r.confidence > 0)[0];
+      if (top) expect(top.sourceId).toBe("generic-table");
+    }
+  });
 });
 
 /**
