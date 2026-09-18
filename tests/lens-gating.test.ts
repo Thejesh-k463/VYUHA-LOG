@@ -47,6 +47,22 @@ describe("the split is an allow-list", () => {
   });
 });
 
+describe("Kpis.winnersNet / losersNet (v4.4.0 D6) cross NEITHER side", () => {
+  // Together they rebuild the profit factor, which is Pro — so they are not
+  // free totals; and the Pro edge already carries profitFactor itself, so they
+  // add nothing there. The dashboard reads them from its own client-side Kpis.
+  it("absent from the free wire AND the Pro wire", () => {
+    const k = kpisOf([trade({ netPnl: 777 }), trade({ netPnl: -333 })]);
+    expect(k.winnersNet).toBe(777);
+    expect(k.losersNet).toBe(-333);
+    for (const pro of [false, true]) {
+      const wire = JSON.stringify(toLensRow(k, pro));
+      expect(wire, `pro=${pro}`).not.toContain("winnersNet");
+      expect(wire, `pro=${pro}`).not.toContain("losersNet");
+    }
+  });
+});
+
 describe("the serialisation proof", () => {
   it("an unlicensed payload contains no Pro field name and no Pro value", () => {
     const trades = [trade({ netPnl: 777 }), trade({ netPnl: -333 })];

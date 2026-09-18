@@ -17,15 +17,15 @@ describe("mulberry32", () => {
 
 describe("monteCarloEquity", () => {
   it("refuses to simulate on too little history (<20 days) or bad equity", () => {
-    expect(monteCarloEquity(flat(0.01, 10), 100000)).toBeNull();
-    expect(monteCarloEquity(flat(0.01), 0)).toBeNull();
+    expect(monteCarloEquity(flat(0.01, 10), 100000, { horizonDays: 252 })).toBeNull();
+    expect(monteCarloEquity(flat(0.01), 0, { horizonDays: 252 })).toBeNull();
   });
 
   it("is deterministic for the same seed", () => {
     const returns = [0.01, -0.02, 0.005, 0.015, -0.01, 0.02, -0.005, 0.001, -0.015, 0.03,
       0.002, -0.008, 0.012, -0.02, 0.007, 0.018, -0.011, 0.004, -0.006, 0.009, 0.013, -0.017];
-    const a = monteCarloEquity(returns, 100000, { paths: 500, seed: 1 })!;
-    const b = monteCarloEquity(returns, 100000, { paths: 500, seed: 1 })!;
+    const a = monteCarloEquity(returns, 100000, { horizonDays: 252, paths: 500, seed: 1 })!;
+    const b = monteCarloEquity(returns, 100000, { horizonDays: 252, paths: 500, seed: 1 })!;
     expect(a).toEqual(b);
   });
 
@@ -48,7 +48,7 @@ describe("monteCarloEquity", () => {
   it("percentiles are monotonic and mean sits inside [p5, p95]", () => {
     const returns = [0.02, -0.02, 0.01, -0.01, 0.03, -0.03, 0.005, -0.005, 0.015, -0.015,
       0.025, -0.025, 0.008, -0.008, 0.012, -0.012, 0.001, -0.001, 0.018, -0.018, 0.006, -0.006];
-    const r = monteCarloEquity(returns, 100000, { paths: 1000 })!;
+    const r = monteCarloEquity(returns, 100000, { horizonDays: 252, paths: 1000 })!;
     const t = r.terminal;
     expect(t.p5).toBeLessThanOrEqual(t.p25);
     expect(t.p25).toBeLessThanOrEqual(t.p50);
@@ -61,8 +61,8 @@ describe("monteCarloEquity", () => {
   it("a tighter ruin threshold (smaller drawdown) ruins more often", () => {
     const returns = [0.02, -0.025, 0.01, -0.015, 0.03, -0.03, 0.005, -0.02, 0.015, -0.01,
       0.025, -0.028, 0.008, -0.012, 0.012, -0.022, 0.001, -0.005, 0.018, -0.026, 0.006, -0.009];
-    const loose = monteCarloEquity(returns, 100000, { paths: 800, ruinFrac: 0.3, seed: 5 })!; // ruin at −70%
-    const tight = monteCarloEquity(returns, 100000, { paths: 800, ruinFrac: 0.8, seed: 5 })!; // ruin at −20%
+    const loose = monteCarloEquity(returns, 100000, { horizonDays: 252, paths: 800, ruinFrac: 0.3, seed: 5 })!; // ruin at −70%
+    const tight = monteCarloEquity(returns, 100000, { horizonDays: 252, paths: 800, ruinFrac: 0.8, seed: 5 })!; // ruin at −20%
     expect(tight.riskOfRuinPct).toBeGreaterThanOrEqual(loose.riskOfRuinPct);
   });
 });
@@ -71,10 +71,10 @@ describe("the memo (2026-08-11 perf wave)", () => {
   it("identical inputs return the cached object; the uncached export recomputes", async () => {
     const { monteCarloEquity, monteCarloEquityUncached } = await import("@/lib/analytics/monte-carlo");
     const rets = Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.008));
-    const a = monteCarloEquity(rets, 100000, { paths: 50 });
-    const b = monteCarloEquity(rets, 100000, { paths: 50 });
+    const a = monteCarloEquity(rets, 100000, { horizonDays: 252, paths: 50 });
+    const b = monteCarloEquity(rets, 100000, { horizonDays: 252, paths: 50 });
     expect(b).toBe(a); // same OBJECT — the memo hit, no recompute
-    const c = monteCarloEquityUncached(rets, 100000, { paths: 50 });
+    const c = monteCarloEquityUncached(rets, 100000, { horizonDays: 252, paths: 50 });
     expect(c).not.toBe(a); // fresh run…
     expect(c).toEqual(a); // …but deterministic, so equal values
   });
@@ -86,8 +86,8 @@ describe("the memo (2026-08-11 perf wave)", () => {
     // this test reversed into itself and "proved" a collision that never was).
     const rets = Array.from({ length: 40 }, (_, i) => (i - 20) / 1000);
     const reordered = [...rets].reverse();
-    const a = monteCarloEquity(rets, 100000, { paths: 50 });
-    const b = monteCarloEquity(reordered, 100000, { paths: 50 });
+    const a = monteCarloEquity(rets, 100000, { horizonDays: 252, paths: 50 });
+    const b = monteCarloEquity(reordered, 100000, { horizonDays: 252, paths: 50 });
     expect(b).not.toBe(a); // same length, same sum — must NOT collide
   });
 });

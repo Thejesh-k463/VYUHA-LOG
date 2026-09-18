@@ -30,6 +30,7 @@
 
 import {
   computeKpis,
+  edgeRatios,
   type AnalyticsTrade,
   type Kpis,
 } from "@/lib/analytics/metrics";
@@ -115,13 +116,9 @@ function classify(n: number, winRate: number, payoff: number | null): WinLossVer
 export function winLossReport(trades: WinLossTrade[]): WinLossReport {
   const kpis = computeKpis(trades);
   const n = kpis.closedCount - kpis.unpricedCount;
-  // The `!= null` halves are the SAME condition as the counts (metrics.ts states
-  // null exactly when its count is 0) — they are here so the division is typed,
-  // not to change when a payoff exists.
-  const payoff =
-    kpis.wins > 0 && kpis.losses > 0 && kpis.avgWin != null && kpis.avgLoss != null
-      ? r4(kpis.avgWin / Math.abs(kpis.avgLoss))
-      : null;
+  // ONE payoff rule for every surface (v4.4.0 D6): the same helper groupBy and
+  // segmentDepth use, over the same priced sums computeKpis divides.
+  const { payoff } = edgeRatios(kpis);
   const winRate = wilsonInterval(kpis.wins, n);
   const payoffNeeded =
     n > 0 && kpis.winRate != null && kpis.winRate > 0 ? r4((1 - kpis.winRate) / kpis.winRate) : null;

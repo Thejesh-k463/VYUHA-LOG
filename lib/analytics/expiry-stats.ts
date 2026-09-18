@@ -32,8 +32,9 @@ export interface ExpiryBucket {
   net: number;
   wins: number;
   losses: number;
-  winRatePct: number;
-  avgPerTrade: number;
+  /** null when the bucket is empty — a rate over no trade is not 0% (invariant 6). */
+  winRatePct: number | null;
+  avgPerTrade: number | null;
 }
 
 export interface UpcomingExpiry {
@@ -46,8 +47,8 @@ export interface ExpiryStats {
   expiryDates: string[]; // derived calendar (sorted)
   expiryDay: ExpiryBucket;
   nonExpiry: ExpiryBucket;
-  concentrationPct: number; // expiry-day trades ÷ all closed F&O trades
-  netEdgeExpiry: number; // expiry-day avg per trade − non-expiry avg per trade
+  concentrationPct: number | null; // expiry-day trades ÷ all closed F&O trades; null with none closed
+  netEdgeExpiry: number | null; // expiry-day avg − non-expiry avg; null unless BOTH buckets hold a trade
   upcoming: UpcomingExpiry[];
 }
 
@@ -70,8 +71,8 @@ function bucket(label: string, trades: ExpiryTradeInput[]): ExpiryBucket {
     net: r2(net),
     wins,
     losses,
-    winRatePct: trades.length ? r2((wins / trades.length) * 100) : 0,
-    avgPerTrade: trades.length ? r2(net / trades.length) : 0,
+    winRatePct: trades.length ? r2((wins / trades.length) * 100) : null,
+    avgPerTrade: trades.length ? r2(net / trades.length) : null,
   };
 }
 
@@ -104,8 +105,11 @@ export function computeExpiryStats(
     expiryDates: [...expirySet].sort(),
     expiryDay,
     nonExpiry,
-    concentrationPct: closed.length ? r2((onExpiry.length / closed.length) * 100) : 0,
-    netEdgeExpiry: r2(expiryDay.avgPerTrade - nonExpiry.avgPerTrade),
+    concentrationPct: closed.length ? r2((onExpiry.length / closed.length) * 100) : null,
+    netEdgeExpiry:
+      expiryDay.avgPerTrade != null && nonExpiry.avgPerTrade != null
+        ? r2(expiryDay.avgPerTrade - nonExpiry.avgPerTrade)
+        : null,
     upcoming,
   };
 }

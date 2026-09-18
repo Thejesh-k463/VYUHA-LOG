@@ -82,7 +82,7 @@ export default function DisciplineReportPage() {
   const pbStats = playbookStats(behaviorTrades, getPlaybooks().map((p) => ({ id: p.id, name: p.name })));
   const mistakes = mistakeReport(behaviorTrades);
   const emotions = emotionReport(behaviorTrades);
-  const pnlCls = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
+  const pnlCls = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
   return (
     <>

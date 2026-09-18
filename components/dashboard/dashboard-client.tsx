@@ -21,6 +21,7 @@ import {
   type AnalyticsTrade,
 } from "@/lib/analytics/metrics";
 import { inr, inrCompact, pct } from "@/lib/format";
+import { PROFIT_FACTOR_TITLE, profitFactorRows, segmentEdgeRows, type SegmentEdgeRow } from "@/lib/domain/kpi-detail";
 import { BROKERS, BROKER_LABELS, BUCKETS, BUCKET_LABELS, SEGMENTS, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
 
@@ -88,6 +89,7 @@ export function DashboardClient({
     [filtered],
   );
   const segStats = React.useMemo(() => bySegment(filtered), [filtered]);
+  const segEdge = React.useMemo(() => segmentEdgeRows(segStats), [segStats]);
   const setupStats = React.useMemo(() => bySetup(filtered), [filtered]);
 
   // C4 — sparkline (last 30 equity points) + week-over-week net delta.
@@ -125,17 +127,6 @@ export function DashboardClient({
     }
     return { best: best[1], worst: worst[1], bestDate: best[0], worstDate: worst[0] };
   }, [daily]);
-
-  const { grossWins, grossLosses } = React.useMemo(() => {
-    let w = 0;
-    let l = 0;
-    for (const t of filtered) {
-      if (t.isOpen) continue;
-      if (t.netPnl > 0) w += t.netPnl;
-      else if (t.netPnl < 0) l += t.netPnl;
-    }
-    return { grossWins: w, grossLosses: l };
-  }, [filtered]);
 
   const rStats = React.useMemo(() => {
     const rs = filtered.filter((t) => !t.isOpen && t.rMultiple != null).map((t) => t.rMultiple as number);
@@ -302,12 +293,12 @@ export function DashboardClient({
           value={k.profitFactor === Infinity ? "∞" : <CountUp value={k.profitFactor} decimals={2} format="plain" />}
           sub={`Expectancy ${inrCompact(k.expectancy)}`}
           detail={{
-            title: "Profit factor — gross wins ÷ gross losses",
+            title: PROFIT_FACTOR_TITLE,
             summary: "Above 1.0 you make money; below 1.0 the book bleeds whatever the win rate says.",
             rows: [
-              { label: "Gross winnings", value: inr(grossWins, { decimals: 0 }), tone: "profit" },
-              { label: "Gross losses", value: `−${inr(Math.abs(grossLosses), { decimals: 0 })}`, tone: "loss" },
-              { label: "Profit factor", value: k.profitFactor === Infinity ? "∞" : k.profitFactor.toFixed(2), tone: k.profitFactor >= 1 ? "profit" : "loss" },
+              // The exact two sums the headline divides (priced trades, net of
+              // charges) — so the popup reproduces the number above it.
+              ...profitFactorRows(k),
               // A null tone would paint a green "—".
               { label: "Expectancy / trade", value: inr(k.expectancy, { decimals: 0 }), tone: k.expectancy == null ? undefined : k.expectancy >= 0 ? "profit" : "loss" },
               { label: "Closed trades", value: `${k.closedCount}`, hint: k.closedCount < 20 ? "under ~20 trades this is mostly noise" : undefined },
@@ -413,7 +404,10 @@ export function DashboardClient({
       <section className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle>Net P&L by segment</CardTitle></CardHeader>
-          <CardContent>{segStats.length ? <SegmentBars data={segStats} labelFor={(kk) => SEGMENT_LABELS[kk as Segment] ?? kk} /> : <Empty />}</CardContent>
+          <CardContent>
+            {segStats.length ? <SegmentBars data={segStats} labelFor={(kk) => SEGMENT_LABELS[kk as Segment] ?? kk} /> : <Empty />}
+            {segEdge.length > 0 && <SegmentEdgeTable rows={segEdge} />}
+          </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle>Net P&L by setup tag</CardTitle></CardHeader>
@@ -463,4 +457,48 @@ function MonthLadder({ month, net, base, stretch }: { month: string; net: number
  *  is finally always true when shown. */
 function Empty() {
   return <EmptyState variant="chart" title="No data for these filters" hint="Widen the date range or clear a filter — closed trades power every chart here." />;
+}
+
+/**
+ * v4.4.0 D6 — per-segment edge beside the segment bars: win rate · profit
+ * factor · payoff · expectancy for the five DEPTH_SEGMENTS, from `groupBy`'s
+ * own figures (`segmentEdgeRows`), so a row equals the KPI band under that
+ * segment filter. FREE (OQ3): the segment filter already shows each segment's
+ * PF unlicensed, and the dashboard is never gated (invariant 7).
+ */
+function SegmentEdgeTable({ rows }: { rows: SegmentEdgeRow[] }) {
+  const tone = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "");
+  return (
+    <div className="mt-4 overflow-x-auto" data-testid="segment-edge-table">
+      <table className="w-full text-xs tabular-nums">
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="py-1 text-left font-medium">Segment</th>
+            <th className="py-1 text-right font-medium">Trades</th>
+            <th className="py-1 text-right font-medium">Win rate</th>
+            <th className="py-1 text-right font-medium" title="Winners ÷ losers, after charges">Profit factor</th>
+            <th className="py-1 text-right font-medium" title="Average win ÷ average loss">Payoff</th>
+            <th className="py-1 text-right font-medium">Expectancy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.segment} className="border-t border-border">
+              <td className="py-1">{r.label}</td>
+              <td className="py-1 text-right" title={r.unpricedCount > 0 ? `${r.unpricedCount} unpriced — no cost basis, held out of every ratio` : undefined}>
+                {r.pricedCount}
+                {r.unpricedCount > 0 && <span className="text-warning"> +{r.unpricedCount}</span>}
+              </td>
+              <td className="py-1 text-right">{pct(r.winRate == null ? null : r.winRate * 100, 1)}</td>
+              <td className="py-1 text-right" title={r.noLoserYet ? "No losing trade yet — nothing to divide by" : undefined}>
+                {r.profitFactor != null ? r.profitFactor.toFixed(2) : r.noLoserYet ? <span className="text-muted-foreground">no losing trade yet</span> : "—"}
+              </td>
+              <td className="py-1 text-right">{r.payoff == null ? "—" : `${r.payoff.toFixed(2)}×`}</td>
+              <td className={`py-1 text-right ${tone(r.expectancy)}`}>{inr(r.expectancy, { decimals: 0 })}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

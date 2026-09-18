@@ -50,7 +50,7 @@ describe("closesToReturns", () => {
 describe("computeBenchmark", () => {
   it("recovers β and zero α for a perfectly leveraged portfolio (rp = 1.5·rb)", () => {
     const portfolio: ReturnByDate[] = dates.map((date, i) => ({ date, ret: 1.5 * rb[i] }));
-    const s = computeBenchmark(portfolio, closes, 0)!;
+    const s = computeBenchmark(portfolio, closes, 0, 252)!;
     expect(s.beta).toBeCloseTo(1.5, 3);
     expect(s.alphaAnnualPct).toBeCloseTo(0, 2);
     expect(s.correlation).toBeCloseTo(1, 4);
@@ -60,14 +60,25 @@ describe("computeBenchmark", () => {
 
   it("recovers α when the portfolio adds a constant daily edge (rp = 0.1%/day + rb)", () => {
     const portfolio: ReturnByDate[] = dates.map((date, i) => ({ date, ret: 0.001 + rb[i] }));
-    const s = computeBenchmark(portfolio, closes, 0)!;
+    const s = computeBenchmark(portfolio, closes, 0, 252)!;
     expect(s.beta).toBeCloseTo(1, 3);
     expect(s.alphaAnnualPct).toBeCloseTo(25.2, 1); // 0.001 × 252 × 100
   });
 
+  it("annualises α on the trading-days basis it is GIVEN — 245 for the NSE 2026 calendar (v4.4.0 D4)", () => {
+    // α moves by 245/252 ≈ −2.8%; β, correlation and R² are unannualised and do not.
+    const portfolio: ReturnByDate[] = dates.map((date, i) => ({ date, ret: 0.001 + rb[i] }));
+    const at245 = computeBenchmark(portfolio, closes, 0, 245)!;
+    const at252 = computeBenchmark(portfolio, closes, 0, 252)!;
+    expect(at245.alphaAnnualPct).toBeCloseTo(24.5, 1); // 0.001 × 245 × 100
+    expect(at245.beta).toBe(at252.beta);
+    expect(at245.correlation).toBe(at252.correlation);
+    expect(at245.rSquared).toBe(at252.rSquared);
+  });
+
   it("returns null when fewer than 2 dates overlap", () => {
     const portfolio: ReturnByDate[] = [{ date: "2026-01-02", ret: 0.01 }];
-    expect(computeBenchmark(portfolio, closes, 0)).toBeNull();
+    expect(computeBenchmark(portfolio, closes, 0, 252)).toBeNull();
   });
 
   it("returns null when dates do not overlap at all", () => {
@@ -75,6 +86,6 @@ describe("computeBenchmark", () => {
       { date: "2030-01-01", ret: 0.01 },
       { date: "2030-01-02", ret: 0.02 },
     ];
-    expect(computeBenchmark(portfolio, closes, 0)).toBeNull();
+    expect(computeBenchmark(portfolio, closes, 0, 252)).toBeNull();
   });
 });

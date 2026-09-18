@@ -30,6 +30,7 @@
 
 import type { Segment } from "@/lib/domain/constants";
 import { proportionPValue, wilsonInterval, benjaminiYekutieli, type Interval } from "./inference";
+import { edgeRatios } from "./metrics";
 
 /**
  * The five the owner asked for, in the order a trader thinks about them:
@@ -74,10 +75,17 @@ export interface SegmentDepth {
   gross: number;
   charges: number;
   wins: number;
-  winRate: number;
+  /** null when `count` is 0 — no measurable trade, no rate (invariant 6). */
+  winRate: number | null;
   /** Wilson interval on the win rate. Wide means "we do not know yet". */
   winRateCi: Interval;
-  expectancy: number;
+  /** null when `count` is 0. */
+  expectancy: number | null;
+  /** After charges, via `edgeRatios` (v4.4.0 D6) — the same figure `groupBy`
+   *  and `computeKpis` state for this segment. null with no loser. */
+  profitFactor: number | null;
+  /** avgWin ÷ |avgLoss|; null unless the segment has both. */
+  payoff: number | null;
   /**
    * Charges as a share of GROSS profit — how much of what the strategy made
    * went to the cost of making it. Null when gross is not positive, because a
@@ -134,6 +142,9 @@ export function segmentDepth(trades: DepthTrade[]): SegmentDepthReport {
     const gross = r2(rows.reduce((s, t) => s + t.grossPnl, 0));
     const charges = r2(rows.reduce((s, t) => s + t.chargesTotal, 0));
     const wins = rows.filter((t) => t.netPnl > 0).length;
+    const losses = rows.filter((t) => t.netPnl < 0).length;
+    const winnersNet = r2(rows.reduce((s, t) => s + (t.netPnl > 0 ? t.netPnl : 0), 0));
+    const losersNet = r2(rows.reduce((s, t) => s + (t.netPnl < 0 ? t.netPnl : 0), 0));
     const withFills = rows.filter((t) => (t.buyOrderCount ?? 0) > 0 && (t.sellOrderCount ?? 0) > 0);
     return {
       segment: d.segment,
@@ -145,9 +156,10 @@ export function segmentDepth(trades: DepthTrade[]): SegmentDepthReport {
       gross,
       charges,
       wins,
-      winRate: count ? wins / count : 0,
+      winRate: count ? wins / count : null,
       winRateCi: wilsonInterval(wins, count),
-      expectancy: count ? r2(net / count) : 0,
+      expectancy: count ? r2(net / count) : null,
+      ...edgeRatios({ wins, losses, winnersNet, losersNet }),
       // A drag percentage against a negative gross would read as a profit share
       // of something that was never profit.
       chargeDragPct: gross > 0 ? r2((charges / gross) * 100) : null,

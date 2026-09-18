@@ -9,7 +9,6 @@
 //   α  — return earned *beyond* what β·market explains (annualised). The edge.
 //   R² — how much of the portfolio's variance the benchmark explains.
 
-const TRADING_DAYS = 252;
 const r2f = (n: number) => Math.round(n * 100) / 100;
 const r4f = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -97,11 +96,14 @@ export function closesToReturns(closes: BenchClose[]): ReturnByDate[] {
  * @param portfolio       portfolio daily returns by date (e.g. performance series)
  * @param benchmarkCloses benchmark daily closes (raw, unsorted ok)
  * @param riskFreeAnnual  annual risk-free rate as a fraction (e.g. 0.07)
+ * @param tradingDaysPerYear  annualisation basis for α — REQUIRED, no silent 252
+ *                  (v4.4.0 D4): the page passes `annualisationBasis(lastDate).days`.
  */
 export function computeBenchmark(
   portfolio: ReturnByDate[],
   benchmarkCloses: BenchClose[],
-  riskFreeAnnual = 0,
+  riskFreeAnnual: number,
+  tradingDaysPerYear: number,
 ): BenchmarkStats | null {
   const bench = closesToReturns(benchmarkCloses);
   const benchByDate = new Map(bench.map((b) => [b.date, b.ret]));
@@ -118,7 +120,7 @@ export function computeBenchmark(
   const n = rp.length;
   if (n < 2) return null;
 
-  const rf = riskFreeAnnual / TRADING_DAYS;
+  const rf = riskFreeAnnual / tradingDaysPerYear;
   const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
   const mp = mean(rp);
   const mb = mean(rb);
@@ -147,7 +149,7 @@ export function computeBenchmark(
 
   return {
     beta: r4f(beta),
-    alphaAnnualPct: r2f(alphaDaily * TRADING_DAYS * 100),
+    alphaAnnualPct: r2f(alphaDaily * tradingDaysPerYear * 100),
     correlation: r4f(correlation),
     rSquared: r4f(correlation * correlation),
     overlapDays: n,

@@ -8,6 +8,10 @@ import {
   type AnalyticsTrade,
 } from "@/lib/analytics/metrics";
 import { benjaminiYekutieli, proportionPValue } from "@/lib/analytics/inference";
+import { profitFactorRows, PROFIT_FACTOR_TITLE } from "@/lib/domain/kpi-detail";
+import { METRIC_HELP } from "@/lib/domain/metric-help";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 function t(p: Partial<AnalyticsTrade>): AnalyticsTrade {
   return {
@@ -251,5 +255,51 @@ describe("groupBy counts its ratios over PRICED trades, like computeKpis", () =>
     expect(priced.get("good"), "m = 2 once they are excluded: significant").toBe(true);
     expect(priced.get("bad")).toBe(true);
     expect(priced.size).toBe(2);
+  });
+});
+
+/**
+ * D6 (v4.4.0) — the Profit-factor popup reproduces its own number. The
+ * dashboard used to sum winners and losers in a LOCAL loop over every closed
+ * trade, while `computeKpis` divides only PRICED trades: one acquisition-flagged
+ * winner (no cost basis) put ₹1,20,000 ÷ ₹60,000 above a printed PF of 1.62.
+ * Both rows now read `Kpis.winnersNet` / `losersNet` — the exact sums the PF
+ * divides — through `profitFactorRows(k)`.
+ */
+describe("profit factor drill-down reproduces its number (D6)", () => {
+  const unpriced = (p: Partial<AnalyticsTrade>) => t({ acquisition: "ipo", buyValue: 0, ...p });
+  // `sample` prices 3,000 of winners against 2,000 of losers → PF 1.5; the
+  // unpriced ₹50,000 winner is cash, not edge.
+  const book = [...sample, unpriced({ sellDate: "2026-06-04", netPnl: 50000, grossPnl: 50100, chargesTotal: 100 })];
+  const k = computeKpis(book);
+  const rupees = (s: string) => Number(s.replace(/[^\d.]/g, ""));
+
+  it("winnersNet / losersNet are the priced, after-charges sums the PF divides", () => {
+    expect(k.unpricedCount).toBe(1);
+    expect(k.winnersNet).toBe(3000);
+    expect(k.losersNet).toBe(-2000);
+    expect(k.profitFactor).toBe(1.5);
+    expect(Math.round((k.winnersNet / Math.abs(k.losersNet)) * 100) / 100).toBe(k.profitFactor);
+  });
+
+  it("the popup's two rows divide to the headline, and say 'after charges'", () => {
+    const rows = profitFactorRows(k);
+    const winners = rows.find((r) => /winners/i.test(r.label))!;
+    const losers = rows.find((r) => /losers/i.test(r.label))!;
+    expect(winners.label).toBe("Total from winners (after charges)");
+    expect(losers.label).toBe("Total from losers (after charges)");
+    expect(Math.round((rupees(winners.value) / rupees(losers.value)) * 100) / 100).toBe(k.profitFactor);
+    expect(rows.find((r) => r.label === "Profit factor")!.value).toBe(k.profitFactor.toFixed(2));
+    expect(PROFIT_FACTOR_TITLE).toBe("Profit factor — winners ÷ losers, after charges");
+    expect(METRIC_HELP.profitFactor.title).toMatch(/after charges/);
+    expect(METRIC_HELP.profitFactor.meaning).toMatch(/after charges/);
+    expect(`${METRIC_HELP.profitFactor.title} ${METRIC_HELP.profitFactor.meaning}`).not.toMatch(/\bgross\b/i);
+  });
+
+  it("the dashboard reads the rows through profitFactorRows — no local winners/losers loop", () => {
+    const src = readFileSync(join(process.cwd(), "components/dashboard/dashboard-client.tsx"), "utf8");
+    expect(src).toContain("profitFactorRows(k)");
+    expect(src).toContain("PROFIT_FACTOR_TITLE");
+    expect(src).not.toMatch(/grossWins|grossLosses/);
   });
 });

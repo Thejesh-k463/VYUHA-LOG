@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import holidays from "@/lib/data/nse-holidays.json";
 import {
   NSE_HOLIDAY_YEAR,
+  annualisationBasis,
+  annualisationNote,
+  nseTradingDaysInYear,
   isExchangeHoliday,
   isTradingDayIst,
   todayIstIso,
@@ -130,5 +133,40 @@ describe("isTradingDayIst — a weekday that is not a listed holiday", () => {
   it("stays TRUE on an uncovered year's weekday — unknown is not a holiday", () => {
     expect(isTradingDayIst("2027-01-26")).toBe(true); // a Tuesday
     expect(isTradingDayIst("2027-01-30")).toBe(false); // a Saturday, still known
+  });
+});
+
+/**
+ * v4.4.0 D4 — the annualisation basis. Sharpe, Sortino, volatility and alpha
+ * used a hard-coded 252 while NSE's own 2026 calendar has 245 sessions. The
+ * basis is now the bundled calendar's count for the series' year, and an
+ * uncovered year falls back to 252 LABELLED as a convention, never silently.
+ */
+describe("annualisation basis — trading days from the bundled NSE calendar", () => {
+  it("2026 → 245: 261 weekdays − 16 weekday holidays (3 of the 19 fall on a weekend)", () => {
+    expect(nseTradingDaysInYear(2026)).toBe(245);
+    // Independent recount from the JSON itself — the function cannot agree with itself.
+    let weekdays = 0;
+    for (let d = new Date(Date.UTC(2026, 0, 1)); d.getUTCFullYear() === 2026; d.setUTCDate(d.getUTCDate() + 1)) {
+      if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) weekdays++;
+    }
+    const weekdayHolidays = rows.filter((r) => ![0, 6].includes(new Date(`${r.date}T00:00:00Z`).getUTCDay())).length;
+    expect(weekdays).toBe(261);
+    expect(weekdayHolidays).toBe(16);
+    expect(nseTradingDaysInYear(NSE_HOLIDAY_YEAR)).toBe(weekdays - weekdayHolidays);
+  });
+
+  it("a year the bundled calendar does not cover has NO count — null, not a guess", () => {
+    expect(nseTradingDaysInYear(2027)).toBeNull();
+    expect(nseTradingDaysInYear(2025)).toBeNull();
+  });
+
+  it("annualisationBasis: the calendar for a covered year, 252 as a LABELLED convention otherwise", () => {
+    expect(annualisationBasis("2026-09-18")).toEqual({ days: 245, source: "nse-calendar", year: 2026 });
+    expect(annualisationBasis("2025-12-31")).toEqual({ days: 252, source: "convention", year: 2025 });
+    expect(annualisationNote(annualisationBasis("2026-01-02"))).toBe("245 trading days (NSE 2026 calendar)");
+    expect(annualisationNote(annualisationBasis("2027-03-01"))).toBe(
+      "252 trading days (convention — 2027 is not in the bundled calendar)",
+    );
   });
 });

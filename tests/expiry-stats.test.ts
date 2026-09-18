@@ -48,11 +48,28 @@ describe("computeExpiryStats", () => {
     expect(total).toBe(4); // the eq_delivery row excluded
   });
 
-  it("empty / no-F&O input → zeroed buckets", () => {
+  it("empty / no-F&O input → empty buckets whose rates are null, never 0 (invariant 6)", () => {
     const e = computeExpiryStats([t("eq_delivery", null, "2026-06-25", 100)], "2026-06-20");
     expect(e.expiryDates).toEqual([]);
     expect(e.expiryDay.trades).toBe(0);
-    expect(e.concentrationPct).toBe(0);
+    // A share of no closed F&O trade is not 0% — there is nothing to divide.
+    expect(e.concentrationPct).toBeNull();
+    expect(e.expiryDay.winRatePct).toBeNull();
+    expect(e.expiryDay.avgPerTrade).toBeNull();
+    expect(e.nonExpiry.winRatePct).toBeNull();
+    expect(e.nonExpiry.avgPerTrade).toBeNull();
+    expect(e.netEdgeExpiry).toBeNull();
     expect(e.upcoming).toEqual([]);
+  });
+
+  it("expiry edge is null unless BOTH buckets hold a trade — a 0 average is not a comparator", () => {
+    // Every F&O exit on an expiry day: the non-expiry bucket is empty, so the
+    // edge used to read "expiry avg − 0" = the whole expiry average.
+    const onlyExpiry = computeExpiryStats([t("index_option", "2026-06-25", "2026-06-25", -900)], "2026-06-20");
+    expect(onlyExpiry.expiryDay.avgPerTrade).toBe(-900);
+    expect(onlyExpiry.nonExpiry.avgPerTrade).toBeNull();
+    expect(onlyExpiry.nonExpiry.winRatePct).toBeNull();
+    expect(onlyExpiry.concentrationPct).toBe(100);
+    expect(onlyExpiry.netEdgeExpiry).toBeNull();
   });
 });

@@ -23,7 +23,7 @@ function BucketCard({ b, highlight }: { b: ExpiryBucket; highlight?: boolean }) 
       <CardContent>
         <div className={`text-2xl font-bold tabular-nums ${tone}`}>{inr(b.net, { decimals: 0 })}</div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {b.winRatePct}% win · avg {inr(b.avgPerTrade, { decimals: 0 })}/trade · {b.wins}W / {b.losses}L
+          {b.winRatePct == null ? "—" : `${b.winRatePct}%`} win · avg {inr(b.avgPerTrade, { decimals: 0 })}/trade · {b.wins}W / {b.losses}L
         </div>
       </CardContent>
     </Card>
@@ -91,11 +91,11 @@ export default function ExpiryPage() {
             </Card>
 
             <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <KpiCard label="Expiry-day concentration" value={`${s.concentrationPct}%`} sub={`${s.expiryDay.trades} of ${closedFno} F&O exits`} />
+              <KpiCard label="Expiry-day concentration" value={s.concentrationPct == null ? "—" : `${s.concentrationPct}%`} sub={`${s.expiryDay.trades} of ${closedFno} F&O exits`} />
               <KpiCard
                 label="Expiry edge"
-                value={`${signOf(s.netEdgeExpiry)}${inr(Math.abs(s.netEdgeExpiry), { decimals: 0 })}`}
-                valueClassName={s.netEdgeExpiry > 0 ? "text-profit" : s.netEdgeExpiry < 0 ? "text-loss" : ""}
+                value={s.netEdgeExpiry == null ? "—" : `${signOf(s.netEdgeExpiry)}${inr(Math.abs(s.netEdgeExpiry), { decimals: 0 })}`}
+                valueClassName={s.netEdgeExpiry == null ? "" : s.netEdgeExpiry > 0 ? "text-profit" : s.netEdgeExpiry < 0 ? "text-loss" : ""}
                 sub="avg/trade vs other days"
               />
               <KpiCard label="Expiry-day net" valueNum={s.expiryDay.net} format="inr0" valueClassName={s.expiryDay.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.expiryDay.trades} trades`} />

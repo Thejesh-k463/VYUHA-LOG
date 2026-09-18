@@ -19,8 +19,15 @@ export interface ShareStats {
   expectancy: number | null;
   maxDrawdown: number;
   charges: number;
-  bestTrade: number;
-  worstTrade: number;
+  /** null = no closed trade — the card prints "—", never ₹0 (invariant 6). */
+  bestTrade: number | null;
+  worstTrade: number | null;
+}
+
+/** Best / worst closed-trade net; null when there is no closed trade to rank. */
+export function extremeTrades(closedNets: number[]): { bestTrade: number | null; worstTrade: number | null } {
+  if (closedNets.length === 0) return { bestTrade: null, worstTrade: null };
+  return { bestTrade: Math.max(...closedNets), worstTrade: Math.min(...closedNets) };
 }
 
 export type ShareMetricId =

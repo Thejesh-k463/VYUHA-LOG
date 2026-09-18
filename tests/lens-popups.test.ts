@@ -69,6 +69,16 @@ describe("lensChargeHeads", () => {
     expect(lensChargeHeads([])).toBeNull();
     expect(lensChargeHeads([chargeRow({ isOpen: true })])).toBeNull();
   });
+
+  it("break-even % over zero turnover is null, never 0% (invariant 6)", () => {
+    // A closed row with no buy or sell value (a worthless expiry written off,
+    // a manual placeholder): charges exist, but there is no turnover to divide
+    // them by — 0% would read as "free to break even".
+    const h = lensChargeHeads([chargeRow({ buyValue: 0, sellValue: 0 })])!;
+    expect(h.turnover).toBe(0);
+    expect(h.total).toBeCloseTo(52.38, 2);
+    expect(h.breakevenPct).toBeNull();
+  });
 });
 
 describe("toLensRow extras", () => {

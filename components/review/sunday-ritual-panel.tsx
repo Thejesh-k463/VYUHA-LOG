@@ -119,7 +119,8 @@ export function SundayRitualPanel({
   score: number | null;
   refusal: string | null;
   gaps: RitualTagGap[];
-  cleanExpectancy: number;
+  /** null when the week has no untagged trade (inr prints "—"). */
+  cleanExpectancy: number | null;
   cleanTrades: number;
   best: RitualExtreme | null;
   worst: RitualExtreme | null;

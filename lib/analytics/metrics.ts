@@ -68,8 +68,17 @@ export interface Kpis {
   losses: number;
   /** 0..1; null when no closed trade could be priced. */
   winRate: number | null;
-  /** NOT in the null family — its own Infinity (no losers) / 0 (nothing) rule. */
+  /** NOT in the null family — its own Infinity (no losers) / 0 (nothing) rule.
+   *  Always r2(winnersNet ÷ |losersNet|) when there is a loser — by construction. */
   profitFactor: number;
+  /**
+   * Σ net P&L of the PRICED winners / losers — after charges, after the
+   * `edgeMeasurable` filter: exactly the two sums `profitFactor` divides, so a
+   * drill-down reading these reproduces the headline (v4.4.0 D6). NOT on the
+   * lens wire either side (`lens-edge.ts`): together they rebuild PF, a Pro figure.
+   */
+  winnersNet: number;
+  losersNet: number;
   /** null when no closed trade could be priced. */
   expectancy: number | null;
   avgR: number | null;
@@ -87,6 +96,7 @@ export interface Kpis {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
 /**
  * Closed trades sorted chronologically: sell date, then exit time, then id. Every caller feeds
@@ -160,6 +170,8 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
    */
   const pricedCount = closedCount - unpricedCount;
   const pricedNetPnl = netPnl - unpricedNetPnl;
+  const winnersNet = r2(sumWin);
+  const losersNet = r2(sumLoss);
 
   return {
     count: trades.length,
@@ -172,7 +184,9 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
     wins,
     losses,
     winRate: pricedCount ? wins / pricedCount : null,
-    profitFactor: sumLoss !== 0 ? r2(sumWin / Math.abs(sumLoss)) : sumWin > 0 ? Infinity : 0,
+    profitFactor: losersNet !== 0 ? r2(winnersNet / Math.abs(losersNet)) : winnersNet > 0 ? Infinity : 0,
+    winnersNet,
+    losersNet,
     expectancy: pricedCount ? r2(pricedNetPnl / pricedCount) : null,
     avgR: rCount ? r2(rSum / rCount) : null,
     avgWin: wins ? r2(sumWin / wins) : null,
@@ -238,6 +252,34 @@ export interface GroupStat {
   /** null when `pricedCount` is 0: a rate over nothing is not a rate (invariant 6). */
   winRate: number | null;
   avgR: number | null;
+  /** Σ net of the priced winners / losers (after charges) — `Kpis`' own sums, per group. */
+  winnersNet: number;
+  losersNet: number;
+  /** `edgeRatios` — null when the group has no loser (PF) / lacks a winner or a loser (payoff). */
+  profitFactor: number | null;
+  payoff: number | null;
+}
+
+export interface EdgeRatios {
+  /** r2(winnersNet ÷ |losersNet|); null when there is no loser to divide by —
+   *  which includes "nothing priced". The `LensEdge` convention: Kpis' Infinity
+   *  reads as null here. UI: "no losing trade yet". */
+  profitFactor: number | null;
+  /** avgWin ÷ |avgLoss| (both r2, as `Kpis` states them), r4; null unless both exist. */
+  payoff: number | null;
+}
+
+/**
+ * THE per-group profit factor and payoff (v4.4.0 D6). `groupBy`, `segmentDepth`
+ * and `winLossReport` all call this, so a segment's PF on the dashboard table,
+ * the edge depth card and the Winners-vs-losers tab is one number.
+ */
+export function edgeRatios(x: { wins: number; losses: number; winnersNet: number; losersNet: number }): EdgeRatios {
+  const profitFactor = x.losses > 0 && x.losersNet !== 0 ? r2(x.winnersNet / Math.abs(x.losersNet)) : null;
+  const avgWin = x.wins > 0 ? r2(x.winnersNet / x.wins) : null;
+  const avgLoss = x.losses > 0 ? r2(x.losersNet / x.losses) : null;
+  const payoff = avgWin != null && avgLoss != null && avgLoss !== 0 ? r4(avgWin / Math.abs(avgLoss)) : null;
+  return { profitFactor, payoff };
 }
 
 export function groupBy(
@@ -254,7 +296,7 @@ export function groupBy(
   const out: GroupStat[] = [];
   for (const [key, list] of map) {
     let net = 0, gross = 0, charges = 0, wins = 0, rSum = 0, rCount = 0;
-    let pricedCount = 0, pricedNet = 0;
+    let pricedCount = 0, pricedNet = 0, losses = 0, sumWin = 0, sumLoss = 0;
     for (const t of list) {
       // Cash always counts — the money moved whether or not we know the basis.
       net += t.netPnl; gross += t.grossPnl; charges += t.chargesTotal;
@@ -264,7 +306,8 @@ export function groupBy(
       // dashboard for the same book.
       if (!edgeMeasurable(t)) continue;
       pricedCount++; pricedNet += t.netPnl;
-      if (t.netPnl > 0) wins++;
+      if (t.netPnl > 0) { wins++; sumWin += t.netPnl; }
+      else if (t.netPnl < 0) { losses++; sumLoss += t.netPnl; }
       if (t.rMultiple != null) { rSum += t.rMultiple; rCount++; }
     }
     out.push({
@@ -278,6 +321,9 @@ export function groupBy(
       pricedNet: r2(pricedNet),
       winRate: pricedCount ? wins / pricedCount : null,
       avgR: rCount ? r2(rSum / rCount) : null,
+      winnersNet: r2(sumWin),
+      losersNet: r2(sumLoss),
+      ...edgeRatios({ wins, losses, winnersNet: r2(sumWin), losersNet: r2(sumLoss) }),
     });
   }
   return out.sort((a, b) => b.net - a.net);

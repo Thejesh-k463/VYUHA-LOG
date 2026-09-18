@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildShareCard,
+  extremeTrades,
   SHARE_METRICS,
   SHARE_WATERMARK,
   type ShareStats,
@@ -28,6 +29,18 @@ describe("buildShareCard — amounts mode", () => {
     expect(find(rows, "netPnl").tone).toBe("profit");
     expect(find(rows, "worstTrade").display).toBe("−₹18.0K");
     expect(find(rows, "worstTrade").tone).toBe("loss");
+  });
+
+  it("best / worst trade are null with no closed trade, and the card prints — not ₹0 (invariant 6)", () => {
+    expect(extremeTrades([])).toEqual({ bestTrade: null, worstTrade: null });
+    expect(extremeTrades([-300, 1200, 40])).toEqual({ bestTrade: 1200, worstTrade: -300 });
+    const empty: ShareStats = { ...stats, ...extremeTrades([]) };
+    for (const privacy of ["amounts", "percent"] as const) {
+      const rows = buildShareCard(empty, { metrics: ["bestTrade", "worstTrade"], privacy, capital: 500000 });
+      expect(find(rows, "bestTrade").display, privacy).toBe("—");
+      expect(find(rows, "worstTrade").display, privacy).toBe("—");
+      expect(find(rows, "worstTrade").tone, privacy).toBe("neutral");
+    }
   });
 
   it("always renders drawdown and charges as costs (negative)", () => {

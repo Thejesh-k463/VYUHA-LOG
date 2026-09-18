@@ -197,9 +197,11 @@ export interface MistakeReport {
   cleanTrades: number;
   mistakeNet: number; // Σ net over mistake-tagged trades
   cleanNet: number;
-  mistakeExpectancy: number; // avg net per mistake-tagged trade
-  cleanExpectancy: number;
-  expectancyGap: number; // clean − mistake (₹/trade you give up when you break rules)
+  /** null when its arm is empty — an average over no trade is not ₹0 (invariant 6). */
+  mistakeExpectancy: number | null; // avg net per mistake-tagged trade
+  cleanExpectancy: number | null;
+  /** clean − mistake (₹/trade you give up when you break rules); null unless both arms exist. */
+  expectancyGap: number | null;
 }
 
 /** Roll up mistake tags over CLOSED trades. A trade with 2 tags counts once in the
@@ -232,17 +234,18 @@ export function mistakeReport(trades: BehaviorTrade[]): MistakeReport {
 
   const mistakeNet = tagged.reduce((s, t) => s + t.netPnl, 0);
   const cleanNet = clean.reduce((s, t) => s + t.netPnl, 0);
-  const mistakeExpectancy = tagged.length ? mistakeNet / tagged.length : 0;
-  const cleanExpectancy = clean.length ? cleanNet / clean.length : 0;
+  const mistakeExpectancy = tagged.length ? mistakeNet / tagged.length : null;
+  const cleanExpectancy = clean.length ? cleanNet / clean.length : null;
   return {
     perTag,
     mistakeTrades: tagged.length,
     cleanTrades: clean.length,
     mistakeNet: r2(mistakeNet),
     cleanNet: r2(cleanNet),
-    mistakeExpectancy: r2(mistakeExpectancy),
-    cleanExpectancy: r2(cleanExpectancy),
-    expectancyGap: r2(cleanExpectancy - mistakeExpectancy),
+    mistakeExpectancy: mistakeExpectancy == null ? null : r2(mistakeExpectancy),
+    cleanExpectancy: cleanExpectancy == null ? null : r2(cleanExpectancy),
+    expectancyGap:
+      cleanExpectancy != null && mistakeExpectancy != null ? r2(cleanExpectancy - mistakeExpectancy) : null,
   };
 }
 

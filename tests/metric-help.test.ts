@@ -156,16 +156,44 @@ describe("label honesty — the explainers state the verified conventions", () =
     expect(METRIC_HELP.avgR.meaning).toMatch(/THE R figure/);
   });
 
-  it("Sharpe/Sortino/volatility admit the realised-only series and √252 annualisation", () => {
+  // v4.4.0 D4 — A DELIBERATE EXCEPTION to "fix the prose, not the expectation"
+  // (pack §8 R2). These pins used to demand a literal /252/; they were
+  // REWRITTEN rather than the prose fitted to them, because the maths no longer
+  // uses 252: annualisation takes the bundled NSE calendar's trading days for
+  // the series' year (245 in 2026) and falls back to 252 only as a LABELLED
+  // convention for an uncovered year. A literal 252 in the help would state a
+  // basis the page does not compute on — so the basis arrives ONLY through the
+  // `{tradingDays}` placeholder, from the same value the page passes the maths.
+  it("Sharpe/Sortino/volatility admit the realised-only series and state the √{tradingDays} basis", () => {
     for (const id of ["sharpe", "sortino", "volatility"] as const) {
       const e = METRIC_HELP[id];
       expect(`${e.formula} ${e.caveat}`, id).toMatch(/realised|days with realised P&L/i);
-      expect(`${e.formula} ${e.caveat}`, id).toMatch(/252/);
+      expect(`${e.formula} ${e.caveat}`, id).toMatch(/√\{tradingDays\}/);
     }
     expect(METRIC_HELP.sharpe.caveat).toMatch(/limited/i);
   });
 
-  it("alpha admits arithmetic ×252 annualisation, not geometric", () => {
+  it("no entry hardcodes 252 — the annualisation basis arrives ONLY via {tradingDays}", () => {
+    const needDays: MetricHelpId[] = [];
+    for (const id of METRIC_HELP_IDS) {
+      const e = METRIC_HELP[id];
+      const text = [e.title, e.meaning, e.formula, e.healthyRange, e.caveat, e.whatToDo].join(" ");
+      expect(text, `${id} hardcodes a trading-day count`).not.toMatch(/\b252\b/);
+      if (text.includes("{tradingDays}")) needDays.push(id);
+    }
+    expect(needDays.sort()).toEqual(["alpha", "sharpe", "sortino", "volatility"]);
+  });
+
+  it("an annualised entry refuses to render without {tradingDays}", () => {
+    expect(() => metricDetail("volatility")).toThrow(/tradingDays/);
+    expect(() => metricDetail("sharpe", { vars: { riskFreePct: "7%" } })).toThrow(/tradingDays/);
+    expect(() => metricDetail("alpha", { vars: { riskFreePct: "7%" } })).toThrow(/tradingDays/);
+    const d = metricDetail("alpha", { vars: { riskFreePct: "7%", tradingDays: "245" } });
+    expect(JSON.stringify(d)).toContain("daily α × 245");
+    expect(JSON.stringify(d)).not.toContain("{tradingDays}");
+  });
+
+  it("alpha admits arithmetic annualisation, not geometric", () => {
     expect(METRIC_HELP.alpha.formula).toMatch(/arithmetic/i);
     expect(METRIC_HELP.alpha.formula).toMatch(/NOT geometrically/i);
   });
@@ -196,7 +224,7 @@ describe("the adapters", () => {
   });
 
   it("interpolates vars and refuses to render an unresolved placeholder", () => {
-    const d = metricDetail("sharpe", { vars: { riskFreePct: "7%" }, also: ["sortino"] });
+    const d = metricDetail("sharpe", { vars: { riskFreePct: "7%", tradingDays: "245" }, also: ["sortino"] });
     expect(JSON.stringify(d)).toContain("7%");
     expect(JSON.stringify(d)).not.toContain("{riskFreePct}");
     // The also-block folded Sortino in as one extra row.

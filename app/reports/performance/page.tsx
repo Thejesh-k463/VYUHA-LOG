@@ -1,4 +1,4 @@
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { annualisationBasis, annualisationNote, todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import { getGoalView, getAggregateGoalProgress } from "@/lib/queries/goals";
 import { goalProgress, type GoalBucket } from "@/lib/analytics/goal";
 import { dailyPnl, equityCurve, computeKpis } from "@/lib/analytics/metrics";
 import { ShareCard } from "@/components/reports/share-card";
-import type { ShareStats } from "@/lib/analytics/share-card";
+import { extremeTrades, type ShareStats } from "@/lib/analytics/share-card";
 import { computePerformance, timeWeightedReturn, type CashFlowR } from "@/lib/analytics/performance";
 import { xirr, type CashFlow } from "@/lib/analytics/xirr";
 import { computeBenchmark, type ReturnByDate } from "@/lib/analytics/benchmark";
@@ -77,17 +77,22 @@ export default function PerformancePage() {
   // The risk-free rate is interpolated from the page constant so the number is
   // stated ONCE; the explainers attach in BOTH capital states, and on a "—"
   // card the note says why it is "—" instead of pretending nothing happened.
-  const rfVars = { riskFreePct: `${Math.round(RISK_FREE * 100)}%` };
+  // v4.4.0 D4 — annualise on the NSE calendar of the series' LAST date (245 in
+  // 2026; the labelled convention only for an uncovered year). The SAME
+  // `basis.days` feeds the maths below and the `{tradingDays}` in the help, so
+  // the explainer can never state a basis the figure was not computed on.
+  const daily = [...dailyPnl(trades).entries()].map(([date, net]) => ({ date, net }));
+  const basis = annualisationBasis(daily.reduce((m, d) => (d.date > m ? d.date : m), "") || todayIstIso());
+  const helpVars = { riskFreePct: `${Math.round(RISK_FREE * 100)}%`, tradingDays: String(basis.days) };
   const noCapitalNote = capitalKnown
     ? undefined
     : 'This card shows "—" because no starting capital is configured — the figure would otherwise divide by an invented base. Set it under Settings → Capital & Go-Live.';
 
-  const daily = [...dailyPnl(trades).entries()].map(([date, net]) => ({ date, net }));
   // With capital 0 computePerformance falls back to a ₹1 base internally: the
   // series shape and the ₹ drawdown (a peak-to-trough DIFFERENCE, so the base
   // cancels) stay right, while every %-figure is garbage — which is exactly
   // why each one is gated on capitalKnown below.
-  const p = computePerformance(daily, capital, RISK_FREE);
+  const p = computePerformance(daily, capital, RISK_FREE, basis.days);
   const curve = equityCurve(trades);
 
   /**
@@ -110,7 +115,8 @@ export default function PerformancePage() {
 
   // T1.4 — stats for the shareable card (same KPI engine as the dashboard).
   const k = computeKpis(trades);
-  const closedNets = trades.filter((t) => !t.isOpen).map((t) => t.netPnl);
+  // Best/worst are null with no closed trade — the card prints "—", never ₹0.
+  const { bestTrade, worstTrade } = extremeTrades(trades.filter((t) => !t.isOpen).map((t) => t.netPnl));
   const shareStats: ShareStats = {
     netPnl: k.netPnl,
     winRatePct: k.winRate == null ? null : k.winRate * 100,
@@ -120,8 +126,8 @@ export default function PerformancePage() {
     expectancy: k.expectancy,
     maxDrawdown: p.maxDrawdownAmt,
     charges: k.charges,
-    bestTrade: closedNets.length ? Math.max(...closedNets) : 0,
-    worstTrade: closedNets.length ? Math.min(...closedNets) : 0,
+    bestTrade,
+    worstTrade,
   };
 
   // Money-weighted return (XIRR) — derived from the cash ledger (P0.2) + realised/
@@ -205,7 +211,7 @@ export default function PerformancePage() {
   const portfolioReturns: ReturnByDate[] = p.series.map((s) => ({ date: s.date, ret: s.ret }));
   // Alpha/beta regress DAILY RETURNS, which are P&L over equity — unusable on
   // the ₹1 fallback base.
-  const bench = capitalKnown ? computeBenchmark(portfolioReturns, benchCloses, RISK_FREE) : null;
+  const bench = capitalKnown ? computeBenchmark(portfolioReturns, benchCloses, RISK_FREE, basis.days) : null;
 
   // Underwater curve — the per-day drawdown series already computed by computePerformance.
   const underwater = p.series.map((s) => ({ date: s.date, ddPct: Math.round(s.drawdown * 10000) / 100 }));
@@ -213,7 +219,9 @@ export default function PerformancePage() {
   // Monte Carlo — bootstrap the portfolio's own daily returns 2,000× over a 1y horizon.
   // Ruin = the path EVER touching −50% from today's equity. Needs ≥20 trading days,
   // and a real equity base — resampling returns on the ₹1 fallback simulates nothing.
-  const mc = capitalKnown ? monteCarloEquity(p.series.map((s) => s.ret), p.endEquity) : null;
+  // The horizon is one year FORWARD from today, on today's IST year calendar.
+  const mcBasis = annualisationBasis(today);
+  const mc = capitalKnown ? monteCarloEquity(p.series.map((s) => s.ret), p.endEquity, { horizonDays: mcBasis.days }) : null;
 
   // Day stats that survive without a capital base: signs and extremes of the
   // daily nets themselves, no equity denominator involved.
@@ -296,10 +304,10 @@ export default function PerformancePage() {
               <KpiCard label="XIRR (money-weighted)" value={xirrPct == null ? "—" : `${signedNumber(xirrPct)}%`} valueClassName={cls(xirrPct)} sub={!capitalKnown ? setCapitalNudge : xirrDays >= 30 ? `over ${Math.round(xirrDays / 30)} mo · ledger-derived` : "<30d — unstable"} detail={metricDetail("xirr", { note: noCapitalNote })} />
               <KpiCard label="TWR (time-weighted)" value={twr == null ? "—" : `${signedNumber(twr.twrPct)}%`} valueClassName={cls(twr?.twrPct ?? null)} sub={twr == null ? (capitalKnown ? "no history" : setCapitalNudge) : twr.annualizedPct == null ? "cumulative · <30d" : `${signedNumber(twr.annualizedPct)}% annualised · flow-neutral`} detail={metricDetail("twr", { note: noCapitalNote })} />
               <KpiCard label="CAGR" value={!capitalKnown || p.cagrPct == null ? "—" : `${signedNumber(p.cagrPct)}%`} valueClassName={capitalKnown ? cls(p.cagrPct) : ""} sub={!capitalKnown ? setCapitalNudge : p.cagrPct == null ? "<30d window" : "annualised"} detail={metricDetail("cagr", { note: noCapitalNote })} />
-              <KpiCard label="Sharpe" value={!capitalKnown || p.sharpe == null ? "—" : p.sharpe.toFixed(2)} valueClassName={capitalKnown ? cls(p.sharpe) : ""} sub={!capitalKnown ? setCapitalNudge : `Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} detail={metricDetail("sharpe", { vars: rfVars, also: ["sortino"], note: noCapitalNote })} />
+              <KpiCard label="Sharpe" value={!capitalKnown || p.sharpe == null ? "—" : p.sharpe.toFixed(2)} valueClassName={capitalKnown ? cls(p.sharpe) : ""} sub={!capitalKnown ? setCapitalNudge : `Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} detail={metricDetail("sharpe", { vars: helpVars, also: ["sortino"], note: noCapitalNote })} />
               <KpiCard label="Calmar" value={!capitalKnown || p.calmar == null ? "—" : p.calmar.toFixed(2)} sub={capitalKnown ? "CAGR ÷ max DD" : setCapitalNudge} detail={metricDetail("calmar", { note: noCapitalNote })} />
               <KpiCard label="Max drawdown" value={capitalKnown ? /* hard "-": maxDrawdownPct is a positive magnitude by construction (r2(Math.abs(maxDdFrac)*100)) */ `-${p.maxDrawdownPct}%` : inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })} valueClassName="text-loss" sub={capitalKnown ? inr(p.maxDrawdownAmt, { decimals: 0 }) : `₹ from peak · ${setCapitalNudge} for %`} detail={metricDetail("maxDrawdown", { note: capitalKnown ? undefined : "Without configured capital the % of equity cannot be computed, so this card shows the ₹ fall from peak — a peak-to-trough difference that needs no base and is exact." })} />
-              <KpiCard label="Volatility" value={capitalKnown ? `${p.volatilityPct}%` : "—"} sub={capitalKnown ? "annualised" : setCapitalNudge} detail={metricDetail("volatility", { note: noCapitalNote })} />
+              <KpiCard label="Volatility" value={capitalKnown ? `${p.volatilityPct}%` : "—"} sub={capitalKnown ? "annualised" : setCapitalNudge} detail={metricDetail("volatility", { vars: helpVars, note: noCapitalNote })} />
               <KpiCard label="Positive days" value={`${capitalKnown ? p.positiveDaysPct : upDayPct}%`} sub={`${p.tradingDays} trading days`} detail={metricDetail("positiveDays")} />
               <KpiCard label="Best / worst day" value={capitalKnown ? `${signedNumber(p.bestDayPct)}% / ${signedNumber(p.worstDayPct)}%` : `${inr(bestDayNet, { decimals: 0 })} / ${inr(worstDayNet, { decimals: 0 })}`} sub={capitalKnown ? `avg up ${p.avgWinDayPct}% · dn ${p.avgLossDayPct}%` : `₹ · ${setCapitalNudge} for %`} detail={metricDetail("bestWorstDay", { note: capitalKnown ? undefined : "Without configured capital the % form is withheld; the ₹ extremes shown need no base and are exact." })} />
             </section>
@@ -451,7 +459,7 @@ export default function PerformancePage() {
               <CardContent className="space-y-4">
                 {bench ? (
                   <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                    <KpiCard label="Alpha (annual)" value={`${signedNumber(bench.alphaAnnualPct)}%`} valueClassName={cls(bench.alphaAnnualPct)} sub="excess vs β·market" detail={metricDetail("alpha", { vars: rfVars })} />
+                    <KpiCard label="Alpha (annual)" value={`${signedNumber(bench.alphaAnnualPct)}%`} valueClassName={cls(bench.alphaAnnualPct)} sub="excess vs β·market" detail={metricDetail("alpha", { vars: helpVars })} />
                     <KpiCard label="Beta" value={bench.beta.toFixed(2)} sub={bench.beta > 1 ? "amplified vs index" : bench.beta < 0 ? "inverse to index" : "tracks index"} detail={metricDetail("beta")} />
                     <KpiCard label="Correlation" value={bench.correlation.toFixed(2)} sub={`R² ${bench.rSquared.toFixed(2)}`} detail={metricDetail("correlation")} />
                     <KpiCard label="Portfolio (window)" value={`${signedNumber(bench.portfolioReturnPct)}%`} valueClassName={cls(bench.portfolioReturnPct)} sub="over overlap" detail={metricDetail("benchmarkWindow", { note: "This card: your book's chained return over the overlapping days." })} />
@@ -528,7 +536,7 @@ export default function PerformancePage() {
                 The money-weighted <strong>XIRR</strong> is derived from the cash ledger (deposits/withdrawals) plus realised and
                 unrealised trading P&L over {inr(toRupees(terminalPaise), { decimals: 0 })} terminal value — accounting for the
                 size and timing of capital. The <strong>TWR</strong> chains daily P&L returns while neutralising the
-                timing of deposits/withdrawals — the manager-skill counterpart to XIRR. Sharpe/Sortino use a {Math.round(RISK_FREE * 100)}% annual risk-free rate; ratios annualise with 252 trading days.
+                timing of deposits/withdrawals — the manager-skill counterpart to XIRR. Sharpe/Sortino use a {Math.round(RISK_FREE * 100)}% annual risk-free rate; ratios annualise with {annualisationNote(basis)}.
               </p>
             ) : (
               <p className="text-[0.6875rem] text-muted-foreground">

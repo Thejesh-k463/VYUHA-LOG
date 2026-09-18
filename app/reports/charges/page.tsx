@@ -7,7 +7,7 @@ import { getTrades } from "@/lib/queries/trades";
 import { getLedgerEntries } from "@/lib/queries/ledger";
 import { chargesBySegment, chargesByMonth, chargesTotals, type ChargeRow } from "@/lib/analytics/charges-report";
 import { marginPenaltyByMonth, marginPenaltyTotal, type MarginPenaltyEntry } from "@/lib/analytics/margin-penalty";
-import { inr, num } from "@/lib/format";
+import { inr, num, pct } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
@@ -61,7 +61,7 @@ export default function ChargesReportPage() {
           <KpiCard label="Total charges" valueNum={totals.total} format="inr0" valueClassName="text-grad-gold" />
           <KpiCard label="Brokerage" valueNum={totals.brokerage} format="inr0" />
           <KpiCard label="STT / CTT" valueNum={totals.sttCtt} format="inr0" />
-          <KpiCard label="Avg break-even move" value={`${totals.breakevenPct}%`} sub="charges ÷ turnover" />
+          <KpiCard label="Avg break-even move" value={pct(totals.breakevenPct, 2)} sub="charges ÷ turnover" />
         </section>
 
         <Card className="p-0">
@@ -150,7 +150,7 @@ function ChargeTable({ title, rows, totals, labelFor, exportName }: { title: str
                 <ReportTd align="right">{num(r.exchangeTxn, 0)}</ReportTd>
                 <ReportTd align="right">{r.mtfInterest > 0 ? num(r.mtfInterest, 0) : "—"}</ReportTd>
                 <ReportTd align="right" className="font-medium text-warning">{num(r.total, 0)}</ReportTd>
-                <ReportTd align="right">{r.breakevenPct}%</ReportTd>
+                <ReportTd align="right">{pct(r.breakevenPct, 2)}</ReportTd>
               </ReportTr>
             ))}
             <tr className="border-t border-border bg-card-hover/30 font-medium">
@@ -162,7 +162,7 @@ function ChargeTable({ title, rows, totals, labelFor, exportName }: { title: str
               <ReportTd align="right">{num(totals.exchangeTxn, 0)}</ReportTd>
               <ReportTd align="right">{num(totals.mtfInterest, 0)}</ReportTd>
               <ReportTd align="right" className="text-warning">{num(totals.total, 0)}</ReportTd>
-              <ReportTd align="right">{totals.breakevenPct}%</ReportTd>
+              <ReportTd align="right">{pct(totals.breakevenPct, 2)}</ReportTd>
             </tr>
           </tbody>
         </ReportTable>

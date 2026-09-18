@@ -121,15 +121,17 @@ export default function ReviewPage() {
   // averaged against what the untagged ones did. With no untagged trade there
   // is no comparator, so there is no gap — an invented 0 baseline would be a
   // fabricated denominator.
+  // `cleanExpectancy` is null exactly when there is no untagged trade.
+  const cleanExpectancy = mistakes.cleanExpectancy;
   const gaps: RitualTagGap[] =
-    mistakes.cleanTrades > 0
+    cleanExpectancy != null
       ? mistakes.perTag
           .map((t) => ({
             tag: t.tag,
             label: t.label,
             trades: t.trades,
             avgNet: t.avgNet,
-            gap: Math.round((mistakes.cleanExpectancy - t.avgNet) * 100) / 100,
+            gap: Math.round((cleanExpectancy - t.avgNet) * 100) / 100,
           }))
           .sort((a, b) => b.gap - a.gap)
           .slice(0, 3)

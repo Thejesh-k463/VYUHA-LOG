@@ -119,6 +119,24 @@ describe("mistakeReport", () => {
     expect(r.expectancyGap).toBe(1250);
   });
 
+  it("an empty arm is null, never ₹0 — and so is the gap built on it (invariant 6)", () => {
+    // Every trade carries a mistake tag: there is no clean trade to average.
+    // A 0 there printed "Clean trades average ₹0/trade — a gap of ₹4,200".
+    const allTagged = mistakeReport([
+      trade({ id: 1, netPnl: -4000, mistakeTags: ["revenge_trade"] }),
+      trade({ id: 2, netPnl: -4400, mistakeTags: ["no_stop"] }),
+    ]);
+    expect(allTagged.cleanTrades).toBe(0);
+    expect(allTagged.mistakeExpectancy).toBe(-4200);
+    expect(allTagged.cleanExpectancy).toBeNull();
+    expect(allTagged.expectancyGap).toBeNull();
+
+    const allClean = mistakeReport([trade({ id: 1, netPnl: 600 })]);
+    expect(allClean.cleanExpectancy).toBe(600);
+    expect(allClean.mistakeExpectancy).toBeNull();
+    expect(allClean.expectancyGap).toBeNull();
+  });
+
   it("a multi-tag trade counts once in the headline but under each tag in perTag", () => {
     const trades = [trade({ id: 1, netPnl: -300, mistakeTags: ["no_stop", "oversized"] })];
     const r = mistakeReport(trades);

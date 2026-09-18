@@ -36,7 +36,8 @@ export interface ChargeRow {
   total: number;
   gross: number;
   net: number;
-  breakevenPct: number; // total charges as % of turnover (avg move to break even)
+  /** Total charges as % of turnover (avg move to break even); null over zero turnover (invariant 6). */
+  breakevenPct: number | null;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -45,7 +46,7 @@ function emptyRow(key: string): ChargeRow {
   return {
     key, count: 0, turnover: 0, brokerage: 0, sttCtt: 0, exchangeTxn: 0,
     statutory: 0, gst: 0, dpCharges: 0, mtfInterest: 0, pledgeCharges: 0,
-    total: 0, gross: 0, net: 0, breakevenPct: 0,
+    total: 0, gross: 0, net: 0, breakevenPct: null,
   };
 }
 
@@ -80,7 +81,7 @@ function finalize(row: ChargeRow): ChargeRow {
     total: r2(row.total),
     gross: r2(row.gross),
     net: r2(row.net),
-    breakevenPct: row.turnover > 0 ? r2((row.total / row.turnover) * 100) : 0,
+    breakevenPct: row.turnover > 0 ? r2((row.total / row.turnover) * 100) : null,
   };
 }
 

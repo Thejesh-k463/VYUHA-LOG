@@ -54,8 +54,9 @@ export interface LensChargeHeads {
   mtfInterest: number;
   pledgeCharges: number;
   total: number;
-  /** Total charges as % of turnover — the average move needed to break even. */
-  breakevenPct: number;
+  /** Total charges as % of turnover — the average move needed to break even.
+   *  null over zero turnover (invariant 6). */
+  breakevenPct: number | null;
 }
 
 /** The charge-projection row this module aggregates: the charges-report shape

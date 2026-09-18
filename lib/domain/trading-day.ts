@@ -81,6 +81,61 @@ export function exchangeHolidayName(isoDate: string): string | null {
 }
 
 /**
+ * NSE cash-market sessions in `year`: weekdays minus the listed weekday
+ * holidays — ONLY for the year the bundled calendar covers (2026 → 245:
+ * 261 weekdays − 16 weekday holidays; 3 of the 19 fall on a weekend).
+ * Any other year → null: the count is unknown, not a guess.
+ *
+ * Special sessions (Muhurat) are not counted — they are not on the list and
+ * are not a weekday session the annualisation convention means.
+ */
+export function nseTradingDaysInYear(year: number): number | null {
+  if (year !== NSE_HOLIDAY_YEAR) return null;
+  let weekdays = 0;
+  for (let d = new Date(Date.UTC(year, 0, 1)); d.getUTCFullYear() === year; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) weekdays++;
+  }
+  let weekdayHolidays = 0;
+  for (const iso of HOLIDAY_DATES) {
+    if (Number(iso.slice(0, 4)) !== year) continue;
+    const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
+    if (dow !== 0 && dow !== 6) weekdayHolidays++;
+  }
+  return weekdays - weekdayHolidays;
+}
+
+/** Trading days per year used to ANNUALISE daily figures (Sharpe, Sortino,
+ *  volatility, alpha, the Monte Carlo horizon), and where the number came from. */
+export interface AnnualisationBasis {
+  days: number;
+  source: "nse-calendar" | "convention";
+  year: number;
+}
+
+/**
+ * The annualisation basis for the year of `iso` (v4.4.0 D4): the bundled NSE
+ * calendar's session count when it covers that year, else the 252 convention —
+ * LABELLED as such (`annualisationNote`), never silent. Callers pass the
+ * series' LAST date (performance, monthly, alpha) or today's IST date (the
+ * Monte Carlo horizon). CAGR and Calmar use calendar days ÷ 365 and never
+ * read this.
+ */
+export function annualisationBasis(iso: string): AnnualisationBasis {
+  const parsed = Number(iso.slice(0, 4));
+  const year = Number.isInteger(parsed) && parsed > 1900 ? parsed : Number(todayIstIso().slice(0, 4));
+  const days = nseTradingDaysInYear(year);
+  return days == null ? { days: 252, source: "convention", year } : { days, source: "nse-calendar", year };
+}
+
+/** The one sentence a page prints beside an annualised figure. */
+export function annualisationNote(b: AnnualisationBasis): string {
+  return b.source === "nse-calendar"
+    ? `${b.days} trading days (NSE ${b.year} calendar)`
+    : `${b.days} trading days (convention — ${b.year} is not in the bundled calendar)`;
+}
+
+/**
  * Is this a day the NSE cash market trades — a weekday that is not a listed
  * holiday?
  *

@@ -5,7 +5,6 @@
 // Note: this is "return on capital" using the configured starting capital as the
 // base; a true money-weighted return (XIRR) needs the cash ledger (roadmap P0.2).
 
-const TRADING_DAYS = 252;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -76,11 +75,16 @@ export function emptyPerformance(startingCapital: number): PerformanceStats {
  * @param daily            realised net P&L per day (any order)
  * @param startingCapital  equity base at the start of the window
  * @param riskFreeAnnual   annual risk-free rate as a fraction (e.g. 0.07 for 7%)
+ * @param tradingDaysPerYear  annualisation basis — REQUIRED, no silent 252 (v4.4.0 D4):
+ *                   callers pass `annualisationBasis(lastDate).days` (245 for NSE 2026).
+ *                   Moves volatility, Sharpe and Sortino; CAGR and Calmar use calendar
+ *                   days ÷ 365 and do not read it.
  */
 export function computePerformance(
   daily: DailyPoint[],
   startingCapital: number,
-  riskFreeAnnual = 0,
+  riskFreeAnnual: number,
+  tradingDaysPerYear: number,
 ): PerformanceStats {
   const base = startingCapital > 0 ? startingCapital : 1;
   const days = daily.filter((d) => d.date).slice().sort((a, b) => a.date.localeCompare(b.date));
@@ -109,16 +113,17 @@ export function computePerformance(
   const totalReturn = endEquity / startEquity - 1;
 
   const sd = std(rets);
-  const volAnnual = sd * Math.sqrt(TRADING_DAYS);
-  const rfDaily = riskFreeAnnual / TRADING_DAYS;
+  const volAnnual = sd * Math.sqrt(tradingDaysPerYear);
+  const rfDaily = riskFreeAnnual / tradingDaysPerYear;
   const excess = rets.map((r) => r - rfDaily);
   const meanExcess = excess.reduce((a, b) => a + b, 0) / excess.length;
   const downside = rets.filter((r) => r < 0);
   const downsideDev =
     downside.length > 0 ? Math.sqrt(downside.reduce((a, b) => a + b * b, 0) / rets.length) : 0;
 
-  const sharpe = sd > 0 ? (meanExcess * TRADING_DAYS) / volAnnual : null;
-  const sortino = downsideDev > 0 ? (meanExcess * TRADING_DAYS) / (downsideDev * Math.sqrt(TRADING_DAYS)) : null;
+  const sharpe = sd > 0 ? (meanExcess * tradingDaysPerYear) / volAnnual : null;
+  const sortino =
+    downsideDev > 0 ? (meanExcess * tradingDaysPerYear) / (downsideDev * Math.sqrt(tradingDaysPerYear)) : null;
 
   const calendarDays = daysBetween(days[0].date, days[days.length - 1].date) || 1;
   const years = calendarDays / 365;

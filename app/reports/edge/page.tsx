@@ -409,7 +409,7 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
  * coin that came up heads. A segment that fails correction is MARKED and stays.
  */
 function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
-  const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
+  const pnl = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
   const finding = segmentFinding(report);
   const rows = report.rows.filter((r) => r.count > 0 || r.excluded > 0);
 
@@ -439,6 +439,8 @@ function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
                 <ReportTh align="right">Expectancy</ReportTh>
                 <ReportTh align="right">Win rate</ReportTh>
                 <ReportTh align="right">95% CI</ReportTh>
+                <ReportTh align="right">Profit factor</ReportTh>
+                <ReportTh align="right">Payoff</ReportTh>
                 <ReportTh align="right">Charge drag</ReportTh>
                 <ReportTh align="right">Avg fills</ReportTh>
               </ReportThead>
@@ -462,7 +464,7 @@ function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
                     {/* % sign INSIDE the ternary — an all-unpriced segment
                         (count 0, excluded > 0) used to render the literal
                         "—%", and its empty-sample CI printed 0%–100%. */}
-                    <ReportTd align="right">{r.count ? `${(r.winRate * 100).toFixed(1)}%` : "—"}</ReportTd>
+                    <ReportTd align="right">{r.winRate != null ? `${(r.winRate * 100).toFixed(1)}%` : "—"}</ReportTd>
                     <ReportTd align="right" muted title={r.count ? rateVerdict(r.winRateCi, report.bookWinRate) : undefined}>
                       <span className="whitespace-nowrap">{r.count ? fmtIntervalPct(r.winRateCi) : "—"}</span>
                       {r.count > 0 && !r.distinguishable && (
@@ -470,6 +472,14 @@ function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
                           not yet distinguishable
                         </span>
                       )}
+                    </ReportTd>
+                    {/* v4.4.0 D6 — the same edgeRatios figures the dashboard's
+                        per-segment table and By-segment rows state. */}
+                    <ReportTd align="right" title="Winners ÷ losers, after charges. Blank with no losing trade yet — nothing to divide by.">
+                      {r.profitFactor == null ? "—" : r.profitFactor.toFixed(2)}
+                    </ReportTd>
+                    <ReportTd align="right" title="Average win ÷ average loss. Blank unless the segment has both.">
+                      {r.payoff == null ? "—" : `${r.payoff.toFixed(2)}×`}
                     </ReportTd>
                     <ReportTd align="right" muted title="Charges as a share of GROSS profit. Blank when the segment did not make a gross profit — a percentage of a loss is not a drag figure.">
                       {r.chargeDragPct == null ? "—" : `${r.chargeDragPct.toFixed(1)}%`}

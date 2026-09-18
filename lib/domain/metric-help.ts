@@ -97,11 +97,11 @@ export const METRIC_HELP = {
     meaning:
       "Average daily return in excess of the risk-free rate, divided by the volatility of those daily returns, annualised — how much return each unit of variability bought.",
     formula:
-      "(mean daily excess return over a {riskFreePct} annual risk-free rate) × 252, divided by (daily standard deviation × √252). Only days with realised P&L participate in the series.",
+      "(mean daily excess return over a {riskFreePct} annual risk-free rate) × {tradingDays}, divided by (daily standard deviation × √{tradingDays}). Only days with realised P&L participate in the series.",
     healthyRange:
       "In fund literature above 1 is commonly called decent and above 2 strong — but that assumes a continuously marked daily series; on a realised-only series the bar shifts, and it depends on the capital base and trading style.",
     caveat:
-      "The series contains only days on which something was realised, annualised ×√252 — so comparability with a fund's Sharpe, marked every day including flat ones, is limited. It also penalises upside volatility exactly like downside.",
+      "The series contains only days on which something was realised, annualised ×√{tradingDays} — so comparability with a fund's Sharpe, marked every day including flat ones, is limited. It also penalises upside volatility exactly like downside.",
     whatToDo:
       "Traders who dislike the upside penalty historically read Sortino beside it; traders with lumpy realised histories read both with suspicion and lean on drawdown figures instead.",
   },
@@ -110,7 +110,7 @@ export const METRIC_HELP = {
     meaning:
       "The same excess return as Sharpe, divided by downside deviation only — volatility contributed by winning days stops counting against the score.",
     formula:
-      "(mean daily excess return over a {riskFreePct} annual risk-free rate) × 252, divided by (downside deviation × √252), on the same realised-only daily series as Sharpe.",
+      "(mean daily excess return over a {riskFreePct} annual risk-free rate) × {tradingDays}, divided by (downside deviation × √{tradingDays}), on the same realised-only daily series as Sharpe.",
     healthyRange:
       "Commonly read as healthy when comfortably above Sharpe and above ~1, with the same assumption baked in — a realised-only series — so it depends on trading style and how continuously the book realises P&L.",
     caveat:
@@ -149,11 +149,11 @@ export const METRIC_HELP = {
     meaning:
       "Annualised standard deviation of daily returns — how big a typical day is, up or down, with no regard for direction.",
     formula:
-      "Standard deviation of daily returns on days with realised P&L, multiplied by √252.",
+      "Standard deviation of daily returns on days with realised P&L, multiplied by √{tradingDays}.",
     healthyRange:
       "Equity indices commonly run ~15–20% annualised; a trading book can sensibly run well above or below that — it depends on the capital base, leverage and style, and a great winning streak raises it just like a losing one.",
     caveat:
-      "Computed only on days with realised P&L and annualised ×√252, so it is not directly comparable with a fund's volatility marked every calendar day.",
+      "Computed only on days with realised P&L and annualised ×√{tradingDays}, so it is not directly comparable with a fund's volatility marked every calendar day.",
     whatToDo:
       "Traders historically watch its trend more than its level — volatility that doubles while returns stay flat has been a reliable position-size-creep signal.",
   },
@@ -231,11 +231,11 @@ export const METRIC_HELP = {
     meaning:
       "The annualised excess return left after subtracting what beta times the index's own move would have produced — the edge, if one exists.",
     formula:
-      "Daily α from a CAPM-style regression of portfolio excess returns on index excess returns (over a {riskFreePct} annual risk-free rate), annualised arithmetically — daily α × 252 — NOT geometrically compounded.",
+      "Daily α from a CAPM-style regression of portfolio excess returns on index excess returns (over a {riskFreePct} annual risk-free rate), annualised arithmetically — daily α × {tradingDays} — NOT geometrically compounded.",
     healthyRange:
       "Commonly read as any reliably positive figure being noteworthy, since most funds do not sustain one — but its reliability depends on the overlap window's length and on the capital base behind the daily returns.",
     caveat:
-      "Arithmetic ×252 annualisation overstates large daily alphas relative to compounding, and the regression runs on realised-only daily returns over whatever days overlap the index series — a short overlap makes it noisy.",
+      "Arithmetic ×{tradingDays} annualisation overstates large daily alphas relative to compounding, and the regression runs on realised-only daily returns over whatever days overlap the index series — a short overlap makes it noisy.",
     whatToDo:
       "Traders historically distrust an alpha that sits on a low R² — when the index explains almost none of the variance, 'excess versus the index' explains little either way.",
   },
@@ -306,9 +306,9 @@ export const METRIC_HELP = {
       "Traders historically pair it with the win/loss size ratio and expectancy — the combination is what compounds, not the rate alone.",
   },
   profitFactor: {
-    title: "Profit factor — gross wins over gross losses",
+    title: "Profit factor — winners ÷ losers, after charges",
     meaning:
-      "Gross winnings ÷ gross losses across priced closed trades. Above 1 the book makes money; below 1 it bleeds, whatever the win rate says.",
+      "Total from winners ÷ total from losers, after charges, across priced closed trades. Above 1 the book makes money; below 1 it bleeds, whatever the win rate says.",
     formula:
       "Sum of winning trades' net P&L ÷ |sum of losing trades' net P&L|. With no losing trades yet it displays ∞ rather than an error or an invented cap; with neither wins nor losses it shows 0.",
     healthyRange:

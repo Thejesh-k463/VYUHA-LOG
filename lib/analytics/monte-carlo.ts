@@ -44,7 +44,8 @@ function percentile(sorted: number[], p: number): number {
 /**
  * @param dailyReturns historical fractional daily returns (e.g. 0.004 = +0.4%)
  * @param startEquity  simulation starting equity (today's equity)
- * @param opts.horizonDays  simulated trading days (default 252 ≈ 1y)
+ * @param opts.horizonDays  simulated trading days — REQUIRED (v4.4.0 D4): the page
+ *                          passes one year on the NSE calendar, `annualisationBasis(today).days`
  * @param opts.paths        number of simulated paths (default 2000)
  * @param opts.ruinFrac     ruin level as a fraction of start (default 0.5)
  * @param opts.seed         PRNG seed (default 42) — fixed for reproducible UI
@@ -52,7 +53,7 @@ function percentile(sorted: number[], p: number): number {
 // ── Memo ────────────────────────────────────────────────────────────────
 // The simulation is DETERMINISTIC (seeded PRNG, default seed 42), so for a
 // given inputs tuple the answer never changes — yet /reports/performance
-// recomputed all 504,000 iterations (2,000 paths x 252 days) on every single
+// recomputed all ~500,000 iterations (2,000 paths x a year of days) on every single
 // page view. One entry is enough: the book changes rarely relative to page
 // views, and a stale entry is impossible because the key IS the inputs.
 // Bounded at 8 entries (multi-account browsing) — never a leak.
@@ -69,7 +70,7 @@ function mcKey(returns: number[], startEquity: number, opts: object): string {
 export function monteCarloEquity(
   dailyReturns: number[],
   startEquity: number,
-  opts: { horizonDays?: number; paths?: number; ruinFrac?: number; seed?: number } = {},
+  opts: { horizonDays: number; paths?: number; ruinFrac?: number; seed?: number },
 ): MonteCarloResult | null {
   const key = mcKey(dailyReturns, startEquity, opts);
   const hit = mcMemo.get(key);
@@ -84,9 +85,9 @@ export function monteCarloEquity(
 export function monteCarloEquityUncached(
   dailyReturns: number[],
   startEquity: number,
-  opts: { horizonDays?: number; paths?: number; ruinFrac?: number; seed?: number } = {},
+  opts: { horizonDays: number; paths?: number; ruinFrac?: number; seed?: number },
 ): MonteCarloResult | null {
-  const { horizonDays = 252, paths = 2000, ruinFrac = 0.5, seed = 42 } = opts;
+  const { horizonDays, paths = 2000, ruinFrac = 0.5, seed = 42 } = opts;
   // Too little history and the bootstrap just replays noise — refuse below 20 days.
   if (dailyReturns.length < 20 || startEquity <= 0) return null;
 
