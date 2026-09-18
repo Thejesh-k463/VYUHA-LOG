@@ -92,6 +92,12 @@ migrations, 0071 and 0072, and no dependency changes.*
   adds one optional column and changes no money figure. Backups and Deleted
   items carry the signal with the trade.
 
+- **A monthly plan, given on request: ₹599 for the first month as a launch
+  offer, ₹999 a month from the second.** Pro — Monthly joins Pro — Annual
+  (₹7,999/yr) and Journal — Lifetime (₹29,999) on every pricing surface; each
+  month is a fresh key issued on request, nothing auto-renews and no card is
+  stored (`license-issue.mjs <email> app --months 1`).
+
 - **Streaks and drawdown now follow entry order inside a trading day.** Every
   screen that ranks closed trades was handed them newest-first, and the streak
   and drawdown walks sorted on the exit date alone — so each day's trades were

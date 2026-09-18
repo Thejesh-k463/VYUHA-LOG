@@ -7,7 +7,7 @@ import path from "node:path";
 import { licenseKeyId } from "@/lib/license";
 import { skuById, upgradeCredit } from "@/lib/domain/pricing";
 import {
-  mintKey, ledgerLine, appendLedger, readLedger, archiveKey, archiveFileName, keyIdOf,
+  mintKey, ledgerLine, appendLedger, readLedger, archiveKey, archiveFileName, keyIdOf, addMonths,
 } from "../scripts/lib/license-mint.mjs";
 import { readLifetimeLaunchPrice, upgradeDue } from "../scripts/lib/upgrade-credit.mjs";
 
@@ -146,6 +146,35 @@ describe("scripts/license-issue.mjs --save-dir", () => {
   it("still refuses without a term or a payment reference", () => {
     expect(run("license-issue.mjs", ["x@y.com", "app"], { VYUHA_LICENSE_NOTE: "UTR" }).status).toBe(1);
     expect(run("license-issue.mjs", ["x@y.com", "app", "--years", "1"]).status).toBe(1);
+  });
+});
+
+describe("scripts/license-issue.mjs --months (Pro — Monthly, owner ruling 2026-09-18)", () => {
+  it("addMonths ROLLS a month-end date forward, never clamping the buyer short", () => {
+    // Jan 31 + 1 month has no 31 February to land on. The rule chosen is
+    // JavaScript's own roll-forward — the same arithmetic style as --years,
+    // which rolls 29 Feb to 1 March — so the buyer gets 31 days, never 28. A
+    // monthly licence must never be SHORTER than the month that was paid for.
+    expect(addMonths("2026-01-31", 1)).toBe("2026-03-03"); // Feb 2026 has 28 days
+    expect(addMonths("2024-01-31", 1)).toBe("2024-03-02"); // leap February
+    expect(addMonths("2026-09-18", 1)).toBe("2026-10-18");
+    expect(addMonths("2026-12-15", 1)).toBe("2027-01-15"); // year rolls over
+    expect(addMonths("2026-01-15", 3)).toBe("2026-04-15");
+  });
+
+  it("mints a one-month key, and refuses to be combined with another term", () => {
+    const r = run("license-issue.mjs", ["monthly@x.com", "app", "--months", "1"], { VYUHA_LICENSE_NOTE: "UTR 599" });
+    expect(r.status, r.err).toBe(0);
+    const rec = readLedger(ledgerPath).find((x: { email: string }) => x.email === "monthly@x.com")!;
+    expect(rec.expires).toBe(addMonths(rec.issued.slice(0, 10), 1));
+    expect(r.err).toContain("Pro — Monthly");
+    // Two terms at once is the ambiguity that once minted a lifetime key on an
+    // annual sale — every combination refuses rather than picking one.
+    expect(run("license-issue.mjs", ["m2@x.com", "app", "--months", "1", "--years", "1"], { VYUHA_LICENSE_NOTE: "U" }).status).toBe(1);
+    expect(run("license-issue.mjs", ["m3@x.com", "app", "--months", "1", "--lifetime"], { VYUHA_LICENSE_NOTE: "U" }).status).toBe(1);
+    expect(run("license-issue.mjs", ["m4@x.com", "app", "--months", "1", "--expires", "2027-01-01"], { VYUHA_LICENSE_NOTE: "U" }).status).toBe(1);
+    // The usage text names the monthly plan at its ruled prices.
+    expect(run("license-issue.mjs", [], {}).err).toContain("--months 1");
   });
 });
 

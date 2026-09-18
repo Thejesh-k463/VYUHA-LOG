@@ -72,6 +72,11 @@ in the password manager, not in the same folder as the bundle.
 > npm run sell -- you@example.com --lifetime --no-payment --name "Me"     # dry run on yourself
 > ```
 >
+> **Pro — Monthly goes through `sell.mjs` too** (2026-09-18):
+> `npm run sell -- buyer@email.com --months 1 --utr <UTR> --name "<Full Name>"` for the FIRST month (receipt ₹599, launch offer), and
+> the same with `--renewal` for every later month (receipt ₹999). Each month is a fresh one-month key; nothing renews by itself.
+> The annual receipt row reads ₹7,999 (it read ₹9,999 until this date).
+>
 > It **spawns** `license-issue.mjs` and `license-backup.mjs` rather than re-implementing
 > them, so every guard below stays in force. Then it verifies the ledger and archive against
 > disk, numbers and saves the receipt (`VY-<year>-NNN`, recorded on the ledger line), backs
@@ -122,6 +127,7 @@ VYUHA_LICENSE_NOTE="UTR 123456789012, ₹7,999 UPI 2026-08-13" \
 |---|---|
 | **Journal — Lifetime ₹29,999** | `… buyer@email.com app --lifetime` |
 | **Pro — Annual ₹7,999/yr** | `… buyer@email.com app --years 1` |
+| **Pro — Monthly ₹599 first month, ₹999/month after** (2026-09-18; **given on request** — each month is a fresh key, nothing auto-renews) | `… buyer@email.com app --months 1` |
 | Custom expiry | `… buyer@email.com app --expires 2027-03-31` |
 | Locked to one computer | `… app --machine EB42-FA73-9AD5` (see §6 — needs the buyer's Machine ID first) |
 | *Legacy bundle (do not issue)* | `… toolkit` — the app+indicators SKU retired at v2.99.76. Old keys still verify; issuing one today labels the buyer's Settings screen "Vyuha app (legacy bundle key)". The script warns if you do. |

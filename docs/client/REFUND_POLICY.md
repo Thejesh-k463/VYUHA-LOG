@@ -40,17 +40,22 @@ copy. We do not hold your own data hostage — not at purchase, not at refund.
 ## What is not refundable
 
 - A change of mind after the trial has ended and the licence has been used.
-- An annual licence part-way through its year, because you decided to stop
-  trading. The trial exists to prevent this.
+- An annual licence part-way through its year, or a monthly licence part-way
+  through its month, because you decided to stop trading. The trial exists to
+  prevent this.
 - Anything to do with your trading results. Vyuha is a record-keeping and
   analytics tool; it does not give investment advice and makes no claim about
   your profitability.
 
-## Renewals (Pro — Annual)
+## Renewals (Pro — Monthly and Pro — Annual)
 
-An annual licence stops at its expiry date. **It does not auto-renew, and there
-is nothing to cancel** — no card is stored, because no card was ever taken. If
-you do nothing, it simply lapses and the core journal keeps working forever.
+A monthly or annual licence stops at its expiry date. **It does not auto-renew,
+and there is nothing to cancel** — no card is stored, because no card was ever
+taken. If you do nothing, it simply lapses and the core journal keeps working
+forever. Pro — Monthly is issued **on request**: each month you ask, and a fresh
+one-month key is issued. The first month is ₹599 as a launch offer and ₹999 a
+month from the second month; each month is a separate purchase under the rules
+above.
 
 ---
 

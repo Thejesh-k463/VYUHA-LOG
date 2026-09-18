@@ -9,7 +9,12 @@
 /** Plan display names and amounts, keyed by how the mint script is told the term. */
 export const PLANS = {
   lifetime: { item: "Vyuha — Journal (Lifetime)", amount: 29999, flag: "--lifetime" },
-  annual: { item: "Vyuha — Pro (Annual)", amount: 9999, flag: "--years 1" },
+  // 7,999 since the 2026-08-31 reprice (lib/domain/pricing.ts). This read 9999 until 2026-09-18 and would have
+  // printed a receipt for Rs 2,000 more than the buyer paid.
+  annual: { item: "Vyuha — Pro (Annual)", amount: 7999, flag: "--years 1" },
+  // Monthly, owner ruling 2026-09-18: Rs 599 for the FIRST month (launch offer), Rs 999 from the second.
+  monthly: { item: "Vyuha — Pro (Monthly, first month — launch offer)", amount: 599, flag: "--months 1", termWord: "1 month" },
+  monthlyRenewal: { item: "Vyuha — Pro (Monthly)", amount: 999, flag: "--months 1", termWord: "1 month" },
 };
 
 /**
@@ -52,7 +57,7 @@ export function inr(n) {
  */
 export function receiptText({ receiptNo, issued, name, email, plan, keyId, utr, expires }) {
   const p = PLANS[plan];
-  const term = expires ? `1 year from ${longDate(issued)} (expires ${longDate(expires)})` : "perpetual";
+  const term = expires ? `${p.termWord ?? "1 year"} from ${longDate(issued)} (expires ${longDate(expires)})` : "perpetual";
   return [
     "VYUHA — PAYMENT RECEIPT",
     "",

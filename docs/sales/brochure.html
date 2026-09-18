@@ -110,6 +110,13 @@
 
   /* Pricing */
   .pricing{margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  /* Monthly (2026-09-18) rides as a highlighted strip, not a fourth column —
+     this is a fixed A4 sheet and a fourth card would overflow it. */
+  .monthly{margin-top:9px;border:1px solid var(--profit);border-radius:10px;padding:8px 12px;
+    background:linear-gradient(115deg,#0f2620,#0d1a26);font-size:10.5px;color:var(--muted)}
+  .monthly b{color:var(--text)}
+  .monthly .lo{color:#052018;background:linear-gradient(135deg,var(--profit),var(--accent));
+    font-size:8.5px;font-weight:800;letter-spacing:.4px;padding:3px 9px;border-radius:999px;margin-right:8px}
   .plan{background:linear-gradient(180deg,#131c28,#0e1620);border:1px solid var(--line);
     border-radius:12px;padding:12px 12px;position:relative;min-width:0}
   .plan.hot{border-color:var(--profit);
@@ -248,6 +255,9 @@
       <ul><li>Recording every trade</li><li>All importers &amp; backups</li><li>Your record is never locked</li></ul>
     </div>
   </div>
+  <div class="monthly"><span class="lo">LAUNCH OFFER 40% OFF</span><b>Pro — Monthly ₹599</b> for your first month
+    (<b>then ₹999/month from the second month</b>) — given on request: message us and a one-month key is issued,
+    each month renews with a fresh key. Nothing auto-renews, no card is stored. Move to Annual or Lifetime whenever you like.</div>
 
   <!-- CTA -->
   <div class="foot">

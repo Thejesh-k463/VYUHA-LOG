@@ -4,8 +4,11 @@
 
 ## 1. What you are buying
 
-A licence to use Vyuha on your own computer. Two plans:
+A licence to use Vyuha on your own computer. Three plans:
 
+- **Pro — Monthly.** Unlocks the Pro analytics for one month from the date your
+  key is issued. It is **issued on request** — each month is a fresh key you ask
+  for. It does not auto-renew, and no payment method is stored.
 - **Pro — Annual.** Unlocks the Pro analytics for one year from the date your key
   is issued. It does not auto-renew.
 - **Journal — Lifetime.** Unlocks the Pro analytics permanently for the versions
@@ -19,7 +22,7 @@ share, resell or publish the key. Keys found posted publicly are withdrawn.
 
 The core journal is **never** gated and never expires: recording trades,
 importing broker files, the dashboard, staged positions, playbooks, backups and
-exports. This holds whether you never buy, your annual licence lapses, or your
+exports. This holds whether you never buy, your monthly or annual licence lapses, or your
 licence is withdrawn. Your record of your own trading is yours.
 
 ## 3. Not financial advice

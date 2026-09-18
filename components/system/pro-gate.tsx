@@ -187,7 +187,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             plan the reprice introduced, and it sat directly under a table
             offering both. */}
         <p className="text-[0.6875rem] text-muted-foreground">
-          Annual or lifetime, verified on your own machine with no server call — activation never phones home. One key per trader; it shows
+          Monthly, annual or lifetime, verified on your own machine with no server call — activation never phones home. One key per trader; it shows
           your email in-app.
         </p>
       </CardContent>

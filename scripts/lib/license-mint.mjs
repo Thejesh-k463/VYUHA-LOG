@@ -25,6 +25,25 @@ export function repoRoot() {
   return root;
 }
 
+/**
+ * `YYYY-MM-DD` + N calendar months, for the monthly plan (owner ruling
+ * 2026-09-18) — pure, so the month-end rule is pinned by a test rather than
+ * discovered on a sale.
+ *
+ * ROLL FORWARD, never clamp: 2026-01-31 + 1 month is 2026-03-03, because there
+ * is no 31 February. That is JavaScript's own Date arithmetic and the same
+ * style `--years` already uses (29 Feb + 1 year → 1 March), and it errs in the
+ * BUYER's favour — a month they paid for is never cut to 28 days. UTC
+ * throughout, so the result never shifts with the machine's timezone.
+ */
+export function addMonths(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) throw new Error(`addMonths: bad date "${iso}"`);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`addMonths: months must be a whole number >= 1, got "${n}"`);
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Short, stable ID — must match lib/license.ts#licenseKeyId exactly. */
 export function keyIdOf(key) {
   const hex = createHash("sha256").update(key.trim()).digest("hex").slice(0, 10).toUpperCase();

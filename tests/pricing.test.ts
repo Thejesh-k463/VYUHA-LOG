@@ -11,6 +11,7 @@ import {
   skuById,
   pricingIsStale,
   buyMessageFor,
+  renewalLabel,
   upgradeCredit,
 } from "@/lib/domain/pricing";
 import {
@@ -60,6 +61,51 @@ describe("shape", () => {
     expect(skuById("annual").wasInr).toBe(13000);
   });
 
+  it("three plans are on sale, and monthly is not the featured one", () => {
+    // Owner ruling 2026-09-18: a MONTHLY plan, given on request. Lifetime
+    // stays the single featured (best-value) card — the owner sells lifetime
+    // first, and a cheap monthly card must not out-shout it.
+    expect(PRICING.map((s) => s.id)).toEqual(["lifetime", "annual", "monthly"]);
+    expect(skuById("monthly").featured).toBeUndefined();
+    expect(skuById("monthly").licenseSku).toBe("app");
+    expect(skuById("monthly").term).toBe("monthly");
+  });
+
+  it("monthly is ₹599 for the first month against a REAL ₹999 anchor — 40%, derived", () => {
+    const m = skuById("monthly");
+    expect(m.amountInr).toBe(599);
+    // The anchor is the price from month two, which the buyer will actually
+    // pay — not an invented strike-through (same rule as the 2026-08-15
+    // launch anchors).
+    expect(m.wasInr).toBe(999);
+    expect(m.thenInr).toBe(999);
+    expect(offerPct(m)).toBe(40); // 1 − 599/999 = 40.04%, floored
+  });
+
+  it("the monthly labels state both prices, in-app and in the buy message", () => {
+    const m = skuById("monthly");
+    expect(priceLabel(m)).toBe("₹599/mo");
+    expect(renewalLabel(m)).toBe("then ₹999/month from the second month");
+    // Only a SKU that has a second-period price carries the line.
+    expect(renewalLabel(skuById("annual"))).toBeNull();
+    expect(renewalLabel(skuById("lifetime"))).toBeNull();
+    const msg = buyMessageFor(m);
+    expect(msg).toContain("Pro — Monthly");
+    expect(msg).toContain("₹599/mo");
+    expect(msg).toContain("₹999/month");
+    expect(msg).toContain(PRICING_AS_OF);
+  });
+
+  it("monthly promises nothing that was not ruled — no upgrade credit, no auto-renewal", () => {
+    const text = skuById("monthly").includes.join(" ");
+    expect(text).toContain("Given on request");
+    expect(text).toContain("Move to Annual or Lifetime whenever you like");
+    // upgradeCredit() is annual → lifetime only; no monthly credit was ruled.
+    expect(text).not.toContain("comes off the lifetime price");
+    expect(text.toLowerCase()).not.toContain("auto-renew");
+    expect(text.toLowerCase()).not.toContain("auto-debit");
+  });
+
   it("savings percentages are derived from the anchors, never hand-typed", () => {
     // The owner's requested "30% / 20%" labels did not survive division —
     // these are the honest figures, and they come out of offerPct() so a
@@ -91,6 +137,24 @@ describe("anti-drift — the app and the landing page quote the same numbers", (
         expect(joined, `${s.id} anchor ${formatInr(s.wasInr)} not on the landing page`).toContain(formatInr(s.wasInr));
       }
     }
+  });
+
+  it("the landing page's monthly card highlights the launch offer and states month two", () => {
+    // The ₹599 cell alone would let the page advertise a monthly plan without
+    // ever saying what month two costs — the one thing a buyer must read
+    // before paying (owner ruling 2026-09-18: "highlight and show this").
+    const m = skuById("monthly");
+    expect(amtBlocks.join(" "), "monthly price cell").toContain(formatInr(m.amountInr));
+    expect(html).toContain("Pro — Monthly");
+    expect(html).toContain("Launch offer · 40% off");
+    expect(html).toContain(renewalLabel(m));
+  });
+
+  it("the in-app cards fit three plans and render the renewal line", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components", "system", "pricing-table.tsx"), "utf8");
+    // A two-column grid silently orphans the third card on a wide screen.
+    expect(src).toContain("lg:grid-cols-3");
+    expect(src).toContain("renewalLabel(");
   });
 });
 

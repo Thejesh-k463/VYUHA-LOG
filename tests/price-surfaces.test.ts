@@ -210,8 +210,14 @@ describe("price surfaces carry no price PRICING does not authorise", () => {
   it("the derived figures are the ones the owner ruled on 2026-08-31", () => {
     // Belt and braces: if PRICING itself is edited to something the owner did
     // not rule, the scans above would happily bless the new number everywhere.
-    expect([...ALLOWED_AMOUNTS].sort()).toEqual(["₹13,000", "₹29,999", "₹35,999", "₹7,999"].sort());
-    expect([...ALLOWED_PCT].sort((a, b) => a - b)).toEqual([16, 38]);
+    // 2026-09-18: the monthly plan adds ₹599 against its REAL ₹999 month-two
+    // price, deriving 40%. Note both are three-digit and so invisible to
+    // AMOUNT_RE (which matches ₹9,999-shaped figures) — they are pinned here
+    // so a future four-digit monthly price cannot slip in unnoticed.
+    expect([...ALLOWED_AMOUNTS].sort()).toEqual(
+      ["₹13,000", "₹29,999", "₹35,999", "₹7,999", "₹599", "₹999"].sort(),
+    );
+    expect([...ALLOWED_PCT].sort((a, b) => a - b)).toEqual([16, 38, 40]);
     expect(UPGRADE_DUE, "annual → lifetime upgrade due").toBe("₹22,000");
   });
 });

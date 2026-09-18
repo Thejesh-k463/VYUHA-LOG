@@ -3,6 +3,8 @@
 //
 //   npm run sell -- <buyer-email> --lifetime  --utr <UTR> --name "<Full Name>"
 //   npm run sell -- <buyer-email> --years 1   --utr <UTR> --name "<Full Name>"
+//   npm run sell -- <buyer-email> --months 1  --utr <UTR> --name "<Full Name>"              # first month, Rs 599
+//   npm run sell -- <buyer-email> --months 1 --renewal --utr <UTR> --name "<Full Name>"    # second month on, Rs 999
 //   npm run sell -- you@example.com --lifetime --no-payment --name "Me"   # dry run on yourself
 //
 // WHAT IT REPLACES. On the first two real sales (2026-08-23) one mint command
@@ -50,6 +52,8 @@ const has = (name) => args.includes(name);
 const email = args.find((a) => a.includes("@") && !a.startsWith("--"));
 const lifetime = has("--lifetime");
 const years = opt("--years");
+const months = opt("--months");
+const renewal = has("--renewal"); // monthly only: the second month onwards, Rs 999
 const utr = opt("--utr");
 const name = opt("--name");
 const freebie = has("--no-payment");
@@ -62,19 +66,20 @@ function die(msg) {
 }
 function usage(msg) {
   if (msg) console.error(`✗ ${msg}\n`);
-  console.error(`Usage: npm run sell -- <buyer-email> (--lifetime | --years 1) --utr <UTR> --name "<Full Name>"`);
-  console.error(`       npm run sell -- <buyer-email> (--lifetime | --years 1) --no-payment --name "<Name>"   # dry run`);
+  console.error(`Usage: npm run sell -- <buyer-email> (--lifetime | --years 1 | --months 1 [--renewal]) --utr <UTR> --name "<Full Name>"`);
+  console.error(`       npm run sell -- <buyer-email> (--lifetime | --years 1 | --months 1 [--renewal]) --no-payment --name "<Name>"   # dry run`);
   process.exit(1);
 }
 
 if (!email) usage("buyer email is required");
-if (!lifetime && years !== "1") usage("a term is required: --lifetime or --years 1 (only 1 is sold)");
-if (lifetime && years) usage("--lifetime and --years contradict each other");
+if (!lifetime && years !== "1" && months !== "1") usage("a term is required: --lifetime, --years 1 or --months 1 (only 1 is sold)");
+if ([lifetime, years, months].filter(Boolean).length > 1) usage("--lifetime, --years and --months contradict each other");
+if (renewal && !months) usage("--renewal is for a monthly sale only");
 if (!name) usage("--name \"<Full Name>\" is required — it goes on the receipt");
 if (!freebie && !utr) usage("--utr <UTR> is required (or --no-payment for a dry run / freebie)");
 if (utr && !/^\d{12}$/.test(utr)) usage(`--utr "${utr}" does not look like a 12-digit UPI UTR`);
 
-const plan = lifetime ? "lifetime" : "annual";
+const plan = lifetime ? "lifetime" : months ? (renewal ? "monthlyRenewal" : "monthly") : "annual";
 const P = PLANS[plan];
 
 // Archive folder: the mint script creates it for the archive, but a shell

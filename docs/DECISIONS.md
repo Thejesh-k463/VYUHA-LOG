@@ -7923,3 +7923,40 @@ job — and if it recurs a third time, give those two cases the `it.each` / in-m
 **Build evidence.** `BUILD_ID` 71 s after the build began; bundle markers `signal-notes-backfill-v1`, "R on signal SL", `rate-card-refresh.mjs`, migration 0072; both
 `.sig` key ids `4FF85F3BBE1DA21D` = the `tauri.conf.json` pubkey; client ZIP installer SHA-256 `3695B809…0B1D2A` equals an independent hash of the nsis setup.exe.
 Gate on the bump: 439 files / 9,711 passed / 35 skipped (9,689 on CI). NOT tagged: the tag is the owner's word.
+
+## 2026-09-18 — A monthly plan: ₹599 first month (launch offer), ₹999 from the second; given on request
+
+**The ruling.** The owner: introduce a MONTHLY plan, given on the user's request, at ₹599 — a LAUNCH OFFER for the first month; ₹999 per month
+from the second month; "highlight and show this". Yearly stays ₹7,999 and Lifetime stays ₹29,999 (verified unchanged in `lib/domain/pricing.ts`,
+which may be raised later). Shipped inside 4.3.0.
+
+**Why the anchor is honest.** The struck-through ₹999 is the REAL price the buyer pays from month two — not an invented list price, and not a
+number chosen to make the discount look larger. That is the same rule the 2026-08-15 launch anchors were held to (₹13,000/yr and ₹35,999 are
+prices the owner committed to charging from 2027-01-01). The badge is DERIVED: `offerPct()` gives `floor((1 − 599/999) × 100)` = **40%**; it was
+never typed. A new field `thenInr` carries the second-period price, and `renewalLabel()` turns it into one sentence — "then ₹999/month from the
+second month" — that the in-app card, the landing page, the brochure and the WhatsApp buy message all print. Making it a FIELD rather than a
+sentence is the point: an introductory price whose second-period price lives only in prose is one surface away from being hidden.
+
+**What is deliberately NOT promised, because it was not ruled.** No upgrade credit from monthly — `upgradeCredit()` stays annual → lifetime only,
+and the monthly card says only "Move to Annual or Lifetime whenever you like". No auto-renewal, no stored card, no auto-debit: each month is a
+fresh key issued when the buyer asks, which is what the licence model already does and what `docs/client/TERMS.md` and `REFUND_POLICY.md` now say
+under the EXISTING refund rules (a monthly licence part-way through its month is not refundable, the same sentence the annual plan already
+carried; no new refund window was invented). Monthly is NOT featured — Lifetime remains the single featured card, because the owner sells
+lifetime first, and `tests/pricing.test.ts` pins "exactly one featured SKU".
+
+**Tooling.** `scripts/license-issue.mjs` gains `--months N`, mutually exclusive with `--years`, `--expires` and `--lifetime` (every term flag is
+collected and two of them refuse rather than one silently winning — the same class of bug as the forgotten `--years` that once minted a lifetime
+key). Term is still REQUIRED, with no default. The month arithmetic is `addMonths()` in `scripts/lib/license-mint.mjs`, pure and unit-tested:
+it ROLLS FORWARD rather than clamping, so **2026-01-31 + 1 month = 2026-03-03** (there is no 31 February). Clamping to 28 February would sell a
+28-day month; rolling errs in the buyer's favour and matches the style `--years` already uses (29 Feb + 1 year → 1 March).
+
+**Renewals.** A monthly key is ALWAYS inside `npm run renewals`' 30/60-day window — it lasts about a month. It is labelled, not hidden:
+`renewals.mjs` gains a TERM column read off each key's own issued→expires span (≤ 45 days = monthly, ≥ 300 = annual), and for a monthly row the
+"chase" date is its expiry, because 30 days before a monthly expiry is the day it was issued. The stale ₹9,999 annual figures in
+`license-issue.mjs`'s usage were corrected to ₹7,999 at the same time; the two lines that NARRATE the old incident keep ₹9,999 and are marked
+`(historical price)`.
+
+**Found by the builder, fixed the same day by the orchestrator:** `scripts/lib/sale-flow.mjs` `PLANS.annual.amount` was still **9999** — the sale script
+would have printed a receipt for ₹2,000 more than an annual buyer pays, and `tests/sell-flow.test.ts` PINNED the stale figure (a pin that agreed with the
+bug). Now 7,999, pin moved. `PLANS` gains `monthly` (₹599, "first month — launch offer") and `monthlyRenewal` (₹999); `npm run sell -- … --months 1`
+sells the first month and `--months 1 --renewal` every later one; the receipt's term line reads "1 month from …"; two term flags together are refused.

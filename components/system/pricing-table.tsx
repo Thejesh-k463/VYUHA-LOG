@@ -11,6 +11,7 @@ import {
   offerPct,
   priceLabel,
   pricingIsStale,
+  renewalLabel,
   type PricingSku,
 } from "@/lib/domain/pricing";
 import { Check, MessageCircle } from "lucide-react";
@@ -75,6 +76,8 @@ export function SkuCardBody({ sku, titleAs = "div" }: { sku: PricingSku; titleAs
         {sku.wasInr && <s className="ml-2 text-sm font-normal text-muted-foreground">{formatInr(sku.wasInr)}</s>}
       </div>
       <div className="text-xs text-muted-foreground">{sku.blurb}</div>
+      {/* An introductory price is never shown without its second-period price. */}
+      {renewalLabel(sku) && <div className="text-xs font-medium text-foreground">{renewalLabel(sku)}</div>}
       {sku.wasInr && (
         <div className="mt-1 text-[0.6875rem] font-medium text-accent">
           Save {formatInr(sku.wasInr - sku.amountInr)} at launch pricing — for a limited period.
@@ -144,7 +147,9 @@ export function PricingTable({ compact }: { compact?: boolean }) {
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Three plans since 2026-09-18 — a fixed 2-column grid orphaned the
+          third card on a wide screen. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {PRICING.map((sku) => (
           <Card
             key={sku.id}

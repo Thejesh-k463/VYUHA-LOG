@@ -35,7 +35,7 @@
 // Zero imports — this file is read by client components through lib/license.ts
 // and must stay browser-safe (see AGENTS.md on `npm run verify`).
 
-export type PricingSkuId = "lifetime" | "annual";
+export type PricingSkuId = "lifetime" | "annual" | "monthly";
 
 export interface PricingSku {
   id: PricingSkuId;
@@ -46,7 +46,13 @@ export interface PricingSku {
   amountInr: number;
   /** Struck-through anchor price, where one is advertised. */
   wasInr?: number;
-  term: "lifetime" | "annual";
+  /**
+   * The price from the SECOND period on, where the first one is an
+   * introductory price. Set only on `monthly` today; `renewalLabel()` turns it
+   * into the one sentence every surface prints under the amount.
+   */
+  thenInr?: number;
+  term: "lifetime" | "annual" | "monthly";
   /** Exactly one SKU carries this — the visually recommended offer. */
   featured?: true;
   /** One line under the amount: what kind of payment this is. */
@@ -56,7 +62,7 @@ export interface PricingSku {
 }
 
 /** The date these numbers were last confirmed against the landing page. */
-export const PRICING_AS_OF = "2026-08-31";
+export const PRICING_AS_OF = "2026-09-18";
 
 /** After this many days, rendered prices say "confirm before paying". */
 export const PRICING_STALE_AFTER_DAYS = 120;
@@ -74,6 +80,24 @@ export const PRICING_STALE_AFTER_DAYS = 120;
 // 13,000→7,999 is 38%, 35,999→29,999 is 16% — the owner's requested "30%/20%"
 // labels did not survive division and were corrected, not displayed.
 // Lifetime is now the featured entry — the owner sells lifetime first.
+//
+// ── 2026-09-18 (owner ruling): a MONTHLY plan, given on request ─────────────
+//
+// "Introduce a monthly plan, given on the user's request, at ₹599 — a LAUNCH
+// OFFER for the first month; ₹999 per month from the second month; highlight
+// and show this." Yearly (₹7,999) and Lifetime (₹29,999) are unchanged.
+//
+// The anchor obeys the same honesty rule as the 2026-08-15 launch anchors: 999
+// is the REAL price the buyer pays from month two, not an invented
+// strike-through, so offerPct() derives 40% (1 − 599/999 = 40.04%, floored).
+// `thenInr` exists so the second-month price is a FIELD every surface must
+// render (renewalLabel), not a sentence one surface can forget.
+//
+// Two things deliberately NOT promised, because neither was ruled: there is no
+// upgrade credit from monthly (upgradeCredit stays annual → lifetime only),
+// and there is no auto-renewal or stored card — each month is a fresh key
+// issued on request, which is exactly what the licence model already does.
+// Monthly is NOT featured: lifetime stays the single featured card.
 export const PRICING: readonly PricingSku[] = [
   {
     id: "lifetime",
@@ -110,6 +134,23 @@ export const PRICING: readonly PricingSku[] = [
       "The charges engine verified within 0.69% of a real broker report",
       "All broker importers and free updates through the year",
       "Upgrade to lifetime any time before your year ends — what you paid for the year comes off the lifetime price",
+    ],
+  },
+  {
+    id: "monthly",
+    licenseSku: "app",
+    name: "Pro — Monthly",
+    amountInr: 599,
+    wasInr: 999,
+    thenInr: 999,
+    term: "monthly",
+    blurb: "first month · launch offer · then ₹999/month",
+    includes: [
+      "The full Vyuha desktop app",
+      "Every Pro analytics screen",
+      "All broker importers and updates while the plan is active",
+      "Given on request — message us and a one-month key is issued; each month renews with a fresh key",
+      "Move to Annual or Lifetime whenever you like",
     ],
   },
 ];
@@ -159,7 +200,21 @@ export function offerPct(sku: PricingSku): number | null {
 }
 
 export function priceLabel(sku: PricingSku): string {
-  return sku.term === "annual" ? `${formatInr(sku.amountInr)}/yr` : formatInr(sku.amountInr);
+  if (sku.term === "annual") return `${formatInr(sku.amountInr)}/yr`;
+  if (sku.term === "monthly") return `${formatInr(sku.amountInr)}/mo`;
+  return formatInr(sku.amountInr);
+}
+
+/**
+ * "then ₹999/month from the second month" — the sentence an introductory price
+ * may never be shown without. Null when the SKU has no second-period price, so
+ * a surface renders it unconditionally and gets nothing for lifetime/annual.
+ * The unit follows the TERM, so a future introductory annual reads "year".
+ */
+export function renewalLabel(sku: PricingSku): string | null {
+  if (sku.thenInr == null) return null;
+  const unit = sku.term === "annual" ? "year" : "month";
+  return `then ${formatInr(sku.thenInr)}/${unit} from the second ${unit}`;
 }
 
 /**
@@ -178,5 +233,8 @@ export function pricingIsStale(asOf: string, today: Date): boolean {
  * seller sees at first contact exactly what this build showed the buyer.
  */
 export function buyMessageFor(sku: PricingSku): string {
-  return `Hi, I'd like the Vyuha ${sku.name} (${priceLabel(sku)}, price shown in-app as of ${PRICING_AS_OF})`;
+  // An introductory price goes out with its second-period price attached: the
+  // seller must see the same two numbers the buyer was shown.
+  const then = sku.thenInr != null ? ` first month, then ${formatInr(sku.thenInr)}/month` : "";
+  return `Hi, I'd like the Vyuha ${sku.name} (${priceLabel(sku)}${then}, price shown in-app as of ${PRICING_AS_OF})`;
 }

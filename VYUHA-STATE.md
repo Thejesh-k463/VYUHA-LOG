@@ -48,6 +48,10 @@ left to do*.
 - **Recorded, not built (DECISIONS 2026-09-18, three entries):** 2P — the unreadable-lot throw in `closeStaleLot`, the D8 route cases that cannot separate their two
   halves, no seam case for D10 / D3-tiered; Signal book — a seeded row in Trash at upgrade time restores without a signal (Edit fills it), `num()` in
   `app/trades/actions.ts` still strips every comma for qty / price, no e2e spec and no Help Desk entry for the tab, the 2 % adherence tolerance is a decision.
+- **FIX LIST for the next wave (owner, 2026-09-18 — "add this to fixes list"):** the `/lenses` **Outcome** tab's **Win rate** column is a tautology — the lens groups BY
+  outcome (`lib/domain/lenses.ts:167`, `outcomeGroups`), so Winners always reads 100% and Losers 0% (the owner read the 0% as "no loss shown"; the loss IS the row's
+  net, −₹12,173 on account #3). Correct arithmetic, useless column. Fix: on the Outcome lens only, replace Win rate with each group's SHARE of closed trades
+  (33 of 42 = 79% / 9 of 42 = 21%, header "Share of trades"), or "—" if a share is ruled out; every other lens keeps Win rate. Pin it in the lens tests.
 - **Next — ONLY the owner's "tag":** `git tag v4.3.0` on the HEAD whose CI is 6/6 → `git push origin v4.3.0` → the release workflow 3/3 →
   `npm run release:verify v4.3.0 -- --deep` → install on a non-build machine → the owner's six-item smoke test (row 3; item (e) is now the Signal book on account #3) →
   WDSI (the form is in the session's last message and the steward's report) → winget status. Then v4.3.1 (row 1b) and v4.4.0 (rows 14, 15) open. Wave 3 stays deferred.

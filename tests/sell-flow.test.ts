@@ -71,12 +71,22 @@ describe("sale-flow helpers (pure)", () => {
     expect(longDate("2026-08-23")).toBe("23 August 2026");
   });
 
+  it("a monthly receipt states ONE MONTH and the amount actually paid: 599 for the first month, 999 on a renewal", () => {
+    const base = { receiptNo: "VY-2026-050", issued: "2026-09-18", name: "A Buyer", email: "x@y.com", keyId: "AAAA-BBBB-01", utr: "123456789012", expires: "2026-10-18" };
+    const first = receiptText({ ...base, plan: "monthly" });
+    expect(first).toContain("Licence term   1 month from 18 September 2026 (expires 18 October 2026)");
+    expect(first).toContain("Amount paid    ₹599");
+    const next = receiptText({ ...base, plan: "monthlyRenewal" });
+    expect(next).toContain("Amount paid    ₹999");
+    expect(next).not.toContain("launch offer");
+  });
+
   it("writes a receipt that is a receipt, not a tax invoice, and quotes the key id never the key", () => {
     const r = receiptText({ receiptNo: "VY-2026-002", issued: "2026-08-23", name: "Shivangi Kulkarni", email: "x@y.com", plan: "annual", keyId: "35CF-B8B5-8E", utr: "072712985315", expires: "2027-08-23" });
     expect(r).toContain("Receipt no.    VY-2026-002");
     expect(r).toContain("Item           Vyuha — Pro (Annual)");
     expect(r).toContain("Licence term   1 year from 23 August 2026 (expires 23 August 2027)");
-    expect(r).toContain("Amount paid    ₹9,999");
+    expect(r).toContain("Amount paid    ₹7,999"); // the 2026-08-31 reprice; the table read 9999 until 2026-09-18
     expect(r).toContain("Not a tax invoice. No GST has been charged");
     expect(r).not.toMatch(/GSTIN|HSN|SAC|CGST|SGST|IGST/);
     expect(r).not.toMatch(/VYUHA-[A-Za-z0-9]/); // never the key itself

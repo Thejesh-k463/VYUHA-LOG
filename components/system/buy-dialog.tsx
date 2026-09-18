@@ -51,7 +51,7 @@ export function BuyDialog({ skuId, trigger }: { skuId?: PricingSkuId; trigger: R
           <DialogDescription>
             {sku
               ? `${sku.name} · ${priceLabel(sku)} · price as of ${PRICING_AS_OF}`
-              : `Annual or lifetime — prices as of ${PRICING_AS_OF}`}
+              : `Monthly, annual or lifetime — prices as of ${PRICING_AS_OF}`}
           </DialogDescription>
         </DialogHeader>
 

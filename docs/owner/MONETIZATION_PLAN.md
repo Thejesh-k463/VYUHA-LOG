@@ -348,7 +348,15 @@ six-broker import (incl. Angel One ≈15% of India's active accounts), clickable
 > and FLOORED (16.67% shows as 16, never 17 — a discount claim never
 > overstates) — the requested "30%/20%" labels did not survive division and
 > were corrected.
-> Two SKUs only — the Toolkit/indicators bundle came off every pricing surface;
+> **Added 2026-09-18 (owner ruling): Pro — Monthly, GIVEN ON REQUEST.** ₹599 for
+> the first month as a launch offer, **₹999/month from the second month**. The
+> anchor is that ₹999 — the real month-two price — so `offerPct()` derives 40%.
+> Annual and Lifetime are unchanged. Nothing auto-renews and no card is stored:
+> each month is a fresh key minted with
+> `license-issue.mjs <email> app --months 1`. No upgrade credit from monthly was
+> ruled, so none is promised (`upgradeCredit()` stays annual → lifetime).
+>
+> Three SKUs — the Toolkit/indicators bundle came off every pricing surface;
 > indicators remain a WhatsApp conversation. `tests/pricing.test.ts` pins the
 > module to the landing page, so changing a price means editing BOTH in one
 > commit — which is the point. "Fixing" the code to match the ranges below

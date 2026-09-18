@@ -22,7 +22,7 @@ export default function PricingPage() {
     <>
       <PageHeader
         title="Pricing"
-        description="Two ways to pay. The core journal stays free forever — the analytics are the product."
+        description="Three ways to pay — monthly, yearly or once. The core journal stays free forever; the analytics are the product."
       />
       <div className="mx-auto max-w-4xl space-y-5 p-6">
         {ent.state === "licensed" && (

@@ -1,7 +1,7 @@
 // Mint a license key after a sale (vendor-side; needs license-private.pem from keygen).
 //
 // Usage:
-//   node scripts/license-issue.mjs <buyer-email> [sku] [--expires YYYY-MM-DD | --years N]
+//   node scripts/license-issue.mjs <buyer-email> [sku] [--expires YYYY-MM-DD | --years N | --months N]
 //                                                      [--machine ABCD-EF12-3456]
 //                                                      [--save-dir <folder>]
 //
@@ -15,13 +15,17 @@
 //   Paths: license-private.pem and license-ledger.jsonl at the repo root, or
 //   VYUHA_LICENSE_PEM / VYUHA_LICENSE_LEDGER when set (tests and smoke runs).
 //
-// THE TWO PLANS SOLD TODAY (v2.99.76 reprice) — both are sku `app`; what
-// separates them is the EXPIRY, because that is the only thing the entitlement
-// engine reads. `sku` is display-only: it feeds SKU_LABELS in Settings and
-// gates nothing.
+// THE THREE PLANS SOLD TODAY — all three are sku `app`; what separates them is
+// the EXPIRY, because that is the only thing the entitlement engine reads.
+// `sku` is display-only: it feeds SKU_LABELS in Settings and gates nothing.
 //
-//   Journal — Lifetime (₹29,999):  license-issue.mjs buyer@x.com app
-//   Pro — Annual      (₹9,999/yr): license-issue.mjs buyer@x.com app --years 1
+//   Journal — Lifetime (₹29,999):  license-issue.mjs buyer@x.com app --lifetime
+//   Pro — Annual      (₹7,999/yr): license-issue.mjs buyer@x.com app --years 1
+//   Pro — Monthly (₹599 first month / ₹999 after, owner ruling 2026-09-18, and
+//   given ON REQUEST):             license-issue.mjs buyer@x.com app --months 1
+//
+//   A monthly key is a FRESH key every month — there is no auto-renewal and no
+//   stored card, so the buyer asks and you mint another one.
 //
 //   sku: app | toolkit | indicators (default app)
 //   `toolkit` is LEGACY — the app-plus-indicators bundle retired at v2.99.76.
@@ -29,10 +33,12 @@
 //   the buyer's Settings screen "Vyuha app (legacy bundle key)". Prefer `app`.
 //
 //   TERM IS REQUIRED — there is no default. --lifetime for the Lifetime plan,
-//   --years N for an annual one, --expires YYYY-MM-DD for a custom date. It used
-//   to be that no flag meant lifetime, and one forgotten flag on a Rs 9,999
-//   annual sale minted a Rs 29,999 lifetime key: signed, valid, and undoable only
-//   by revoking someone who had just paid. Lifetime is opt-IN for that reason.
+//   --years N for an annual one, --months N for a monthly one, --expires
+//   YYYY-MM-DD for a custom date, and exactly ONE of them. It used to be that no
+//   flag meant lifetime, and one forgotten flag on a Rs 9,999 annual sale
+//   (historical price) minted a Rs 29,999 lifetime key: signed, valid, and
+//   undoable only by revoking someone who had just paid. Lifetime is opt-IN for
+//   that reason.
 //
 //   --machine LOCKS the key to one computer. The buyer reads their Machine ID
 //   from Settings → License and sends it to you; the key then refuses to
@@ -41,21 +47,43 @@
 //   Trade-off: binding means you cannot pre-issue at checkout — you need the
 //   buyer's Machine ID first, so it is a two-step delivery.
 import {
-  mintKey, ledgerLine, appendLedger, archiveKey, defaultPemPath, defaultLedgerPath,
+  mintKey, ledgerLine, appendLedger, archiveKey, defaultPemPath, defaultLedgerPath, addMonths,
 } from "./lib/license-mint.mjs";
 
 const args = process.argv.slice(2);
 let expires = null;
 let machine = null;
+/** Which term was asked for — drives the plan line printed after the mint. */
+let termKind = null;
+/** EVERY term flag seen. Two of them is a contradiction, never a silent winner. */
+const termFlags = [];
 let saveDir = process.env.VYUHA_KEY_ARCHIVE_DIR || null;
 for (let i = args.length - 1; i >= 0; i--) {
   if (args[i] === "--machine" && args[i + 1]) { machine = args[i + 1].trim().toUpperCase(); args.splice(i, 2); }
   else if (args[i] === "--save-dir" && args[i + 1]) { saveDir = args[i + 1]; args.splice(i, 2); }
-  else if (args[i] === "--expires" && args[i + 1]) { expires = args[i + 1]; args.splice(i, 2); }
+  else if (args[i] === "--expires" && args[i + 1]) {
+    expires = args[i + 1];
+    termKind = "expires"; termFlags.push("--expires");
+    args.splice(i, 2);
+  }
   else if (args[i] === "--years" && args[i + 1]) {
     const d = new Date();
     d.setFullYear(d.getFullYear() + Number(args[i + 1]));
     expires = d.toISOString().slice(0, 10);
+    termKind = "years"; termFlags.push("--years");
+    args.splice(i, 2);
+  }
+  else if (args[i] === "--months" && args[i + 1]) {
+    // Pro — Monthly (owner ruling 2026-09-18). Same arithmetic style as
+    // --years: calendar months from today, rolling forward at a month end
+    // (31 Jan + 1 month → 3 Mar) so the buyer is never short-changed.
+    const n = Number(args[i + 1]);
+    if (!Number.isInteger(n) || n < 1) {
+      console.error(`Bad --months "${args[i + 1]}" — a whole number of months, 1 or more (the monthly plan is --months 1).`);
+      process.exit(1);
+    }
+    expires = addMonths(new Date().toISOString().slice(0, 10), n);
+    termKind = "months"; termFlags.push("--months");
     args.splice(i, 2);
   }
 }
@@ -64,14 +92,15 @@ for (let i = args.length - 1; i >= 0; i--) {
 // after the v2.99.76 reprice retired that bundle.
 const [email, sku = "app"] = args;
 if (!email || !email.includes("@")) {
-  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] (--lifetime | --years N | --expires YYYY-MM-DD) [--machine ABCD-EF12-3456] [--save-dir <folder>] [--no-payment]");
+  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] (--lifetime | --years N | --months N | --expires YYYY-MM-DD) [--machine ABCD-EF12-3456] [--save-dir <folder>] [--no-payment]");
   console.error("");
   console.error("  A TERM is required — there is no default:");
   console.error("    Journal — Lifetime ₹29,999 : license-issue.mjs buyer@x.com app --lifetime");
-  console.error("    Pro — Annual ₹9,999/yr     : license-issue.mjs buyer@x.com app --years 1");
+  console.error("    Pro — Annual ₹7,999/yr     : license-issue.mjs buyer@x.com app --years 1");
+  console.error("    Pro — Monthly ₹599 first month / ₹999 after : license-issue.mjs buyer@x.com app --months 1");
   console.error("");
   console.error("  A PAYMENT REFERENCE is required — set VYUHA_LICENSE_NOTE to the UTR:");
-  console.error('    VYUHA_LICENSE_NOTE="UTR 123456789012, ₹9,999 UPI 2026-08-22" node scripts/license-issue.mjs …');
+  console.error('    VYUHA_LICENSE_NOTE="UTR 123456789012, ₹7,999 UPI 2026-08-22" node scripts/license-issue.mjs …');
   console.error("    (or --no-payment for a genuine freebie: review copy, reissue, your own machine)");
   process.exit(1);
 }
@@ -106,17 +135,18 @@ if (sku === "toolkit") {
  * explicitly, and neither can be reached by omission.
  */
 const wantsLifetime = args.includes("--lifetime");
-if (wantsLifetime) args.splice(args.indexOf("--lifetime"), 1);
+if (wantsLifetime) { args.splice(args.indexOf("--lifetime"), 1); termFlags.push("--lifetime"); }
 if (!expires && !wantsLifetime) {
   console.error(`Refusing to mint: no term given.\n`);
-  console.error(`  Pro — Annual (₹9,999/yr) :  --years 1`);
+  console.error(`  Pro — Monthly (₹599 first month, ₹999 after) :  --months 1`);
+  console.error(`  Pro — Annual (₹7,999/yr) :  --years 1`);
   console.error(`  Journal — Lifetime (₹29,999) :  --lifetime\n`);
   console.error(`  Omitting the term used to mint a LIFETIME key silently, so a forgotten`);
-  console.error(`  --years 1 gave away a ₹29,999 licence for a ₹9,999 payment.`);
+  console.error(`  --years 1 gave away a ₹29,999 licence for a ₹9,999 payment (historical price).`);
   process.exit(1);
 }
-if (expires && wantsLifetime) {
-  console.error(`--lifetime and --years/--expires contradict each other. Pick one.`);
+if (termFlags.length > 1) {
+  console.error(`${termFlags.join(" and ")} contradict each other. Pick ONE term.`);
   process.exit(1);
 }
 
@@ -185,7 +215,16 @@ if (saveDir) {
 console.log(key);
 console.error(`
   key id : ${keyId}`);
-console.error(`  plan   : ${expires ? `Pro — Annual, expires ${expires}` : "Journal — Lifetime"}  (sku ${sku})`);
+// The plan line names the term that was ASKED for — a monthly key printed as
+// "Pro — Annual" would send the wrong receipt and the wrong renewal date.
+const planLine = !expires
+  ? "Journal — Lifetime"
+  : termKind === "months"
+    ? `Pro — Monthly, expires ${expires}`
+    : termKind === "years"
+      ? `Pro — Annual, expires ${expires}`
+      : `Pro — custom term, expires ${expires}`;
+console.error(`  plan   : ${planLine}  (sku ${sku})`);
 console.error(`  buyer  : ${email}`);
 console.error(`  machine: ${machine ?? "unbound — activates on any computer"}`);
 console.error(`  ledger : ${ledgerPath} — back this up with ${pemPath}`);

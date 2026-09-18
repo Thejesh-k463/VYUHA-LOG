@@ -19,7 +19,7 @@
 // version, cheap Indian competitors INCLUDED — hiding them would be the
 // dishonesty the product positions against).
 
-import { priceLabel, skuById } from "./pricing";
+import { formatInr, priceLabel, skuById } from "./pricing";
 
 /** The date every competitor cell was last read from its source. */
 export const COMPARISON_AS_OF = "2026-08-15";
@@ -115,12 +115,18 @@ export const COMPETITORS: readonly CompetitorRow[] = [
 
 const ANNUAL = priceLabel(skuById("annual"));
 const LIFETIME = priceLabel(skuById("lifetime"));
+// Monthly (owner ruling 2026-09-18) is an INTRODUCTORY price, so its cell
+// carries the month-two price too — a comparison table that quoted ₹599
+// against competitors' full rates would be the overstatement this file exists
+// to avoid.
+const MONTHLY = priceLabel(skuById("monthly"));
+const MONTHLY_THEN = formatInr(skuById("monthly").thenInr!);
 
 /** Vyuha's own row, phrased in the same vocabulary as the competitor cells. */
 export const VYUHA_ROW = {
   name: "Vyuha",
-  model: `Annual ${ANNUAL} · Lifetime ${LIFETIME} once`,
-  cheapestPaid: `${ANNUAL} — or ${LIFETIME} ever`,
+  model: `Monthly ${MONTHLY} first month then ${MONTHLY_THEN}/mo · Annual ${ANNUAL} · Lifetime ${LIFETIME} once`,
+  cheapestPaid: `${MONTHLY} first month (then ${MONTHLY_THEN}/mo) · ${ANNUAL} — or ${LIFETIME} ever`,
   dataLocation: "Your own PC with Vyuha Desktop; a web platform is in development",
   indianBrokers: "6 auto-detected parsers + column mapper + 4 broker-API pulls",
   chargesEngine: "Computes STT/CTT, stamp duty, GST, exchange & SEBI charges from configurable rates",
