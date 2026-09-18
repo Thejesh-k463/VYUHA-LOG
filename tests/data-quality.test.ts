@@ -689,7 +689,7 @@ describe("data quality — remediation", () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * B4 (v4.2.1) — the two CROSS-ACCOUNT issues, and the one-click fix.
+ * B4 (4.3.0 wave 1) — the two CROSS-ACCOUNT issues, and the one-click fix.
  *
  * The dedup hash carries no account id (lib/import/dedup.ts) and the unique
  * index that enforces it is per account (`trades_account_broker_dedup_uq`), so

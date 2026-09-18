@@ -256,7 +256,7 @@ function nameList(names: string[]): string {
 }
 
 /**
- * The two CROSS-ACCOUNT issues (v4.2.1).
+ * The two CROSS-ACCOUNT issues (4.3.0 wave 1).
  *
  * Both are facts about more than one account at once, which is why they are
  * resolved outside this module and handed in already masked and already

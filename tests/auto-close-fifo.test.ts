@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { planLotCloses, splitByRemainder, type IncomingRow, type OpenLot } from "@/lib/import/close-open-lots";
 
 /**
- * R5 (v4.2.1) — the PURE FIFO planner behind wave 1's auto-close.
+ * R5 (4.3.0 wave 1) — the PURE FIFO planner behind wave 1's auto-close.
  *
  * SWITCHED OFF FOR 4.3.0 (owner ruling 2026-09-11, 06-ANSWERS "v4.3.0
  * release-level-audit rulings", row 1): lib/import/commit.ts is v4.2.0 again,

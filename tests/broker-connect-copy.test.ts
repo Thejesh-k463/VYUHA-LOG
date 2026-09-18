@@ -101,7 +101,7 @@ describe("Wave 3 connect-card copy", () => {
 
   it("the expired-token pop-up names the broker, the time, and both ways out", () => {
     expect(TOKEN_EXPIRED_TITLE).toBe("A pasted broker token has expired");
-    // R3 (v4.2.1): the timestamp is the EXPLICIT IST stamp, fed straight from
+    // R3 (4.3.0 wave 1): the timestamp is the EXPLICIT IST stamp, fed straight from
     // the server's UTC ISO — never `toLocaleString()`, whose "5/9/2026,
     // 11:24:54 pm" states neither the date order nor the zone.
     expect(tokenExpiredMessage("Dhan", formatTs("2026-09-05T17:54:54Z"))).toBe(
@@ -118,7 +118,7 @@ describe("Wave 3 connect-card copy", () => {
 });
 
 /**
- * R3 (v4.2.1) — the token-expiry timestamp. `new Date(t).toLocaleString()`
+ * R3 (4.3.0 wave 1) — the token-expiry timestamp. `new Date(t).toLocaleString()`
  * printed "5/9/2026, 11:24:54 pm" on the owner's machine: day-first or
  * month-first is unstated, the zone is unstated, and a token's death time is
  * exactly the fact a user must not have to guess at. One explicit IST stamp
@@ -164,7 +164,7 @@ describe("formatTs — one explicit IST stamp, no machine locale", () => {
 });
 
 /**
- * R6 (v4.2.1) — the catch-up line. A pull fetches a RANGE whenever the last one
+ * R6 (4.3.0 wave 1) — the catch-up line. A pull fetches a RANGE whenever the last one
  * ran before today (`catchUpRange`, lib/import/api/dhan.ts); this line appears
  * only when that gap is longer than a routine one — the last pull older than
  * the previous trading day — and says so in one plain line. It states a fact

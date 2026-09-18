@@ -1,5 +1,5 @@
 /**
- * R5 (v4.2.1) — an incoming execution that CLOSES a position the book already
+ * R5 (4.3.0 wave 1) — an incoming execution that CLOSES a position the book already
  * holds, decided across rows instead of inside one file.
  *
  * ── SWITCHED OFF FOR 4.3.0 ─────────────────────────────────────────────────

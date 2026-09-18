@@ -2,7 +2,7 @@
 
 /**
  * The same broker record, held in two accounts — and the one button that
- * removes ONE account's copy (v4.2.1, owner ruling R4b).
+ * removes ONE account's copy (4.3.0 wave 1, owner ruling R4b).
  *
  * Every group here is a `(broker, dedupHash)` that exists in more than one
  * account. The dedup hash carries no account id and its unique index is per

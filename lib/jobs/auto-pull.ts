@@ -213,7 +213,7 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
           }
         },
       );
-      // CATCH-UP (v4.2.1): `/positions` is TODAY's book, so a sweep that ran
+      // CATCH-UP (4.3.0 wave 1): `/positions` is TODAY's book, so a sweep that ran
       // after a gap — a laptop closed for a week, auto-pull enabled late —
       // used to stamp lastPullAt over days it never fetched. `catchUpRange`
       // turns the stored stamp into [lastPullAt IST day, today], clamped to

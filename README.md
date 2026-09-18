@@ -28,7 +28,42 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v4.2.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v4.3.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v4.3.0 — option structures by name, and the signal behind the trade.**
+> **`/strategies`** names what your open option legs add up to, from a catalogue
+> of **40 shapes**, and draws each payoff at expiry from your entry premiums:
+> intrinsic value only, **before charges**, a group that spans expiries drawn at
+> its nearest one, and **no Greeks**. The **Options Help Desk** on `/help`
+> writes up all 40, **free** on every copy, and each strategy card links to its
+> entry. The sixteen shapes Vyuha named before 4.3 keep their names on the free
+> tier; the other twenty-four names, the **shelf** of tiles you pick and the
+> picker that edits it are **Pro**, and on a free copy such a group reads
+> "Custom (n legs)". A new **Signal book** tab records, on the trade itself,
+> the model, spot, zone, open-interest and volume figures and the **T1 / T2 /
+> SL** ladder an option trade was taken on — Vyuha records the signal, it does
+> not produce one — and reads it back as rule adherence against each trade's own
+> levels, edge by model and direction, and ladder hit rates (those blocks are
+> Pro). **Data Quality** joins a held lot to the sale that closed it with one
+> button, lists copies already held in two accounts with a **Remove the copy**
+> button for the plain ones, and the same broker client can no longer be
+> connected into a second account. A **Dhan** connection that missed days
+> catches up: the next pull also reads Dhan's trade history from the last
+> successful pull, at most **90 days** back and **50 pages**; a longer gap is
+> read for its last 90 days only, and the pull names the dates it did not fetch,
+> in a notice that stays on the Dhan tab until you clear it. Streaks and
+> drawdown now follow entry order inside a trading day. Beside them: the
+> charioteer line on the splash, larger Help Desk and dialog text, a pasted
+> broker token's expiry stamped in **IST**, an editor behind the `spot?` chip
+> with an **EOD close** fallback, and one sign rule — zero unsigned, a
+> percentage taking the sign of the rupee figure beside it. The desktop
+> rate-card refresh had failed on every launch since v3.2.0; 4.3.0 repairs the
+> F&O STT rates for dates before 1 April 2026 on first launch, adds the STT
+> rates in force before 1 October 2024, dates the NSE and BSE exchange
+> transaction charges and NSE's investor-protection fee by the exchanges' own
+> circulars, and corrects today's NSE transaction charges and the BSE
+> stock-option charge; charges already stored on trades are not rewritten. Two
+> migrations, 0071 and 0072, and no dependency changes.
 >
 > **v4.2.0 — credentials you already saved.** **Settings → Live feed** gains a
 > fourth source for the Live Desk: **Upstox**. It is opt-in like every other
@@ -854,13 +889,13 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.1.x to v4.2.0:** the installer runs the v4.1.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0069 and 0070 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.2.x to v4.3.0:** the installer runs the v4.2.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0071 and 0072 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v4.2.0**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v4.3.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.

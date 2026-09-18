@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default function DataQualityPage() {
   const report = getDataQualityReport();
-  // Cross-account facts (v4.2.1). They span EVERY account by definition — one
+  // Cross-account facts (4.3.0 wave 1). They span EVERY account by definition — one
   // broker client connected twice, and one broker record imported into two
   // books — so they are resolved here rather than inside the account-scoped
   // report, and folded into the same issue list and the same score.

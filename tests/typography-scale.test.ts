@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * v4.2.1 — reading-size guard for the two surfaces that were set too small.
+ * 4.3.0 wave 1 — reading-size guard for the two surfaces that were set too small.
  *
  * `components/system/import-help.tsx` is the precedent scale (:61 CardTitle
  * `text-base`, :62 summary `text-sm`, :92 DialogDescription `text-sm`): a card

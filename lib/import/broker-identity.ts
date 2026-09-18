@@ -16,7 +16,7 @@ import { isAutoCloseMerged, lotIdentityHashes } from "@/lib/import/close-open-lo
 
 /**
  * WHO a broker connection belongs to, and where else that same client already
- * is (v4.2.1, owner rulings R4a / R4b).
+ * is (4.3.0 wave 1, owner rulings R4a / R4b).
  *
  * ── The question this module answers ────────────────────────────────────────
  *

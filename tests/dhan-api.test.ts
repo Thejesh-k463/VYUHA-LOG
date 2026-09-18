@@ -756,7 +756,7 @@ describe("read-only by surface", () => {
 });
 
 // ---------------------------------------------------------------------------
-// R6 (v4.2.1) — the CATCH-UP pull. `/v2/positions` is the current day's book,
+// R6 (4.3.0 wave 1) — the CATCH-UP pull. `/v2/positions` is the current day's book,
 // so a connection last pulled five days ago silently lost four days: the pull
 // button fetched today, stamped lastPullAt, and the gap never came back. Dhan
 // publishes a trade-history endpoint (GET /v2/trades/{from}/{to}/{page},

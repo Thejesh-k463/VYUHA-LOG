@@ -7,7 +7,7 @@ import { duplicateTradeIdsIn, findDuplicateTradeGroup } from "@/lib/import/broke
 
 /**
  * Removing ONE account's copy of a broker record that was imported into two
- * (v4.2.1, owner ruling R4b).
+ * (4.3.0 wave 1, owner ruling R4b).
  *
  * Everything destructive here goes through `deleteTradesByIds`
  * (lib/queries/delete.ts): a recovery snapshot first, one audit row per trade,

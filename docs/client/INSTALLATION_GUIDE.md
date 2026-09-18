@@ -141,25 +141,29 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
-**Upgrading from v4.1.x to v4.2.0 — nothing is asked of you.** The v4.2.0 installer runs the
-v4.1.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
+**Upgrading from v4.2.x to v4.3.0 — nothing is asked of you.** The v4.3.0 installer runs the
+v4.2.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
 "Delete the application data" checkbox appears, ticking it still erases the whole data folder, but
 not before your journal database and licence key have been named and copied to
 `Documents\Vyuha-backup-<date>`, and Cancel leaves everything exactly as it is.
 
-**Migrations on first launch of v4.2.0.** Two database upgrades (0069: the live-feed consent
-record; 0070: a broker instrument-token cache for Angel One), applied behind the same automatic
-`backups\pre-migrate-<timestamp>.sqlite` copy described below.
+**Migrations on first launch of v4.3.0.** Two database upgrades (0071: the strategy-shelf
+preference; 0072: the optional signal column), applied behind the same automatic
+`backups\pre-migrate-<timestamp>.sqlite` copy described below. Neither changes a money figure.
 
-**One thing you may want to do after upgrading, and nothing that happens on its own.** v4.2.0
-offers Upstox and Angel One as Live Desk price sources, using credentials already saved in Vyuha —
-the Upstox Analytics token, or the Angel One client code, PIN and TOTP secret, both from **Import →
-Connect broker**. Each is off until you choose it: the source's own consent sheet has to be read
-and accepted in **Settings → Live feed**, and the source has to be picked there. Until both are
-true the desk prices exactly as it did in v4.1.0 — from the end-of-day bhavcopy on this machine,
-from an OpenAlgo bridge if you had already switched that on, or from marks you type. Nothing is
-enabled by the update itself, and equity positions are what these two sources price: futures and
-options rows say so on the row.
+**One thing that happens on its own at first launch, and nothing to switch on.** The desktop
+rate-card refresh had failed on every launch since v3.2.0; 4.3.0 repairs the F&O STT rates for
+dates before 1 April 2026 on first launch, adds the STT rates in force before 1 October 2024, dates
+the NSE and BSE exchange transaction charges and NSE's investor-protection fee by the exchanges'
+own circulars, and corrects today's NSE transaction charges and the BSE stock-option charge;
+charges already stored on trades are not rewritten. It writes only Vyuha's own rate table, and
+never a rate you edited yourself. It runs again on every later launch and finds nothing left to
+change. One other thing happens by itself: a trade whose note carries one of your recorded signals
+in full is read into the new Signal book, and a note it cannot read in full is left exactly as it
+is. Nothing else is switched on by the update: Option Strategies, the Signal book and the Options
+Help Desk are there when you open them, and every Live Desk source stays exactly as you had set it.
+One thing changes in how imports land, with no switch: the next Dhan pull after a gap also reads
+the days it missed, up to 90 of them, and names on the Dhan tab any days it could not read.
 
 **Upgrading from v3.9.x to v4.0.0 — nothing is asked of you.** The v4.0.0 installer runs the
 v3.9.1 uninstaller once before it installs, and that one is the *guarded* uninstaller. If its
@@ -208,7 +212,7 @@ removed. Leave the box unticked to keep the data where it is.
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_4.2.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.2`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_4.3.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.3`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

@@ -1234,7 +1234,7 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
     kind: "api",
     /**
      * No range: today's `/positions`, byte-identical to every build before
-     * v4.2.1 — that is the daily pull and it must not change shape.
+     * 4.3.0 — that is the daily pull and it must not change shape.
      *
      * With a range: the trade HISTORY for [from, to] as well, so a connection
      * last pulled five days ago no longer loses four of them. Today is taken

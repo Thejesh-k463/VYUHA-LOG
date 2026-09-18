@@ -3,7 +3,7 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 /**
  * B4 — the same broker CLIENT must not be connected under two accounts
- * (v4.2.1, owner ruling R4a).
+ * (4.3.0 wave 1, owner ruling R4a).
  *
  * `broker_connections` is unique on (account_id, broker) only, so account #1
  * and account #2 could each hold a connection to the SAME Dhan client. Both

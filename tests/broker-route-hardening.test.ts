@@ -398,7 +398,7 @@ describe("item 9 — masking a credential for the audit log", () => {
 });
 
 // ---------------------------------------------------------------------------
-// R4a (v4.2.1) — ONE connection per broker client. The seam is
+// R4a (4.3.0 wave 1) — ONE connection per broker client. The seam is
 // lib/import/broker-identity.ts (builder B4); what is under test HERE is the
 // route's half: it asks BEFORE it writes, it answers 409 with the sentence,
 // and a refusal stores nothing. `findRivalConnection` is mocked so this test

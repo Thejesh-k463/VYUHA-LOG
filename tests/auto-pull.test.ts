@@ -242,7 +242,7 @@ describe("the real Dhan pull — reuse the stored token, PERSIST a mint (finder 
 });
 
 /**
- * R6 (v4.2.1) — the CATCH-UP sweep. `/v2/positions` is today's book only, so a
+ * R6 (4.3.0 wave 1) — the CATCH-UP sweep. `/v2/positions` is today's book only, so a
  * sweep after a gap (laptop closed for a week) fetched one day, stamped
  * `lastPullAt` and lost the rest for ever. The sweep now hands the adapter the
  * window [last pull's IST day, today] — and paste-mode Dhan is STILL skipped,

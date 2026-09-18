@@ -244,7 +244,7 @@ Migration re-keying rows closed by never-shipped wave-1 code — **none needed**
 | this file §8.4 | intraday bar import "blocked on a data-source decision" | ruled NOT required 2026-08-15 | same section → struck |
 | this file §8.5 | "Public launch is planned as 3.0.0" | 3.0.0 shipped 2026-08-29 | `git tag` → note |
 | this file §2-published "Next:" | "application fixes (list not yet given — ask first)" | list came 2026-09-09 → v4.3.0 wave 1 | §2 → note |
-| `docs/SESSION_PROMPT.md` ready-to-paste block | v2.99.100 published; 1,962 tests / 134 files; migration 0049; candidates list | v4.2.0; 378 / 7,598 / 35; migration 0071; §0 pickup table | gate + `drizzle/` → banner (rules kept) |
+| `docs/SESSION_PROMPT.md` ready-to-paste block | v2.99.100 published; 1,962 tests / 134 files; migration 0049; candidates list | v4.2.0; 378 / 7,598 / 35; migrations 0071 and 0072; §0 pickup table | gate + `drizzle/` → banner (rules kept) |
 | `docs/prompts/NEXT_SESSION_V380.md`, `…V390_V400.md`, `…V391_V400_LIVEDESK.md` | "v3.7.1 published, build 3.8" / "build 3.9.0" / "v3.9.1 built, uncommitted" | all shipped through v4.2.0 | `git tag` → banners |
 | `docs/V320…V380_BUILD_PLAN.md` | "AWAITING OWNER APPROVAL" / "IN BUILD" / "approved v3.7–v3.9 roadmap" | all shipped | `git tag` → banners on all six |
 | `NEXT-SESSION-CONTINUATION.md` line 6 | newest ruling table = "v4.2 build-session rulings" | "v4.3.0 audit-round-1 rulings" | 06-ANSWERS headers → corrected |
@@ -260,7 +260,7 @@ Migration re-keying rows closed by never-shipped wave-1 code — **none needed**
 | `~/.claude/settings.json` line 236 | trust-repo path `VYUHA-TRADE JOURNAL-V1` | `VYUHA\TRADE-JOURNAL` | hook-gate denies agents → row 12 → **applied by the operator; verified by the round-3 docs auditor 2026-09-11** |
 | `~/.claude/hooks/learn.mjs` line 220 comment; `skills/token-efficient-coding/SKILL.md` line 200 label | mention the old folder name | historical mentions, not paths | left as history |
 | this file §0.3 V3 (2026-09-11) | "`set VYUHA_DB_PATH … npm run dev` … startup applies 0071 once"; FAIL-C → `BASELINE_SETTINGS_FIELDS` | `next dev` never migrates (only `db:migrate` and the desktop sidecar do); backup survival is `SETTINGS_MACHINE_COLUMNS` | 3 explorers + a Fable skeptic (CONFIRMED) → V3 rewritten |
-| `NEXT-SESSION-CONTINUATION.md` NEXT item 2 (2026-09-11) | 4.3.0 install guide: "three database upgrades (0069, 0070, 0071)" | ONE (0071) — v4.2.0's journal already holds 0069/0070 | `git show v4.2.0:drizzle/meta/_journal.json` (71 entries) + owner ruling → rewritten |
+| `NEXT-SESSION-CONTINUATION.md` NEXT item 2 (2026-09-11) | 4.3.0 install guide: "three database upgrades (0069, 0070, 0071)" | TWO (0071, 0072) — v4.2.0's journal already holds 0069/0070; 0072 is the Signal book's column | `git show v4.2.0:drizzle/meta/_journal.json` (71 entries) + owner ruling → rewritten; re-corrected 2026-09-18 when 0072 landed |
 | this file §0.1 row 11 (2026-09-11) | the hook proposal awaiting the operator = wave-guard | wave-guard REJECTED 2026-09-11; the pending one = the SENTINEL hooks README repoint | `HOOK-PROPOSALS.md` headings → row rewritten |
 | this file §2 (the v4.3.0 wave-1 list, line ~172) | Data Quality "one-click" remove the copy | a "Remove the copy" button plus a confirm | the release-copy check 2026-09-11 → corrected at the source |
 | the 4.3.0 build brief | "the 11 legacy names stay free" | 16 `legacyFree` rows | `lib/analytics/strategy-catalogue.ts:87` → the release copy says 16 |

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * v4.2.1 — splash copy guard.
+ * 4.3.0 wave 1 — splash copy guard.
  *
  * The Tauri splash (`src-tauri/loading/index.html`) is the first thing a buyer
  * sees, before the Node sidecar is even up. Two rules it now carries:

@@ -537,7 +537,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ONE connection per broker CLIENT (v4.2.1, owner ruling R4a). The unique
+    // ONE connection per broker CLIENT (4.3.0 wave 1, owner ruling R4a). The unique
     // index is (account_id, broker), so the same Dhan Client ID could be saved
     // under two accounts — and then both pull the same tradebook into two
     // books, because the dedup hash carries no account id. The check spans
@@ -861,7 +861,7 @@ export async function POST(req: Request) {
             }
           },
         );
-        // CATCH-UP (v4.2.1): `/positions` is TODAY's book, so a connection
+        // CATCH-UP (4.3.0 wave 1): `/positions` is TODAY's book, so a connection
         // last pulled days ago lost every day in between — the pull fetched
         // today, stamped lastPullAt, and the gap never came back. The stored
         // stamp becomes the window [its IST day, today], clamped to

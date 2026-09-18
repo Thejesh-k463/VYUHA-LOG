@@ -1,5 +1,289 @@
 # Changelog
 
+## v4.3.0 — 2026-09-18
+
+*The release where the option legs you hold are read against a 40-shape
+catalogue, and where the signal a trade was taken on is recorded beside the
+trade. On `/strategies` the catalogue names what your open option legs add up
+to, a shelf holds the tiles you pick, and the Options Help Desk writes up all
+40, free on every copy; a new **Signal book** tab records, for each option
+trade, the model, spot, zone, open-interest and volume figures and the
+T1 / T2 / SL ladder it was taken on, and reads them back. A Dhan connection
+that missed days catches up from its last successful pull and names any days it
+could not read; the same broker client can no longer be connected into a second
+account, and Data Quality lists the copies already made, with a removal button
+for the plain ones. Around them: the charioteer line on the splash, larger Help
+Desk and dialog text, a pasted token's expiry stamped in IST, an inline editor
+behind the `spot?` chip, and percentages that take the sign of the rupee figure
+beside them. The desktop rate-card refresh had failed on every launch since
+v3.2.0; 4.3.0 repairs the F&O STT rates for dates before 1 April 2026 on first
+launch, adds the STT rates in force before 1 October 2024, dates the NSE and BSE
+exchange transaction charges and NSE's investor-protection fee by the exchanges'
+own circulars, and corrects today's NSE transaction charges and the BSE
+stock-option charge; charges already stored on trades are not rewritten. Two
+migrations, 0071 and 0072, and no dependency changes.*
+
+- **`/strategies` reads your legs against 40 structures.** A catalogue of
+  **40 shapes** (`STRATEGY_IDS`, `lib/analytics/strategy-catalogue.ts`) —
+  verticals, straddles, strangles, condors, butterflies, ratios, backspreads,
+  calendars, synthetics, the box and the jade lizard among them. Open legs are
+  grouped per underlying symbol with expiry carried on each leg, so a calendar
+  or a diagonal stays one position; a symbol whose legs fit no single shape and
+  span two or more expiries is split per expiry and each is read on its own.
+  The stock or future held against the options is drawn into the structure and
+  shown read-only.
+
+- **Every figure says how it was computed.** The payoff is drawn at expiry from
+  your entry premiums, intrinsic value only — no volatility, no time value. A
+  group that spans expiries is drawn at the **nearest** one with the later legs
+  valued at intrinsic only, and its maximum profit reads "Not computed" rather
+  than a confident number. The gross figures are **before charges**, said in one
+  line under the cards beside one note on STT at exercise, which is charged on
+  intrinsic value rather than premium. A cap reached only if the underlying
+  settled at zero is labelled **"Computed at underlying = 0"**. There are no
+  Greeks on this screen. One line from SEBI's study of individual F&O traders
+  sits at the top, computed from the study's own record rather than typed.
+
+- **The shelf (Pro).** Eight tiles by default — long call, long put, the four
+  verticals, long straddle and iron condor — above the named groups. **Browse
+  all (40)** opens the picker, where any tile is selected or unselected;
+  **Undo** and **Redo** step through the changes made in the session, and
+  **Restore defaults** puts the eight back. The selection is one column,
+  `settings.strategy_shelf_json` (**migration 0071**); every change writes an
+  Audit Log row, it is carried in backups — a preference, so it is not redacted
+  the way a consent is — and it is part of My Default Settings.
+
+- **The Options Help Desk is free.** A highlighted Options section on `/help`
+  writes up all **40** structures — the legs, how the payoff is computed, who
+  uses it and what it risks — on every tier, Pro or not. Each strategy card
+  carries a **"How this works"** link to its entry, and the command palette
+  finds an entry by its name or keywords.
+
+- **What is free and what is Pro.** The grouping, the payoff curve and the
+  gross figures are free for every book, and the sixteen shapes Vyuha named
+  before 4.3 keep their names on the free tier. The other twenty-four names, the
+  shelf and the picker are Pro: on a free copy a group matching one of them
+  reads **"Custom (n legs)"** beside a Pro chip, and the match is withheld on
+  the server rather than hidden in the browser.
+
+- **An option trade can now carry the signal it was taken on.** The Add and
+  Edit trade forms gain a **Signal** section — model, spot, zone, the
+  open-interest and volume figures, a score, and the **T1 / T2 / SL** ladder,
+  which pre-fills at +30% / +60% / −25% of your entry and is editable. Vyuha
+  records the signal; it does not produce one — there is no scanner, no zone
+  engine, no open-interest feed and no alerting here, and this release adds no
+  network host of any kind.
+
+- **Option Strategies opens on a new Signal book tab.** It lists every recorded
+  signal with its option data, and with Pro it also shows rule adherence against
+  each trade's **own** levels, edge by model, direction and exit status, and
+  target/stop hit rates from the day's recorded high and low. The day's high and
+  low are the whole session's range and not the range since your entry, and the
+  screen says so beside the figures that use them. The table of recorded signals
+  is free; the three analytics blocks are Pro and are withheld on the server.
+
+- **Trades already in the journal are read into the Signal book from their own
+  notes.** A trade whose note carries the signal in full is parsed on first
+  launch and appears in the book; a note that cannot be read in full is left
+  exactly as it is. Clearing a signal clears it for good — a later backup
+  restore does not bring it back.
+
+- **One more small database upgrade (0072) is applied on first launch.** It
+  adds one optional column and changes no money figure. Backups and Deleted
+  items carry the signal with the trade.
+
+- **Streaks and drawdown now follow entry order inside a trading day.** Every
+  screen that ranks closed trades was handed them newest-first, and the streak
+  and drawdown walks sorted on the exit date alone — so each day's trades were
+  read backwards and runs that crossed a day boundary were joined or cut. A
+  42-trade options book read "8 wins, best 11W" where its entry order says 7 and
+  10. Closed trades now tiebreak exit date → exit time → trade id, on the
+  dashboard and on `/lenses` alike.
+
+- **Dhan catches up after a gap, and says what it could not read.** Dhan's
+  `/v2/positions` is today's book only, so a connection last pulled days ago
+  used to fetch today, stamp the pull time and lose every day in between. When
+  the last successful pull falls on an earlier IST day, the next pull — yours
+  or the once-a-day auto-pull — also reads Dhan's trade history from that day to
+  today, at most **90 days** back and **50 pages**; today's fills still come
+  from `/v2/positions`, and a fill read twice is de-duplicated on commit. A gap
+  longer than 90 days is read for its last 90 days only, and the pull names the
+  dates it did not fetch and the way to bring them in — a Dhan tradebook
+  imported for those dates; a pull that stops at the 50-page limit says so too,
+  with the dates that may be missing. That notice is kept as an Audit Log entry
+  and stays on the Dhan tab — from a pull you start or from the auto-pull —
+  until you press **Clear notice**, which adds a second entry and rewrites
+  nothing. The Dhan tab shows **"Pulls missed since …"** while the last pull is
+  older than the previous trading day; when the next pull cannot reach back that
+  far, the line names the day it will start from and says the fills before it
+  are not fetched.
+
+- **One broker client, one account.** Saving a connection whose broker client
+  is already connected in another account is refused before anything is
+  written, and the refusal names that account: *This … client is already
+  connected in account "…". Vyuha keeps one connection per broker client so a
+  book is never imported twice.* It holds for every broker, compared within the
+  same broker.
+
+- **Data Quality joins a held lot to the sale that closed it.** Until now a
+  sale of something the journal already held landed as a row of its own, so the
+  position still read open and the sale read as a second position. Data Quality
+  lists each of those pairs beside one another, and **Close with the recorded
+  sale** (or, for a short, *the recorded purchase*) closes the lot at that row's
+  own price and quantity and moves the sale row to Deleted items. Nothing is
+  typed except the date, and only when the sale row states none: it is
+  pre-filled with the day the row was pulled, because the close date sets the
+  charge rates, the holding period and any MTF interest. A partial pair, a sale
+  recorded in several fills, a staged lot, a sale carrying your own journal
+  entries and a pair another closed trade may already have taken are all
+  **listed without the button** and link to Trades, where you close them
+  yourself; the server re-derives every pair before it writes.
+
+- **Data Quality lists the copies that were already made.** Two cross-account
+  checks join it: the same broker client connected in more than one account,
+  and the same broker record held in more than one account. A duplicated record
+  gets a **Remove the copy in …** button, confirmed once, and only for a plain
+  copy; the server checks again before it deletes anything. A duplicated
+  connection links to Import instead.
+
+- **The `spot?` chip on `/risk` opens an editor.** Click it and type the
+  underlying's spot in place; Enter saves, Escape cancels. With nothing typed,
+  the chip now shows the latest end-of-day close stored on this machine,
+  labelled **EOD close**, and the ITM/OTM badges read from it. A price you type
+  is labelled **typed**, is saved as that day's mark for the underlying, and
+  outranks the close.
+
+- **One sign rule for a percentage and its rupee figure.** Zero carries no
+  sign, and a percentage printed beside a rupee figure takes that figure's sign
+  instead of its own (`signOf`, `signedPct`, `signedNumber` in `lib/format.ts`).
+  It is applied on the Portfolio Risk cockpit, the ROM, monthly and performance
+  reports, the VaR, Greeks and MTF-drift panels, and the ledger import.
+
+- **Token expiry is stamped in IST.** A pasted broker access token's expiry now
+  reads as an explicit IST time — "05 Sep 2026, 23:24 IST" — on the connection
+  badge and in the "A pasted broker token has expired" notice, instead of a
+  time in whatever format the machine's locale produced.
+
+- **Larger reading text in the Help Desk and in dialogs.** The Help Desk's
+  headings, card titles and body text are one type step larger, and so is the
+  body text of every dialog, now in the foreground colour rather than muted.
+
+- **The splash carries the tagline.** "Every warrior had a charioteer. Yours
+  keeps count." replaces the "DESKTOP · WEB · YOUR CHOICE" strap, with a shimmer
+  that stops when the system asks for reduced motion.
+
+- **MTF financing states only what you recorded.** An MTF position bills
+  interest only on the funded amount you recorded, and a staged position splits
+  it across its tranches by value; a row with none recorded states no financing
+  figure anywhere, says why beside the dash, and accrues nothing until you
+  record one. Closed staged MTF rows priced before 4.3.0 keep the figure they
+  already stored. The Equity Tracker's MTF funded figure is the funding every
+  MTF row states; the broker comparison includes no financing cost for a row
+  with no recorded funded amount, and says so; closed MTF trades with no
+  recorded funding are listed on Data Quality for information, sharing one
+  penalty cap with the open ones. For a broker whose MTF rate is tiered, a
+  staged position's interest is rated on the whole recorded funded amount, so
+  the ladder and the daily run state the same interest for the same days. The
+  daily run no longer stops at a position it cannot price or at one marked
+  staged with no fills: it leaves that row as it was and every other row still
+  accrues.
+
+- **The trade editor keeps the bill your broker stated.** A notes-only save no
+  longer replaces broker-stated charges with Vyuha's own estimate, the charge
+  preview prices a row exactly as the save stores it, an un-exited IPO
+  allotment is never billed purchase STT, and a staged position's charges are
+  written only by its own ladder. Where a trade's stored date is not a real
+  calendar day, the editor says so and waits for a day rather than clearing the
+  date on Save, and every writer that prices a trade from its stored dates now
+  counts the holding period by the same rule.
+
+- **IPO records say what they are linked to.** A restore that cannot bring a
+  holding back leaves its IPO record unlinked and says so, instead of pointing
+  it at another trade; an exit-price correction on a holding whose sale was
+  stored day-first before 4.3.0 saves and syncs again; a record whose stored
+  exit date is blank can save its notes again; and Data Quality now treats a
+  record naming a holding no longer in the journal as unlinked, saying whether
+  that holding is in Deleted items.
+
+- **A figure with no basis is blank, not zero.** A dashboard whose closed
+  trades have no cost basis no longer shows a 0% win rate or a ₹0 expectancy —
+  the figure is blank until a priced trade exists — and the edge report's win
+  rate, confidence interval and expectancy per setup and per segment count only
+  priced trades, the same rule as the dashboard. A blocked import shows one
+  card per refused row, and an overlap list stops at twelve lines.
+  Ctrl+Shift+K opens only the search panel; AltGr+K no longer opens the
+  command palette.
+
+- **The desktop rate-card refresh is repaired, and the rate card is dated.**
+  The desktop rate-card refresh had failed on every launch since v3.2.0; 4.3.0
+  repairs the F&O STT rates for dates before 1 April 2026 on first launch, adds
+  the STT rates in force before 1 October 2024, dates the NSE and BSE exchange
+  transaction charges and NSE's investor-protection fee by the exchanges' own
+  circulars, and corrects today's NSE transaction charges and the BSE
+  stock-option charge; charges already stored on trades are not rewritten.
+  Since v3.2.0 a rate can carry dated epochs and the rate table is unique on the
+  epoch's start date as well, but the launcher's refresh still matched rows on
+  broker, plan, segment and exchange alone — so its update broke the table's
+  own unique index on every launch, after its insert had already been written,
+  and its corrections never landed. The bundled card now carries three F&O STT
+  epochs, changing on 1 October 2024 and 1 April 2026: futures 0.0125%, 0.02%
+  and 0.05%, options 0.0625%, 0.10% and 0.15% of premium, each on the sell
+  side. NSE's transaction charges change on 1 April 2023, 1 April 2024,
+  1 October 2024 and 1 March 2026, and its investor-protection fee is ₹10 per
+  crore on cash and futures and ₹50 per crore of option premium from 1 April
+  2023 to 28 February 2026. BSE cash changes on 1 December 2022; BSE stock
+  options are charged 0.005% of premium from 2 May 2022 rather than the
+  index-option rate; BSE index options change on 2 May 2022, 1 November 2023,
+  13 May 2024 and 1 October 2024. The refresh now reads its key from that unique
+  index, runs its insert and update in **one transaction**, never touches a rate
+  you edited yourself, and never adds a bundled epoch that starts inside a
+  window you edited. It still runs on every launch, and after the first finds
+  nothing to change. The database migration and the refresh now fail
+  separately, each with its own logged line, and neither stops the app from
+  starting.
+
+- **Fifteen fix waves behind it and nine scoped re-checks; every fix proven red
+  on revert before it was kept** — what each round found, and what was ruled not
+  a defect, is recorded in `docs/DECISIONS.md`.
+
+- **No dependency was added, removed or upgraded.** The only lines this release
+  changes in `package.json` and `package-lock.json` are version numbers.
+
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  Before the "Delete the application data" option can act, the uninstaller
+  names the journal database and the licence key, copies both (they live in
+  `vyuha.sqlite`), the sidecar's pre-migration `backups\` snapshots and your
+  attachments to `Documents\Vyuha-backup-<date>`, and asks; Cancel keeps
+  everything in place, and if that copy cannot be made — a full disk, a
+  OneDrive files-on-demand placeholder — the uninstall stops with nothing
+  removed. Ticking the box erases the data folder only once that copy exists.
+
+- **Not in this release, stated plainly:** an execution that closes a position
+  the journal already holds is **not** matched against it automatically — an
+  imported or pulled exit still lands as its own row, exactly as in v4.2.0, and
+  Data Quality is where a stale open lot is closed against its later sale. The
+  Upstox and Angel One sources still price **equity** positions only — an
+  option or future row under either shows its recorded close, or a dash, and
+  says so on the row. Pricing an option row from its underlying's price is
+  **deferred** rather than approximated, because the underlying's price is not
+  the contract's. Telegram notices for a stop or a target are still **cut** and
+  stay out of every Pro description; the end-of-day Telegram digest is
+  unchanged. There is still **no `openalgo-charts` pilot**;
+  `lightweight-charts` stays where it is. Kelly still takes the win rate and
+  payoff **you** supply. Nothing on `/strategies` is a forecast: its figures are
+  computed at expiry from your entry premiums, with no volatility and no time
+  value, and the Signal book reports what you recorded rather than judging it.
+  And the rate card is still not exact everywhere: a date before the earliest
+  schedule verified from the exchanges' own circulars — NSE before 1 January
+  2021, BSE cash before 1 March 2021, BSE options before 20 August 2019 — takes
+  that earliest verified schedule; the card has one BSE index-option rate, which
+  follows Sensex and Bankex, so Sensex 50 options — and, from 1 November 2023 to
+  13 May 2024, Bankex options and Sensex options other than the nearest expiry —
+  are charged at that rate; MCX charges are unchanged; BSE stock groups other
+  than the ones the card carries (X, XT, Z and the rest) and BSE's own
+  investor-protection contribution are not modelled; and charges already stored
+  on trades are not rewritten.
+
 ## v4.2.0 — 2026-09-09
 
 *The release where the Live Desk can be priced from broker credentials you
