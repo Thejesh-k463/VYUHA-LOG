@@ -21,7 +21,7 @@
 //
 //   Journal — Lifetime (₹29,999):  license-issue.mjs buyer@x.com app --lifetime
 //   Pro — Annual      (₹7,999/yr): license-issue.mjs buyer@x.com app --years 1
-//   Pro — Monthly (₹599 first month / ₹999 after, owner ruling 2026-09-18, and
+//   Pro — Monthly (₹999 first month / ₹1,499 after, owner ruling 2026-09-18, repriced v4.4.0, and
 //   given ON REQUEST):             license-issue.mjs buyer@x.com app --months 1
 //
 //   A monthly key is a FRESH key every month — there is no auto-renewal and no
@@ -97,7 +97,7 @@ if (!email || !email.includes("@")) {
   console.error("  A TERM is required — there is no default:");
   console.error("    Journal — Lifetime ₹29,999 : license-issue.mjs buyer@x.com app --lifetime");
   console.error("    Pro — Annual ₹7,999/yr     : license-issue.mjs buyer@x.com app --years 1");
-  console.error("    Pro — Monthly ₹599 first month / ₹999 after : license-issue.mjs buyer@x.com app --months 1");
+  console.error("    Pro — Monthly ₹999 first month / ₹1,499 after : license-issue.mjs buyer@x.com app --months 1");
   console.error("");
   console.error("  A PAYMENT REFERENCE is required — set VYUHA_LICENSE_NOTE to the UTR:");
   console.error('    VYUHA_LICENSE_NOTE="UTR 123456789012, ₹7,999 UPI 2026-08-22" node scripts/license-issue.mjs …');
@@ -138,7 +138,7 @@ const wantsLifetime = args.includes("--lifetime");
 if (wantsLifetime) { args.splice(args.indexOf("--lifetime"), 1); termFlags.push("--lifetime"); }
 if (!expires && !wantsLifetime) {
   console.error(`Refusing to mint: no term given.\n`);
-  console.error(`  Pro — Monthly (₹599 first month, ₹999 after) :  --months 1`);
+  console.error(`  Pro — Monthly (₹999 first month, ₹1,499 after) :  --months 1`);
   console.error(`  Pro — Annual (₹7,999/yr) :  --years 1`);
   console.error(`  Journal — Lifetime (₹29,999) :  --lifetime\n`);
   console.error(`  Omitting the term used to mint a LIFETIME key silently, so a forgotten`);

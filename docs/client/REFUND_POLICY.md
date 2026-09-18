@@ -53,7 +53,7 @@ A monthly or annual licence stops at its expiry date. **It does not auto-renew,
 and there is nothing to cancel** — no card is stored, because no card was ever
 taken. If you do nothing, it simply lapses and the core journal keeps working
 forever. Pro — Monthly is issued **on request**: each month you ask, and a fresh
-one-month key is issued. The first month is ₹599 as a launch offer and ₹999 a
+one-month key is issued. The first month is ₹999 as a launch offer and ₹1,499 a
 month from the second month; each month is a separate purchase under the rules
 above.
 

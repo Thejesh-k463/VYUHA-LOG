@@ -71,28 +71,28 @@ describe("shape", () => {
     expect(skuById("monthly").term).toBe("monthly");
   });
 
-  it("monthly is ₹599 for the first month against a REAL ₹999 anchor — 40%, derived", () => {
+  it("monthly is ₹999 for the first month against a REAL ₹1,499 anchor — 33%, derived", () => {
     const m = skuById("monthly");
-    expect(m.amountInr).toBe(599);
+    expect(m.amountInr).toBe(999);
     // The anchor is the price from month two, which the buyer will actually
     // pay — not an invented strike-through (same rule as the 2026-08-15
     // launch anchors).
-    expect(m.wasInr).toBe(999);
-    expect(m.thenInr).toBe(999);
-    expect(offerPct(m)).toBe(40); // 1 − 599/999 = 40.04%, floored
+    expect(m.wasInr).toBe(1499);
+    expect(m.thenInr).toBe(1499);
+    expect(offerPct(m)).toBe(33); // 1 − 999/1499 = 33.36%, floored (was 599/999 = 40% until the v4.4.0 reprice)
   });
 
   it("the monthly labels state both prices, in-app and in the buy message", () => {
     const m = skuById("monthly");
-    expect(priceLabel(m)).toBe("₹599/mo");
-    expect(renewalLabel(m)).toBe("then ₹999/month from the second month");
+    expect(priceLabel(m)).toBe("₹999/mo");
+    expect(renewalLabel(m)).toBe("then ₹1,499/month from the second month");
     // Only a SKU that has a second-period price carries the line.
     expect(renewalLabel(skuById("annual"))).toBeNull();
     expect(renewalLabel(skuById("lifetime"))).toBeNull();
     const msg = buyMessageFor(m);
     expect(msg).toContain("Pro — Monthly");
-    expect(msg).toContain("₹599/mo");
-    expect(msg).toContain("₹999/month");
+    expect(msg).toContain("₹999/mo");
+    expect(msg).toContain("₹1,499/month");
     expect(msg).toContain(PRICING_AS_OF);
   });
 
@@ -140,13 +140,13 @@ describe("anti-drift — the app and the landing page quote the same numbers", (
   });
 
   it("the landing page's monthly card highlights the launch offer and states month two", () => {
-    // The ₹599 cell alone would let the page advertise a monthly plan without
+    // The ₹999 cell alone would let the page advertise a monthly plan without
     // ever saying what month two costs — the one thing a buyer must read
     // before paying (owner ruling 2026-09-18: "highlight and show this").
     const m = skuById("monthly");
     expect(amtBlocks.join(" "), "monthly price cell").toContain(formatInr(m.amountInr));
     expect(html).toContain("Pro — Monthly");
-    expect(html).toContain("Launch offer · 40% off");
+    expect(html).toContain("Launch offer · 33% off");
     expect(html).toContain(renewalLabel(m));
   });
 
@@ -269,9 +269,14 @@ describe("the emailable standalone landing page", () => {
   it.skipIf(!exists)("carries no retired price and no superseded network claim", () => {
     const html = fs.readFileSync(standalone, "utf8");
     // The exact numbers it was stuck on, and the sentence v2.99.91 corrected.
-    for (const dead of ["₹1,499", "₹4,999", "₹499/yr"]) {
+    for (const dead of ["₹4,999", "₹499/yr"]) {
       expect(html, `retired price ${dead} still present — run: npm run landing:build`).not.toContain(dead);
     }
+    // ₹1,499 was a RETIRED price until v4.4.0 made it the monthly plan's month-two price
+    // (owner, 2026-09-18). It may now appear ONLY as that: "₹1,499/month" or the
+    // struck-through anchor `<span class="was">₹1,499</span>` — anywhere else it is the old one.
+    const stray = html.split("₹1,499").slice(1).filter((rest) => !rest.startsWith("/month") && !rest.startsWith("</span>"));
+    expect(stray.length, "a ₹1,499 that is not the monthly plan's month-two price — run: npm run landing:build").toBe(0);
     expect(html, "pre-v2.99.91 network answer — run: npm run landing:build").toContain("download-only");
   });
 });

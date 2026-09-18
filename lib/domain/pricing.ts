@@ -98,6 +98,13 @@ export const PRICING_STALE_AFTER_DAYS = 120;
 // and there is no auto-renewal or stored card — each month is a fresh key
 // issued on request, which is exactly what the licence model already does.
 // Monthly is NOT featured: lifetime stays the single featured card.
+//
+// ── 2026-09-18, the next session (owner): "MONTHLY PLAN CHANGE IT TO 999
+// (original price from second month will be 1499)" ─────────────────────────
+// ₹999 for the first month (launch offer), ₹1,499 per month from the second.
+// Same honesty rule: 1,499 is the real month-two price, so offerPct() now
+// derives 33% (1 − 999/1499 = 33.36%, floored). The ₹599 / ₹999 pair above
+// is history; nothing else about the plan changed.
 export const PRICING: readonly PricingSku[] = [
   {
     id: "lifetime",
@@ -140,11 +147,11 @@ export const PRICING: readonly PricingSku[] = [
     id: "monthly",
     licenseSku: "app",
     name: "Pro — Monthly",
-    amountInr: 599,
-    wasInr: 999,
-    thenInr: 999,
+    amountInr: 999,
+    wasInr: 1499,
+    thenInr: 1499,
     term: "monthly",
-    blurb: "first month · launch offer · then ₹999/month",
+    blurb: "first month · launch offer · then ₹1,499/month",
     includes: [
       "The full Vyuha desktop app",
       "Every Pro analytics screen",

@@ -116,7 +116,7 @@ export const COMPETITORS: readonly CompetitorRow[] = [
 const ANNUAL = priceLabel(skuById("annual"));
 const LIFETIME = priceLabel(skuById("lifetime"));
 // Monthly (owner ruling 2026-09-18) is an INTRODUCTORY price, so its cell
-// carries the month-two price too — a comparison table that quoted ₹599
+// carries the month-two price too — a comparison table that quoted ₹999
 // against competitors' full rates would be the overstatement this file exists
 // to avoid.
 const MONTHLY = priceLabel(skuById("monthly"));

@@ -355,6 +355,10 @@ six-broker import (incl. Angel One ≈15% of India's active accounts), clickable
 > each month is a fresh key minted with
 > `license-issue.mjs <email> app --months 1`. No upgrade credit from monthly was
 > ruled, so none is promised (`upgradeCredit()` stays annual → lifetime).
+> **Repriced 2026-09-18 for v4.4.0 (owner: "MONTHLY PLAN CHANGE IT TO 999 (original
+> price from second month will be 1499)"):** ₹999 for the first month (launch offer),
+> **₹1,499/month from the second month**; the real month-two anchor ₹1,499 makes
+> `offerPct()` derive **33%**. The ₹599 / ₹999 / 40% figures above are history.
 >
 > Three SKUs — the Toolkit/indicators bundle came off every pricing surface;
 > indicators remain a WhatsApp conversation. `tests/pricing.test.ts` pins the

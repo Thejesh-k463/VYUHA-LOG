@@ -596,7 +596,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 
 <img src="docs/screenshots/pricing.png" alt="Pricing — Pro Annual and Journal Lifetime plans shown in-app" width="900" />
 
-**Pro — Monthly ₹599 first month (launch offer), then ₹999/month · Pro — Annual ₹7,999/yr ·
+**Pro — Monthly ₹999 first month (launch offer), then ₹1,499/month · Pro — Annual ₹7,999/yr ·
 Journal — Lifetime ₹29,999**, launch prices (annual and lifetime list at ₹13,000/yr and ₹35,999
 from 2027-01-01). Monthly is **given on request** — message us and a one-month key is issued; each
 month renews with a fresh key, there is no auto-renewal and no card is stored. All three are quoted

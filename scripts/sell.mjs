@@ -3,8 +3,8 @@
 //
 //   npm run sell -- <buyer-email> --lifetime  --utr <UTR> --name "<Full Name>"
 //   npm run sell -- <buyer-email> --years 1   --utr <UTR> --name "<Full Name>"
-//   npm run sell -- <buyer-email> --months 1  --utr <UTR> --name "<Full Name>"              # first month, Rs 599
-//   npm run sell -- <buyer-email> --months 1 --renewal --utr <UTR> --name "<Full Name>"    # second month on, Rs 999
+//   npm run sell -- <buyer-email> --months 1  --utr <UTR> --name "<Full Name>"              # first month, Rs 999
+//   npm run sell -- <buyer-email> --months 1 --renewal --utr <UTR> --name "<Full Name>"    # second month on, Rs 1,499
 //   npm run sell -- you@example.com --lifetime --no-payment --name "Me"   # dry run on yourself
 //
 // WHAT IT REPLACES. On the first two real sales (2026-08-23) one mint command
@@ -53,7 +53,7 @@ const email = args.find((a) => a.includes("@") && !a.startsWith("--"));
 const lifetime = has("--lifetime");
 const years = opt("--years");
 const months = opt("--months");
-const renewal = has("--renewal"); // monthly only: the second month onwards, Rs 999
+const renewal = has("--renewal"); // monthly only: the second month onwards, Rs 1,499
 const utr = opt("--utr");
 const name = opt("--name");
 const freebie = has("--no-payment");

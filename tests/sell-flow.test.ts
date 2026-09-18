@@ -71,13 +71,13 @@ describe("sale-flow helpers (pure)", () => {
     expect(longDate("2026-08-23")).toBe("23 August 2026");
   });
 
-  it("a monthly receipt states ONE MONTH and the amount actually paid: 599 for the first month, 999 on a renewal", () => {
+  it("a monthly receipt states ONE MONTH and the amount actually paid: 999 for the first month, 1,499 on a renewal", () => {
     const base = { receiptNo: "VY-2026-050", issued: "2026-09-18", name: "A Buyer", email: "x@y.com", keyId: "AAAA-BBBB-01", utr: "123456789012", expires: "2026-10-18" };
     const first = receiptText({ ...base, plan: "monthly" });
     expect(first).toContain("Licence term   1 month from 18 September 2026 (expires 18 October 2026)");
-    expect(first).toContain("Amount paid    ₹599");
+    expect(first).toContain("Amount paid    ₹999");
     const next = receiptText({ ...base, plan: "monthlyRenewal" });
-    expect(next).toContain("Amount paid    ₹999");
+    expect(next).toContain("Amount paid    ₹1,499");
     expect(next).not.toContain("launch offer");
   });
 
