@@ -5,7 +5,7 @@ import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
 import { bySegment, bySetup, type GroupStat } from "@/lib/analytics/metrics";
 import { benjaminiYekutieli, fmtIntervalPct, proportionPValue, rateVerdict, wilsonInterval } from "@/lib/analytics/inference";
-import { segmentDepth, segmentFinding, type SegmentDepthReport } from "@/lib/analytics/segment-depth";
+import { DEPTH_SEGMENTS, segmentDepth, segmentFinding, type SegmentDepthReport } from "@/lib/analytics/segment-depth";
 import { hasKnownBasis } from "@/lib/analytics/acquisition";
 import { num, inr, pct } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
@@ -14,7 +14,8 @@ import { getBarsMap } from "@/lib/queries/price-history";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { KpiCard } from "@/components/kpi-card";
-import { getIndexMembershipMap } from "@/lib/queries/instruments";
+import { getIndexLotMap, getIndexMembershipMap } from "@/lib/queries/instruments";
+import { isLotSegment, perLotAggregate, perLotSecondLine } from "@/lib/analytics/per-lot";
 import { themeEdge, THEME_MIN_SAMPLE } from "@/lib/analytics/theme-edge";
 import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
@@ -99,6 +100,42 @@ export default function EdgeReportPage() {
     })),
   );
 
+  /**
+   * v4.4.0 D3 — the per-lot SECOND line for the F&O rows of Segment depth.
+   *
+   * Population: exactly the rows `segmentDepth` rates that segment over (closed
+   * AND `hasKnownBasis`), so per-lot x Slots = the segment's net to the paisa.
+   * Lots resolve through `lotsOf`: the stored `lot_size`, else the DATED index
+   * table (the user's upload beats the bundle only when its asOf is at least
+   * INDEX_LOTS_AS_OF), else nothing — and one unresolved row dashes the whole
+   * line with "lot size unknown on k of N" (invariant 6).
+   *
+   * `rProvenanceLine` rides on the same line (design-review delta): a cap-only
+   * segment's "1R per lot" is a per-segment cap divided by lots.
+   */
+  const lotMap = getIndexLotMap();
+  const perLotBySegment = new Map<string, string>();
+  for (const d of DEPTH_SEGMENTS) {
+    if (!isLotSegment(d.segment)) continue;
+    const pop = trades.filter((t) => t.segment === d.segment && !t.isOpen && hasKnownBasis(t));
+    if (pop.length === 0) continue;
+    const agg = perLotAggregate(
+      pop.map((t) => ({
+        lotSize: t.lotSize,
+        symbol: t.symbol.toUpperCase(),
+        expiry: t.expiry,
+        buyQty: t.buyQty,
+        sellQty: t.sellQty,
+        netPnl: t.netPnl,
+        riskAmount: t.riskAmount,
+        rMultiple: t.rMultiple,
+      })),
+      lotMap,
+    );
+    const prov = rProvenanceLine(rProvenanceCounts(pop.map(provenanceRowOf)));
+    perLotBySegment.set(d.segment, perLotSecondLine(agg, prov));
+  }
+
   return (
     <>
       <PageHeader title="Edge / Setup Analytics" description="Which edges pay — expectancy, win rate and avg R per setup and segment." />
@@ -108,7 +145,7 @@ export default function EdgeReportPage() {
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />
         <StopTuningCard tuning={tuning} />
-        <SegmentDepthCard report={depth} />
+        <SegmentDepthCard report={depth} perLot={perLotBySegment} />
         <ThemeEdgeCard report={themes} />
         <MaeMfeCard report={maeReport} />
       </ProGate>
@@ -414,7 +451,7 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
  * five simultaneous comparisons an uncorrected "best segment" is frequently a
  * coin that came up heads. A segment that fails correction is MARKED and stays.
  */
-function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
+function SegmentDepthCard({ report, perLot }: { report: SegmentDepthReport; perLot: Map<string, string> }) {
   const pnl = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
   const finding = segmentFinding(report);
   const rows = report.rows.filter((r) => r.count > 0 || r.excluded > 0);
@@ -466,7 +503,16 @@ function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
                       )}
                     </ReportTd>
                     <ReportTd align="right" className={`font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</ReportTd>
-                    <ReportTd align="right" className={pnl(r.expectancy)}>{num(r.expectancy, 0)}</ReportTd>
+                    <ReportTd align="right" className={pnl(r.expectancy)}>
+                      {num(r.expectancy, 0)}
+                      {/* v4.4.0 D3 - the per-lot second line, F&O rows only, from
+                          the SAME `perLotSecondLine` the dashboard prints. */}
+                      {perLot.get(r.segment) && (
+                        <span className="block text-[0.65rem] font-normal text-muted-foreground" data-testid={"per-lot-" + r.segment}>
+                          {perLot.get(r.segment)}
+                        </span>
+                      )}
+                    </ReportTd>
                     {/* % sign INSIDE the ternary — an all-unpriced segment
                         (count 0, excluded > 0) used to render the literal
                         "—%", and its empty-sample CI printed 0%–100%. */}

@@ -119,6 +119,61 @@ describe("every entry keeps the house rules", () => {
     for (const s of legal) expect(s, s).not.toMatch(PRESCRIPTIVE);
   });
 
+  // v4.4.0 wave A (owner ruling Q3, "your own arithmetic + cited facts"). A
+  // healthyRange states something always true of the USER'S OWN figures, and
+  // may carry a fact about other traders ONLY with its source and year. It may
+  // never publish a band this codebase cannot derive — "viable above ~1.25",
+  // "under ~20%", "~15–20% annualised" were all invented denominators
+  // (AGENTS.md invariant 6), and one research doc's guess becomes a cited
+  // "fact" within a year of shipping.
+  //
+  // "Cited" = a source NAME from the verified list plus a 4-digit year in the
+  // same healthyRange. Two shapes are checked:
+  //   1. a band shape — "~N", a numeric range, or a judgement word next to a
+  //      number ("viable above 1.25", "healthy above ~1");
+  //   2. a population claim — a number in a field that also speaks about
+  //      traders/funds/studies, i.e. a fact about people other than the user.
+  const BAND =
+    /~\s*\d|\b\d+(?:\.\d+)?\s*%?\s*(?:–|—)\s*\d+(?:\.\d+)?\s*%|\b(?:viable|healthy|respectable|decent|strong|acceptable|optimal|ideal|good)\b[^.]{0,40}?\d|\d[^.]{0,40}?\b(?:viable|healthy|respectable|decent|strong|acceptable|optimal|ideal)\b/i;
+  // "fund" alone is excluded deliberately — it is a verb here ("a p5 year you
+  // could fund"); the claim this guard is after is one about OTHER people.
+  const POPULATION = /\b(?:traders?|fund managers?|studies|study|industry|most people)\b/i;
+  const SOURCE = /\b(?:SEBI|Zerodha Varsity|Varsity|Nithin Kamath|@yashstocks|@JayneshKasliwal|ICAI)\b/;
+  const YEAR = /\b(?:19|20)\d{2}\b/;
+  const cited = (h: string) => SOURCE.test(h) && YEAR.test(h);
+
+  it("no healthyRange publishes an uncited numeric band", () => {
+    for (const id of METRIC_HELP_IDS) {
+      const h = METRIC_HELP[id].healthyRange;
+      if (BAND.test(h)) {
+        expect(cited(h), `${id}.healthyRange states a band with no source+year: ${h}`).toBe(true);
+      }
+      if (POPULATION.test(h) && /\d/.test(h)) {
+        expect(
+          cited(h),
+          `${id}.healthyRange makes a numeric claim about other traders with no source+year: ${h}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("the band net catches the bands this wave deleted (red-on-revert)", () => {
+    const deleted = [
+      "Commonly read as viable above ~1.25 and strong above ~2 — it depends on sample size.",
+      "Risk-focused traders commonly try to keep it under ~20% of equity — it depends on leverage.",
+      "Equity indices commonly run ~15–20% annualised; it depends on the capital base.",
+      "Commonly read as good above 50% — but it depends on trading style.",
+      "In fund literature above 1 is commonly called decent and above 2 strong; it assumes a daily series.",
+      "Commonly read as healthy when comfortably above ~1 — it depends on style.",
+    ];
+    for (const s of deleted) expect(BAND.test(s) && !cited(s), s).toBe(true);
+    // A cited fact about other traders, and the user's own arithmetic, stay legal.
+    expect(
+      cited("SEBI found 93% of individual F&O traders lost money over FY22–FY24 (SEBI, 2024)."),
+    ).toBe(true);
+    expect(BAND.test("Above 1.0 the book made money after charges — arithmetic, not a target.")).toBe(false);
+  });
+
   it("keeps the house voice — no marketing superlatives", () => {
     for (const id of METRIC_HELP_IDS) {
       const e = METRIC_HELP[id];

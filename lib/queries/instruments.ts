@@ -12,6 +12,7 @@ import {
 import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
 import { INDEX_UNDERLYINGS } from "@/lib/domain/constants";
+import type { InstrumentLotMap } from "@/lib/analytics/per-lot";
 
 export interface InstrumentDisplay {
   id: number;
@@ -83,6 +84,16 @@ export function getIndexLotSizes(): Record<string, { lotSize: number; asOf: stri
     }
   }
   return out;
+}
+
+/**
+ * v4.4.0 D3 — the same rows as `getIndexLotSizes`, in the shape `lotsOf`
+ * consumes (`InstrumentLotMap`). The DATE rides along deliberately: `lotsOf`
+ * uses the user's row only when it speaks for INDEX_LOTS_AS_OF or later, so a
+ * two-year-old upload cannot re-price a 2026 contract.
+ */
+export function getIndexLotMap(): InstrumentLotMap {
+  return new Map(Object.entries(getIndexLotSizes()));
 }
 
 /**

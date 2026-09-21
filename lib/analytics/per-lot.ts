@@ -30,6 +30,16 @@ import { INDEX_LOTS_AS_OF, resolveIndexLot, type IndexUnderlying } from "@/lib/d
 
 const INDEX_UNDERLYINGS_SET: ReadonlySet<string> = new Set(INDEX_UNDERLYINGS);
 
+/** The segments that trade in lots — the only ones a per-lot line is shown for.
+ *  Equity has no lot, so "per lot" there would be "per share" dressed up. */
+const LOT_SEGMENTS: ReadonlySet<string> = new Set([
+  "index_option", "stock_option", "commodity_future", "commodity_option", "future",
+]);
+
+export function isLotSegment(segment: string | null | undefined): boolean {
+  return segment != null && LOT_SEGMENTS.has(segment);
+}
+
 export interface PerLotTrade {
   /** Stored market lot on the row (`trades.lot_size`). The user's own number wins. */
   lotSize: number | null;
@@ -97,6 +107,12 @@ export function lotsOf(t: PerLotTrade, instruments?: InstrumentLotMap): LotResol
   return { lot, lots: qty / lot, source, asOf };
 }
 
+/** "bundled (2026-01-01)" / "trade" — the ONE way a lot source is named, so the
+ *  server-resolved string and the pure aggregate cannot drift apart. */
+export function lotSourceLabel(res: LotResolution): string {
+  return res.asOf ? `${res.source} (${res.asOf})` : res.source;
+}
+
 export interface PerLotAggregate {
   /** Rows in the population. */
   total: number;
@@ -121,16 +137,46 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * this divides the STORED net and the STORED risk (D1).
  */
 export function perLotAggregate(rows: readonly PerLotTrade[], instruments?: InstrumentLotMap): PerLotAggregate {
+  return perLotAggregateResolved(rows.map((t) => {
+    const res = lotsOf(t, instruments);
+    return {
+      lots: res?.lots ?? null,
+      lotSource: res ? lotSourceLabel(res) : null,
+      netPnl: t.netPnl,
+      riskAmount: t.riskAmount,
+      rMultiple: t.rMultiple,
+    };
+  }));
+}
+
+/**
+ * One row whose lots were already resolved — the wire shape `lib/queries` ships
+ * to the dashboard. `lotsOf` needs six columns (`lot_size`, `expiry`, both
+ * quantities, the symbol) that the client never renders, so the server resolves
+ * and sends `lots` + `lotSource`: the RSC payload grows by two fields, not six,
+ * and both render sites divide the SAME numbers the server resolved.
+ */
+export interface ResolvedLotRow {
+  /** Whole lots, or null when the book could not say (the line then dashes). */
+  lots: number | null;
+  /** `lotSourceLabel` of the resolution; null on an unresolved row. */
+  lotSource: string | null;
+  netPnl: number;
+  riskAmount: number | null;
+  rMultiple: number | null;
+}
+
+/** The same aggregate over rows whose lots a server query already resolved. */
+export function perLotAggregateResolved(rows: readonly ResolvedLotRow[]): PerLotAggregate {
   let unknown = 0, lots = 0, net = 0, risk = 0, rLots = 0, rRows = 0;
   const sources = new Set<string>();
   for (const t of rows) {
-    const res = lotsOf(t, instruments);
-    if (res == null) { unknown++; continue; }
-    lots += res.lots;
+    if (t.lots == null || !(t.lots > 0)) { unknown++; continue; }
+    lots += t.lots;
     net += t.netPnl;
-    sources.add(res.asOf ? `${res.source} (${res.asOf})` : res.source);
+    if (t.lotSource) sources.add(t.lotSource);
     if (t.rMultiple != null && t.riskAmount != null && t.riskAmount > 0) {
-      risk += t.riskAmount; rLots += res.lots; rRows++;
+      risk += t.riskAmount; rLots += t.lots; rRows++;
     }
   }
   const resolved = unknown === 0 && lots > 0;
@@ -147,6 +193,29 @@ export function perLotAggregate(rows: readonly PerLotTrade[], instruments?: Inst
 /** The caveat that replaces the figures when a single row cannot be resolved. */
 export function perLotUnknownNote(a: PerLotAggregate): string | null {
   return a.unknown > 0 ? `lot size unknown on ${a.unknown} of ${a.total}` : null;
+}
+
+const rupees = (n: number) =>
+  `${n < 0 ? "−" : ""}₹${Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+
+/**
+ * THE second line, shared by both render sites (the dashboard's per-segment
+ * table and /reports/edge's segment depth) so they cannot drift — one wording,
+ * one dash rule, one source caption.
+ *
+ * `rProvLine` is `rProvenanceLine` over the SAME population (design-review
+ * delta): on a cap-only book "1R per lot" is a per-segment cap divided by lots,
+ * not a planned risk, and an unlabelled cap-unit figure is the thing invariant 6
+ * forbids. Empty string when there is no population to describe.
+ */
+export function perLotSecondLine(a: PerLotAggregate, rProvLine?: string | null): string {
+  if (a.total === 0) return "";
+  const note = perLotUnknownNote(a);
+  const head =
+    a.expectancyPerLot == null
+      ? `Per lot: —${note ? ` · ${note}` : ""}`
+      : `Per lot: ${rupees(a.expectancyPerLot)} / lot · ${rPerLotLabel(a)} · lots from ${a.sources.join(", ")}`;
+  return rProvLine ? `${head} · ${rProvLine}` : head;
 }
 
 /** "1R = ₹X per lot" (owner ruling OQ2) — "—" when the book cannot say. */

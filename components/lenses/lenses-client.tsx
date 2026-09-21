@@ -600,7 +600,8 @@ function GroupDetail({
             sub={`${edge.wins}W / ${edge.losses}L`}
             detail={{
               title: "Win rate — wins, losses and streaks",
-              summary: "A low win rate with big winners beats a high win rate with big losers.",
+              summary:
+                "Out of every hundred closed trades, how many ended green — it says nothing about size. If your average loss is 3× your average win, 75% wins only breaks you even.",
               rows: [
                 { label: "Wins", value: String(edge.wins), tone: "profit" },
                 { label: "Losses", value: String(edge.losses), tone: "loss" },
@@ -632,7 +633,8 @@ function GroupDetail({
             sub="per closed trade"
             detail={{
               title: "Expectancy — what one trade is worth",
-              summary: "Average net P&L per priced closed trade — the number that actually compounds.",
+              summary:
+                "What one average trade was worth to you in rupees, after charges — rupees per trade, not R. Avg R is the R figure.",
               rows: [
                 { label: "Expectancy / trade", value: inr(edge.expectancy, { decimals: 0 }), tone: edge.expectancy >= 0 ? "profit" : "loss" },
                 { label: "Average win", value: edge.wins > 0 ? inr(edge.avgWin, { decimals: 0 }) : "—", tone: "profit" },

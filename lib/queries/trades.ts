@@ -8,6 +8,8 @@ import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
 import { canonicalIsin } from "@/lib/domain/isin";
 import { SLIM_TRADE_FIELDS, type SlimTrade } from "@/lib/domain/slim-trade";
 import { hasPlanR } from "@/lib/analytics/win-loss";
+import { lotsOf, lotSourceLabel } from "@/lib/analytics/per-lot";
+import { getIndexLotMap } from "./instruments";
 import { getSelectedAccountId } from "./accounts";
 
 export const getTrades = cache((): Trade[] => {
@@ -187,12 +189,61 @@ const DASH_FIELDS = [
   // closedSorted's same-day tiebreaks (2026-09-17): rows arrive newest-first, and without these
   // the streak and drawdown loops ran BACKWARDS inside a day.
   "id", "exitTime",
+  // v4.4.0 D3 — the "1R = ₹X per lot" numerator. Σrisk over the rows carrying an
+  // R, divided by Σlots; the client holds the segment/broker/date filters, so the
+  // per-segment population can only be formed here. ONE field, and the six
+  // columns `lotsOf` needs are folded server-side into `lots`/`lotSource` below
+  // rather than shipped.
+  "riskAmount",
 ] as const satisfies readonly (keyof Trade)[];
 
-export type DashboardTrade = Pick<Trade, (typeof DASH_FIELDS)[number]> & RPlanFlags;
+/** v4.4.0 D3 — lots resolved on the SERVER, per row, and named. */
+export interface PerLotFlags {
+  /** Whole lots traded, or null when the book cannot say (the line dashes). */
+  lots: number | null;
+  /** `lotSourceLabel` — "trade" / "bundled (2026-01-01)" / "instruments (…)". */
+  lotSource: string | null;
+}
 
-/** The dashboard's per-trade wire shape (13 render fields + the 3 basis fields). */
-export const getDashboardTrades = cache((): DashboardTrade[] => rPlanRows(DASH_FIELDS));
+export type DashboardTrade = Pick<Trade, (typeof DASH_FIELDS)[number]> & RPlanFlags & PerLotFlags;
+
+/**
+ * The dashboard's per-trade wire shape, plus D2's R-provenance flags and D3's
+ * resolved lots.
+ *
+ * Same trade as `rPlanRows`: `lotsOf` reads `lot_size`, `expiry`, both
+ * quantities and the symbol, and the client renders none of them, so they are
+ * SELECTED and DROPPED — the wire grows by two fields, not six. The instruments
+ * lot map is read once per request (a ≤ 6-row table), and `lotsOf` applies the
+ * dated gate: a user upload wins only when its `asOf` is at least
+ * INDEX_LOTS_AS_OF, and an expiry before that with no stored lot resolves to
+ * null rather than borrow today's lot (invariant 6).
+ */
+export const getDashboardTrades = cache((): DashboardTrade[] => {
+  const instruments = getIndexLotMap();
+  const wide = rPlanRows([...DASH_FIELDS, "lotSize", "expiry", "buyQty", "sellQty"]);
+  return wide.map((r) => {
+    const res = lotsOf(
+      {
+        lotSize: r.lotSize,
+        symbol: r.symbol,
+        expiry: r.expiry,
+        buyQty: r.buyQty,
+        sellQty: r.sellQty,
+        netPnl: r.netPnl,
+        riskAmount: r.riskAmount,
+        rMultiple: r.rMultiple,
+      },
+      instruments,
+    );
+    const src = r as unknown as Record<string, unknown>;
+    const out: Record<string, unknown> = { rPlan: r.rPlan, riskSource: r.riskSource };
+    for (const k of DASH_FIELDS) out[k] = src[k];
+    out.lots = res?.lots ?? null;
+    out.lotSource = res ? lotSourceLabel(res) : null;
+    return out as unknown as DashboardTrade;
+  });
+});
 
 const TRACKER_FIELDS = [
   "id", "broker", "bucket", "segment", "instrumentType", "exchange",

@@ -24,11 +24,20 @@ import { inr, inrCompact, pct } from "@/lib/format";
 import { PROFIT_FACTOR_TITLE, profitFactorRows, segmentEdgeRows, type SegmentEdgeRow } from "@/lib/domain/kpi-detail";
 import { BROKERS, BROKER_LABELS, BUCKETS, BUCKET_LABELS, SEGMENTS, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
-import { rProvenanceFromKpis, rProvenanceLine } from "@/lib/analytics/win-loss";
+import { provenanceRowOf, rProvenanceCounts, rProvenanceFromKpis, rProvenanceLine } from "@/lib/analytics/win-loss";
+import {
+  isLotSegment, perLotAggregateResolved, perLotSecondLine, perLotUnknownNote, rPerLotLabel,
+  type PerLotAggregate,
+} from "@/lib/analytics/per-lot";
 
 export interface DashTrade extends AnalyticsTrade {
   symbol: string;
   exchange: string;
+  /** v4.4.0 D3 — the "1R = X per lot" numerator (stored risk, rupees). */
+  riskAmount?: number | null;
+  /** Lots resolved SERVER-side by getDashboardTrades; null = the book cannot say. */
+  lots?: number | null;
+  lotSource?: string | null;
 }
 
 export function DashboardClient({
@@ -93,6 +102,41 @@ export function DashboardClient({
   );
   const segStats = React.useMemo(() => bySegment(filtered), [filtered]);
   const segEdge = React.useMemo(() => segmentEdgeRows(segStats), [segStats]);
+
+  /**
+   * v4.4.0 D3 — the per-lot SECOND line, per F&O segment.
+   *
+   * Population: the exact rows the per-trade figure above it was taken over —
+   * closed AND `edgeMeasurable` — so expectancy-per-lot × Σlots = the segment's
+   * priced net to the paisa. Lots are whatever the SERVER resolved (`lots`,
+   * `lotSource`); nothing is re-derived or re-priced here.
+   *
+   * `rProvenanceLine` is computed over the SAME population and printed beside
+   * the figures (design-review delta): on a cap-only segment "1R per lot" is a
+   * per-segment cap divided by lots, not a planned risk.
+   */
+  const perLotBySegment = React.useMemo(() => {
+    const out = new Map<string, { agg: PerLotAggregate; line: string; rProvLine: string }>();
+    const segs = new Set(filtered.map((t) => t.segment).filter(isLotSegment));
+    for (const s of segs) {
+      const pop = filtered.filter((t) => t.segment === s && !t.isOpen && edgeMeasurable(t));
+      if (pop.length === 0) continue;
+      const agg = perLotAggregateResolved(pop.map((t) => ({
+        lots: t.lots ?? null,
+        lotSource: t.lotSource ?? null,
+        netPnl: t.netPnl,
+        riskAmount: t.riskAmount ?? null,
+        rMultiple: t.rMultiple,
+      })));
+      const prov = rProvenanceLine(rProvenanceCounts(pop.map(provenanceRowOf)));
+      out.set(s, { agg, line: perLotSecondLine(agg, prov), rProvLine: prov });
+    }
+    return out;
+  }, [filtered]);
+
+  /** The popups only speak per-lot when the filter names ONE F&O segment —
+   *  a per-lot figure pooled across segments divides unlike lots. */
+  const segPerLot = segment && isLotSegment(segment) ? perLotBySegment.get(segment) : undefined;
   const setupStats = React.useMemo(() => bySetup(filtered), [filtered]);
 
   // C4 — sparkline (last 30 equity points) + week-over-week net delta.
@@ -312,6 +356,14 @@ export function DashboardClient({
               ...profitFactorRows(k),
               // A null tone would paint a green "—".
               { label: "Expectancy / trade", value: inr(k.expectancy, { decimals: 0 }), tone: k.expectancy == null ? undefined : k.expectancy >= 0 ? "profit" : "loss" },
+              // D3 — the second line: a derivative trade nobody sizes in trades.
+              // All or dash: one unresolvable row dashes it and says how many.
+              ...(segPerLot ? [{
+                label: "Expectancy / lot",
+                value: segPerLot.agg.expectancyPerLot == null ? "—" : inr(segPerLot.agg.expectancyPerLot, { decimals: 0 }),
+                tone: segPerLot.agg.expectancyPerLot == null ? undefined : segPerLot.agg.expectancyPerLot >= 0 ? ("profit" as const) : ("loss" as const),
+                hint: perLotUnknownNote(segPerLot.agg) ?? `lots from ${segPerLot.agg.sources.join(", ")}`,
+              }] : []),
               { label: "Closed trades", value: `${k.closedCount}`, hint: k.closedCount < 20 ? "under ~20 trades this is mostly noise" : undefined },
             ],
           }}
@@ -330,6 +382,13 @@ export function DashboardClient({
               // all cap: a risk you TYPED is neither, and it does not move when
               // the per-trade cap is edited (v4.4.0 D2).
               { label: "Where the R came from", value: rProvLine || "—", hint: rProv.cap > 0 ? "default-cap R measures P&L in cap units, not plan adherence" : undefined },
+              // D3 — R per lot, beside where those Rs came from: a cap-only
+              // segment's "1R per lot" is a cap ÷ lots, never a planned risk.
+              ...(segPerLot ? [{
+                label: "Risk per lot",
+                value: rPerLotLabel(segPerLot.agg),
+                hint: perLotUnknownNote(segPerLot.agg) ?? `${segPerLot.rProvLine || "—"} · lots from ${segPerLot.agg.sources.join(", ")}`,
+              }] : []),
               { label: "Best R", value: rStats.best == null ? "—" : `${rStats.best.toFixed(2)}R`, tone: "profit" },
               { label: "Worst R", value: rStats.worst == null ? "—" : `${rStats.worst.toFixed(2)}R`, tone: "loss" },
               { label: "Max drawdown", value: inr(k.maxDrawdown, { decimals: 0 }), tone: "loss" },
@@ -424,7 +483,7 @@ export function DashboardClient({
           <CardHeader><CardTitle>Net P&L by segment</CardTitle></CardHeader>
           <CardContent>
             {segStats.length ? <SegmentBars data={segStats} labelFor={(kk) => SEGMENT_LABELS[kk as Segment] ?? kk} /> : <Empty />}
-            {segEdge.length > 0 && <SegmentEdgeTable rows={segEdge} />}
+            {segEdge.length > 0 && <SegmentEdgeTable rows={segEdge} perLot={perLotBySegment} />}
           </CardContent>
         </Card>
         <Card>
@@ -484,7 +543,7 @@ function Empty() {
  * segment filter. FREE (OQ3): the segment filter already shows each segment's
  * PF unlicensed, and the dashboard is never gated (invariant 7).
  */
-function SegmentEdgeTable({ rows }: { rows: SegmentEdgeRow[] }) {
+function SegmentEdgeTable({ rows, perLot }: { rows: SegmentEdgeRow[]; perLot: Map<string, { line: string }> }) {
   const tone = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "");
   return (
     <div className="mt-4 overflow-x-auto" data-testid="segment-edge-table">
@@ -512,7 +571,18 @@ function SegmentEdgeTable({ rows }: { rows: SegmentEdgeRow[] }) {
                 {r.profitFactor != null ? r.profitFactor.toFixed(2) : r.noLoserYet ? <span className="text-muted-foreground">no losing trade yet</span> : "—"}
               </td>
               <td className="py-1 text-right">{r.payoff == null ? "—" : `${r.payoff.toFixed(2)}×`}</td>
-              <td className={`py-1 text-right ${tone(r.expectancy)}`}>{inr(r.expectancy, { decimals: 0 })}</td>
+              <td className={`py-1 text-right ${tone(r.expectancy)}`}>
+                {inr(r.expectancy, { decimals: 0 })}
+                {/* v4.4.0 D3 — the per-lot SECOND line, F&O rows only: a per-trade
+                    figure on a derivative book says nothing until you know whether
+                    that trade was one lot or eleven. `perLotSecondLine` is shared
+                    with /reports/edge so the two surfaces cannot word it differently. */}
+                {perLot.get(r.segment)?.line && (
+                  <span className="block text-[0.65rem] font-normal text-muted-foreground" data-testid={`per-lot-${r.segment}`}>
+                    {perLot.get(r.segment)!.line}
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
