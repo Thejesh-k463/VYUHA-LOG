@@ -7998,3 +7998,66 @@ then the release. Needs the owner's answers FIRST on metrics Q1 (per-lot F&O), Q
 Session 2 (≈ 50): the auto-close rebuild with its two identity defects (row 1b) + the wave-3 tax work, ONE design review first (identity + tax), one builder each in
 sequence, then the release. NOT inside the 100: the signed widget feed, Telegram alerts, Atlas v3, the Positions tab / charts facade — each needs a new network surface
 or the owner's "build"; swap one in only by dropping something above.
+
+## 2026-09-18 — v4.4.0 opens (fourteenth session): the rulings, the monthly reprice, and how the waves were run
+
+**Rulings** are in `06-ANSWERS.md` "v4.4.0 session-1 rulings" (one group of eight in the first ten minutes + one follow-up after research): per-lot second line
+(Q1); healthy-range lines = the user's own arithmetic + cited facts, no invented band (Q3, after a web pass found NO Indian source for a profit-factor / drawdown /
+Sharpe / seller-win-rate band — sources in `19-BACKLOG-RESEARCH-2026-09-16/metrics-q3-indian-sources-2026-09-18.md`; x.com returns 402 to fetches); 245 trading days
+from the NSE calendar (Q5); per-segment editable cap (Q6); Rearrange pilot on `/settings` + `/` only, stored per device; the Live Desk ResizeObserver fix in the sidebar
+wave; "spend over 50, ship all". Decided by the orchestrator under the decision policy: the sidebar pack's Q1–Q9 recommendations; metrics OQ1 (a cap edit re-prices
+past cap-R), OQ2 ("1R = ₹X per lot"), OQ3 (the per-segment table is free); metrics wave C is NOT in v4.4.0; the copy wave runs AFTER the ratio wave (it rewrites prose
+over the final formulas and the `{tradingDays}` placeholder; both ship in one release, so the ruled "copy first" changes nothing a user sees).
+
+**Monthly plan repriced (`859459f`).** The owner: "MONTHLY PLAN CHANGE IT TO 999 (original price from second month will be 1499)". ₹999 first month, ₹1,499 from the
+second; `offerPct()` derives 33% (1 − 999/1499 = 33.36%, floored). Supersedes the ₹599 / ₹999 / 40% entry above. The standalone landing guard treated ₹1,499 as a
+RETIRED price; it is now allowed only as the monthly plan's month-two price ("/month" or the struck-through anchor).
+
+**How the waves ran, and what it cost.** Three builders hit the agent's 150-turn cap mid-wave (the parser wave, B-ii-1 twice) and two were killed by the account spend
+limit (HTTP 429). Resuming a 380k-token builder is dearer than briefing a fresh FINISHER with the on-disk state and a narrow TODO list — every finisher landed. Lessons:
+brief a money-class wave as two builders from the start (product, then tests + guards + gate); two builders may share a tree only if ONE of them runs Playwright at a
+time (two collided on port 3100); a finisher's first act is to verify the partial work, never trust it (the parser finisher found a PII leak — a contract-note number
+recurring as the GST invoice number — and a stale pin).
+
+## 2026-09-18 — v4.4.0 parser wave (`6995c3a`): measured on the owner's real files
+
+Zerodha ledger: opening 0 + 4 entries = every Net Balance, closing 0.0016 exact (4 dp; paise storage rounds 15.045). Groww ledger: 447 rows sorted by settlement date
+but NOT in posting order within a day — bottom-up reconciliation breaks at 102 rows; placing each row by its Balance gives 0 breaks, opening 81.52 derived; 18 segment
+types (the manifest's "8" counted only the common ones). Groww note: 713 fills; 23 BSE fills wrap their 19-digit order number and vanish SILENTLY unless re-joined; net
+8,813.99 = the stated obligation, less 3,013.83 = the stated net 5,800.16. Upstox note: −1.05 / 3.23 / −4.28 to the paisa = its realised-P&L export. Upstox F&O grammar
+VERIFIED (European Call/Put, FON/FOB, BSX = SENSEX, dd-mm-yyyy expiry): the trade report lands 5 positions, net −355.66 (was 4 / −271.92 with options priced as equity).
+**OPEN, the owner's:** the engine prices that day's options at 156.76 of charges where Upstox's own ledger implies 226.57 (gap 69.81 ≈ ₹10/order + GST × 6) — the rate
+card says ₹20 flat; a fix is a `charge_config` migration, not built. Text fixtures check out CRLF on Windows (CI included) — the contract-note pins were re-run on CRLF.
+
+## 2026-09-18 — v4.4.0 UI asks (`ae5e237`): sidebar width, Appearance save, default order, Rearrange pilot
+
+Sidebar: 180–420 px, default 232 (the old literal, SSR unchanged), a 640 px content floor, clamped on EVERY read (so a width stored on a wide monitor re-clamps on a
+1024 px window); per machine in localStorage (`vyuha-sidebar-width`, `{v:1,px}`), not a settings column (chrome; a column needs a migration plus a
+`SETTINGS_MACHINE_COLUMNS` entry). The handle stops the keys it uses — Enter would otherwise expand the focused Live Desk row. Live Desk `theadHeight` / `boxChromeY`
+were mount-only; now ResizeObserver-backed. **Measured trap:** headless Chromium HIDES scrollbars, so a geometry spec can never see a horizontal bar take space —
+`z-live-desk` drops `--hide-scrollbars` for the file and measures "visible" against the box's visible area (a row under a scrollbar is not visible); on macOS overlay
+scrollbars the widened-sidebar case passes with or without the fix. Appearance saves through `POST /api/settings/appearance` and renders LAST. Rearrange: localStorage
+`vyuha-section-order:<page>` `{v:1,order}`, move-only, committed via `moveWithinVisible` over the full registry, keyed by section id (no chart remount); registry↔render
+agreement is an AST test; a section id is a permanent name. Rejected: a sticky page-wide Save bar; a `section_order_json` column; hover grips; all 8 pack pages at once.
+
+## 2026-09-18 — v4.4.0 fix list (`4ae21b6`) and metrics wave B-i (`93d2a4b`)
+
+Fix list: the Outcome lens shows "Share of trades" (free — counts); every trade-form number goes through the ONE SIG-1 rule (`parseFormNumber`; "14,48" refused, ".5"
+gets its zero); `closeStaleLot` refuses an unreadable stored date with BAD_DATE before any read (it had silently joined `2026-02-31` at 0 days of interest); the Signal
+book's help lives inside the `/strategies` entry (a `#` href fails the nav join). Recorded, not built: comma-stripping survives in `app/api/risk/limits/route.ts:18,24`,
+`components/sizing/lab-client.tsx:92`, `lib/domain/onboarding.ts:122`.
+B-i: empty denominators return null and print "—" (D7); `Kpis.winnersNet` / `losersNet` make the PF popup divide to its headline by construction, one `edgeRatios`, a
+free per-segment table (D6); annualisation on the bundled NSE calendar — 2026 = 245 (261 weekdays − 16 weekday holidays), 252 only as a labelled convention (D4).
+**CAGR and Calmar do NOT move** (calendar days ÷ 365) — the Q5 ruling row listed CAGR; the release notes say what actually moves: Sharpe / Sortino / volatility ≈ −1.4%,
+alpha ≈ −2.8%, the Monte Carlo horizon 245. The three `/252/` pins in `tests/metric-help.test.ts` were rewritten deliberately.
+
+## 2026-09-21 — v4.4.0 metrics wave B-ii-1 (`22fb53f`): the per-trade cap is per SEGMENT, and R follows it (migration 0073)
+
+The cap lives in `risk_config` (`scope='segment'`), resolved by ONE pure resolver (global < bucket < segment); R is STORED and re-priced by writers
+(`repriceCapTrades`), never derived at read time — 30 readers of `r_multiple` would be 30 chances to read under another rule. Migration 0073 moves NO cap: a
+bucket/segment row with `cap_scheme IS NULL` and `per_trade_max_loss = 9500` (the v1–v4.3 seed literal) READS as unset and inherits, so an untouched install stays at
+₹9,500 and an EDITED cap is untouched. Undetectable edge, accepted: a user who edited the global cap AND typed exactly ₹9,500 on a segment before 0073 sees that segment
+inherit. Writers stamp `risk_source`: a stop-derived or typed risk is `'set'`; an import, a mark-only save with no stop (S1) or a dialog re-posting the prefilled cap (S2)
+stays `'cap'`; staged rows are `'frozen'`. S1–S4 were found by the Fable design review BEFORE a builder started (`20-V440-BUILD/metrics-waveB-design-review.md`) and are
+pinned by name in the harness under invariant I7. D5: one dated risk-free setting (ppm, default 7%, a user preference in the baseline and backups) replaces three
+hard-coded 0.07 copies. Cost: harness 319 → 360 `it`s, 34.0 → 35.5 s. Gate: 447 files / 10,278 passed / 35 skipped.
