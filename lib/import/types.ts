@@ -264,6 +264,12 @@ export interface CommitResult {
   enrichApplied?: number;
   enrichTotal?: number;
   /**
+   * W2a: what the FIFO auto-close did to the book's open positions. Present
+   * only when the caller asked for it (`ImportWriteOptions.autoClose`), which
+   * nothing does yet — the applier ships dormant and W2b turns it on.
+   */
+  autoClose?: import("./close-open-lots").AutoCloseCounters;
+  /**
    * Sentences the COMMIT produced (not the parse). The parse's own warnings
    * still travel on `ParsedFile.warnings`; these are facts only the write knew
    * — "Fill times applied to 41 of 52 contract-note lines", "N reference

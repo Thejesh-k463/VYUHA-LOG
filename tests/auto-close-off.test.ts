@@ -296,13 +296,20 @@ describe("(iii) broker-pull shapes landing in a held book", () => {
 });
 
 describe("(iv) the switch-off is the v4.2.0 file (plus R26), not a flag", () => {
-  it("commit.ts names none of the auto-close applier's pieces", () => {
-    // R26 (4.3.0) imports the identity reader and the stale-close note from
-    // close-open-lots, so the module name alone no longer tells; the applier's
-    // pieces do. Re-wiring auto-close needs at least one of them.
+  it("the applier exists but is DORMANT: `autoClose` defaults to false and no caller asks for it", () => {
+    // RE-PINNED, v4.5.0 W2a. Until now this asserted that commit.ts named none
+    // of the applier's pieces — the 4.3.0 switch-off was "the v4.2.0 file". W2a
+    // rebuilds the applier (design review revisions 9/12/13) and ships it
+    // behind `ImportWriteOptions.autoClose`, DEFAULT FALSE; W2b turns it on
+    // after W3 has built un-close and the delete/merge refusals. So the pin is
+    // now on the thing that keeps this whole file's behaviour true: the OFF
+    // default, and the fact that nothing in production passes the option.
     const src = fs.readFileSync(path.join(ROOT, "lib/import/commit.ts"), "utf8");
-    for (const name of ["planLotCloses", "applyLotCloses", "withLotCloseNote", "withScaledRemainderNote", "splitByRemainder"]) {
-      expect(src, `${name} is wave 1's auto-close; 4.3.0 ships it off`).not.toContain(name);
+    expect(src, "the applier must read the option, never a constant").toContain("options.autoClose === true");
+    expect(src, "`autoClose` must be optional on the write options").toMatch(/autoClose\?: boolean/);
+    for (const caller of ["app/api/import/route.ts", "app/api/import/broker/route.ts", "lib/jobs/auto-pull.ts"]) {
+      const text = fs.readFileSync(path.join(ROOT, caller), "utf8");
+      expect(text, `${caller} must not ask for auto-close until W2b`).not.toContain("autoClose");
     }
   });
 });

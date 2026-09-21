@@ -847,6 +847,38 @@ export const OPS: BookOp[] = [
       record(ctx, "legacifyLatestEnvelope", "skipped", "no envelope carries ipoRefs");
     },
   },
+  {
+    name: "autoCloseImport",
+    needs: "nothing — it imports its own lot first, then the sale that closes it",
+    drives:
+      "lib/import/commit.ts commitParsedFile with `{ autoClose: true }` (v4.5.0 W2a, dormant) — the FIFO applier: the lot row becomes the closed row and holds the sale's hash as an alias",
+    run: async (_db, ctx) => {
+      // Two separate files, which is the class the applier exists for: a sale
+      // that closes a lot ALREADY in the book. The pair is flat, so the op
+      // declares no quantity delta; on a re-run both files dedup and it writes
+      // nothing, which keeps the op total in every ordering.
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, "autoCloseImport", "skipped", "account A is gone");
+      const sym = `ACSYM${ctx.seq}`;
+      const file = (t: NormalizedTrade, name: string) =>
+        ctx.m.commit.commitParsedFile(parsedFile([t]), name, null, acc, { autoClose: true });
+      const buy = file(
+        normalized({ tradingsymbol: sym, buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-04-01" }),
+        `autoclose-buy-${ctx.seq}`,
+      );
+      if (buy.added !== 1) return record(ctx, "autoCloseImport", "skipped", `the lot was already imported (${sym})`);
+      const sale = file(
+        normalized({ tradingsymbol: sym, sellQty: 10, avgSellPrice: 120, sellValue: 1200, sellDate: "2026-05-01" }),
+        `autoclose-sell-${ctx.seq}`,
+      );
+      record(
+        ctx,
+        "autoCloseImport",
+        "applied",
+        `${sym}: ${sale.autoClose?.closedWhole ?? 0} closed whole, ${sale.added} rows added beside it`,
+      );
+    },
+  },
 ];
 
 /**

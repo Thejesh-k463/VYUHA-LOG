@@ -244,9 +244,58 @@ function withIdentityNote(importNotes: string | null, sentence: string, hash: st
  * it: the provenance sentence once, plus one alias per consuming execution.
  * Idempotent — a lot eaten by three sells ends with three aliases and one
  * sentence, in the order the sells arrived.
+ *
+ * W2a (design review revision 9): this is now written ONLY where the row is
+ * the HOLDER of that execution's hash — a lot consumed WHOLE, which becomes
+ * the closed row itself. A partly-consumed lot gets `withAutoClosedLotNote`
+ * (the sentence alone) and the slice beside it holds the hash, because ONE
+ * execution hash may have exactly ONE holder: two holders made the Trash
+ * restore of the slice skip silently ("recorded in the position it closed",
+ * `lib/trash.ts:546-551`) and 40 shares of realised P&L disappear.
  */
 export function withLotCloseNote(importNotes: string | null, closingHash: string): string {
   return withIdentityNote(importNotes, AUTO_CLOSE_NOTE, closingHash);
+}
+
+/**
+ * The `import_notes` a PARTLY consumed lot carries: the provenance sentence and
+ * NOTHING else (revision 9). It freezes the row's identity
+ * (`isLotIdentityFrozen` reads the sentence too), which is the point — the
+ * lot's legs no longer state what its hash was built from — while leaving the
+ * consuming execution's hash to the one row that holds it.
+ */
+export function withAutoClosedLotNote(importNotes: string | null): string {
+  const parts = (importNotes ?? "").split("|").map((s) => s.trim()).filter(Boolean);
+  if (!parts.includes(AUTO_CLOSE_NOTE)) parts.push(AUTO_CLOSE_NOTE);
+  return parts.join(" | ");
+}
+
+/**
+ * Marks the execution a piece of an auto-close belongs to, WITHOUT claiming its
+ * identity (revision 9). `lotIdentityHashes` never reads this prefix, so a row
+ * carrying it answers to its own hash alone — it is provenance, the thread that
+ * ties the pieces of one execution together for the lifecycle work (W3), and
+ * the reason a row-level delete of any piece can be refused by name.
+ */
+export const CLOSED_BY_PREFIX = "closed-by:";
+
+/** Append `closed-by:<hash>` once. Adds no identity. */
+export function withClosedByNote(importNotes: string | null, execHash: string): string {
+  const parts = (importNotes ?? "").split("|").map((s) => s.trim()).filter(Boolean);
+  const seg = `${CLOSED_BY_PREFIX}${execHash}`;
+  if (!parts.includes(seg)) parts.push(seg);
+  return parts.join(" | ");
+}
+
+/** The execution hash a row was closed by, or null. Never an identity. */
+export function closedByHash(importNotes: string | null): string | null {
+  for (const seg of (importNotes ?? "").split("|")) {
+    const s = seg.trim();
+    if (!s.startsWith(CLOSED_BY_PREFIX)) continue;
+    const h = s.slice(CLOSED_BY_PREFIX.length).trim().toLowerCase();
+    if (HASH_RE.test(h)) return h;
+  }
+  return null;
 }
 
 /**
@@ -297,6 +346,76 @@ export function withStaleCloseNote(importNotes: string | null, saleHash: string)
 export function splitByRemainder(total: number, share: number): { slice: number; keep: number } {
   const slice = r2(total * share);
   return { slice, keep: r2(total - slice) };
+}
+
+/**
+ * What an import DID to the book's open positions — one counter object, built
+ * once in `commit.ts` and read by the file commit, the pull commit, both
+ * previews and the auto-pull job (R14, R15, R31, R2).
+ *
+ * "Closed" counts `closedWhole` ONLY: a sale that merely reduced a lot has not
+ * closed a position, and saying it did is R14. "already held in this account"
+ * is said only of `closedAgainstStoredLot`, because a buy and a sell inside ONE
+ * file were never "already held" (R15).
+ */
+export interface AutoCloseCounters {
+  /** Lots consumed to zero — the only figure the word "closed" may describe. */
+  closedWhole: number;
+  /** Lots left open with less quantity than before. */
+  reduced: number;
+  /** Rows written as new open positions (a remainder counts here). */
+  openedNew: number;
+  /** Closes against a lot the book already held before this file. */
+  closedAgainstStoredLot: number;
+  /** Closes against a lot THIS file opened earlier in its own order (M-2). */
+  closedAgainstThisFilesLot: number;
+  /** Executions refused a close because they state no date (R72 / ruling A2). */
+  refusedNoDate: number;
+}
+
+export const emptyAutoCloseCounters = (): AutoCloseCounters => ({
+  closedWhole: 0,
+  reduced: 0,
+  openedNew: 0,
+  closedAgainstStoredLot: 0,
+  closedAgainstThisFilesLot: 0,
+  refusedNoDate: 0,
+});
+
+/**
+ * The sentences an import says about what it closed. Pure, so the preview and
+ * the commit can never word the same book differently.
+ */
+export function autoCloseSentences(c: AutoCloseCounters): string[] {
+  const out: string[] = [];
+  const pos = (n: number) => `${n} position${n === 1 ? "" : "s"}`;
+  // R14 — ONLY `closedWhole` may be called "closed". A sale that took 40 of a
+  // 100 lot closed nothing; it reduced it, and the sentence below says so.
+  // R15 — "already held in this account" is said only when the lots that were
+  // closed actually came from the book: a buy and a sell inside ONE file were
+  // never "already held".
+  if (c.closedWhole > 0) {
+    const stored = c.closedAgainstStoredLot > 0;
+    const own = c.closedAgainstThisFilesLot > 0;
+    const where =
+      stored && own
+        ? "against open positions — some this account already held, some opened earlier in this same file"
+        : own
+          ? "against positions opened earlier in this same file"
+          : "against open positions this account already held";
+    out.push(`${pos(c.closedWhole)} closed ${where} (FIFO, oldest first).`);
+  }
+  if (c.reduced > 0) {
+    out.push(
+      `${pos(c.reduced)} reduced, not closed: part of an incoming sale was matched against ${c.reduced === 1 ? "it" : "them"} and the rest is still open.`,
+    );
+  }
+  if (c.refusedNoDate > 0) {
+    out.push(
+      `${c.refusedNoDate} incoming ${c.refusedNoDate === 1 ? "execution states" : "executions state"} no date, so nothing was closed automatically: both rows stay open and Data Quality lists them under "Open positions with their closing trade stored beside them", where you confirm the date.`,
+    );
+  }
+  return out;
 }
 
 /** An open position the book already holds, as this module needs to see it. */
@@ -461,10 +580,26 @@ export function planLotCloses(
     const list = byKey.get(matchKey(row)) ?? [];
     let remaining = row.qty;
 
+    // R4/R72 (v4.5.0 W2a) — a lot bought AFTER the sale can never be closed by
+    // it, and a close with no date is not stored at all. BOTH dates must be
+    // stated: an unknown date is not evidence of anything (invariant 6), and a
+    // close date sets the charge epoch, the holding period and the MTF day
+    // count. A dateless execution therefore matches NOTHING, falls to
+    // `untouched`, and is written as an ordinary row — both rows stay open and
+    // Data Quality's `stale_open` offers the user the R26 join with a date they
+    // confirm. The reachable shape is the same-day partial (buy 100, sell 40):
+    // a pull dates only a closed or sell-only row (`api/angelone.ts:326`,
+    // `api/upstox.ts:217`).
+    if (!row.date) {
+      untouched.push({ key: row.key, qty: row.qty });
+      continue;
+    }
+
     for (const st of list) {
       if (remaining <= 0) break;
       if (st.qty <= 0) continue;
       if (st.lot.side !== wanted) continue;
+      if (!st.lot.date || st.lot.date > row.date) continue;
 
       const take = Math.min(remaining, st.qty);
       const lotShare = take / st.qty;

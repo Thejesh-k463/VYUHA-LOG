@@ -8195,3 +8195,39 @@ before/after diff on the data fix); all nine red-on-revert rows red then restore
 **Recorded, not built.** `lib/import/parsers/dhan-holdings.ts` states scrip names (holdings, not trades) — untouched. The three
 parsers write a `gtr-name:` note even when the ticker equals the stated name — redundant, harmless. A later wave needing "which
 parser wrote this batch" needs a migration (0075 is the next free number). Release note owed: Dhan rows regroup under tickers.
+
+## 2026-09-22 — v4.5.0 wave W2a: the auto-close applier + planner, built DORMANT (`autoClose` defaults to false until W2b)
+
+**Shape.** `ImportWriteOptions { supersedeSnapshot?, autoClose? }` on `commitParsedFile` / `previewParsedFile`; the four
+production callers pass nothing, so 4.3.0's switch-off holds until W2b (design-review revision 13). `tests/auto-close-off.test.ts`
+was re-pinned from "commit.ts names none of the applier's pieces" to "the option exists AND no production caller mentions it" — it
+reddens the moment W2b flips a caller, which is W2b's own signal. The plan is ONE pure function, `planExecutionCloses`, used by
+preview AND commit over the same lot book (stored lots + this file's own lots as virtual negative ids), so R2 holds by construction.
+
+**The one-holder rule (revision 9) as implemented — every execution hash has exactly one holder:** whole consumption → the LOT ROW
+converts in place (own `dedup_hash` kept, `dedup-alias:<execHash>` added, no slice inserted; `added` is 0 and `closedWhole` 1);
+a remainder exists → the scaled remainder holds the execution hash, slices carry their own-legs hash + a non-identity
+`closed-by:<execHash>`; otherwise the first slice holds it. A PARTLY consumed lot gets the sentence only — no alias (the alias was
+the Trash restore-skip defect). `closed-by:` is never read by `lotIdentityHashes`. Charges: `statedOrPricedCharges` (R3 — a stated
+broker total is never swapped for the engine's) and `splitParts` (R6 — per-component split conserved to the paisa) are now SHARED
+with R26's `closeStaleLot`; the audit bodies stay separate (different before-images). The wholesale "one shared helper" of design D2
+was NOT done: R26 had to keep working unchanged.
+
+**Refusals (owner A2, revision 12).** A dateless execution matches nothing in `planLotCloses`: it is written as an ordinary row,
+both rows stay open and Data Quality's existing `stale_open` check pairs them (no new DQ code); `refusedNoDate` is counted only
+when a lot was actually there. The reachable shape is the same-day partial (buy 100 / sell 40) — sell-only pulls are already dated
+(`angelone.ts:326`, `upstox.ts:217`). **Decided against the design (D3 seq 2 vs R4):** a row with `acquisition = "unknown"` is
+never a lot — its basis is unknowable, so a later purchase is a NEW long, not a cover (invariant 6); R4 as written treated an
+opening sell as a short lot and closed it.
+
+**Measured.** A partial close: lot 100 → 60, slice 40/40 gross 400, the lot's ₹18.57 bill split 7.43 / 11.14 + the sale's 13.32 —
+conserved. Whole: one row, `isOpen` false, re-import 0 added / 1 skipped. `tests/auto-close-planner.test.ts` (24, pure),
+`tests/auto-close-applier.test.ts` (33, one temp DB, every `it` ≤ 39 ms); an `autoCloseImport` op in `tests/helpers/book-ops.ts`
+(the harness 360 → 397 pairs, six invariants green, nothing loosened); 17 red-on-revert rows red then restored. Gate: 457 files /
+10,530 passed / 35 skipped.
+
+**Found, decided for W3 (W2a-F1).** The import SUMMARY over-states a same-file buy+sell's charges and net by the buy leg's own
+bill (counted once as an open row and again inside the merged close) — ₹51.96 shown vs ₹39.58 in the book; preview and commit
+agree, the stored book is right. Decision: the summary reports **what the book moved** (each leg charged once); fixed in W3 with a
+pin. Also pinned, not a defect: `openLotOf` does not exclude `eq_mtf` (design seq 12) — a closed MTF row leaves the accrual's
+reach and a reduced one accrues on the remaining stated principal.

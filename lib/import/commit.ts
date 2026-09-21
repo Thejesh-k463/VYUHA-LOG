@@ -52,7 +52,26 @@ import { rebuildStagedTrade, legCountOf, hasLadder } from "@/lib/queries/staged"
 import { chargeInputsChanged, chargeInputsOf, patchMovesChargeInput, statesNoCharges, storedCharges } from "@/lib/domain/trade-edit";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
-import { heldIdentityHashes, isLotIdentityFrozen, STALE_CLOSE_NOTE, withStaleCloseNote } from "./close-open-lots";
+import {
+  heldIdentityHashes,
+  isLotIdentityFrozen,
+  STALE_CLOSE_NOTE,
+  withStaleCloseNote,
+  // W2a — the applier (dormant behind `options.autoClose`, default false).
+  planLotCloses,
+  matchKey,
+  AUTO_CLOSE_NOTE,
+  splitByRemainder,
+  withLotCloseNote,
+  withAutoClosedLotNote,
+  withClosedByNote,
+  withScaledRemainderNote,
+  autoCloseSentences,
+  emptyAutoCloseCounters,
+  type AutoCloseCounters,
+  type LotClose,
+  type OpenLot,
+} from "./close-open-lots";
 import { withoutSyncChargesNote } from "@/lib/analytics/ipo-link";
 import { saleJournalFields, staleAmbiguousNote, staleFillsNote, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
 
@@ -265,6 +284,310 @@ function applyScopedIdentity(
     if (ov) row.b = rebuild(row.t, new Map([[row.b.dedup, ov]]));
     row.b = { ...row.b, dedup: hash };
   }
+}
+
+// ───────────────────── W2a — the auto-close applier (DORMANT) ───────────────
+//
+// v4.5.0 W2a rebuilds the applier wave 1 switched off, and rebuilds it BEHIND
+// an option: `commitParsedFile`/`previewParsedFile` take `{ autoClose }` and it
+// defaults to FALSE, so every caller on this tree (the import route, the broker
+// route, the auto-pull job) behaves exactly as v4.4.0 did. W2b turns it on,
+// after W3 has built un-close and the delete/merge refusals — a close nobody
+// can undo is not a feature.
+//
+// THE ONE-HOLDER RULE (design review revision 9). One execution hash may be
+// held by exactly ONE row. Wave 1 put it on the slice AND on the lot as a held
+// alias, and `lib/trash.ts:546-551` then skipped the slice's restore with
+// "recorded in the position it closed" — 40 shares of realised P&L gone, and
+// the re-import de-duplicated too. So, per execution:
+//
+//   1. a lot consumed WHOLE becomes the closed row itself and takes the
+//      execution's hash as a HELD alias (`withLotCloseNote`); no slice exists;
+//   2. else, if part of the execution is left over, the REMAINDER row keeps the
+//      execution's own hash and is frozen by `withScaledRemainderNote` — the
+//      one place a re-import of the file must still find it;
+//   3. else the FIRST slice stores the execution's hash as its own.
+//
+// Every other piece takes `dedupHash` of its OWN legs and carries a
+// `closed-by:<execHash>` segment, which `lotIdentityHashes` never reads. A
+// partly consumed lot gets `AUTO_CLOSE_NOTE` and NOTHING else.
+//
+// CHARGES (R3/R6) follow `closeStaleLot`: each side keeps the bill it STATES, a
+// side stating none is priced from `charge_config` on its own date, and every
+// component is split BY REMAINDER (`splitByRemainder`) so the pieces always sum
+// to what was charged. Every derived column (R60) comes from `buildRow` — the
+// same code the ordinary insert uses — by handing it the closed row as a
+// synthetic trade whose `reportedCharges` are the merged bill.
+
+/** The ten stored charge heads of a computed or stored row. */
+const partsOf = (c: StaleChargeParts): StaleChargeParts =>
+  Object.fromEntries(STALE_CHARGE_PARTS.map((k) => [k, c[k] ?? 0])) as StaleChargeParts;
+
+/**
+ * R3, the ONE rule, shared by `closeStaleLot` (R26) and the applier: the bill a
+ * stored row STATES, else `charge_config` priced for that row's own leg on its
+ * own day. Never both for one side, and never a re-sum of the ten components
+ * (`buildRow` keeps the ENGINE's value for a head the broker did not state
+ * while `total` stays the BROKER's, so re-summing swaps ₹12.50 of engine DP in
+ * for Dhan's stated total).
+ */
+function statedOrPricedCharges(
+  row: StaleChargeParts & { chargesTotal: number },
+  leg: { buyValue: number; sellValue: number; buyQty: number; sellQty: number; buyOrderCount: number; sellOrderCount: number },
+  segment: Segment,
+  day: string,
+  ratesOn: (day: string) => Parameters<typeof computeCharges>[1],
+): { parts: StaleChargeParts; total: number } {
+  if (row.chargesTotal > 0) return { parts: partsOf(row), total: row.chargesTotal };
+  const c = computeCharges({ segment, ...leg }, ratesOn(day));
+  return { parts: partsOf(c as unknown as StaleChargeParts & { total: number }), total: c.total };
+}
+
+const r2m = (n: number) => Math.round(n * 100) / 100;
+
+/** Split every component of a bill by remainder; the two halves always sum. */
+function splitParts(parts: StaleChargeParts, share: number): { slice: StaleChargeParts; keep: StaleChargeParts } {
+  const slice = {} as StaleChargeParts;
+  const keep = {} as StaleChargeParts;
+  for (const k of STALE_CHARGE_PARTS) {
+    const s = splitByRemainder(parts[k] ?? 0, share);
+    slice[k] = s.slice;
+    keep[k] = s.keep;
+  }
+  return { slice, keep };
+}
+
+/**
+ * The closed row one `LotClose` describes, as a trade `buildRow` can price —
+ * the lot's leg on one side, the execution's on the other, and the merged bill
+ * as `reportedCharges` so `buildRow` keeps it verbatim and still derives
+ * `netPnl`, `isOpen`, `realisedPct`, `rMultiple` and the risk the way the
+ * ordinary insert does (R60).
+ *
+ * R41: the entry time comes from the LOT, the exit time from the execution.
+ * R62: `importNotes` is null here — the piece gets a FRESH note, never a copy
+ * of the lot's.
+ */
+function closedTradeOf(
+  t: NormalizedTrade,
+  c: LotClose,
+  entryTime: string | null,
+  parts: StaleChargeParts,
+  total: number,
+): NormalizedTrade {
+  const long = c.side === "long";
+  const closeValue = r2m(c.qty * c.price);
+  const buyValue = long ? c.openValue : closeValue;
+  const sellValue = long ? closeValue : c.openValue;
+  return {
+    ...t,
+    buyQty: c.qty,
+    sellQty: c.qty,
+    avgBuyPrice: long ? c.openPrice : c.price,
+    avgSellPrice: long ? c.price : c.openPrice,
+    buyValue,
+    sellValue,
+    buyDate: long ? c.openDate : c.date,
+    sellDate: long ? c.date : c.openDate,
+    entryTime: entryTime ?? null,
+    exitTime: t.exitTime ?? null,
+    closingPrice: null,
+    grossPnl: r2m(sellValue - buyValue),
+    unrealisedPnl: 0,
+    basisUnknown: false,
+    suggestedBasisPrice: null,
+    // One fill against one lot is not a staged position (invariant 4): the
+    // file's own ladder describes the WHOLE execution, not this piece of it.
+    executions: null,
+    reportedCharges: { ...parts, total },
+    importNotes: null,
+  };
+}
+
+/** What is LEFT of an execution that closed something: the same row, scaled. */
+function scaledRemainderOf(t: NormalizedTrade, qty: number, parts: StaleChargeParts, total: number): NormalizedTrade {
+  const sells = t.sellQty > 0;
+  const price = sells ? t.avgSellPrice : t.avgBuyPrice;
+  const value = r2m(qty * price);
+  const wholeQty = sells ? t.sellQty : t.buyQty;
+  return {
+    ...t,
+    buyQty: sells ? 0 : qty,
+    sellQty: sells ? qty : 0,
+    buyValue: sells ? 0 : value,
+    sellValue: sells ? value : 0,
+    grossPnl: wholeQty > 0 ? r2m(t.grossPnl * (qty / wholeQty)) : 0,
+    unrealisedPnl: wholeQty > 0 ? r2m(t.unrealisedPnl * (qty / wholeQty)) : 0,
+    // The file's fills describe the whole execution; which of them are left is
+    // not derivable, so the remainder states none rather than a guess.
+    executions: null,
+    reportedCharges: { ...parts, total },
+  };
+}
+
+/** An incoming row is a candidate close only while it states exactly one side. */
+function singleSidedOf(t: NormalizedTrade): { side: "buy" | "sell"; qty: number; price: number; value: number } | null {
+  if (t.buyQty > 0 && t.sellQty === 0) return { side: "buy", qty: t.buyQty, price: t.avgBuyPrice, value: t.buyValue };
+  if (t.sellQty > 0 && t.buyQty === 0) return { side: "sell", qty: t.sellQty, price: t.avgSellPrice, value: t.sellValue };
+  return null;
+}
+
+/** A stored row read as a lot an execution may close, or null when it may not. */
+function openLotOf(r: typeof tradesTable.$inferSelect, hasLegs: boolean): OpenLot | null {
+  // Seq 11: a STAGED position (or any row with a ladder) is refused — its
+  // exit is booked on its own ladder, which prices each tranche and keeps R
+  // frozen at the first entry (invariant 4). `closeStaleLot` refuses it too.
+  if (!r.isOpen || r.staged || hasLegs || r.accountId <= 0) return null;
+  if (storedDateProblem(r)) return null;
+  // D3 sequence 2 — an OPENING SELL is not a short lot. Its stock was acquired
+  // before the file's window and its cost basis is unknowable (invariant 6), so
+  // a later purchase is a NEW long position, not a cover: covering it would
+  // book a P&L against a basis nobody stated. The user says how it was acquired
+  // (setAcquisitionAction) and only then does it read as a real position.
+  if (r.acquisition === "unknown") return null;
+  const long = r.buyQty > 0 && r.sellQty === 0;
+  const short = r.sellQty > 0 && r.buyQty === 0;
+  if (!long && !short) return null;
+  return {
+    id: r.id,
+    accountId: r.accountId,
+    broker: r.broker,
+    tradingsymbol: r.tradingsymbol,
+    segment: r.segment,
+    exchange: r.exchange,
+    side: long ? "long" : "short",
+    qty: long ? r.buyQty : r.sellQty,
+    price: long ? r.avgBuyPrice : r.avgSellPrice,
+    value: long ? r.buyValue : r.sellValue,
+    charges: r.chargesTotal,
+    date: long ? r.buyDate : r.sellDate,
+  };
+}
+
+interface ExecutionClosePlan {
+  /** One piece per lot this execution consumed, with its merged bill. */
+  pieces: { c: LotClose; parts: StaleChargeParts; total: number; entryTime: string | null }[];
+  /** What is left of each touched lot, with the bill it KEEPS (R6). */
+  remainders: { lotId: number; qty: number; value: number; charges: number; parts: StaleChargeParts | null }[];
+  /** What is left of the execution after the closes (0 = consumed whole). */
+  untouchedQty: number;
+  /** Which piece holds the execution's hash — the one-holder rule. */
+  holder: { kind: "lot" | "remainder" | "slice"; at: number };
+  /** The remainder's share of the execution's bill. */
+  execRest: StaleChargeParts;
+  execRestTotal: number;
+  /** True when a lot was there to close and the execution states no date. */
+  refusedNoDate: boolean;
+}
+
+/**
+ * The PURE half of the applier: what this execution closes, and what each piece
+ * costs — no writes, no ids minted, nothing read from the database that the
+ * caller did not hand in.
+ *
+ * Both the preview and the commit call it, which is what makes the preview's
+ * Net P&L the commit's to the paisa (R2). The commit then writes the plan; the
+ * preview only adds it up.
+ */
+function planExecutionCloses(
+  t: NormalizedTrade,
+  b: BuiltRow,
+  accountId: number,
+  lots: readonly OpenLot[],
+  lotRows: ReadonlyMap<number, typeof tradesTable.$inferSelect>,
+  ratesOnFor: (row: typeof tradesTable.$inferSelect) => (day: string) => Parameters<typeof computeCharges>[1],
+): ExecutionClosePlan | null {
+  const exec = singleSidedOf(t);
+  if (!exec) return null;
+  const execDate = normalizeDate(exec.side === "sell" ? t.sellDate : t.buyDate);
+  const incoming = {
+    key: b.dedup,
+    accountId,
+    broker: t.broker,
+    tradingsymbol: t.tradingsymbol,
+    segment: b.classification.segment,
+    exchange: b.classification.exchange,
+    side: exec.side,
+    qty: exec.qty,
+    price: exec.price,
+    value: exec.value,
+    charges: b.charges.total,
+    date: execDate,
+  };
+  const plan = planLotCloses(lots, [incoming]);
+  if (plan.closes.length === 0) {
+    // R72 / ruling A2 — worth SAYING only when a lot was actually there to
+    // close: a dateless row in a book holding nothing is an ordinary open
+    // position, not a refused close.
+    let refusedNoDate = false;
+    if (!execDate) {
+      const wanted = exec.side === "sell" ? "long" : "short";
+      const key = matchKey(incoming);
+      refusedNoDate = lots.some((l) => l.qty > 0 && l.side === wanted && matchKey(l) === key);
+    }
+    return refusedNoDate
+      ? { pieces: [], remainders: [], untouchedQty: exec.qty, holder: { kind: "remainder", at: -1 }, execRest: partsOf(b.charges as unknown as StaleChargeParts), execRestTotal: b.charges.total, refusedNoDate }
+      : null;
+  }
+
+  // R6 — every component split BY REMAINDER, per side, in plan order.
+  let execRest = partsOf(b.charges as unknown as StaleChargeParts);
+  let execRestTotal = b.charges.total;
+  let execQtyLeft = exec.qty;
+  const lotBill = new Map<number, { parts: StaleChargeParts; total: number }>();
+  const pieces: ExecutionClosePlan["pieces"] = [];
+  for (const c of plan.closes) {
+    const share = execQtyLeft > 0 ? c.qty / execQtyLeft : 0;
+    const ep = splitParts(execRest, share);
+    const et = splitByRemainder(execRestTotal, share);
+    execRest = ep.keep;
+    execRestTotal = et.keep;
+    execQtyLeft = r2m(execQtyLeft - c.qty);
+
+    const row = lotRows.get(c.lotId)!;
+    let bill = lotBill.get(c.lotId);
+    if (!bill) {
+      // R3 — the lot's OWN stated bill, or charge_config on the lot's own day.
+      bill = statedOrPricedCharges(
+        row as unknown as StaleChargeParts & { chargesTotal: number },
+        { buyValue: row.buyValue, sellValue: row.sellValue, buyQty: row.buyQty, sellQty: row.sellQty, buyOrderCount: row.buyOrderCount, sellOrderCount: row.sellOrderCount },
+        row.segment as Segment,
+        pricingDate(row, execDate ?? todayIstIso()),
+        ratesOnFor(row),
+      );
+      lotBill.set(c.lotId, bill);
+    }
+    const lp = splitParts(bill.parts, c.lotShare);
+    const lt = splitByRemainder(bill.total, c.lotShare);
+    bill.parts = lp.keep;
+    bill.total = lt.keep;
+    const parts = {} as StaleChargeParts;
+    for (const k of STALE_CHARGE_PARTS) parts[k] = r2m(lp.slice[k] + ep.slice[k]);
+    pieces.push({ c, parts, total: r2m(lt.slice + et.slice), entryTime: row.entryTime });
+  }
+
+  const untouchedQty = plan.untouched[0]?.qty ?? 0;
+  const wholeIdx = pieces.findIndex((p) => p.c.fullyConsumed);
+  const holder: ExecutionClosePlan["holder"] =
+    wholeIdx >= 0
+      ? { kind: "lot", at: wholeIdx }
+      : untouchedQty > 0
+        ? { kind: "remainder", at: -1 }
+        : { kind: "slice", at: pieces.findIndex((p) => !p.c.fullyConsumed) };
+
+  return {
+    pieces,
+    remainders: plan.remainders.map((rm) => ({
+      ...rm,
+      charges: lotBill.get(rm.lotId)?.total ?? rm.charges,
+      parts: lotBill.get(rm.lotId)?.parts ?? null,
+    })),
+    untouchedQty,
+    holder,
+    execRest,
+    execRestTotal,
+    refusedNoDate: false,
+  };
 }
 
 /** Rates and defaults only — for mutations of a row that already has an account. */
@@ -677,6 +1000,23 @@ export function supersededFromWarnings(warnings: readonly string[] | undefined):
   return 0;
 }
 
+/**
+ * What a preview or a commit may be asked to do beyond writing the file's rows.
+ *
+ * `autoClose` (W2a) defaults to FALSE and every caller on this tree leaves it
+ * so: the applier is built, unit-tested and dormant. W2b turns it on — with a
+ * per-import "Keep sells as separate rows" toggle (ruling A1) — AFTER W3 has
+ * built un-close and the delete/merge refusals, because a close the user cannot
+ * undo is not a feature. A pull passes whatever it is given (revision 13); it
+ * has no toggle of its own this wave.
+ */
+export interface ImportWriteOptions {
+  /** R43: a broker pull's snapshot identity — see `SupersedeSnapshot`. */
+  supersedeSnapshot?: SupersedeSnapshot | null;
+  /** W2a: FIFO-close open lots this execution closes. Default false. */
+  autoClose?: boolean;
+}
+
 export interface PreviewRow {
   tradingsymbol: string;
   symbol: string;
@@ -716,6 +1056,8 @@ export interface PreviewResult {
    * `total = newCount + dupCount + supersededCount`.
    */
   summary: { total: number; newCount: number; dupCount: number; supersededCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
+  /** W2a: what the FIFO auto-close WOULD do. Present only when asked for. */
+  autoClose?: AutoCloseCounters;
   reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
   /** Rows that look like trades already held from a DIFFERENT file kind. */
   crossSource?: CrossSourceReport;
@@ -792,7 +1134,7 @@ export function previewParsedFile(
    *  rows that came from this very file on an earlier import. */
   fileName = "",
   /** R43: a broker pull's snapshot identity — see `SupersedeSnapshot`. */
-  options: { supersedeSnapshot?: SupersedeSnapshot | null } = {},
+  options: ImportWriteOptions = {},
 ): PreviewResult {
   const parsed = applyProductOverrides(resolveSymbols(parsedIn), productOverrides);
   const { rates, defaults, accountId } = loadContext(accountIdIn);
@@ -832,18 +1174,121 @@ export function previewParsedFile(
     reclassifiedBy(overrides),
   );
 
+  // W2a (R2) — the preview runs the SAME pure plan the commit will run, over a
+  // virtual copy of the book's open lots, so its Net/Gross/Charges are what the
+  // commit will store to the paisa. OFF by default, like the commit.
+  const autoClose = options.autoClose === true;
+  const counters = emptyAutoCloseCounters();
+  const previewLotRows = new Map<number, typeof tradesTable.$inferSelect>();
+  const previewLots: OpenLot[] = [];
+  if (autoClose) {
+    const laddered = tradeIdsWithLegs(db, existingRows.filter((r) => r.isOpen).map((r) => r.id));
+    for (const r of existingRows) {
+      const lot = openLotOf(r, laddered.has(r.id));
+      if (!lot) continue;
+      previewLotRows.set(r.id, r);
+      previewLots.push(lot);
+    }
+  }
+  const previewRatesOn = (row: typeof tradesTable.$inferSelect) => (day: string) =>
+    ratesForTrade(
+      rates,
+      { broker: row.broker as Broker, segment: row.segment as Segment, exchange: row.exchange as Exchange, isin: row.isin, symbol: row.symbol },
+      day,
+      resolvePlan(planAccount, row.broker, day, rates),
+    );
+
   for (const [i, { t, b }] of built.entries()) {
     const isDuplicate = existing.has(b.dedup);
     if (isDuplicate) dupCount++;
     else if (snapshot?.supersede.has(i)) supersededCount++;
+
+    // The plan this row would produce at commit — and the row's own figures
+    // become the pieces it would write.
+    let rowGross = t.grossPnl, rowCharges = b.charges.total, rowNet = b.netPnl, rowOpen = b.isOpen, rowBasisUnknown = !!t.basisUnknown;
+    if (autoClose && !isDuplicate && !snapshot?.supersede.has(i)) {
+      const plan = planExecutionCloses(t, b, accountId, previewLots, previewLotRows, previewRatesOn);
+      if (plan?.refusedNoDate) counters.refusedNoDate++;
+      else if (plan && plan.pieces.length > 0) {
+        rowGross = 0; rowCharges = 0; rowNet = 0;
+        for (const [pi, piece] of plan.pieces.entries()) {
+          const closed = closedTradeOf(t, piece.c, piece.entryTime, piece.parts, piece.total);
+          const cb = buildRow(closed, rates, overrides, defaults, planAccount);
+          rowGross = r2m(rowGross + closed.grossPnl);
+          rowCharges = r2m(rowCharges + cb.charges.total);
+          rowNet = r2m(rowNet + cb.netPnl);
+          if (piece.c.fullyConsumed) counters.closedWhole++;
+          else counters.reduced++;
+          // A negative id is a lot THIS file opened (the virtual rows below).
+          if (piece.c.lotId < 0) counters.closedAgainstThisFilesLot++;
+          else counters.closedAgainstStoredLot++;
+          void pi;
+        }
+        if (plan.untouchedQty > 0) {
+          const scaled = scaledRemainderOf(t, plan.untouchedQty, plan.execRest, plan.execRestTotal);
+          const rb = buildRow(scaled, rates, overrides, defaults, planAccount);
+          rowGross = r2m(rowGross + scaled.grossPnl);
+          rowCharges = r2m(rowCharges + rb.charges.total);
+          rowNet = r2m(rowNet + rb.netPnl);
+          rowOpen = rb.isOpen;
+          counters.openedNew++;
+        } else {
+          rowOpen = false;
+          rowBasisUnknown = false; // R31
+        }
+        for (const rem of plan.remainders) {
+          const l = previewLots.find((x) => x.id === rem.lotId);
+          if (!l) continue;
+          l.qty = rem.qty;
+          l.value = rem.value;
+          l.charges = rem.charges;
+        }
+      } else if (b.isOpen) counters.openedNew++;
+      // M-2 / R58, in the preview too: a lot this file OPENS is a lot a later
+      // row of the same file can close, so the virtual book grows as the commit's
+      // would. The row is synthesised from what the commit would store.
+      if (rowOpen) {
+        const vid = -(i + 1);
+        const vrow = {
+          id: vid,
+          accountId,
+          broker: t.broker,
+          tradingsymbol: t.tradingsymbol,
+          symbol: b.classification.symbol,
+          segment: b.classification.segment,
+          exchange: b.classification.exchange,
+          isin: t.isin,
+          isOpen: true,
+          staged: stagedFromExecutions(t),
+          buyQty: t.buyQty,
+          sellQty: t.sellQty,
+          avgBuyPrice: t.avgBuyPrice,
+          avgSellPrice: t.avgSellPrice,
+          buyValue: t.buyValue,
+          sellValue: t.sellValue,
+          buyDate: normalizeDate(t.buyDate),
+          sellDate: normalizeDate(t.sellDate),
+          buyOrderCount: b.buyOrderCount,
+          sellOrderCount: b.sellOrderCount,
+          chargesTotal: b.charges.total,
+          entryTime: t.entryTime ?? null,
+          ...partsOf(b.charges as unknown as StaleChargeParts),
+        } as unknown as typeof tradesTable.$inferSelect;
+        const vlot = openLotOf(vrow, false);
+        if (vlot) {
+          previewLotRows.set(vid, vrow);
+          previewLots.push(vlot);
+        }
+      }
+    }
     // Disjoint by construction: an opening sell also has buyQty !== sellQty, so
     // counting it as "open" as well would make the three counts overlap and
     // stop summing to the position total.
-    if (t.basisUnknown) openingSells++;
-    else if (b.isOpen) openCount++;
-    grossPnl += t.grossPnl;
-    chargesTotal += b.charges.total;
-    netPnl += b.netPnl;
+    if (rowBasisUnknown) openingSells++;
+    else if (rowOpen) openCount++;
+    grossPnl += rowGross;
+    chargesTotal += rowCharges;
+    netPnl += rowNet;
     for (const k of Object.keys(agg)) agg[k] += (b.charges as unknown as Record<string, number>)[k];
     rows.push({
       tradingsymbol: t.tradingsymbol,
@@ -856,10 +1301,10 @@ export function previewParsedFile(
       sellQty: t.sellQty,
       buyValue: t.buyValue,
       sellValue: t.sellValue,
-      grossPnl: t.grossPnl,
-      chargesTotal: b.charges.total,
-      netPnl: b.netPnl,
-      isOpen: b.isOpen,
+      grossPnl: rowGross,
+      chargesTotal: rowCharges,
+      netPnl: rowNet,
+      isOpen: rowOpen,
       isDuplicate,
     });
   }
@@ -868,7 +1313,9 @@ export function previewParsedFile(
     sourceId: parsed.sourceId,
     broker: parsed.broker,
     format: parsed.format,
-    warnings: parsed.warnings,
+    // W2a: the same sentences the commit will say, from the same pure function.
+    warnings: autoClose ? [...parsed.warnings, ...autoCloseSentences(counters)] : parsed.warnings,
+    ...(autoClose ? { autoClose: counters } : {}),
     rawText: parsed.rawText,
     supersededByBook: supersededByBookNow(db, parsed, accountId),
     rows,
@@ -1383,7 +1830,7 @@ export function commitParsedFile(
   productOverrides: Record<string, ProductHint> | null = null,
   accountIdIn?: number | null,
   /** R43: a broker pull's snapshot identity — see `SupersedeSnapshot`. */
-  options: { supersedeSnapshot?: SupersedeSnapshot | null } = {},
+  options: ImportWriteOptions = {},
 ): CommitResult {
   const parsed = applyProductOverrides(resolveSymbols(parsedIn), productOverrides);
   const { rates, defaults, accountId } = loadContext(accountIdIn);
@@ -1498,7 +1945,258 @@ export function commitParsedFile(
       }
     };
 
-    for (const [i, { t, b }] of built.entries()) {
+    // ── W2a: the auto-close applier. OFF unless the caller asks for it ──────
+    // `options.autoClose` defaults to FALSE, so every production caller on this
+    // tree (app/api/import/route.ts, app/api/import/broker/route.ts,
+    // lib/jobs/auto-pull.ts) writes exactly what v4.4.0 wrote. W2b flips it.
+    const autoClose = options.autoClose === true;
+    const counters = emptyAutoCloseCounters();
+    const lotRows = new Map<number, typeof tradesTable.$inferSelect>();
+    const lots: OpenLot[] = [];
+    const openedHere = new Set<number>();
+    if (autoClose) {
+      const openRows = tx
+        .select()
+        .from(tradesTable)
+        .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker), eq(tradesTable.isOpen, true)))
+        .all();
+      const laddered = tradeIdsWithLegs(tx as unknown as TxLike, openRows.map((r) => r.id));
+      for (const r of openRows) {
+        const lot = openLotOf(r, laddered.has(r.id));
+        if (!lot) continue;
+        lotRows.set(r.id, r);
+        lots.push(lot);
+      }
+    }
+    const ratesOnFor = (row: typeof tradesTable.$inferSelect) => (day: string) =>
+      ratesForTrade(
+        rates,
+        { broker: row.broker as Broker, segment: row.segment as Segment, exchange: row.exchange as Exchange, isin: row.isin, symbol: row.symbol },
+        day,
+        resolvePlan(planAccount, row.broker, day, rates),
+      );
+
+    /**
+     * Close what this execution closes. Returns null when it closed nothing
+     * (the caller then writes it as an ordinary row, exactly as v4.2.0 did),
+     * or the scaled remainder to write instead — `null` remainder meaning the
+     * execution was consumed whole and nothing more is to be written.
+     */
+    const runAutoClose = (
+      t: NormalizedTrade,
+      b: BuiltRow,
+    ): { remainder: { t: NormalizedTrade; hash: string; note: (n: string | null) => string } | null; netPnl: number; added: number } | null => {
+      const plan = planExecutionCloses(t, b, accountId, lots, lotRows, ratesOnFor);
+      if (!plan) return null;
+      if (plan.refusedNoDate) {
+        counters.refusedNoDate++;
+        return null;
+      }
+      const { pieces, untouchedQty, holder, execRest, execRestTotal } = plan;
+
+      let netDelta = 0;
+      let inserted = 0;
+      for (const [pi, piece] of pieces.entries()) {
+        const { c } = piece;
+        const row = lotRows.get(c.lotId)!;
+        const closed = closedTradeOf(t, c, piece.entryTime, piece.parts, piece.total);
+        const cb = buildRow(closed, rates, overrides, defaults, planAccount);
+        const holdsHash = holder.kind !== "remainder" && holder.at === pi;
+        netDelta = r2m(netDelta + cb.netPnl);
+
+        if (c.fullyConsumed) {
+          // The LOT ROW becomes the closed row: no slice, its own hash kept,
+          // the execution's hash held as an alias when it holds it.
+          const kept = keptRisk(row, row.bucket, row.segment, defaults.capRows);
+          const notes = holdsHash
+            ? withLotCloseNote(row.importNotes, b.dedup)
+            : withClosedByNote(withAutoClosedLotNote(row.importNotes), b.dedup);
+          const patch = {
+            buyQty: closed.buyQty,
+            avgBuyPrice: closed.avgBuyPrice,
+            buyValue: closed.buyValue,
+            buyDate: normalizeDate(closed.buyDate),
+            sellQty: closed.sellQty,
+            avgSellPrice: closed.avgSellPrice,
+            sellValue: closed.sellValue,
+            sellDate: normalizeDate(closed.sellDate),
+            exitTime: closed.exitTime ?? null,
+            isOpen: cb.isOpen,
+            grossPnl: closed.grossPnl,
+            unrealisedPnl: 0,
+            chargesTotal: cb.charges.total,
+            netPnl: cb.netPnl,
+            realisedPct: cb.realisedPct,
+            ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
+            rMultiple: capR(cb.netPnl, kept.followsCap ? kept.riskAmount : row.riskAmount),
+            brokerage: piece.parts.brokerage,
+            sttCtt: piece.parts.sttCtt,
+            exchangeTxn: piece.parts.exchangeTxn,
+            sebi: piece.parts.sebi,
+            stampDuty: piece.parts.stampDuty,
+            ipft: piece.parts.ipft,
+            gst: piece.parts.gst,
+            dpCharges: piece.parts.dpCharges,
+            mtfInterest: piece.parts.mtfInterest,
+            pledgeCharges: piece.parts.pledgeCharges,
+            importNotes: notes,
+            updatedAt: sql`(datetime('now'))`,
+          };
+          tx.update(tradesTable).set(patch).where(eq(tradesTable.id, row.id)).run();
+          recordAudit({
+            entity: "trade",
+            entityId: row.id,
+            action: "close",
+            summary: `${row.symbol} closed automatically against this import (${fileName}) · ${c.qty} @ ${c.price} · net ${cb.netPnl}`,
+            before: { isOpen: true, buyQty: row.buyQty, sellQty: row.sellQty, chargesTotal: row.chargesTotal, netPnl: row.netPnl, importNotes: row.importNotes },
+            after: { isOpen: false, buyQty: closed.buyQty, sellQty: closed.sellQty, chargesTotal: cb.charges.total, netPnl: cb.netPnl, importNotes: notes },
+            source: "import",
+          });
+          counters.closedWhole++;
+        } else {
+          // The lot stays open with less of it, and the CLOSE is a new row.
+          const rem = plan.remainders.find((x) => x.lotId === c.lotId)!;
+          const bill = { total: rem.charges, parts: rem.parts ?? partsOf(row as unknown as StaleChargeParts) };
+          const long = c.side === "long";
+          const before = { buyQty: row.buyQty, sellQty: row.sellQty, buyValue: row.buyValue, sellValue: row.sellValue, chargesTotal: row.chargesTotal, netPnl: row.netPnl, importNotes: row.importNotes };
+          const lotNotes = withAutoClosedLotNote(row.importNotes);
+          const lotPatch = {
+            ...(long
+              ? { buyQty: rem.qty, buyValue: rem.value }
+              : { sellQty: rem.qty, sellValue: rem.value }),
+            chargesTotal: bill.total,
+            grossPnl: 0,
+            netPnl: r2m(0 - bill.total),
+            brokerage: bill.parts.brokerage,
+            sttCtt: bill.parts.sttCtt,
+            exchangeTxn: bill.parts.exchangeTxn,
+            sebi: bill.parts.sebi,
+            stampDuty: bill.parts.stampDuty,
+            ipft: bill.parts.ipft,
+            gst: bill.parts.gst,
+            dpCharges: bill.parts.dpCharges,
+            mtfInterest: bill.parts.mtfInterest,
+            pledgeCharges: bill.parts.pledgeCharges,
+            importNotes: lotNotes,
+            updatedAt: sql`(datetime('now'))`,
+          };
+          tx.update(tradesTable).set(lotPatch).where(eq(tradesTable.id, row.id)).run();
+          Object.assign(row, lotPatch, { updatedAt: row.updatedAt });
+          recordAudit({
+            entity: "trade",
+            entityId: row.id,
+            action: "update",
+            summary: `${row.symbol} reduced to ${rem.qty} by this import (${fileName}) — ${c.qty} of it closed`,
+            before,
+            after: { buyQty: long ? rem.qty : row.buyQty, sellQty: long ? row.sellQty : rem.qty, buyValue: long ? rem.value : row.buyValue, sellValue: long ? row.sellValue : rem.value, chargesTotal: bill.total, netPnl: r2m(0 - bill.total), importNotes: lotNotes },
+            source: "import",
+          });
+          counters.reduced++;
+
+          const sliceHash = holdsHash ? b.dedup : executionIdentity({ ...closed, segment: cb.classification.segment, exchange: cb.classification.exchange }).hash;
+          const sliceNotes = holdsHash
+            ? withLotCloseNote(null, b.dedup)
+            : withClosedByNote(AUTO_CLOSE_NOTE, b.dedup);
+          const ins = tx
+            .insert(tradesTable)
+            .values({
+              accountId,
+              broker: closed.broker,
+              bucket: cb.classification.bucket,
+              segment: cb.classification.segment,
+              instrumentType: cb.classification.instrumentType,
+              exchange: cb.classification.exchange,
+              symbol: cb.classification.symbol,
+              tradingsymbol: closed.tradingsymbol,
+              isin: closed.isin,
+              expiry: cb.classification.expiry,
+              strike: cb.classification.strike,
+              optionType: cb.classification.optionType,
+              buyQty: closed.buyQty,
+              avgBuyPrice: closed.avgBuyPrice,
+              buyValue: closed.buyValue,
+              sellQty: closed.sellQty,
+              avgSellPrice: closed.avgSellPrice,
+              sellValue: closed.sellValue,
+              closingPrice: null,
+              buyDate: normalizeDate(closed.buyDate),
+              sellDate: normalizeDate(closed.sellDate),
+              entryTime: closed.entryTime ?? null,
+              exitTime: closed.exitTime ?? null,
+              grossPnl: closed.grossPnl,
+              chargesTotal: cb.charges.total,
+              netPnl: cb.netPnl,
+              unrealisedPnl: 0,
+              realisedPct: cb.realisedPct,
+              isOpen: cb.isOpen,
+              buyOrderCount: cb.buyOrderCount,
+              sellOrderCount: cb.sellOrderCount,
+              riskAmount: cb.riskAmount,
+              rMultiple: cb.rMultiple,
+              riskSource: cb.riskSource,
+              brokerage: piece.parts.brokerage,
+              sttCtt: piece.parts.sttCtt,
+              exchangeTxn: piece.parts.exchangeTxn,
+              sebi: piece.parts.sebi,
+              stampDuty: piece.parts.stampDuty,
+              ipft: piece.parts.ipft,
+              gst: piece.parts.gst,
+              dpCharges: piece.parts.dpCharges,
+              mtfInterest: piece.parts.mtfInterest,
+              pledgeCharges: piece.parts.pledgeCharges,
+              sourceFile: fileName,
+              importBatchId: batchId,
+              dedupHash: sliceHash,
+              staged: false,
+              importNotes: sliceNotes,
+            })
+            .returning({ id: tradesTable.id })
+            .get();
+          inserted++;
+          recordAudit({
+            entity: "trade",
+            entityId: ins!.id,
+            action: "create",
+            summary: `${cb.classification.symbol} closed automatically against position #${row.id} (${fileName}) · ${c.qty} @ ${c.price} · net ${cb.netPnl}`,
+            after: { buyQty: closed.buyQty, sellQty: closed.sellQty, chargesTotal: cb.charges.total, netPnl: cb.netPnl, importNotes: sliceNotes },
+            source: "import",
+          });
+        }
+        if (openedHere.has(c.lotId)) counters.closedAgainstThisFilesLot++;
+        else counters.closedAgainstStoredLot++;
+      }
+
+      // The live lot view follows the plan, so the next row of this same file
+      // sees the book as it now stands (M-2 / R58).
+      for (const rem of plan.remainders) {
+        const l = lots.find((x) => x.id === rem.lotId);
+        if (!l) continue;
+        l.qty = rem.qty;
+        l.value = rem.value;
+        l.charges = rem.charges;
+      }
+
+      if (untouchedQty <= 0) return { remainder: null, netPnl: netDelta, added: inserted };
+      const scaled = scaledRemainderOf(t, untouchedQty, execRest, execRestTotal);
+      const scaledHash = holder.kind === "remainder"
+        ? b.dedup
+        : executionIdentity({ ...scaled, segment: b.classification.segment, exchange: b.classification.exchange }).hash;
+      return {
+        remainder: {
+          t: scaled,
+          hash: scaledHash,
+          note: (n) => (holder.kind === "remainder" ? withScaledRemainderNote(n, scaledHash) : withClosedByNote(n, b.dedup)),
+        },
+        netPnl: netDelta,
+        added: inserted,
+      };
+    };
+
+    for (const [i, entry] of built.entries()) {
+      // `let`, not a destructured const: an execution that closed part of a lot
+      // is written as its SCALED remainder, and the rest of this body must see
+      // that row rather than the whole one the file stated (W2a).
+      let { t, b } = entry;
       // Counted BEFORE the duplicate check, and over every parsed row: the
       // shape sentence describes the FILE, which is what the user reconciles
       // against their broker's statement. Added/skipped is a separate fact.
@@ -1513,6 +2211,29 @@ export function commitParsedFile(
         continue;
       }
       seenInThisFile.add(b.dedup);
+
+      // W2a — does this execution close something the book holds? (dormant)
+      let noteDecorator: ((n: string | null) => string) | null = null;
+      if (autoClose) {
+        const done = runAutoClose(t, b);
+        if (done) {
+          added += done.added;
+          netPnl = r2m(netPnl + done.netPnl);
+          if (done.remainder) {
+            // Part of it closed lots; this row is what was left of it.
+            t = done.remainder.t;
+            b = { ...buildRow(t, rates, overrides, defaults, planAccount), dedup: done.remainder.hash };
+            noteDecorator = done.remainder.note;
+          } else {
+            // R31 — a row the plan closed is not an "opening sell with no cost
+            // basis", and not an open position either. The file's shape counted
+            // it as one before the plan was known; it is now neither.
+            if (t.basisUnknown) openingSells--;
+            else if (b.isOpen) openCount--;
+            continue;
+          }
+        }
+      }
 
       // A derived fact must not wear a reported fact's clothes (invariant 6):
       // when an MTF trade's file states no interest figure, whatever later
@@ -1665,12 +2386,31 @@ export function commitParsedFile(
           // is flagged rather than reported as an all-profit trade.
           acquisition: t.basisUnknown ? "unknown" : null,
           suggestedBasisPrice: t.suggestedBasisPrice ?? null,
-          importNotes: noteLines.length ? noteLines.join(" | ") : null,
+          // W2a: a remainder row states WHY it is smaller than the file's own
+          // row, and (when it holds it) freezes the execution's hash on itself.
+          importNotes: (() => {
+            const base = noteLines.length ? noteLines.join(" | ") : null;
+            return noteDecorator ? noteDecorator(base) : base;
+          })(),
         })
         .returning({ id: tradesTable.id })
         .get();
       added++;
       netPnl += b.netPnl;
+      if (autoClose) {
+        if (b.isOpen) counters.openedNew++;
+        // M-2 / R58: a lot this file just opened is a lot the NEXT row of the
+        // same file can close. Re-read, so the pool holds exactly what is stored.
+        if (inserted && b.isOpen && !stagedFromExecutions(t)) {
+          const fresh = tx.select().from(tradesTable).where(eq(tradesTable.id, inserted.id)).get();
+          const lot = fresh ? openLotOf(fresh, false) : null;
+          if (fresh && lot) {
+            lotRows.set(fresh.id, fresh);
+            lots.push(lot);
+            openedHere.add(fresh.id);
+          }
+        }
+      }
 
       // Preserve the entry ladder from a tradebook export. The parent row keeps
       // the aggregate the rest of the app reads; the legs give the position its
@@ -1695,6 +2435,9 @@ export function commitParsedFile(
     // which stays a refusal for a TRADEBOOK that produced no rows.
     const commitWarnings: string[] = [];
     if (superseded > 0) commitWarnings.push(`${supersededPhrase(superseded)}.`);
+    // W2a — R14/R15/R31: what the import did to the book's open positions, in
+    // the ONE wording the preview uses too (`autoCloseSentences`, pure).
+    for (const s of autoCloseSentences(counters)) commitWarnings.push(s);
     const referenceRows = parsed.reference?.length ? parsed.reference : referenceFromReported(parsed.reported);
     const referenceStored = referenceRows.length
       ? persistReference(tx, referenceRows, accountId, parsed.broker, parsed.sourceId, batchId)
@@ -1765,6 +2508,7 @@ export function commitParsedFile(
       enrichApplied,
       enrichTotal,
       warnings: commitWarnings,
+      ...(autoClose ? { autoClose: counters } : {}),
     };
   });
 }
@@ -2404,16 +3148,15 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
           day,
           resolvePlan(lotPlanAccount, lot.broker, day, rates),
         );
-      const partsOf = (c: StaleChargeParts) => Object.fromEntries(STALE_CHARGE_PARTS.map((k) => [k, c[k]])) as StaleChargeParts;
+      // R3 — the ONE stated-bill rule, shared with the W2a applier so the two
+      // doors onto "this lot was closed by that execution" can never price the
+      // same pair differently (`statedOrPricedCharges`, module level).
       const side = (
         row: typeof lot,
         leg: { buyValue: number; sellValue: number; buyQty: number; sellQty: number; buyOrderCount: number; sellOrderCount: number },
         day: string,
-      ): { parts: StaleChargeParts; total: number } => {
-        if (row.chargesTotal > 0) return { parts: partsOf(row), total: row.chargesTotal };
-        const c = computeCharges({ segment: lot.segment as Segment, ...leg }, ratesOn(day));
-        return { parts: partsOf(c), total: c.total };
-      };
+      ): { parts: StaleChargeParts; total: number } =>
+        statedOrPricedCharges(row as unknown as StaleChargeParts & { chargesTotal: number }, leg, lot.segment as Segment, day, ratesOn);
       const lotSide = side(
         lot,
         { buyValue: lot.buyValue, sellValue: lot.sellValue, buyQty: lot.buyQty, sellQty: lot.sellQty, buyOrderCount: lot.buyOrderCount, sellOrderCount: lot.sellOrderCount },
