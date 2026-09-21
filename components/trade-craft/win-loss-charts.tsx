@@ -79,7 +79,7 @@ export function QuadrantScatter({ payoff, winRatePct }: { payoff: number; winRat
  * a plan. The caller renders the explainer line beside this chart.
  */
 export function RHistogram({ buckets }: { buckets: RBucket[] }) {
-  const data = buckets.map((b) => ({ label: b.label, plan: b.plan, defaultCap: b.defaultCap }));
+  const data = buckets.map((b) => ({ label: b.label, plan: b.plan, typed: b.typed, defaultCap: b.defaultCap }));
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
@@ -92,6 +92,7 @@ export function RHistogram({ buckets }: { buckets: RBucket[] }) {
         />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Bar isAnimationActive={false} dataKey="plan" name="plan-derived R" fill="var(--color-primary)" radius={[2, 2, 0, 0]} />
+        <Bar isAnimationActive={false} dataKey="typed" name="typed R" fill="var(--color-muted-foreground)" fillOpacity={0.7} radius={[2, 2, 0, 0]} />
         <Bar isAnimationActive={false} dataKey="defaultCap" name="default-cap R" fill="var(--color-warning)" fillOpacity={0.7} radius={[2, 2, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>

@@ -49,6 +49,7 @@ describe("outcomeShares — each group's share of the closed book", () => {
 const edge = (winRate: number | null): LensEdge => ({
   wins: 0, losses: 0, winRate, profitFactor: null, expectancy: null, avgR: null,
   avgWin: null, avgLoss: null, maxWinStreak: 0, maxLossStreak: 0, currentStreak: 0,
+  rCount: 0, rPlanCount: 0, rCapCount: 0,
 });
 const row = (key: string, label: string, count: number, openCount: number, netPnl: number, winRate: number | null, pro: boolean): LensGroupRow => ({
   group: { key, label, sub: "", count, scope: { kind: "filter", ids: [], label } },

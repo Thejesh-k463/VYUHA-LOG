@@ -45,6 +45,14 @@ const SESSION_TRADE_COLS = {
   isOpen: trades.isOpen,
   segment: trades.segment,
   expiry: trades.expiry,
+  // v4.4.0 D2 — the R-provenance inputs, so the planner's "avg R" can say where
+  // those Rs came from instead of printing a cap unit unlabelled.
+  slPlanned: trades.slPlanned,
+  trailingSl: trades.trailingSl,
+  avgBuyPrice: trades.avgBuyPrice,
+  avgSellPrice: trades.avgSellPrice,
+  riskAmount: trades.riskAmount,
+  riskSource: trades.riskSource,
 };
 
 export function getSessionPlanPage() {

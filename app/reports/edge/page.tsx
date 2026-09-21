@@ -21,6 +21,7 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analytics/win-loss";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,10 @@ export default function EdgeReportPage() {
    * `basisKnown` mirrors the gate every other rate on this page uses: a trade
    * with no cost basis is excluded from rates and counted, never bucketed.
    */
+  /** v4.4.0 D2 — one caption for every Avg R cell on this page, over the same
+   *  closed book the cuts are taken from. */
+  const rProvLine = rProvenanceLine(rProvenanceCounts(trades.map(provenanceRowOf)));
+
   const depth = segmentDepth(
     trades.map((t) => ({
       segment: t.segment,
@@ -98,6 +103,7 @@ export default function EdgeReportPage() {
     <>
       <PageHeader title="Edge / Setup Analytics" description="Which edges pay — expectancy, win rate and avg R per setup and segment." />
       <div className="space-y-5 p-6">
+        {rProvLine && <p className="text-[0.6875rem] text-muted-foreground">Every Avg R on this page: {rProvLine}. Default-cap R measures P&amp;L in per-segment cap units, not plan adherence.</p>}
         <ProGate>
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />

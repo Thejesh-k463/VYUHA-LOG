@@ -9,6 +9,7 @@ import {
 
 const stats: ShareStats = {
   netPnl: 125000,
+  avgRSplit: "6 plan-derived · 0 typed · 2 default-cap · 1 no R",
   winRatePct: 58.3,
   profitFactor: 1.72,
   avgR: 0.42,

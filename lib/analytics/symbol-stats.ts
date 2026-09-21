@@ -13,7 +13,14 @@
  *     book has an expiry within N days"), never a live market calendar.
  */
 
-export interface SymbolTradeInput {
+import {
+  provenanceRowOf,
+  rProvenanceCounts,
+  type RProvenanceCounts,
+  type RProvenanceInput,
+} from "@/lib/analytics/win-loss";
+
+export interface SymbolTradeInput extends RProvenanceInput {
   symbol: string;
   netPnl: number;
   rMultiple: number | null;
@@ -35,6 +42,9 @@ export interface SymbolStats {
   winRate: { pct: number; n: number } | null;
   /** Mean rMultiple over closed trades that carry one, with that count. */
   avgR: { value: number; n: number } | null;
+  /** v4.4.0 D2 — where those Rs came from. `rProvenanceLine` prints it beside
+   *  the figure; `unknown` > 0 means the caller's projection shipped no flags. */
+  rProv: RProvenanceCounts;
   /** Most recent buy or sell date on the symbol. */
   lastTraded: string | null;
   /** Days to the NEAREST expiry among the book's own open F&O positions. */
@@ -102,6 +112,7 @@ export function computeSymbolStats(trades: SymbolTradeInput[], today: string): M
       avgR: withR.length ? { value: r2(withR.reduce((s, t) => s + (t.rMultiple as number), 0) / withR.length), n: withR.length } : null,
       lastTraded,
       expiryWithinDays,
+      rProv: rProvenanceCounts(rows.map(provenanceRowOf)),
     });
   }
   return out;

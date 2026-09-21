@@ -20,6 +20,7 @@ import Link from "next/link";
 import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analytics/win-loss";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +88,8 @@ export default function DisciplineReportPage() {
   );
   const ruleCosts = playbookRuleCost(trades);
   const pbStats = playbookStats(behaviorTrades, getPlaybooks().map((p) => ({ id: p.id, name: p.name })));
+  /** v4.4.0 D2 — the Avg R column below is a mix of provenances; say which. */
+  const rProvLine = rProvenanceLine(rProvenanceCounts(trades.map(provenanceRowOf)));
   const mistakes = mistakeReport(behaviorTrades);
   const emotions = emotionReport(behaviorTrades);
   const pnlCls = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -95,6 +98,7 @@ export default function DisciplineReportPage() {
     <>
       <PageHeader title="Discipline Scorecard" description="Weekly adherence to the rules that protect your capital." />
       <div className="space-y-5 p-6">
+        {rProvLine && <p className="text-[0.6875rem] text-muted-foreground">Every Avg R on this page: {rProvLine}. Default-cap R measures P&amp;L in per-segment cap units, not plan adherence.</p>}
         <ProGate>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiCard

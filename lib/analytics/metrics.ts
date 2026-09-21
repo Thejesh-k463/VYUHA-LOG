@@ -25,6 +25,17 @@ export interface AnalyticsTrade {
   /** Chronological tiebreaks for same-day rows (closedSorted); optional so narrower fixtures still compile. */
   id?: number;
   exitTime?: string | null;
+  /**
+   * v4.4.0 D2 — R PROVENANCE, computed server-side by `withRPlan` (lib/queries/trades.ts)
+   * and never stored. `riskSource` is the `trades.risk_source` column ('cap' | 'set' |
+   * 'frozen' | null); `rPlan` is `hasPlanR` (lib/analytics/win-loss.ts) over the seven
+   * inputs that projection selects. BOTH are optional because a projection may not carry
+   * them — and a MISSING flag is counted as unknown, never as an absence of cap R
+   * (`rPlanCount` / `rCapCount` go null rather than under-claim). The three-way verdict
+   * lives in ONE place, `rProvenance`.
+   */
+  rPlan?: boolean;
+  riskSource?: string | null;
 }
 
 /**
@@ -82,6 +93,18 @@ export interface Kpis {
   /** null when no closed trade could be priced. */
   expectancy: number | null;
   avgR: number | null;
+  /** The Avg R DENOMINATOR: closed, edge-measurable trades carrying an rMultiple.
+   *  Not `closedCount`, and not every priced row — the dashboard's own "Trades with
+   *  R recorded" counted unpriced rows too until v4.4.0 D2. */
+  rCount: number;
+  /**
+   * Of `rCount`, how many carry PLAN-derived R (`rProvenance` = 'plan') and how many
+   * carry DEFAULT-CAP R (`risk_source = 'cap'`). `null` — NOT 0 — when any row with an
+   * R lacks the flag: a projection that forgets to ship it can never silently
+   * under-claim cap provenance. typed = rCount − plan − cap.
+   */
+  rPlanCount: number | null;
+  rCapCount: number | null;
   /** null when there is no winner / no loser to average. */
   avgWin: number | null;
   avgLoss: number | null;
@@ -124,6 +147,7 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
   let netPnl = 0, grossPnl = 0, charges = 0;
   let wins = 0, losses = 0, sumWin = 0, sumLoss = 0;
   let rSum = 0, rCount = 0;
+  let rPlanN = 0, rCapN = 0, rPlanUnknown = false, rCapUnknown = false;
   let unpricedCount = 0, unpricedNetPnl = 0;
   for (const t of closed) {
     // Cash always counts — the money moved whether or not we know the basis.
@@ -139,7 +163,15 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
 
     if (t.netPnl > 0) { wins++; sumWin += t.netPnl; }
     else if (t.netPnl < 0) { losses++; sumLoss += t.netPnl; }
-    if (t.rMultiple != null) { rSum += t.rMultiple; rCount++; }
+    if (t.rMultiple != null) {
+      rSum += t.rMultiple; rCount++;
+      // v4.4.0 D2: a MISSING flag (a projection that never selected it) makes the
+      // whole count null; a flag that is present and not 'cap' is simply not cap.
+      if (t.riskSource === undefined) rCapUnknown = true;
+      else if (t.riskSource === "cap") rCapN++;
+      if (t.rPlan === undefined) rPlanUnknown = true;
+      else if (t.rPlan) rPlanN++;
+    }
   }
 
   // streaks (chronological)
@@ -189,6 +221,9 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
     losersNet,
     expectancy: pricedCount ? r2(pricedNetPnl / pricedCount) : null,
     avgR: rCount ? r2(rSum / rCount) : null,
+    rCount,
+    rPlanCount: rCount === 0 ? 0 : rPlanUnknown ? null : rPlanN,
+    rCapCount: rCount === 0 ? 0 : rCapUnknown ? null : rCapN,
     avgWin: wins ? r2(sumWin / wins) : null,
     avgLoss: losses ? r2(sumLoss / losses) : null,
     maxDrawdown: r2(Math.abs(maxDd)),

@@ -3,6 +3,7 @@ import { ProLock } from "@/components/system/pro-lock";
 import { EmptyState } from "@/components/ui/empty-state";
 import { inr, num } from "@/lib/format";
 import { ADHERENCE_LABELS, ADHERENCE_TOL_PCT, type SignalAnalytics, type SignalTradeRow } from "@/lib/analytics/signal-book";
+import { rProvenanceLine } from "@/lib/analytics/win-loss";
 
 /**
  * THE SIGNAL BOOK tab (v4.3.0) — every option trade that recorded the signal it
@@ -189,7 +190,16 @@ function Blocks({ a }: { a: SignalAnalytics }) {
                 <ReportTd align="right">{g.n}</ReportTd>
                 <ReportTd align="right">{num(g.winRate * 100, 1)}%</ReportTd>
                 <ReportTd align="right">{inr(g.expectancy)}</ReportTd>
-                <ReportTd align="right">{g.avgR == null ? DASH : `${num(g.avgR, 2)} (${g.rN} of ${g.n})`}</ReportTd>
+                <ReportTd align="right">
+                  {g.avgR == null ? DASH : `${num(g.avgR, 2)} (${g.rN} of ${g.n})`}
+                  {/* v4.4.0 D2 — this R divides by the SIGNAL's own SL, never by the
+                      stored riskAmount, so every one of them is plan-derived by
+                      construction and none is a cap unit. Same wording helper as
+                      every other Avg R surface, so the claim is comparable. */}
+                  <div className="text-[9px] font-normal text-muted-foreground">
+                    {rProvenanceLine({ plan: g.rN, typed: 0, cap: 0, unknown: 0, noR: g.n - g.rN })}
+                  </div>
+                </ReportTd>
               </ReportTr>
             ))}
           </tbody>

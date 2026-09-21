@@ -18,7 +18,7 @@ import { inr } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Plus, Pencil, Trash2, Archive, ArchiveRestore } from "lucide-react";
 
-export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?: Record<number, PlaybookStat> }) {
+export function PlaybookManager({ rows, stats = {}, rProvenanceLine }: { rows: Playbook[]; stats?: Record<number, PlaybookStat>; rProvenanceLine?: string }) {
   const router = useRouter();
   const [addOpen, setAddOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Playbook | null>(null);
@@ -103,6 +103,8 @@ export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?
                   <p className="text-xs text-muted-foreground">No rules written yet.</p>
                 )}
                 <PlaybookStatsRow stat={stats[p.id]} />
+                {/* v4.4.0 D2 — the avgR above is a mix of provenances, book-wide. */}
+                {rProvenanceLine && <p className="text-[0.625rem] text-muted-foreground">R across the book: {rProvenanceLine}</p>}
               </CardContent>
             </Card>
           ))}

@@ -112,6 +112,13 @@ export interface LensEdge {
   expectancy: number | null;
   /** `null` = no R recorded on any trade in the group. */
   avgR: number | null;
+  /** v4.4.0 D2 — the Avg R denominator and its provenance split, so /lenses can
+   *  print `rProvenanceLine` beside the column instead of an unlabelled cap-unit
+   *  figure. PRO: they are derived-edge counts, the same side of the line as avgR
+   *  itself. `rPlanCount`/`rCapCount` null = the projection shipped no flag. */
+  rCount: number;
+  rPlanCount: number | null;
+  rCapCount: number | null;
   /** `null` = no winner / no loser to average. */
   avgWin: number | null;
   avgLoss: number | null;
@@ -161,6 +168,9 @@ export function toLensRow(
       profitFactor: Number.isFinite(k.profitFactor) ? k.profitFactor : null,
       expectancy: k.expectancy,
       avgR: k.avgR,
+      rCount: k.rCount,
+      rPlanCount: k.rPlanCount,
+      rCapCount: k.rCapCount,
       avgWin: k.avgWin,
       avgLoss: k.avgLoss,
       maxWinStreak: k.maxWinStreak,

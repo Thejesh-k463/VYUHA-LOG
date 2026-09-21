@@ -7,6 +7,7 @@ import { getSessionPlanPage, type PlannedSymbolInfo } from "@/lib/queries/sessio
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { inr } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
+import { rProvenanceLine } from "@/lib/analytics/win-loss";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ function PlannedSymbolRow({ info }: { info: PlannedSymbolInfo }) {
       <span className={s.netPnl >= 0 ? "text-profit" : "text-loss"}>{inr(s.netPnl)}</span>
       <span className="text-muted-foreground">win {s.winRate ? `${s.winRate.pct}% (n=${s.winRate.n})` : "—"}</span>
       <span className="text-muted-foreground">avg R {s.avgR ? `${s.avgR.value} (n=${s.avgR.n})` : "—"}</span>
+      {/* v4.4.0 D2 — never an unlabelled cap-unit R, even in one line of a planner row. */}
+      {s.avgR && <span className="text-muted-foreground">({rProvenanceLine(s.rProv)})</span>}
       <span className="text-muted-foreground">last {s.lastTraded ?? "—"}</span>
     </> : <span className="text-muted-foreground">no history in this account</span>}
     <span className="text-muted-foreground">{info.sector ?? "—"}</span>

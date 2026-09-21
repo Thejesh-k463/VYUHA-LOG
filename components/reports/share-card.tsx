@@ -90,6 +90,14 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
       ctx.fillStyle = r.tone === "profit" ? profit : r.tone === "loss" ? loss : fg;
       ctx.font = "300 26px 'JetBrains Mono', ui-monospace, monospace";
       ctx.fillText(r.display, x, y + 26);
+      // The caveat travels INTO the PNG, not just the on-screen preview — an
+      // exported Avg R that does not say where its R came from is the share
+      // card's version of an unlabelled cap figure (v4.4.0 D2).
+      if (r.sub) {
+        ctx.fillStyle = mut;
+        ctx.font = "9px Inter, system-ui, sans-serif";
+        ctx.fillText(r.sub, x, y + 40);
+      }
     });
 
     // Footer watermark — the honesty line
@@ -177,6 +185,7 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
                 <div key={r.id}>
                   <div className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{r.label}</div>
                   <div className={`font-mono text-xl font-light tabular-nums ${tone(r.tone)}`}>{r.display}</div>
+                  {r.sub && <div className="text-[8px] text-muted-foreground">{r.sub}</div>}
                 </div>
               ))}
             </div>

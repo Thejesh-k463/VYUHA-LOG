@@ -67,6 +67,11 @@ export const SLIM_TRADE_FIELDS = [
   "trailingSl",
   "targetPlanned",
   "riskAmount",
+  // v4.4.0 D2: WHERE that riskAmount came from ('cap' | 'set' | 'frozen' | null,
+  // migration 0073). One nullable short string per row, and it travels with the
+  // risk plan it describes — every Avg R surface labels cap-unit R from it, and
+  // /lenses reads it through LENS_FIELDS, which must stay a subset of this list.
+  "riskSource",
   "mtfFundedAmount",
   "setupTag",
   "playbookId",

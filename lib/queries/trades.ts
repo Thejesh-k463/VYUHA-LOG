@@ -7,6 +7,7 @@ import type { Trade } from "@/lib/db/schema";
 import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
 import { canonicalIsin } from "@/lib/domain/isin";
 import { SLIM_TRADE_FIELDS, type SlimTrade } from "@/lib/domain/slim-trade";
+import { hasPlanR } from "@/lib/analytics/win-loss";
 import { getSelectedAccountId } from "./accounts";
 
 export const getTrades = cache((): Trade[] => {
@@ -51,6 +52,51 @@ function scopedBookRows<K extends keyof Trade & keyof typeof trades>(
     .all() as Pick<Trade, K>[];
 }
 
+/**
+ * v4.4.0 D2 — R PROVENANCE, computed in SQL-adjacent JS and never stored.
+ *
+ * `rPlan` needs seven columns (`hasPlanR`) that no analytics projection has any
+ * other use for, and shipping them to the client would widen the RSC payload the
+ * 2026-08-29 sweep exists to keep narrow. So `rPlanRows` selects them, folds them
+ * into ONE boolean plus the `risk_source` string, and DROPS the inputs: the wire
+ * grows by two fields, not nine. A projection that skips this ships neither flag,
+ * and `Kpis.rPlanCount`/`rCapCount` then read null rather than claim 0 cap rows.
+ */
+const R_PLAN_INPUT_FIELDS = [
+  "slPlanned", "trailingSl", "avgBuyPrice", "avgSellPrice", "buyQty", "sellQty", "riskAmount", "riskSource",
+] as const satisfies readonly (keyof Trade)[];
+
+/** The two flags every Avg R surface reads (`rProvenance`, lib/analytics/win-loss.ts). */
+export interface RPlanFlags {
+  rPlan: boolean;
+  riskSource: string | null;
+}
+
+function rPlanRows<K extends keyof Trade & keyof typeof trades>(
+  keys: readonly K[],
+): (Pick<Trade, K> & RPlanFlags)[] {
+  const wide = scopedBookRows([
+    ...keys, ...R_PLAN_INPUT_FIELDS,
+  ] as readonly (K | (typeof R_PLAN_INPUT_FIELDS)[number])[]);
+  return wide.map((r) => {
+    const src = r as Record<string, unknown>;
+    const out = {} as Record<string, unknown>;
+    for (const k of keys) out[k] = src[k];
+    out.rPlan = hasPlanR({
+      slPlanned: src.slPlanned as number | null,
+      trailingSl: src.trailingSl as number | null,
+      avgBuyPrice: src.avgBuyPrice as number | null,
+      avgSellPrice: src.avgSellPrice as number | null,
+      // The flat row's traded quantity — the same max(buy, sell) rule arjuns-eye
+      // and lib/queries/risk-cap.ts use.
+      qty: Math.max((src.buyQty as number) ?? 0, (src.sellQty as number) ?? 0) || null,
+      riskAmount: src.riskAmount as number | null,
+    });
+    out.riskSource = (src.riskSource as string | null) ?? null;
+    return out as Pick<Trade, K> & RPlanFlags;
+  });
+}
+
 /** The trades-table wire shape (`SlimTrade`), selected in SQL instead of projected in JS. */
 export const getSlimTrades = cache((): SlimTrade[] => scopedBookRows(SLIM_TRADE_FIELDS));
 
@@ -69,7 +115,7 @@ const LENS_FIELDS = [
   "acquisition", "acquisitionPrice", "buyValue",
 ] as const satisfies readonly (keyof Trade)[];
 
-export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]>;
+export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]> & RPlanFlags;
 
 /**
  * /lenses: the `LENS_FIELDS` above — `SLIM_TRADE_FIELDS` plus the two basis
@@ -95,7 +141,7 @@ export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]>;
  * wider shape, so it gets its OWN projection rather than narrowing that one —
  * the single-route-projection rule at the head of this file.
  */
-export const getLensTrades = cache((): LensRowTrade[] => scopedBookRows(LENS_FIELDS));
+export const getLensTrades = cache((): LensRowTrade[] => rPlanRows(LENS_FIELDS));
 
 const LENS_CHARGE_FIELDS = [
   // id joins the row back to its lens group; isOpen lets the aggregation keep
@@ -143,10 +189,10 @@ const DASH_FIELDS = [
   "id", "exitTime",
 ] as const satisfies readonly (keyof Trade)[];
 
-export type DashboardTrade = Pick<Trade, (typeof DASH_FIELDS)[number]>;
+export type DashboardTrade = Pick<Trade, (typeof DASH_FIELDS)[number]> & RPlanFlags;
 
 /** The dashboard's per-trade wire shape (13 render fields + the 3 basis fields). */
-export const getDashboardTrades = cache((): DashboardTrade[] => scopedBookRows(DASH_FIELDS));
+export const getDashboardTrades = cache((): DashboardTrade[] => rPlanRows(DASH_FIELDS));
 
 const TRACKER_FIELDS = [
   "id", "broker", "bucket", "segment", "instrumentType", "exchange",
@@ -177,10 +223,10 @@ const PERFORMANCE_FIELDS = [
   "instrumentType", "tradingsymbol",
 ] as const satisfies readonly (keyof Trade)[];
 
-export type PerformanceTrade = Pick<Trade, (typeof PERFORMANCE_FIELDS)[number]>;
+export type PerformanceTrade = Pick<Trade, (typeof PERFORMANCE_FIELDS)[number]> & RPlanFlags;
 
 /** /reports/performance: the KPI-engine fields plus the open-MTM and basis fields it reads. */
-export const getPerformanceTrades = cache((): PerformanceTrade[] => scopedBookRows(PERFORMANCE_FIELDS));
+export const getPerformanceTrades = cache((): PerformanceTrade[] => rPlanRows(PERFORMANCE_FIELDS));
 
 /**
  * Option trades only, filtered in SQL. `/options-journal` used to pull the

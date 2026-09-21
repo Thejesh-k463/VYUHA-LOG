@@ -5,6 +5,7 @@ import { PresetLibrary } from "@/components/behavior/preset-library";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getTrades } from "@/lib/queries/trades";
 import { playbookStats, type PlaybookStat } from "@/lib/analytics/behavior";
+import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analytics/win-loss";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export default function PlaybooksPage() {
     id: t.id, isOpen: t.isOpen, netPnl: t.netPnl, rMultiple: t.rMultiple,
     playbookId: t.playbookId, emotionTag: t.emotionTag, mistakeTags: t.mistakeTags,
   }));
+  const rProvLine = rProvenanceLine(rProvenanceCounts(getTrades().map(provenanceRowOf)));
   const stats: Record<number, PlaybookStat> = {};
   for (const s of playbookStats(trades, rows.map((p) => ({ id: p.id, name: p.name })))) {
     if (s.playbookId != null) stats[s.playbookId] = s;
@@ -31,7 +33,8 @@ export default function PlaybooksPage() {
         actions={<Badge variant="secondary">{active} active</Badge>}
       />
       <div className="space-y-5 p-6">
-        <PlaybookManager rows={rows} stats={stats} />
+        {/* v4.4.0 D2 — the cards print an Avg R; this says where those Rs came from. */}
+        <PlaybookManager rows={rows} stats={stats} rProvenanceLine={rProvLine} />
         <PresetLibrary existingNames={rows.map((r) => r.name)} />
       </div>
     </>

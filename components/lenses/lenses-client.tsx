@@ -90,6 +90,7 @@ import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { inr, num, pct, fmtDate, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, ChevronRight, Trash2 } from "lucide-react";
+import { rProvenanceFromKpis, rProvenanceLine } from "@/lib/analytics/win-loss";
 
 /** Per-device chrome. Versioned so a future shape is discarded, not mis-read. */
 const TAB_KEY = "vyuha-lenses-tab";
@@ -390,7 +391,21 @@ export function GroupList({
               className={edge ? signedClass(edge.expectancy) : undefined}
               render={(e) => inr(e.expectancy, { decimals: 0 })} />
             <EdgeCell edge={edge} measurable
-              render={(e) => (e.avgR == null ? "—" : num(e.avgR))} />
+              render={(e) => (
+                e.avgR == null ? "—" : (
+                  <>
+                    {num(e.avgR)}
+                    {/* v4.4.0 D2 — the provenance of THIS group's R, under the figure:
+                        a cap-unit R is never printed unlabelled. */}
+                    <div className="text-[9px] font-normal text-muted-foreground">
+                      {rProvenanceLine(rProvenanceFromKpis({
+                        rCount: e.rCount, rPlanCount: e.rPlanCount, rCapCount: e.rCapCount,
+                        closedCount: totals.closedCount, unpricedCount: totals.unpricedCount,
+                      }))}
+                    </div>
+                  </>
+                )
+              )} />
             <ReportTd className="text-right">
               <div className="flex items-center justify-end gap-1">
                 <Button size="sm" variant="ghost" disabled={busy === group.key} title={`Delete the ${group.count} trades in ${group.label}`} onClick={() => onDelete(row)}>
@@ -429,7 +444,7 @@ function EdgeCell({
   edge: import("@/lib/domain/lens-edge").LensEdge | null;
   measurable: boolean;
   className?: string;
-  render: (e: import("@/lib/domain/lens-edge").LensEdge) => string;
+  render: (e: import("@/lib/domain/lens-edge").LensEdge) => React.ReactNode;
 }) {
   if (edge === null) {
     return (

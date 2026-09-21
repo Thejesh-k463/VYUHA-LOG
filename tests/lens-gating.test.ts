@@ -42,6 +42,10 @@ describe("the split is an allow-list", () => {
       [
         "avgR", "expectancy", "losses", "profitFactor", "winRate", "wins",
         "avgWin", "avgLoss", "maxWinStreak", "maxLossStreak", "currentStreak",
+        // v4.4.0 D2 — the Avg R denominator and its provenance split. Derived
+        // edge counts, so Pro side like avgR itself; the unlicensed-wire test
+        // below proves their absence from a free payload.
+        "rCount", "rPlanCount", "rCapCount",
       ].sort(),
     );
   });

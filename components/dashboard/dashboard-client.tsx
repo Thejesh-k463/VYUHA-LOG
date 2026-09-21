@@ -17,13 +17,14 @@ import { EquityCurve, SegmentBars } from "./charts";
 import { CalendarHeatmap } from "./calendar-heatmap";
 import { Section, SectionStack } from "@/components/layout/section-stack";
 import {
-  computeKpis, equityCurve, dailyPnl, bySegment, bySetup,
+  computeKpis, equityCurve, dailyPnl, bySegment, bySetup, edgeMeasurable,
   type AnalyticsTrade,
 } from "@/lib/analytics/metrics";
 import { inr, inrCompact, pct } from "@/lib/format";
 import { PROFIT_FACTOR_TITLE, profitFactorRows, segmentEdgeRows, type SegmentEdgeRow } from "@/lib/domain/kpi-detail";
 import { BROKERS, BROKER_LABELS, BUCKETS, BUCKET_LABELS, SEGMENTS, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
+import { rProvenanceFromKpis, rProvenanceLine } from "@/lib/analytics/win-loss";
 
 export interface DashTrade extends AnalyticsTrade {
   symbol: string;
@@ -131,13 +132,21 @@ export function DashboardClient({
   }, [daily]);
 
   const rStats = React.useMemo(() => {
-    const rs = filtered.filter((t) => !t.isOpen && t.rMultiple != null).map((t) => t.rMultiple as number);
+    // Edge-measurable only, so this count IS `k.rCount` — the detail row used to
+    // count unpriced rows the Avg R average itself excludes (v4.4.0 D2).
+    const rs = filtered
+      .filter((t) => !t.isOpen && t.rMultiple != null && edgeMeasurable(t))
+      .map((t) => t.rMultiple as number);
     return {
       count: rs.length,
       best: rs.length ? Math.max(...rs) : null,
       worst: rs.length ? Math.min(...rs) : null,
     };
   }, [filtered]);
+
+  /** Where the R denominators came from, over the SAME rows `k.avgR` averaged. */
+  const rProv = React.useMemo(() => rProvenanceFromKpis(k), [k]);
+  const rProvLine = rProvenanceLine(rProv);
 
   // monthly ladder (combined)
   const monthly = React.useMemo(() => {
@@ -310,13 +319,17 @@ export function DashboardClient({
         <KpiCard
           label="Avg R"
           value={k.avgR == null ? "—" : <CountUp value={k.avgR} decimals={2} format="plain" suffix="R" />}
-          sub={`Max DD ${inrCompact(k.maxDrawdown)}`}
+          sub={rProvLine || `Max DD ${inrCompact(k.maxDrawdown)}`}
           detail={{
             title: "Avg R — return per unit of risk",
             summary: "R normalises every trade to the risk you planned, so position size stops distorting the picture.",
             rows: [
               { label: "Average R", value: k.avgR == null ? "—" : `${k.avgR.toFixed(2)}R`, tone: (k.avgR ?? 0) >= 0 ? "profit" : "loss" },
-              { label: "Trades with R recorded", value: `${rStats.count} of ${k.closedCount}`, hint: rStats.count < k.closedCount ? "set an SL so risk (and R) gets captured" : undefined },
+              { label: "Trades with R recorded", value: `${k.rCount} of ${k.closedCount}`, hint: k.rCount < k.closedCount ? "set an SL so risk (and R) gets captured" : undefined },
+              // Three-way, because "everything that is not plan-derived" is not
+              // all cap: a risk you TYPED is neither, and it does not move when
+              // the per-trade cap is edited (v4.4.0 D2).
+              { label: "Where the R came from", value: rProvLine || "—", hint: rProv.cap > 0 ? "default-cap R measures P&L in cap units, not plan adherence" : undefined },
               { label: "Best R", value: rStats.best == null ? "—" : `${rStats.best.toFixed(2)}R`, tone: "profit" },
               { label: "Worst R", value: rStats.worst == null ? "—" : `${rStats.worst.toFixed(2)}R`, tone: "loss" },
               { label: "Max drawdown", value: inr(k.maxDrawdown, { decimals: 0 }), tone: "loss" },

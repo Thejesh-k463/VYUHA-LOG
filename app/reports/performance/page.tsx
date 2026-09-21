@@ -28,6 +28,7 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { rProvenanceFromKpis, rProvenanceLine } from "@/lib/analytics/win-loss";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,8 @@ export default function PerformancePage() {
     winRatePct: k.winRate == null ? null : k.winRate * 100,
     profitFactor: k.profitFactor,
     avgR: k.avgR,
+    // The same population the figure above was averaged over (v4.4.0 D2).
+    avgRSplit: rProvenanceLine(rProvenanceFromKpis(k)) || null,
     trades: k.closedCount,
     expectancy: k.expectancy,
     maxDrawdown: p.maxDrawdownAmt,

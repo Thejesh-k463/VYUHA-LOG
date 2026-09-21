@@ -9,6 +9,7 @@ import {
   type TailReport,
   type WinLossReport,
   type WinLossVerdict,
+  rProvenanceLine,
 } from "@/lib/analytics/win-loss";
 import { QuadrantScatter, RHistogram } from "./win-loss-charts";
 
@@ -117,22 +118,23 @@ export function WinLossTab({ report, dist, tail }: { report: WinLossReport; dist
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>R-multiple distribution</CardTitle>
           <Badge variant={dist.planCount > 0 ? "secondary" : "warning"}>
-            {dist.planCount} plan-derived · {dist.defaultCapCount} default-cap · {dist.noRCount} no R
+            {rProvenanceLine({ plan: dist.planCount, typed: dist.typedCount, cap: dist.defaultCapCount, unknown: 0, noR: dist.noRCount })}
           </Badge>
         </CardHeader>
         <CardContent>
-          {dist.planCount + dist.defaultCapCount === 0 ? (
+          {dist.planCount + dist.defaultCapCount + dist.typedCount === 0 ? (
             <p className="text-sm text-muted-foreground">No closed priced trade carries an R multiple yet.</p>
           ) : (
             <>
               <RHistogram buckets={dist.buckets} />
               <p className="mt-2 text-[0.6875rem] text-muted-foreground">
-                Two series because the R means two different things. <b>Plan-derived R</b> is measured against a
-                risk amount that verifiably derives from a recorded stop (the stored risk matches
-                |entry &minus; stop| &times; qty). <b>Default-cap R</b> is everything else — including trades that
-                recorded a stop but whose risk stayed your per-segment cap, which imports fall
-                back to — it measures P&amp;L in cap units, <b>not</b> plan adherence, and a &minus;2 there does
-                not mean a stop was overrun.
+                Three series because the R means three different things. <b>Plan-derived R</b> is measured
+                against a risk amount that verifiably derives from a recorded stop (the stored risk matches
+                |entry &minus; stop| &times; qty). <b>Typed R</b> is a risk you set yourself that does not tie
+                back to a stop — a real number, but not evidence of plan adherence. <b>Default-cap R</b> is
+                the per-segment cap an import fell back to: it measures P&amp;L in cap units, <b>not</b> plan
+                adherence, a &minus;2 there does not mean a stop was overrun, and it is the only series that
+                MOVES when you edit the cap.
                 {dist.noRCount > 0 && <> {dist.noRCount} trade{dist.noRCount === 1 ? "" : "s"} carry no R at all and sit in neither series.</>}
               </p>
             </>

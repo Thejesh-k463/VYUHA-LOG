@@ -14,6 +14,11 @@ export interface ShareStats {
   winRatePct: number | null;
   profitFactor: number;
   avgR: number | null;
+  /** v4.4.0 D2 — `rProvenanceLine` for the SAME population avgR was taken over.
+   *  It is printed on the card itself (and in the exported PNG): a cap-unit R
+   *  leaving the app unlabelled is the one thing this split exists to prevent.
+   *  null/"" = nothing closed to describe. */
+  avgRSplit: string | null;
   trades: number;
   /** null = no priced closed trade to average over. */
   expectancy: number | null;
@@ -63,6 +68,8 @@ export interface ShareCardValue {
   label: string;
   display: string;
   tone: "profit" | "loss" | "neutral";
+  /** A caveat line under the figure (today: Avg R's provenance split). */
+  sub?: string;
 }
 
 // Kept local rather than swapped for lib/format's `inrCompact`: this is the
@@ -107,7 +114,8 @@ export function buildShareCard(stats: ShareStats, opts: ShareCardOptions): Share
         id === "avgR" && stats.avgR != null ? toneOf(stats.avgR)
         : id === "profitFactor" ? toneOf(stats.profitFactor - 1)
         : "neutral";
-      out.push({ id, label: meta.label, display, tone });
+      const sub = id === "avgR" && stats.avgRSplit ? stats.avgRSplit : undefined;
+      out.push({ id, label: meta.label, display, tone, ...(sub ? { sub } : {}) });
       continue;
     }
 

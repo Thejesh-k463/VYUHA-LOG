@@ -152,6 +152,9 @@ export interface RBucket {
   plan: number;
   /** Trades whose R is netPnl over the per-trade cap — NOT plan adherence. */
   defaultCap: number;
+  /** v4.4.0 D2: a risk the user TYPED that does not tie back to a stop. Neither
+   *  plan adherence nor a cap unit — and it does not move when the cap is edited. */
+  typed: number;
 }
 
 export interface RDistribution {
@@ -161,6 +164,8 @@ export interface RDistribution {
   planCount: number;
   /** Closed priced trades with an R in the default-cap series. */
   defaultCapCount: number;
+  /** Closed priced trades with a typed (non-cap, non-plan) R. */
+  typedCount: number;
   /** Closed priced trades carrying no rMultiple at all — in neither series. */
   noRCount: number;
 }
@@ -191,7 +196,18 @@ export const PLAN_R_RISK_TOLERANCE = 0.02;
  * plan series makes. When any verification input is absent, the row is
  * default-cap: never overclaim provenance.
  */
-export function hasPlanR(t: WinLossTrade): boolean {
+/** The six inputs `hasPlanR` reads — optional so a NARROW projection still type-checks
+ *  and simply answers `false` (never overclaim provenance on missing evidence). */
+export interface PlanRInput {
+  slPlanned?: number | null;
+  trailingSl?: number | null;
+  avgBuyPrice?: number | null;
+  avgSellPrice?: number | null;
+  qty?: number | null;
+  riskAmount?: number | null;
+}
+
+export function hasPlanR(t: PlanRInput): boolean {
   const risk = t.riskAmount;
   const qty = t.qty;
   if (risk == null || risk <= 0 || qty == null || qty <= 0) return false;
@@ -205,6 +221,127 @@ export function hasPlanR(t: WinLossTrade): boolean {
     }
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// R provenance — THREE-way, decided in ONE place (v4.4.0 D2)
+// ---------------------------------------------------------------------------
+/**
+ * Where a row's R DENOMINATOR came from.
+ *
+ * Until v4.4.0 this was two-way and everything that was not plan-derived was
+ * labelled `default-cap` — which is a lie about a row the user TYPED a risk on.
+ * A book of 10 hand-typed ₹4,000 risks (risk_source 'set', no stop recorded, so
+ * hasPlanR false) plus 20 imports read "0 plan · 30 default-cap"; edit the
+ * per-trade cap and only 20 of those 30 move. The third label is what makes the
+ * cap-edit seam checkable: rows that move = `rCapCount`, exactly.
+ *
+ * - 'cap'   ⇔ `risk_source = 'cap'` — the R is P&L in per-segment-cap units.
+ * - 'plan'  ⇔ source ≠ 'cap' AND `hasPlanR` — the denominator ties to a stop.
+ * - 'typed' ⇔ everything else — a real risk the user set, but not verifiably
+ *             a stop-derived one.
+ * - null    ⇔ the row carries no flags at all (a projection that ships neither
+ *             `riskSource` nor `rPlan`): UNKNOWN, never silently 'typed'.
+ */
+export type RProvenance = "cap" | "plan" | "typed";
+
+export interface RProvenanceInput extends PlanRInput {
+  /** `trades.risk_source`. `undefined` = the projection did not select it. */
+  riskSource?: string | null;
+  /** Precomputed `hasPlanR`, shipped by `withRPlan`. `undefined` = not computed. */
+  rPlan?: boolean;
+}
+
+export function rProvenance(t: RProvenanceInput): RProvenance | null {
+  if (t.riskSource === undefined && t.rPlan === undefined) return null;
+  if (t.riskSource === "cap") return "cap";
+  const plan = t.rPlan !== undefined ? t.rPlan : hasPlanR(t);
+  return plan ? "plan" : "typed";
+}
+
+export interface RProvenanceCounts {
+  plan: number;
+  typed: number;
+  cap: number;
+  /** Rows with an R whose provenance could not be decided (no flags on the row). */
+  unknown: number;
+  /** Closed rows carrying no rMultiple at all. */
+  noR: number;
+}
+
+export const EMPTY_R_PROVENANCE: RProvenanceCounts = { plan: 0, typed: 0, cap: 0, unknown: 0, noR: 0 };
+
+/** Count provenance over CLOSED rows (open rows have no realised R). */
+export function rProvenanceCounts(
+  trades: readonly (RProvenanceInput & { rMultiple: number | null; isOpen?: boolean })[],
+): RProvenanceCounts {
+  const c: RProvenanceCounts = { plan: 0, typed: 0, cap: 0, unknown: 0, noR: 0 };
+  for (const t of trades) {
+    if (t.isOpen) continue;
+    if (t.rMultiple == null) { c.noR++; continue; }
+    const p = rProvenance(t);
+    if (p == null) c.unknown++;
+    else c[p]++;
+  }
+  return c;
+}
+
+/**
+ * The ONE wording every Avg R surface prints beside the figure, so cap-unit R is
+ * never shown unlabelled (invariant 6 — the caveat is the counts themselves).
+ * Empty string when there is nothing closed to describe: a caption saying
+ * "0 plan-derived · 0 typed …" is noise, not honesty.
+ */
+export function rProvenanceLine(c: RProvenanceCounts): string {
+  if (c.plan + c.typed + c.cap + c.unknown + c.noR === 0) return "";
+  const parts = [`${c.plan} plan-derived`, `${c.typed} typed`, `${c.cap} default-cap`, `${c.noR} no R`];
+  if (c.unknown > 0) parts.push(`${c.unknown} unclassified`);
+  return parts.join(" · ");
+}
+
+/**
+ * Adapt a STORED book row (buyQty/sellQty, no `qty`) onto the provenance input.
+ * Every surface that holds whole rows — /reports/edge, /reports/discipline, the
+ * Signal book — goes through this so the qty rule (`max(buyQty, sellQty)`, the
+ * flat-row rule of arjuns-eye) is written once.
+ */
+export function provenanceRowOf(t: {
+  rMultiple: number | null;
+  isOpen?: boolean;
+  buyQty?: number | null;
+  sellQty?: number | null;
+  slPlanned?: number | null;
+  trailingSl?: number | null;
+  avgBuyPrice?: number | null;
+  avgSellPrice?: number | null;
+  riskAmount?: number | null;
+  riskSource?: string | null;
+  rPlan?: boolean;
+}): RProvenanceInput & { rMultiple: number | null; isOpen?: boolean } {
+  return {
+    rMultiple: t.rMultiple,
+    isOpen: t.isOpen,
+    slPlanned: t.slPlanned,
+    trailingSl: t.trailingSl,
+    avgBuyPrice: t.avgBuyPrice,
+    avgSellPrice: t.avgSellPrice,
+    qty: Math.max(t.buyQty ?? 0, t.sellQty ?? 0) || null,
+    riskAmount: t.riskAmount,
+    riskSource: t.riskSource === undefined ? null : t.riskSource,
+    rPlan: t.rPlan,
+  };
+}
+
+/** Counts straight off a `Kpis` — the dashboard/lenses path, where the flags were
+ *  already folded server-side. `rPlanCount`/`rCapCount` null ⇒ every R row is unknown. */
+export function rProvenanceFromKpis(k: {
+  rCount: number; rPlanCount: number | null; rCapCount: number | null; closedCount: number; unpricedCount: number;
+}): RProvenanceCounts {
+  const noR = Math.max(0, k.closedCount - k.unpricedCount - k.rCount);
+  if (k.rPlanCount == null || k.rCapCount == null) {
+    return { plan: 0, typed: 0, cap: 0, unknown: k.rCount, noR };
+  }
+  return { plan: k.rPlanCount, cap: k.rCapCount, typed: Math.max(0, k.rCount - k.rPlanCount - k.rCapCount), unknown: 0, noR };
 }
 
 const fmtR = (x: number) => `${x}R`;
@@ -223,13 +360,13 @@ function bucketLabel(lo: number | null, hi: number | null): string {
 export function rDistribution(trades: WinLossTrade[]): RDistribution {
   const edges = [...R_BUCKET_EDGES];
   const buckets: RBucket[] = [];
-  buckets.push({ lo: null, hi: edges[0], label: bucketLabel(null, edges[0]), plan: 0, defaultCap: 0 });
+  buckets.push({ lo: null, hi: edges[0], label: bucketLabel(null, edges[0]), plan: 0, defaultCap: 0, typed: 0 });
   for (let i = 0; i < edges.length - 1; i++) {
-    buckets.push({ lo: edges[i], hi: edges[i + 1], label: bucketLabel(edges[i], edges[i + 1]), plan: 0, defaultCap: 0 });
+    buckets.push({ lo: edges[i], hi: edges[i + 1], label: bucketLabel(edges[i], edges[i + 1]), plan: 0, defaultCap: 0, typed: 0 });
   }
-  buckets.push({ lo: edges[edges.length - 1], hi: null, label: bucketLabel(edges[edges.length - 1], null), plan: 0, defaultCap: 0 });
+  buckets.push({ lo: edges[edges.length - 1], hi: null, label: bucketLabel(edges[edges.length - 1], null), plan: 0, defaultCap: 0, typed: 0 });
 
-  let planCount = 0, defaultCapCount = 0, noRCount = 0;
+  let planCount = 0, defaultCapCount = 0, typedCount = 0, noRCount = 0;
   for (const t of trades) {
     if (t.isOpen) continue;
     if (t.rMultiple == null) {
@@ -242,10 +379,17 @@ export function rDistribution(trades: WinLossTrade[]): RDistribution {
     for (let i = 0; i < buckets.length - 1; i++) {
       if (r < edges[i]) { idx = i; break; }
     }
-    if (hasPlanR(t)) { buckets[idx].plan++; planCount++; }
-    else { buckets[idx].defaultCap++; defaultCapCount++; }
+    // ONE verdict, shared with rProvenanceLine and Kpis: a row whose risk the
+    // user typed is neither plan-derived nor a cap unit (v4.4.0 D2). A row that
+    // carries NO flag at all keeps the pre-v4.4.0 two-way labelling — a caller
+    // that ships no risk_source (arjuns-eye) must not have its default-cap
+    // series silently emptied into a "typed" one it never measured.
+    const p = rProvenance(t) ?? (hasPlanR(t) ? "plan" : "cap");
+    if (p === "plan") { buckets[idx].plan++; planCount++; }
+    else if (p === "cap") { buckets[idx].defaultCap++; defaultCapCount++; }
+    else { buckets[idx].typed++; typedCount++; }
   }
-  return { edges, buckets, planCount, defaultCapCount, noRCount };
+  return { edges, buckets, planCount, defaultCapCount, typedCount, noRCount };
 }
 
 // ---------------------------------------------------------------------------
