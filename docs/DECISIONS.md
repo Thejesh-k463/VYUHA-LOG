@@ -8061,3 +8061,16 @@ inherit. Writers stamp `risk_source`: a stop-derived or typed risk is `'set'`; a
 stays `'cap'`; staged rows are `'frozen'`. S1–S4 were found by the Fable design review BEFORE a builder started (`20-V440-BUILD/metrics-waveB-design-review.md`) and are
 pinned by name in the harness under invariant I7. D5: one dated risk-free setting (ppm, default 7%, a user preference in the baseline and backups) replaces three
 hard-coded 0.07 copies. Cost: harness 319 → 360 `it`s, 34.0 → 35.5 s. Gate: 447 files / 10,278 passed / 35 skipped.
+
+## 2026-09-21 — v4.4.0 R provenance, the per-lot line, the explainer rewrite; bumped, built, READY TO TAG
+
+R provenance is THREE-way (`rProvenance` in `win-loss.ts`): `risk_source='cap'` ⇒ cap, else `hasPlanR` ⇒ plan, else typed. The old binary called a hand-typed ₹4,000 risk
+"default-cap"; the only test that can tell them apart is the cap edit — rows whose `r_multiple` moves must equal `rCapCount` (4 on the seam book, not the 6 the old label
+claimed). A missing flag is UNKNOWN and makes `rPlanCount` / `rCapCount` null, never 0. Rejected: provenance computed client-side per surface (seven columns on every wire
+shape); a stored `r_provenance` column (derivable since 0073). Per-lot: lots resolve SERVER-side and ship as `lots` + `lotSource`; a pre-`INDEX_LOTS_AS_OF` index expiry
+without a stored `lot_size` is unknown (NIFTY traded in 75s before Nov-2024) and one unknown row dashes the whole line; the `qty % lot` guard cannot see a common multiple
+(975 = 15×65 = 13×75) — recorded. Explainers: all 43 `healthyRange` lines state what is always true of the user's own figures; every uncited band deleted; a guard requires
+a source AND a year beside any band or any number about other traders. 14 new explainers deferred — each needs a render site on a gated help page.
+Release: bump `80eb164`; `npm run verify` EXIT 0, 450 files / 10,307 passed / 35 skipped (9,745 on CI — the owner-file parity cases skip); CI 6/6; installer SHA-256
+`A3BB74F4…5C7F9CF2`, both signatures verify with key id `4FF85F3BBE1DA21D`; steward READY TO TAG, 0 unsubstantiated claims. A one-off: `seams-v42-fix2` S7a threw a
+collect-time STACK_TRACE_ERROR inside one full run, passed alone and in the next two full runs — not reproduced, recorded.

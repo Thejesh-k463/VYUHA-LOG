@@ -171,3 +171,68 @@ gate 408 / 8,644 / 35; NOT bumped, NOT tagged.
 
 *Superseded one-line state of 2026-09-15 at `ec89bbd` (fifth session), kept for the record:* the fix work through waves 2R + 2F (`ec89bbd`, CI 34895595282 6/6); the 2R + 2F re-check 34 / 0 / 0 with 17 new findings → wave 2G; owner rulings R90 = the bundled NSE ETF list, all four out-of-list defects into 4.3.0, R13 = the inline official-close notice; gate 397 / 8,416 / 35; NOT bumped, NOT tagged.
 
+
+
+---
+
+# ARCHIVED 2026-09-21 — the §0 block written by the thirteenth session (v4.3.0 PUBLISHED), replaced by the fourteenth session's v4.4.0 block; byte-for-byte below
+
+## §0 START HERE — reconciled 2026-09-18 IST by the thirteenth session: **v4.3.0 is PUBLISHED** (tag `v4.3.0` = `c5c7c5b`; CI 6/6; release run 3/3; deep verify 3/3; `releases/latest` → v4.3.0; the updater feed serves 4.3.0 for six platforms) — **NOT yet installed off the build machine, WDSI not yet submitted: both are the owner's**; the commit that landed this block is the next one in `git log`
+
+**Read order, every session, in this order and no other:**
+
+1. **This §0.** It outranks every other document. *If any document disagrees with §0, §0 wins and the other document is the bug — fix it in the same turn.* **Memory is not authoritative; it forks by cwd** (hub copy vs the project copy) and rots; it now carries pointers and durable traps only.
+2. `VYUHA/LIVE-DESK-RESEARCH/NEXT-SESSION-CONTINUATION.md` §0 — research-pack specifics for the item you are picking up (audit known-inputs, ruling tables, ledger pointers). It points back here.
+3. Re-derive before asserting: `git log --oneline -3` · `git tag --sort=-creatordate | head -1` · `package.json` `"version"` · `gh run list --limit 3` · the RAW vitest line (§0.3).
+4. `AGENTS.md` before any code change (on conflict AGENTS.md wins over this file; the code wins over both). Owner rulings: `06-ANSWERS.md` newest table LAST; `docs/DECISIONS.md` newest entries at the END (its header still says newest-first, but every entry since 2026-09-10 is appended — grep `^## 2026-`, never read it whole) — binding, never re-ask one.
+5. §3 of this file for where any other answer lives.
+
+**The one-line state (verified 2026-09-18):** published release = **v4.3.0** (tag `v4.3.0` → `c5c7c5b`, published 2026-09-18 12:22 UTC; before it v4.2.0 `9da7bc8`). The chain: `c5c7c5b` (Windows-CI test timeout) on `55f1fd3` (the monthly plan) on `160753f` (docs) on `7537ae2` (bump + release copy) on `20c08ff` (the Signal book) on `3abcb2c` (fix wave 2P). The block this one replaced is in `VYUHA-STATE-ARCHIVE.md` (byte-for-byte, dated).
+
+- **What the thirteenth session did, in order (each commit CI 6/6):**
+  - **fix wave 2P `3abcb2c`** — D1–D12 of `18-FIX-WORK-4.3.0/wave2p-designs.md` as revised by its review; two builders in sequence, one seam pass (4 cases,
+    no product defect), one gate. CI run 35322863777 SUCCESS 6/6 on its second attempt: the Windows job hit two 5 s TIMEOUTS
+    (`backup-roundtrip` "a pre-lots v3 envelope…" and one preview-matrix G3 cell) and passed on `gh run rerun --failed`. No re-check followed, by the owner's instruction.
+  - **the Signal book `20c08ff`** — the ONE single strategy (06-ANSWERS last two tables + the owner's `AI_MODEL_STRATEGY_BLUEPRINTS.docx`): journal side only;
+    migration **0072** `trades.signal_json` (versioned envelope, tombstone on a clear); a Signal section on the Add and Edit trade forms (prefill +30 / +60 / −25 %);
+    the data fix `signal-notes-backfill-v1` (the four regexes matched 42 of 42 rows of the live journal, read-only); three pure analytics; the first tab on `/strategies`
+    (table free, analytics Pro, withheld server-side). Design → `vyuha-design-reviewer` (3 BUILD, 4 REVISE, all adopted) → one builder → one seam pass, which found
+    ONE product defect, **SIG-1** (a decimal-comma "14,48" stored as 1448), fixed before the gate. CI run 35328890550 SUCCESS 6/6.
+  - **the bump `7537ae2`** — 4.3.0 in package.json / tauri.conf.json / Cargo.toml / the footer (`v4.3`); `Cargo.lock` 1 line, `package-lock.json` 2 lines by hand;
+    the release copy (every auto-close, wave-3, ETF, tax, Greeks claim dropped; TWO database upgrades 0071 + 0072). CI run 35330899427 SUCCESS 6/6.
+- **Gate (2026-09-18, on `7537ae2`):** `npm run verify` EXIT 0 — **439 files / 9,711 passed / 35 skipped** on the owner's machine; **9,689 expected on CI**
+  (22 owner-broker-file cases run only locally — the earlier "21" was an off-by-one); README says 9689 / 439; typecheck 0; lint 3 pre-existing warnings.
+- **Desktop build (2026-09-18):** `npm run desktop:build` EXIT 0 after `cargo clean --release` — the Rust cache still named the repo's PRE-MOVE folder
+  (`VYUHA-TRADE JOURNAL-V1`) in every build-script output, so the first build after a folder move needs the release cache cleared (3 m 24 s to rebuild).
+  `desktop-dist/.next/BUILD_ID` written 71 s after the build started; the bundle holds `signal-notes-backfill-v1`, "R on signal SL", `rate-card-refresh.mjs` and
+  migration 0072. Both `.sig` files decode to key id **`4FF85F3BBE1DA21D`** = the `tauri.conf.json` pubkey. Client ZIP `release-packages/Vyuha_4.3.0_Client_Package.zip`;
+  installer SHA-256 `3695B8090300518C85AD88B7BB1623CEB3E672F0970944D7D97F1794C40B1D2A` (35,652,661 bytes).
+- **Release steward (2026-09-18):** READY TO TAG, no blocking items - 11 steps walked read-only: version sync, lockfile numstat, installer freshness, key ids, CI 6/6, revocations a prerelease with releases/latest at v4.2.0, the client ZIP (13 entries, no licence key, no macOS artefact, CHECKSUMS = the independent hash), and the claims audit over 8 surfaces with 0 unsubstantiated claims; one ADVISORY: the standing blurb 'Greeks across the book' (true of the Risk cockpit) sits three lines above the /strategies table that says it has no Greeks (docs/client/README.md:25, docs/sales/landing-page.html:460); release:verify --deep NOT run (nothing published yet); winget manifest for 4.3.0 comes after publish.
+- **Owner rulings of this session (06-ANSWERS, the LAST two tables — binding):** journal side only (the scanner / zone engine / alerts are NOT VYUHA's);
+  one JSON column; form section + notes backfill; three analytics; T2 = scale-out; first tab on `/strategies`, analytics Pro; **model S1 / S2 only — the tier is DROPPED**;
+  prefill +30 / +60 / −25 with adherence judged on each trade's OWN levels; S1 = 5 CE + 5 PE, S2 = 4 CE + 4 PE (recorded, a scanner matter); tool-bound agents on Opus.
+- **Recorded, not built (DECISIONS 2026-09-18, three entries):** 2P — the unreadable-lot throw in `closeStaleLot`, the D8 route cases that cannot separate their two
+  halves, no seam case for D10 / D3-tiered; Signal book — a seeded row in Trash at upgrade time restores without a signal (Edit fills it), `num()` in
+  `app/trades/actions.ts` still strips every comma for qty / price, no e2e spec and no Help Desk entry for the tab, the 2 % adherence tolerance is a decision.
+- **FIX LIST for the next wave (owner, 2026-09-18 — "add this to fixes list"):** the `/lenses` **Outcome** tab's **Win rate** column is a tautology — the lens groups BY
+  outcome (`lib/domain/lenses.ts:167`, `outcomeGroups`), so Winners always reads 100% and Losers 0% (the owner read the 0% as "no loss shown"; the loss IS the row's
+  net, −₹12,173 on account #3). Correct arithmetic, useless column. Fix: on the Outcome lens only, replace Win rate with each group's SHARE of closed trades
+  (33 of 42 = 79% / 9 of 42 = 21%, header "Share of trades"), or "—" if a share is ruled out; every other lens keeps Win rate. Pin it in the lens tests.
+- **After the bump, same session (each CI 6/6 unless said):** **the monthly plan `55f1fd3`** — ₹599 first month (launch offer), ₹999 from the second, given on request;
+  Yearly ₹7,999 and Lifetime ₹29,999 unchanged; `license-issue.mjs --months N` (month ends roll forward), `sell.mjs --months 1 [--renewal]`; the sale script's ANNUAL receipt
+  amount was still 9,999 with a test pinning it — now 7,999. Its CI run 35339488381 lost the Windows job to FOUR 5 s timeouts → **`c5c7c5b`**: `testTimeout` 20 s on the
+  Windows CI runner only (DECISIONS 2026-09-18, a class not a flake) → CI 6/6 → **tag `v4.3.0`** (the owner: "proceed to do that") → release run 3/3 →
+  `release:verify v4.3.0 -- --deep` 3/3 over the published bytes, key id `4FF85F3BBE1DA21D` → published, `releases/latest` → v4.3.0, `revocations` still a prerelease;
+  the GitHub Pages landing page shows 4.3.0, the monthly plan and the Signal book (fetched live). Gate on the release tree: 439 files / 9,720 passed / 35 skipped locally,
+  9,698 on CI; README 9698 / 439. **The installer was REBUILT after the pricing change**: client ZIP installer SHA-256
+  `DB71DD7936907EFC4719FBBAC4F6035884211CCFC80F373D4E80D3DDD9C0E19B` (the earlier `3695B809…` ZIP is set aside as `…SUPERSEDED-pre-monthly-plan.zip`); the GitHub asset's
+  SHA-256 is `b768c903…680e507b` (winget manifest `release-packages/winget/4.3.0/` generated from it; submission still HELD by #421585).
+- **Next — the owner's, by hand:** install the client ZIP's installer on a NON-build machine → the six-item smoke test (row 3; item (e) = the Signal book on account #3:
+  42 rows, net ₹75,132.75 unchanged) → the WDSI submission with the CLIENT ZIP hash above. Then the next build: v4.4.0 (rows 14, 15 + the fix list) and v4.3.1 /
+  wave 3 (row 1b) — the two-session plan is in DECISIONS 2026-09-18 "the plan for the next 100 credits".
+- **What WRONG looks like:** the Signal book showing fewer than 42 rows on account #3 after the upgrade (the fix logs refused ids to the console — read them, never edit
+  notes by SQL); any net for account #3 other than ₹75,132.75 (migration 0072 and the fix move no money — find the writer); a release note claiming auto-close, ETF
+  heads, Greeks or a scanner; a CI red that is a 5 s Windows timeout in `backup-roundtrip` or the preview matrix (re-run the job, never re-tag); a `.sig` whose key id
+  is not `4FF85F3BBE1DA21D`.
+- **Owed outside the release:** `/fleet-tune` (due 9 days; skipped on the owner's credit cap) and one hook proposal awaiting the owner in `~/.claude/coord/learnings/HOOK-PROPOSALS.md`.
+
