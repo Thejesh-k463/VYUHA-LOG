@@ -8096,3 +8096,18 @@ places no orders, so a dynamic home IP is harmless; the IP can be changed at mos
 6-digit code and not the API secret. Kite Connect's price is written DATED ("₹500 a month, September 2026 — check the page"). The docx renderer was extracted to
 `scripts/docx-render.mjs` (the OpenAlgo docx regenerates byte-identical). Rejected: waiting for 4.5.0 to ship the guide — the ZIP packs docs at build time, so a
 docs-only rebuild reaches clients today with the same installer hash.
+
+## 2026-09-22 — v4.5.0 opening rulings: the Upstox brokerage is plan-dependent; Session 2 approved to build
+
+The owner ruled twice (`LIVE-DESK-RESEARCH/06-ANSWERS.md`, table "v4.5.0 opening rulings"). First: the Upstox brokerage is
+**PLAN-dependent** — the rate card's ₹20 flat is one plan among several, so the engine must be fed the user's plan, not a
+corrected constant. v4.5.0 researches Upstox's published plans, then fixes it through `charge_config` (reusing the
+broker × plan dimension if one already exists); the pin is the owner's 2026-08-28 option day (trade date per the research file; an earlier note said 09-01), where the ledger implies
+226.57 against the engine's 156.76. **This SUPERSEDES the "OPEN, the owner's: … ₹20 flat" sentence of the 2026-09-18
+parser-wave entry and of the 2026-09-21 entries** — the open question is no longer *which rate is right* but *which plan
+the user is on*; do not re-ask the rate. Second: **v4.5.0 = Session 2 is APPROVED TO BUILD** — the row 1b FIFO auto-close
+rebuild together with the duplicate-detection defects that share its trade-identity code, the wave-3 tax work, the Upstox
+plan fix, and the recorded-not-built fix list; ONE design review over all of it before any builder, money waves as TWO
+builders, one Playwright runner, and a STOP for the owner's "tag". The three designs are drafted into
+`LIVE-DESK-RESEARCH/21-V450-BUILD/` **before** the `/clear`, deliberately: the next session then starts at the design
+review rather than spending its first hour re-deriving what this one already knows.
