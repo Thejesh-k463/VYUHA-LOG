@@ -35,7 +35,8 @@ export function TargetActiveClient({
   goalStrip,
 }: {
   daily: DailySummary[];
-  limits: { dailyLossStop: number | null; optionsMaxTrades: number; intradayMaxTrades: number; commodityMaxTrades: number; optionsMaxOpen: number };
+  /** v4.4.0: null = never set — each meter then says so (no 15 / 12 / 10 / 8 stand-ins). */
+  limits: { dailyLossStop: number | null; optionsMaxTrades: number | null; intradayMaxTrades: number | null; commodityMaxTrades: number | null; optionsMaxOpen: number | null };
   openOptions: number;
   segLimits: SegLimit[];
   defaultRisk: number | null;

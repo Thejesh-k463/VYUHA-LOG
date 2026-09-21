@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
+import { SEGMENT_BUCKET, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
+import { inheritedPerTradeCap, isLegacySeedCap, type CapRow } from "@/lib/risk/limits";
 import { toast } from "@/components/ui/toaster";
 import type { RiskConfigRow } from "@/lib/db/schema";
 
@@ -30,9 +31,29 @@ export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
     for (const r of rows) {
       o[r.id] = {};
       for (const f of FIELDS) o[r.id][f.key as string] = (r[f.key] as number | null) ?? "";
+      // D1 (v4.4.0): the v1–v4.3 seed stamped ₹9,500 on every bucket and segment
+      // row, and the resolver reads that literal as UNSET (lib/risk/limits.ts).
+      // The cell says so — BLANK, with what it inherits — because this editor
+      // posts every row on save, and a 9500 shown here would come back as a
+      // value the user chose.
+      if (isLegacySeedCap(r)) o[r.id].perTradeMaxLoss = "";
     }
     return o;
   });
+
+  // What each blank per-trade cap inherits, read off the CURRENT edits — so the
+  // placeholder follows the global cell as it is typed, exactly as the save's
+  // resolver will read it (every posted row carries capScheme 1).
+  const capRows: CapRow[] = rows.map((r) => {
+    const v = edits[r.id]?.perTradeMaxLoss;
+    const n = v === "" || v == null ? null : Number(v);
+    return { scope: r.scope, key: r.key, perTradeMaxLoss: n != null && Number.isFinite(n) ? n : null, capScheme: 1 };
+  });
+  const inheritsText = (r: RiskConfigRow): string | undefined => {
+    if (r.scope === "global") return undefined;
+    const got = inheritedPerTradeCap(capRows, { scope: r.scope, key: r.key, perTradeMaxLoss: null, capScheme: 1 }, (seg) => SEGMENT_BUCKET[seg as Segment] ?? "");
+    return got.cap == null ? "no cap — no R" : `inherits ₹${got.cap.toLocaleString("en-IN")} from ${got.from}`;
+  };
 
   const set = (id: number, key: string, v: string) => setEdits((p) => ({ ...p, [id]: { ...p[id], [key]: v } }));
 
@@ -84,21 +105,30 @@ export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
                       <Badge variant={r.scope === "global" ? "default" : "secondary"}>{r.scope}</Badge>{" "}
                       <span className="text-muted-foreground">{r.key ? (SEGMENT_LABELS[r.key as Segment] ?? r.key) : ""}</span>
                     </td>
-                    {FIELDS.map((f) => (
-                      <td key={f.key as string} className="py-1 pr-2">
-                        <Input
-                          type="number" step="any"
-                          value={edits[r.id]?.[f.key as string] ?? ""}
-                          onChange={(e) => set(r.id, f.key as string, e.target.value)}
-                          className="h-7 w-28 text-right text-xs"
-                        />
-                      </td>
-                    ))}
+                    {FIELDS.map((f) => {
+                      const inherits = f.key === "perTradeMaxLoss" ? inheritsText(r) : undefined;
+                      return (
+                        <td key={f.key as string} className="py-1 pr-2">
+                          <Input
+                            type="number" step="any"
+                            value={edits[r.id]?.[f.key as string] ?? ""}
+                            onChange={(e) => set(r.id, f.key as string, e.target.value)}
+                            placeholder={inherits}
+                            title={inherits}
+                            className={`h-7 text-right text-xs ${inherits ? "w-44" : "w-28"}`}
+                          />
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-[0.6875rem] text-muted-foreground">
+            A blank per-trade max loss inherits — a segment takes its bucket&apos;s cap, else the global one. Saving
+            re-prices every trade whose R is measured in the cap (no stop, no typed risk).
+          </p>
           <div className="flex items-center gap-3">
             <Button type="button" size="sm" onClick={save} disabled={pending}>{pending ? "Saving…" : "Save risk rules"}</Button>
           </div>

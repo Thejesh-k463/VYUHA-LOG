@@ -11,9 +11,23 @@ export function Meter({
 }: {
   label: string;
   used: number;
-  limit: number;
+  /** null = the user never set this limit (v4.4.0): the meter says so instead of
+   *  measuring against a number nobody configured (invariant 6). */
+  limit: number | null;
   unit?: string;
 }) {
+  if (limit == null) {
+    return (
+      <Card className="p-3">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">{label}</span>
+          <span className="tabular-nums font-medium">{used}/— {unit ?? ""}</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-card-hover" />
+        <div className="mt-1 text-[10px] text-muted-foreground">No limit set — Settings → Risk rules</div>
+      </Card>
+    );
+  }
   const s = counter(used, limit);
   const color = s.exceeded ? "var(--color-loss)" : s.warn ? "var(--color-warning)" : "var(--color-primary)";
   return (

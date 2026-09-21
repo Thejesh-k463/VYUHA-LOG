@@ -9,6 +9,7 @@ import { weeklyScoreAverage } from "@/components/reports/weekly-score-average";
 import { getTrades } from "@/lib/queries/trades";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
+import { resolvePerTradeCap, withSegmentCap } from "@/lib/risk/limits";
 import { breachReport, disciplineByWeek } from "@/lib/analytics/discipline";
 import { PROCESS_SCORE_FLOOR } from "@/lib/analytics/process-score";
 import { computeFnoReality } from "@/lib/analytics/sebi-reality";
@@ -45,10 +46,16 @@ export default function DisciplineReportPage() {
   // daily stop was still scored against one — and told they had respected it.
   // Null flows through to the Process Score, whose risk-cap and daily-stop
   // components then refuse and drop out of the mean instead.
-  const cap = risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? null;
+  // v4.4.0 (D1): a loser with no recorded risk is judged against the cap its
+  // OWN bucket/segment resolves to (`withSegmentCap`, lib/risk/limits.ts) — it
+  // used to be the global row for every segment, so an index_option loser was
+  // scored against a cap its segment never had. No second fallback: null.
   const stop = risk.find((r) => r.scope === "bucket" && r.key === "active")?.dailyLossStop ?? null;
+  // The card below states the GLOBAL cap (through the resolver) and says that a
+  // segment's own cap overrides it — the score itself used each trade's own.
+  const cap = resolvePerTradeCap(risk, "", "");
 
-  const weeks = disciplineByWeek(trades, cap, stop);
+  const weeks = disciplineByWeek(withSegmentCap(risk, trades), null, stop);
   // Sub-floor weeks carry `processScore: null` and a stated refusal. They are
   // excluded from the average and never handed to `scoreColor` — averaging the
   // legacy `score` field (0 on refusal) is what dragged this number down.
@@ -105,7 +112,7 @@ export default function DisciplineReportPage() {
           <KpiCard
             label="Per-trade risk cap"
             value={cap == null ? "—" : num(cap, 0)}
-            sub={cap == null ? "not configured in Settings" : "max loss per trade"}
+            sub={cap == null ? "no global cap — segment caps apply where set" : "global · a segment's own cap overrides it"}
           />
           <KpiCard
             label="Daily loss stop"

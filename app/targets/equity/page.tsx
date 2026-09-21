@@ -15,6 +15,7 @@ import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { goalProgress } from "@/lib/analytics/goal";
 import { GoalStrip } from "@/components/targets/goal-strip";
 import type { Broker, Exchange } from "@/lib/domain/constants";
+import { resolvePerTradeCap } from "@/lib/risk/limits";
 
 export const dynamic = "force-dynamic";
 
@@ -121,16 +122,21 @@ export default function TargetEquityPage() {
       <PageHeader title="Target Tracker — Equity" description="Position sizing, max-open monitor, monthly ladder, MTF break-even." />
       <div className="space-y-5 p-6">
         {equityGoal && goalProg && <GoalStrip goal={equityGoal} progress={goalProg} />}
+        {/* v4.4.0 (D1 + the invented-limits sweep): every limit is the user's
+            or null — the cap through THE resolver (the equity bucket's cap,
+            which is what an equity-delivery trade is measured in), and no
+            ₹9,500 / 6 / 20% / ₹4.25L / ₹5.1L stand-ins. The client says "not
+            set" for each null (invariant 6). */}
         <TargetEquityClient
-          defaultRisk={globalRisk?.perTradeMaxLoss ?? 9500}
+          defaultRisk={resolvePerTradeCap(risk, "equity", "eq_delivery")}
           equityCapital={equityCapital}
           openCount={positions.length}
-          maxOpen={equityRisk?.maxOpen ?? 6}
+          maxOpen={equityRisk?.maxOpen ?? null}
           topConcentration={top}
-          concentrationLimit={equityRisk?.concentrationPct ?? 20}
+          concentrationLimit={equityRisk?.concentrationPct ?? null}
           monthly={monthly}
-          monthlyBase={globalRisk?.monthlyTargetBase ?? 425000}
-          monthlyStretch={globalRisk?.monthlyTargetStretch ?? 510000}
+          monthlyBase={globalRisk?.monthlyTargetBase ?? null}
+          monthlyStretch={globalRisk?.monthlyTargetStretch ?? null}
           mtf={mtf}
         />
       </div>

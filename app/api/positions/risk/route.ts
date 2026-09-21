@@ -59,10 +59,16 @@ export async function POST(req: Request) {
   const isShort = t.sellQty > t.buyQty;
   const openQty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
   const entryPrice = isShort ? t.avgSellPrice : t.avgBuyPrice;
-  const riskAmount =
-    originalSl != null && openQty > 0
-      ? Math.round(Math.abs(entryPrice - originalSl) * openQty * 100) / 100
-      : t.riskAmount;
+  // D1 (v4.4.0) — a risk DERIVED FROM A STOP is the user's plan, so the row
+  // becomes 'set' and no later cap edit moves it. Only then: a save with no
+  // stop (a mark-only save, a dialog saved with SL blank) writes the row's own
+  // risk back and leaves its source alone, so a cap-derived row keeps following
+  // the cap (review S1 — the unconditional stamp froze one row in the old cap
+  // while every other cap row moved).
+  const slDerived = originalSl != null && openQty > 0;
+  const riskAmount = slDerived
+    ? Math.round(Math.abs(entryPrice - originalSl) * openQty * 100) / 100
+    : t.riskAmount;
   const rMultiple =
     riskAmount && riskAmount > 0 ? Math.round((t.netPnl / riskAmount) * 100) / 100 : t.rMultiple;
 
@@ -70,6 +76,7 @@ export async function POST(req: Request) {
     .set({
       riskAmount,
       rMultiple,
+      ...(slDerived ? { riskSource: "set" } : {}),
       updatedAt: sql`(datetime('now'))`,
       ...(has("originalSl") ? { slPlanned: originalSl } : {}),
       ...(has("trailingSl") ? { trailingSl: numOrNull(body.trailingSl) } : {}),

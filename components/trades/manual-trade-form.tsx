@@ -26,6 +26,17 @@ interface PreviewResp {
   breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
   grossPnl: number;
   netPnl: number;
+  /** v4.4.0 D1 — the per-trade cap this classification resolves to (the route's
+   *  `getPerTradeCap`): what the save stores as the risk when there is no stop
+   *  and no typed risk. Null = no cap configured → no risk and no R. */
+  perTradeCap?: number | null;
+}
+
+/** The risk field's hint — the figure the save will store, never a literal. */
+export function riskHint(p: Pick<PreviewResp, "classification" | "perTradeCap"> | null): string {
+  if (!p) return "from SL, else your per-trade cap";
+  if (p.perTradeCap == null) return "from SL, else none — no cap is set";
+  return `from SL, else your ₹${p.perTradeCap.toLocaleString("en-IN")} ${SEGMENT_LABELS[p.classification.segment] ?? p.classification.segment} cap`;
 }
 
 const MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -485,7 +496,7 @@ export function ManualTradeForm({
             step="any"
             value={riskAmount}
             onChange={(e) => { setRiskAmount(e.target.value); setRiskTouched(e.target.value !== ""); }}
-            placeholder="from SL, else 9500"
+            placeholder={riskHint(preview)}
           />
         </Field>
         <Field label={kind === "fno" ? "Strategy" : "Setup tag"}><Input name="setupTag" placeholder={kind === "fno" ? "e.g. Iron condor, ORB" : "e.g. ORB, pullback"} /></Field>

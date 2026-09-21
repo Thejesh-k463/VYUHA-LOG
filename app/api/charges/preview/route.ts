@@ -15,6 +15,7 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
 import { getMarginPct } from "@/lib/queries/margin";
 import { getSettings } from "@/lib/queries/settings";
+import { getPerTradeCap } from "@/lib/queries/limits";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { ipoEditCharges } from "@/lib/analytics/ipo";
 import { sellChargerFor } from "@/lib/queries/ipos";
@@ -334,5 +335,11 @@ export async function POST(req: Request) {
     breakdown,
     grossPnl: gross,
     netPnl: Math.round((gross - breakdown.total) * 100) / 100,
+    // D1 (v4.4.0) — the per-trade cap this classification resolves to, through
+    // THE resolver: what a save with no stop and no typed risk stores as the
+    // row's risk (commitManualTrade), so the Add form can state it ("from SL,
+    // else your ₹X cap") instead of a literal. Null = no cap configured, and
+    // then the save stores no risk and no R (invariant 6).
+    perTradeCap: getPerTradeCap(cls.bucket, cls.segment),
   });
 }

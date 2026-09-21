@@ -15,7 +15,10 @@
 export type OptionType = "CE" | "PE";
 export type Side = "long" | "short";
 
-export const DEFAULT_RISK_FREE_RATE = 0.07; // India ~7% — same convention as performance.ts
+// No risk-free constant here (v4.4.0 D5): the rate is REQUIRED on every entry
+// point and comes from the one dated setting (`getRiskFree()`,
+// lib/queries/settings.ts) — a hard-coded 7% here once discounted the Greeks at
+// a different rate from the Sharpe on /reports/performance.
 export const DEFAULT_IV_PCT = 20; // flat fallback when no per-position IV is set
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -55,7 +58,7 @@ export interface BlackScholesResult {
  * @param strike option strike
  * @param dte    days to expiry (calendar)
  * @param ivPct  implied volatility, as a percentage (e.g. 20 for 20%)
- * @param rate   annual risk-free rate as a fraction (default DEFAULT_RISK_FREE_RATE)
+ * @param rate   annual risk-free rate as a fraction (0.07) — required, from getRiskFree()
  */
 export function blackScholes(
   spot: number,
@@ -63,7 +66,7 @@ export function blackScholes(
   dte: number,
   optionType: OptionType,
   ivPct: number,
-  rate: number = DEFAULT_RISK_FREE_RATE,
+  rate: number,
 ): BlackScholesResult {
   const isCall = optionType === "CE";
   const T = dte / 365;
@@ -144,10 +147,10 @@ export function resolveIvSource(ivPct: number | null, marketIvPct: number | null
 }
 
 /** Position Greeks for one open option leg. Returns null if it can't be priced (no spot/dte). */
-export function positionGreeks(p: PositionGreeksInput): PositionGreeks | null {
+export function positionGreeks(p: PositionGreeksInput, rate: number): PositionGreeks | null {
   if (p.spot == null || p.dte == null || p.qty <= 0) return null;
   const { ivPct, source } = resolveIvSource(p.ivPct, p.marketIvPct);
-  const perUnit = blackScholes(p.spot, p.strike, p.dte, p.optionType, ivPct);
+  const perUnit = blackScholes(p.spot, p.strike, p.dte, p.optionType, ivPct, rate);
   const sign = p.side === "long" ? 1 : -1;
   return {
     id: p.id,
@@ -174,11 +177,12 @@ export interface PortfolioGreeks {
   positions: PositionGreeks[];
 }
 
-export function portfolioGreeks(inputs: PositionGreeksInput[]): PortfolioGreeks {
+/** @param rate annual risk-free rate as a fraction — required (D5): the page passes `getRiskFree().annual`. */
+export function portfolioGreeks(inputs: PositionGreeksInput[], rate: number): PortfolioGreeks {
   const positions: PositionGreeks[] = [];
   let skipped = 0;
   for (const p of inputs) {
-    const g = positionGreeks(p);
+    const g = positionGreeks(p, rate);
     if (g == null) { skipped++; continue; }
     positions.push(g);
   }

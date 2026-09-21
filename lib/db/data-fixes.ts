@@ -3,6 +3,7 @@ import { dedupHash, PAYTM_BROKER } from "@/lib/import/dedup";
 import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
 import { normalizeDate } from "@/lib/domain/trading-day";
 import { parseSeededSignalNotes, serializeSignal } from "@/lib/domain/signal";
+import { classifyUnsourcedRisk, repriceCapTrades } from "@/lib/queries/risk-cap";
 
 /**
  * Data fixes — one-shot row rewrites that SQL alone cannot express.
@@ -24,6 +25,7 @@ export const PAYTM_DEDUP_FIX = "paytm-dedup-isin-v1";
 export const IPO_ACCOUNT_REHOME_FIX = "ipo-account-rehome-v1";
 export const LEG_TRADE_DATE_ISO_FIX = "leg-trade-date-iso-v1";
 export const SIGNAL_NOTES_BACKFILL_FIX = "signal-notes-backfill-v1";
+export const RISK_SOURCE_FIX = "risk-source-v1";
 
 export interface DataFixResult {
   name: string;
@@ -279,11 +281,46 @@ function applySignalNotesBackfill(sqlite: Database.Database): DataFixResult {
   return result;
 }
 
+/**
+ * risk-source-v1 (v4.4.0 D1) — say where every stored risk came from, then put
+ * every cap-derived R on today's cap.
+ *
+ * Migration 0073 added `trades.risk_source` NULL on every row. This fix
+ * classifies each row that holds a risk but states no source — with
+ * `classifyRiskSource` (lib/queries/risk-cap.ts), the SAME function Trash
+ * restore calls on a pre-0073 envelope — and then re-prices every `'cap'` row
+ * to the cap its bucket/segment resolves to now. On an untouched install that
+ * moves nothing (every legacy seed row inherits the global ₹9,500); a segment
+ * cap the user set to anything else now drives that segment's R (owner ruling
+ * Q6 — the release notes say so).
+ *
+ * ACROSS ACCOUNTS, ON PURPOSE: `risk_config` has no `account_id` (the caps are
+ * per install, app/api/risk/live-desk/route.ts), so a row's cap does not
+ * depend on which book it sits in; declared in the OWNERS registry of
+ * tests/account-isolation.test.ts with that reason.
+ *
+ * Money is raw integer PAISE on both sides of these statements (invariant 1):
+ * `risk_amount_paise` is written as rupees × 100, `net_pnl_paise` read ÷ 100,
+ * once each. Idempotent: a classified row is never re-classified, and a re-price
+ * writes only rows whose figures differ. Re-run after every backup restore
+ * (`rerunDataFixesAfterRestore`), where it re-prices against the RESTORED caps.
+ *
+ * No quiet `hasColumn` guard, for the reason `signal-notes-backfill-v1` states:
+ * on a pre-0073 connection the SELECT throws, the marker rolls back, and the
+ * fix runs on the next open.
+ */
+function applyRiskSource(sqlite: Database.Database): DataFixResult {
+  const classified = classifyUnsourcedRisk(sqlite);
+  const repriced = repriceCapTrades(sqlite);
+  return { name: RISK_SOURCE_FIX, applied: true, rekeyed: classified + repriced, skippedCollisions: 0 };
+}
+
 const FIXES: { name: string; apply: (sqlite: Database.Database) => DataFixResult }[] = [
   { name: PAYTM_DEDUP_FIX, apply: applyPaytmDedupIsin },
   { name: IPO_ACCOUNT_REHOME_FIX, apply: applyIpoAccountRehome },
   { name: LEG_TRADE_DATE_ISO_FIX, apply: applyLegTradeDateIso },
   { name: SIGNAL_NOTES_BACKFILL_FIX, apply: applySignalNotesBackfill },
+  { name: RISK_SOURCE_FIX, apply: applyRiskSource },
 ];
 
 /**

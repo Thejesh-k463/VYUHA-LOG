@@ -101,8 +101,8 @@ export default function DashboardPage() {
         <DashboardClient
           workspace={asWorkspace(settings?.workspace)}
           trades={dash}
-          monthlyBase={risk?.monthlyTargetBase ?? 425000}
-          monthlyStretch={risk?.monthlyTargetStretch ?? 510000}
+          monthlyBase={risk?.monthlyTargetBase ?? null}
+          monthlyStretch={risk?.monthlyTargetStretch ?? null}
         />
       </div>
     </SectionArrangeProvider>

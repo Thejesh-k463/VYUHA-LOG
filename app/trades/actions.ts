@@ -97,6 +97,11 @@ const str = (v: FormDataEntryValue | null) => {
   const s = String(v ?? "").trim();
   return s === "" ? null : s;
 };
+/** The edit dialog posts `riskAmountOpened` (the value it was prefilled with);
+ *  true when the posted risk is that same figure. A form without the field (a
+ *  stale tab, another client) keeps the old "always posted" reading. */
+const riskFieldUnchanged = (fd: FormData): boolean =>
+  fd.has("riskAmountOpened") && (num(fd.get("riskAmount")) || null) === (num(fd.get("riskAmountOpened")) || null);
 /**
  * "Own capital used" (MTF): blank or missing → null (keep / estimate); a typed 0
  * is a STATED figure — the whole position broker-funded — as both forms' previews
@@ -380,7 +385,13 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
     slPlanned: num(formData.get("slPlanned")) || null,
     trailingSl: num(formData.get("trailingSl")) || null,
     targetPlanned: num(formData.get("targetPlanned")) || null,
-    riskAmount: num(formData.get("riskAmount")) || null,
+    // D1 (v4.4.0, review S2) — a risk the dialog posts back EXACTLY as it opened
+    // with is "not mentioned" (`undefined`): the row keeps its own rule, so a
+    // cap-derived row re-reads today's cap. Without this, a dialog opened
+    // before a cap edit and saved after it stored the old cap as the user's
+    // choice. A changed field (typed, cleared, or re-derived from an SL edit)
+    // is posted as before, and updateManualTrade decides whose it is.
+    riskAmount: riskFieldUnchanged(formData) ? undefined : num(formData.get("riskAmount")) || null,
     ownCapitalUsed: ownCapital(formData.get("ownCapitalUsed")),
     setupTag: str(formData.get("setupTag")),
     exitTrigger: str(formData.get("exitTrigger")),

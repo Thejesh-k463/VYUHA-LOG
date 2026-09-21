@@ -57,6 +57,14 @@ export const BASELINE_SETTINGS_FIELDS = [
   // whose baseline predates this field is untouched (diffAgainstBaseline skips
   // a field the baseline never recorded).
   "strategyShelfJson",
+  // The dated risk-free rate (v4.4.0 D5, migration 0073) — the rate the user
+  // says Sharpe, Sortino, alpha and the Greeks should use, and the day it was
+  // true on. A CHOICE, so it travels in a backup (it is not in
+  // SETTINGS_MACHINE_COLUMNS) and comes back with "back to my defaults"; a
+  // baseline captured before 0073 holds neither key, so the restore leaves the
+  // current pair alone (Drizzle skips an undefined key).
+  "riskFreeRatePpm",
+  "riskFreeAsOf",
 ] as const;
 
 export type BaselineSettingsField = (typeof BASELINE_SETTINGS_FIELDS)[number];

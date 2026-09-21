@@ -119,6 +119,22 @@ export const trades = sqliteTable(
     adjustmentGroup: text("adjustment_group"),
     fmv31Jan2018: real("fmv_31jan2018"), // per-share FMV on 31-Jan-2018 (LTCG grandfathering; pre-2018 lots only)
     rMultiple: real("r_multiple"),
+    /**
+     * WHERE `risk_amount` came from (v4.4.0, migration 0073) — and therefore
+     * whether a per-trade cap edit may move it:
+     *   'cap'    the per-trade cap resolved for the row's CURRENT bucket/segment
+     *            (`resolvePerTradeCap`, lib/risk/limits.ts). Re-priced by
+     *            `repriceCapTrades` (lib/queries/risk-cap.ts) whenever the cap
+     *            changes, so a 'cap' row ALWAYS holds today's cap and
+     *            R = r2(net ÷ risk) — two caps are never averaged into one Avg R.
+     *   'set'    a risk the user typed, or one derived from a stop they entered.
+     *            Never moved by a cap edit.
+     *   'frozen' a staged position's R, frozen at the first entry (invariant 4).
+     *            Never moved by a cap edit.
+     *   NULL     no risk — or a pre-0073 row the `risk-source-v1` data fix has
+     *            not classified yet.
+     */
+    riskSource: text("risk_source"),
     ruleViolations: text("rule_violations", { mode: "json" }).$type<string[]>(),
     mistakeTags: text("mistake_tags", { mode: "json" }).$type<string[]>(),
     /**
@@ -730,6 +746,15 @@ export const riskConfig = sqliteTable(
     // User-set only. The 6% portfolio-heat figure is trading lore, not
     // regulation, so Vyuha ships no ceiling of its own.
     heatCeilingPpm: integer("heat_ceiling_ppm"),
+    // v4.4.0 (migration 0073) — which rule reads this row's `perTradeMaxLoss`.
+    // NULL = written by v1–v4.3, whose seed stamped the literal ₹9,500 on every
+    // bucket and segment row: on a bucket/segment row with NULL here, exactly
+    // 9500 reads as UNSET and the row INHERITS the broader cap
+    // (`resolvePerTradeCap`, lib/risk/limits.ts — the only reader of that rule).
+    // 1 = the value is the user's (the risk editor stamps it on every save, the
+    // 0073 rows and fresh seeds carry it): 9500 then means ₹9,500. It travels
+    // with its row, so a pre-0073 backup or baseline keeps the legacy reading.
+    capScheme: integer("cap_scheme"),
     updatedAt: text("updated_at").notNull().default(now),
   },
   (t) => [uniqueIndex("risk_config_scope_key_uq").on(t.scope, t.key)],
@@ -938,6 +963,14 @@ export const settings = sqliteTable("settings", {
   // the shelf the user saved. Null = the DEFAULT_SHELF eight; storing a copy of
   // them would freeze this release's list into every upgraded database.
   strategyShelfJson: text("strategy_shelf_json"),
+  // The risk-free rate (v4.4.0, migration 0073) — ONE dated setting read by
+  // Sharpe, Sortino, alpha and the option Greeks through `getRiskFree()`
+  // (lib/queries/settings.ts). PPM, never REAL (the risk_config ppm rule):
+  // 70000 = 7%. `riskFreeAsOf` NULL = Vyuha's default assumption, not a market
+  // quote; a user edit requires the date the rate was true on. A user CHOICE,
+  // so it travels in a backup and sits in BASELINE_SETTINGS_FIELDS.
+  riskFreeRatePpm: integer("risk_free_rate_ppm").notNull().default(70_000),
+  riskFreeAsOf: text("risk_free_as_of"),
   selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });

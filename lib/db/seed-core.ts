@@ -104,19 +104,7 @@ function seedAll(log: boolean): SeedReport {
       ` (user-edited rows left untouched)`,
   );
 
-  const riskRows = [
-    { scope: "global", key: "", perTradeMaxLoss: 9500, monthlyTargetBase: 425000, monthlyTargetStretch: 510000 },
-    { scope: "bucket", key: "equity", perTradeMaxLoss: 9500, maxOpen: 6, maxTradesDay: 12, concentrationPct: 20 },
-    { scope: "bucket", key: "active", perTradeMaxLoss: 9500, maxOpen: 8, maxTradesDay: 15, dailyLossStop: 25000 },
-    { scope: "segment", key: "index_option", perTradeMaxLoss: 9500, maxTradesDay: 15 },
-    { scope: "segment", key: "stock_option", perTradeMaxLoss: 9500, maxTradesDay: 15 },
-    { scope: "segment", key: "eq_intraday", perTradeMaxLoss: 9500, maxTradesDay: 12 },
-    { scope: "segment", key: "commodity_future", perTradeMaxLoss: 9500, maxTradesDay: 10 },
-    { scope: "segment", key: "commodity_option", perTradeMaxLoss: 9500, maxTradesDay: 10 },
-  ] as const;
-  for (const row of riskRows) {
-    report.riskAdded += db.insert(riskConfig).values(row).onConflictDoNothing().run().changes;
-  }
+  report.riskAdded = seedRiskConfig();
   say(`✓ risk_config: ${report.riskAdded} added`);
 
   // Margin-rate approximations (% of notional) for the /risk margin gauge and
@@ -175,6 +163,42 @@ export interface ChargeRefreshReport {
  * connection (`db.transaction((tx) => …)`), so the pass joins that transaction.
  */
 type ChargeConn = Pick<typeof db, "select" | "insert" | "update" | "run">;
+
+/**
+ * The risk_config rows a fresh install starts with — one per scope Vyuha knows,
+ * the eight segments of `lib/domain/constants.ts` included.
+ *
+ * v4.4.0 (D1): only the GLOBAL row seeds a per-trade cap (₹9,500, editable).
+ * Bucket and segment rows seed it NULL with `capScheme` 1 — they INHERIT until
+ * the user sets one (`resolvePerTradeCap`, lib/risk/limits.ts). v1–v4.3 stamped
+ * the literal 9500 on every row, which made every segment look configured and
+ * made the import (global only) and the breach checks (segment first) disagree
+ * the moment the global cap was edited; those legacy rows keep a NULL
+ * `capScheme` and the resolver reads their 9500 as unset.
+ *
+ * INSERT OR IGNORE on (scope, key): an existing row — edited or not — is never
+ * touched. Called by `seedDatabase` and, inside its transaction, by "back to my
+ * defaults" (lib/queries/settings-baseline.ts), whose snapshot may predate the
+ * three rows migration 0073 added. Opens no transaction of its own.
+ */
+export function seedRiskConfig(conn: Pick<typeof db, "insert"> = db): number {
+  const riskRows = [
+    { scope: "global", key: "", perTradeMaxLoss: 9500, monthlyTargetBase: 425000, monthlyTargetStretch: 510000, capScheme: 1 },
+    { scope: "bucket", key: "equity", perTradeMaxLoss: null, maxOpen: 6, maxTradesDay: 12, concentrationPct: 20, capScheme: 1 },
+    { scope: "bucket", key: "active", perTradeMaxLoss: null, maxOpen: 8, maxTradesDay: 15, dailyLossStop: 25000, capScheme: 1 },
+    { scope: "segment", key: "eq_delivery", perTradeMaxLoss: null, capScheme: 1 },
+    { scope: "segment", key: "eq_mtf", perTradeMaxLoss: null, capScheme: 1 },
+    { scope: "segment", key: "eq_intraday", perTradeMaxLoss: null, maxTradesDay: 12, capScheme: 1 },
+    { scope: "segment", key: "index_option", perTradeMaxLoss: null, maxTradesDay: 15, capScheme: 1 },
+    { scope: "segment", key: "stock_option", perTradeMaxLoss: null, maxTradesDay: 15, capScheme: 1 },
+    { scope: "segment", key: "future", perTradeMaxLoss: null, capScheme: 1 },
+    { scope: "segment", key: "commodity_future", perTradeMaxLoss: null, maxTradesDay: 10, capScheme: 1 },
+    { scope: "segment", key: "commodity_option", perTradeMaxLoss: null, maxTradesDay: 10, capScheme: 1 },
+  ];
+  let added = 0;
+  for (const row of riskRows) added += conn.insert(riskConfig).values(row).onConflictDoNothing().run().changes;
+  return added;
+}
 
 /**
  * Bring charge_config up to the rate card this build ships, on `conn`.

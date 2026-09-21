@@ -151,7 +151,11 @@ export function EditTradeDialog({
   const [slPlanned, setSlPlanned] = useState(trade.slPlanned != null ? String(trade.slPlanned) : "");
   const [trailingSl, setTrailingSl] = useState(trade.trailingSl != null ? String(trade.trailingSl) : "");
   const [targetPlanned, setTargetPlanned] = useState(trade.targetPlanned != null ? String(trade.targetPlanned) : "");
-  const [riskAmount, setRiskAmount] = useState(trade.riskAmount != null ? String(trade.riskAmount) : "");
+  // Captured ONCE, at open: a re-render with a refreshed `trade` must not move
+  // the baseline the save compares the posted risk against (see the hidden
+  // `riskAmountOpened` input below).
+  const [riskAmountOpened] = useState(() => (trade.riskAmount != null ? String(trade.riskAmount) : ""));
+  const [riskAmount, setRiskAmount] = useState(riskAmountOpened);
   // Only treat risk as "manually touched" (exempt from SL auto-recompute) if
   // the STORED value doesn't match what SL-derivation would already produce —
   // otherwise opening Edit would silently overwrite a genuinely custom risk
@@ -291,6 +295,13 @@ export function EditTradeDialog({
   return (
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="tradeId" value={trade.id} />
+      {/* D1 (v4.4.0, review S2) — the risk this dialog OPENED with. The field is
+          prefilled and always posted, so without this a dialog opened before a
+          cap edit and saved after it posted the OLD cap, which the save then
+          stored as the user's own choice ('set'): a stale cap frozen into one
+          row while every other cap row moved. The action treats a posted risk
+          equal to this as "not mentioned", so the row keeps its own rule. */}
+      <input type="hidden" name="riskAmountOpened" value={riskAmountOpened} />
       <div className="rounded-md border border-border bg-card-hover/30 p-2.5 text-xs">
         <span className="font-medium">{trade.symbol}</span>{" "}
         <span className="text-muted-foreground">{trade.broker} · {trade.segment} · {trade.exchange}</span>

@@ -574,6 +574,9 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction, asOf?
       trailingSl: agg.trailingSl,
       targetPlanned: agg.targetPlanned,
       riskAmount: agg.riskAmount,
+      // D1 (v4.4.0): a staged R is frozen at the first entry (invariant 4) and
+      // never re-priced by a cap edit; no first-entry stop → no risk, no source.
+      riskSource: agg.riskAmount != null ? "frozen" : null,
       grossPnl,
       chargesTotal: totals.total,
       netPnl,
@@ -779,8 +782,15 @@ export function deleteLeg(legId: number, direction?: Direction): LegMutationResu
   if (remaining.length === 0) {
     // Last leg gone — drop back to a plain trade rather than leaving an empty
     // staged shell that every report would have to special-case.
+    // D1 (v4.4.0): the frozen risk the ladder left becomes the plain trade's
+    // own figure — 'set' when there is one (a cap edit must not move it), no
+    // source when there is none.
     db.update(tradesTable)
-      .set({ staged: false, updatedAt: sql`(datetime('now'))` })
+      .set({
+        staged: false,
+        riskSource: sql`CASE WHEN risk_amount_paise IS NOT NULL THEN 'set' ELSE NULL END`,
+        updatedAt: sql`(datetime('now'))`,
+      })
       .where(eq(tradesTable.id, row.tradeId))
       .run();
   } else {

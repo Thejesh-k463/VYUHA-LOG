@@ -24,6 +24,7 @@ import {
 } from "@/lib/analytics/settlement";
 import { portfolioGreeks, type PositionGreeksInput, type OptionType } from "@/lib/analytics/greeks";
 import { GreeksPanel } from "@/components/risk/greeks-panel";
+import { getRiskFree } from "@/lib/queries/settings";
 import { getLatestVixClose, VIX_SYMBOL } from "@/lib/queries/vix";
 import { getBenchmarkMeta, getBenchmarkCloses, DEFAULT_BENCHMARK } from "@/lib/queries/benchmark";
 import { BenchmarkPanel } from "@/components/reports/benchmark-panel";
@@ -193,7 +194,10 @@ export default function RiskPage() {
       qty: p.qty,
       side: p.side ?? "long",
     }));
-  const greeks = portfolioGreeks(greeksInputs);
+  // v4.4.0 D5 — discounted at the ONE dated risk-free setting, the same rate
+  // Sharpe and alpha read on /reports/performance, and labelled on the panel.
+  const riskFree = getRiskFree();
+  const greeks = portfolioGreeks(greeksInputs, riskFree.annual);
 
   // P1.2 — VaR / beta-weighted exposure / stress tests off delta-equivalent exposures.
   // Options enter at positionDelta × spot (Greeks above); equity/futures at qty × mtm,
@@ -427,7 +431,7 @@ export default function RiskPage() {
         )}
         {greeks.count > 0 && (
           <>
-            <GreeksPanel greeks={greeks} latestVix={latestVix} />
+            <GreeksPanel greeks={greeks} latestVix={latestVix} riskFreeLabel={riskFree.label} />
             <Card>
               <CardHeader>
                 <CardTitle>India VIX (Greeks IV fallback)</CardTitle>

@@ -5,7 +5,7 @@ import { riskConfig } from "@/lib/db/schema";
 import { getTrades } from "@/lib/queries/trades";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { SEGMENT_BUCKET, type Segment } from "@/lib/domain/constants";
-import type { RiskRules, PortfolioState } from "@/lib/risk/limits";
+import { resolvePerTradeCap, type RiskRules, type PortfolioState } from "@/lib/risk/limits";
 
 type RiskConfigRow = typeof riskConfig.$inferSelect;
 
@@ -32,12 +32,24 @@ export function resolveRules(bucket: string, segment: string): RiskRules {
   };
 
   return {
-    perTradeMaxLoss: field("perTradeMaxLoss") as number | null,
+    // D1 (v4.4.0): the cap through THE resolver, so a breach check and the R
+    // an import stores measure against the same number (the legacy seed
+    // literal on a bucket/segment row inherits — lib/risk/limits.ts).
+    perTradeMaxLoss: resolvePerTradeCap(rows, bucket, segment),
     dailyLossStop: field("dailyLossStop") as number | null,
     maxOpen: field("maxOpen") as number | null,
     maxTradesDay: field("maxTradesDay") as number | null,
     concentrationPct: field("concentrationPct") as number | null,
   };
+}
+
+/**
+ * The per-trade cap for one bucket + segment, read now — the figure the manual
+ * form states ("from SL, else your ₹X cap") and the save stores, through the
+ * one resolver. Null = no cap configured, and then no R (invariant 6).
+ */
+export function getPerTradeCap(bucket: string, segment: string): number | null {
+  return resolvePerTradeCap(db.select().from(riskConfig).all(), bucket, segment);
 }
 
 /** Capital for a bucket scope ("" / "all" → both buckets combined).

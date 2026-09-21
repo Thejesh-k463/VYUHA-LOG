@@ -8,6 +8,7 @@ import {
   SEEDED_SIGNAL_NOTES,
   IPO_NAME,
   CROSS_BOOK_IPO_NAME,
+  EDITED_PER_TRADE_CAPS,
   FOREIGN_IPO_NAME,
   LOOKALIKE_IPO_NAME,
   STRAY_IPO_NAME,
@@ -59,13 +60,19 @@ import { parseSignal } from "@/lib/domain/signal";
  *   I5 PARENT-EQUALS-LEGS   invariant 5, through `parentAggregate`
  *   I6 NO-NAN               no NULL / non-finite in a money column that must be
  *                           stated
+ *   I7 CAP-ROWS-FOLLOW-THE-CAP  every `risk_source='cap'` row holds
+ *                           `resolvePerTradeCap(bucket, segment)` and
+ *                           `r2(net ÷ risk)`; staged and `'frozen'` rows come
+ *                           back byte-identical (v4.4.0 D1, ruling OQ1)
  *
- * WHAT IT RUNS: 17 operations; every ordered pair of them — 289 less the 14 the
- * table marks incompatible = 275 — plus each op alone (17), 19 curated
+ * WHAT IT RUNS: the operations of the table (21 with v4.4.0's `editPerTradeCap`);
+ * every ordered pair of them less the ones the table marks incompatible, plus
+ * each op alone, the two D1 review pairs S1 and S2 asserted by name, 19 curated
  * sequences of three to five taken from this release's findings (four of them
  * the IPO-pairing cases waves 2M and 2N moved, two of them wave 2O's CROSS-BOOK
- * pair, D4) and 6 tests that PLANT each invariant's own violation so a green
- * sweep is known to be able to go red. 319 `it`s.
+ * pair, D4) and 9 tests that PLANT each invariant's own violation so a green
+ * sweep is known to be able to go red. 360 `it`s, 35.5 s wall (measured
+ * 2026-09-21 with I7 and `editPerTradeCap` added; 319 / 34.0 s before).
  *
  * `VARIANTS` (book-ops.ts) holds fixture shapes a named scenario needs, plus
  * the one step that is an ANSWER rather than an operation on the book, none of
@@ -302,6 +309,61 @@ describe("each invariant can fire", () => {
 
   it("I6 — a price column holding something that is not a number", async () => {
     expect(await plant(`UPDATE trades SET avg_buy_price = 'not a number' WHERE id = ?`, ids.dupA)).toContain("I6");
+  });
+
+  it("I7 — a cap row holding a risk the resolver does not state", async () => {
+    expect(await plant(`UPDATE trades SET risk_amount_paise = 12345 WHERE id = ?`, ids.mtfTrade)).toContain("I7");
+  });
+
+  it("I7 — a cap row whose R is not its own net ÷ its own risk", async () => {
+    expect(await plant(`UPDATE trades SET r_multiple = -9.9 WHERE id = ?`, ids.mtfTrade)).toContain("I7");
+  });
+
+  it("I7 — a 'frozen' row re-priced behind the invariant's back", async () => {
+    tpl.reset();
+    const ctx = freshCtx(t, m, ids);
+    // A frozen row is a staged position's, whose R is fixed at its first entry
+    // (invariant 4); planted RAW, because the question is only whether the
+    // check fires.
+    t.sqlite.prepare(`UPDATE trades SET risk_source = 'frozen', risk_amount_paise = 333300, r_multiple = -0.3 WHERE id = ?`).run(ids.dupA);
+    expect((await checkInvariants(t.db, ctx)).map((v) => v.code), "the first sight of a frozen row is what pins it").not.toContain("I7");
+    t.sqlite.prepare(`UPDATE trades SET risk_amount_paise = 400000 WHERE id = ?`).run(ids.dupA);
+    expect((await checkInvariants(t.db, ctx)).map((v) => v.code)).toContain("I7");
+  });
+});
+
+/**
+ * S1 and S2 of the D1 design review — the two writers a cap edit must not leave
+ * behind. Both are pairs, and both are about the SOURCE a save stamps: a writer
+ * that reads "the request carried a risk" as "the user chose this risk" freezes
+ * that one row in yesterday's cap while every other cap row moves, and the two
+ * live side by side in one Avg R. The row's own figures are asserted here
+ * because I7 cannot: a row wrongly stamped `'set'` is a row I7 no longer checks.
+ */
+describe("a cap edit reaches the rows the other writers touched (D1 S1, S2)", () => {
+  const capOf = (bucket: string, segment: string) =>
+    m.limits.resolvePerTradeCap(m.riskCap.readCapRows(t.sqlite), bucket, segment);
+
+  const expectFollowsCap = (id: number, what: string) => {
+    const row = t.db.select().from(t.schema.trades).all().find((r) => r.id === id)!;
+    const cap = capOf(row.bucket, row.segment);
+    expect(cap, "the op must have moved the cap off the seeded default").toBe(EDITED_PER_TRADE_CAPS[0]);
+    expect(
+      [row.riskSource, row.riskAmount, row.rMultiple],
+      `${what}: the row must still follow the cap after the edit, not sit frozen in the old one`,
+    ).toEqual(["cap", cap, m.riskCap.capR(row.netPnl, cap)]);
+  };
+
+  it("S1 — a mark-only save with NO stop, then the cap edit", async () => {
+    const { violations } = await runSequence(["markPriceNoStop", "editPerTradeCap"]);
+    expect(violations.join("\n")).toBe("");
+    expectFollowsCap(ids.mtfTrade, "the marked MTF row");
+  });
+
+  it("S2 — the edit dialog re-posting the cap it prefilled, then the cap edit", async () => {
+    const { violations } = await runSequence(["saveEditDialogRepostingTheCap", "editPerTradeCap"]);
+    expect(violations.join("\n")).toBe("");
+    expectFollowsCap(ids.dqLot, "the re-saved lot");
   });
 });
 

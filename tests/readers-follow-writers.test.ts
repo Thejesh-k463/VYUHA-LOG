@@ -289,6 +289,62 @@ export function realisedIpoNet(countedTradeIds: ReadonlySet<number>) {
   });
 });
 
+/**
+ * v4.4.0 D1 (design review verdict REVISE, brief delta 4) — the per-trade cap
+ * has ONE reader rule: `resolvePerTradeCap`. The registry entry is STRUCTURAL —
+ * a `perTradeMaxLoss` read on a CARRIER of a `.from(riskConfig)` select — not a
+ * file allow-list, and it is proven red against the importer as it stood at the
+ * design's base (`58bf72c`, committed fixture), where `?? 9500` sat on the GLOBAL
+ * row alone while the breach checks resolved global < bucket < segment.
+ */
+describe("v4.4.0 D1 — the per-trade cap is read through the resolver (risk-cap-resolver)", () => {
+  const RC = "58bf72c";
+
+  it("reports the pre-review importer's read of the GLOBAL row, and HEAD's importer is silent", () => {
+    const f = "lib/import/commit.ts";
+    const hits = scanSource(`${RC}:${f}`, git(`${RC}:${f}`), ["risk-cap-resolver"]);
+    expect(hits.map((v) => v.expr)).toEqual(["globalRisk?.perTradeMaxLoss ?? 9500"]);
+    expect(scanSource(f, git(`HEAD:${f}`), ["risk-cap-resolver"])).toEqual([]);
+  });
+
+  it("sees every carrier shape the pages and the importer used — and stays silent on the resolver's own reads", () => {
+    const bad = `import { riskConfig } from "@/lib/db/schema";
+declare const db: any;
+export function page() {
+  const risk = db.select().from(riskConfig).all();
+  const a = risk.find((r: any) => r.scope === "global")?.perTradeMaxLoss ?? null;
+  const globalRisk = db.select().from(riskConfig).where(1).all()[0];
+  const b = globalRisk?.perTradeMaxLoss;
+  const caps = risk.map((r: any) => r.perTradeMaxLoss);
+  const segRisk = (k: string) => risk.find((r: any) => r.key === k);
+  const c = segRisk("index_option")?.["perTradeMaxLoss"];
+  const { perTradeMaxLoss: d } = risk.find((r: any) => r.key === "equity")!;
+  return [a, b, caps, c, d];
+}`;
+    const seen = scanSource("fixture-risk-cap.ts", bad, ["risk-cap-resolver"]);
+    expect(seen.map((v) => v.line)).toEqual([5, 7, 8, 10, 11]);
+
+    const good = `import { riskConfig } from "@/lib/db/schema";
+import { resolvePerTradeCap, withSegmentCap } from "@/lib/risk/limits";
+declare const db: any; declare const body: any; declare const trades: any[];
+export function page(props: { segLimits: { perTradeMaxLoss: number | null }[] }) {
+  const risk = db.select().from(riskConfig).all();
+  const cap = resolvePerTradeCap(risk, "active", "index_option");
+  const scored = withSegmentCap(risk, trades);
+  db.update(riskConfig).set({ perTradeMaxLoss: Number(body.perTradeMaxLoss) }).run();
+  return [cap, scored, props.segLimits.map((s) => s.perTradeMaxLoss)];
+}`;
+    expect(scanSource("fixture-risk-cap-ok.ts", good, ["risk-cap-resolver"])).toEqual([]);
+  });
+
+  it("does NOT flag target-active-client.tsx: its `perTradeMaxLoss` is a resolved figure handed down as a PROP", () => {
+    const f = "components/targets/target-active-client.tsx";
+    const src = fs.readFileSync(f, "utf8");
+    expect(src, "not empty-satisfiable: the file does read a same-named field").toContain(".perTradeMaxLoss");
+    expect(scanSource(f, src, ["risk-cap-resolver"])).toEqual([]);
+  });
+});
+
 describe("G3 — HEAD under every rule", () => {
   /**
    * ONE walk for the whole file (measured locally 2026-09-15: 640 files read,
@@ -396,6 +452,10 @@ export function reads(p: P, list: P[]) {
    * lib/domain/trading-day.ts, so the ladder, the pure staged module and both
    * dialogs read ONE calendar.
    */
+  it("risk-cap-resolver: no reader in lib/, app/ or components/ takes the per-trade cap off a risk_config row", () => {
+    expect(hits("risk-cap-resolver"), RULE["risk-cap-resolver"].forbidden).toEqual([]);
+  });
+
   it("raw-date: no day count is taken from an unresolved, unguarded date field", () => {
     expect(hits("raw-date"), RULE["raw-date"].forbidden).toEqual([]);
   });
@@ -466,7 +526,7 @@ export function reads(p: P, list: P[]) {
   });
 
   it("the registry states a rule, its forbidden shapes and its provenance for every field it guards", () => {
-    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope"]);
+    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver"]);
     for (const r of REGISTRY) {
       expect(r.rule.length, r.id).toBeGreaterThan(40);
       expect(r.forbidden.length, r.id).toBeGreaterThan(20);

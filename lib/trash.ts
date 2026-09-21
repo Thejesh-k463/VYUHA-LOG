@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { inArray } from "drizzle-orm";
-import { db, trashDir, attachmentsDir } from "@/lib/db";
+import { db, sqlite, trashDir, attachmentsDir } from "@/lib/db";
+import { classifyUnsourcedRisk, repriceCapTrades } from "@/lib/queries/risk-cap";
 import {
   trades,
   tradeLegs,
@@ -687,6 +688,18 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
             : e instanceof Error ? e.message : "unknown error";
           skipped.push({ id: row.id, symbol: String(row.symbol ?? "—"), reason: msg });
         }
+      }
+
+      // D1 (v4.4.0) — a restored row reads in TODAY's cap, not the one it was
+      // trashed under. A row from a pre-0073 envelope carries no `riskSource`,
+      // so it is classified first by the SAME function the `risk-source-v1`
+      // data fix uses; then every landed `'cap'` row is re-priced to the cap
+      // its segment resolves to now. Inside this transaction, and only the
+      // rows that landed — nothing already in the book moves.
+      if (landed.size > 0) {
+        const ids = [...landed];
+        classifyUnsourcedRisk(sqlite, { ids });
+        repriceCapTrades(sqlite, { ids });
       }
 
       // Children follow only the parents that actually came back — a leg

@@ -102,7 +102,8 @@ describe("the honesty framing survives refactors", () => {
     const tab = read("components/trade-craft/win-loss-tab.tsx");
     // The default-cap series must be explained as P&L over the per-trade cap,
     // never presented as plan adherence.
-    expect(tab).toContain("₹9,500");
+    // v4.4.0 D1: the cap is per segment, so the literal ₹9,500 gave way to the resolved cap's name.
+    expect(tab).toContain("per-segment cap");
     expect(tab).toMatch(/not[\s\S]{0,60}plan\s+adherence/i);
     // The deep-loss gap renders next to its plan-R coverage (invariant 6).
     expect(tab).toContain("planLossCoverage.recorded");

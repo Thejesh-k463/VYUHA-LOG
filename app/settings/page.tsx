@@ -20,7 +20,8 @@ import { LicenseCard } from "@/components/settings/license-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/db";
 import { chargeConfig, riskConfig } from "@/lib/db/schema";
-import { getSettings } from "@/lib/queries/settings";
+import { getRiskFree, getSettings } from "@/lib/queries/settings";
+import { RiskFreeCard } from "@/components/settings/risk-free-card";
 import { getCapitalSummary, getCapitalHistory, getBucketCapital } from "@/lib/queries/capital";
 import { getGoalView } from "@/lib/queries/goals";
 import { GoalCard } from "@/components/settings/goal-card";
@@ -36,6 +37,7 @@ export default function SettingsPage() {
   const settings = getSettings();
   const chargeRows = db.select().from(chargeConfig).all();
   const riskRows = db.select().from(riskConfig).all();
+  const riskFree = getRiskFree();
   const capital = getCapitalSummary();
   const bucketCapital = getBucketCapital();
   const goalView = getGoalView();
@@ -104,7 +106,15 @@ export default function SettingsPage() {
           <Section id="settings-preferences"><PreferencesCard /></Section>
           <Section id="settings-accounts"><AccountManager accounts={getAccounts()} /></Section>
           <Section id="settings-defaults"><DefaultSettingsCard /></Section>
-          <Section id="settings-risk-rules"><RiskEditor rows={riskRows} /></Section>
+          <Section id="settings-risk-rules">
+            {/* v4.4.0 D5 — the dated risk-free rate sits with the risk rules
+                rather than in a section of its own, so the section registry
+                (and every saved arrangement) is unchanged. */}
+            <div className="space-y-6">
+              <RiskEditor rows={riskRows} />
+              <RiskFreeCard ppm={riskFree.ppm} asOf={riskFree.asOf} label={riskFree.label} />
+            </div>
+          </Section>
           <Section id="settings-charge-rates"><ChargeEditor rows={chargeRows} /></Section>
           <Section id="settings-telegram">
             {/* Explicit props, not the settings row: the encrypted token must not

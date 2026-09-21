@@ -79,6 +79,9 @@ export interface BookMods {
   closeRoute: typeof import("@/app/api/positions/close/route");
   staleRoute: typeof import("@/app/api/data-quality/close-stale/route");
   settingsRoute: typeof import("@/app/api/settings/route");
+  riskRoute: typeof import("@/app/api/positions/risk/route");
+  riskCap: typeof import("@/lib/queries/risk-cap");
+  limits: typeof import("@/lib/risk/limits");
   trashDir: string;
 }
 
@@ -101,6 +104,9 @@ export async function loadBookMods(): Promise<BookMods> {
     closeRoute: await import("@/app/api/positions/close/route"),
     staleRoute: await import("@/app/api/data-quality/close-stale/route"),
     settingsRoute: await import("@/app/api/settings/route"),
+    riskRoute: await import("@/app/api/positions/risk/route"),
+    riskCap: await import("@/lib/queries/risk-cap"),
+    limits: await import("@/lib/risk/limits"),
     trashDir: (await import("@/lib/db")).trashDir,
   };
 }
@@ -188,6 +194,14 @@ export interface BookCtx {
   mayReadShort: Set<string>;
   /** Bumped by ops that must not collide with their own earlier call. */
   seq: number;
+  /**
+   * I7 (v4.4.0 D1) — the risk signature of every row that must NEVER move: a
+   * staged position (R frozen at the first entry, invariant 4) or a row whose
+   * source is `'frozen'`. Filled LAZILY, the first time a check sees the row,
+   * and compared on every later check, so a row a test plants before its first
+   * op is pinned at the value it was planted with.
+   */
+  frozenRisk: Map<number, string>;
 }
 
 // ── small helpers over the live connection ──────────────────────────────────
@@ -379,7 +393,11 @@ export async function seedSequenceBook(db: BookDb, ctx: { t: TempDb; m: BookMods
     .returning({ id: t.schema.ipos.id })
     .get()!.id;
 
-  // 4 — the partly sold MTF row.
+  // 4 — the partly sold MTF row. It carries what an IMPORT of it would have
+  // written (v4.4.0 D1): the cap its bucket/segment resolves to, stamped
+  // `'cap'`, and R off its own net through the writers' one formula — so the
+  // S1 mark-only save has a cap row to be tested on.
+  const mtfCap = m.limits.resolvePerTradeCap(m.riskCap.readCapRows(t.sqlite), "equity", "eq_mtf");
   const mtfTrade = db
     .insert(t.schema.trades)
     .values(
@@ -401,6 +419,9 @@ export async function seedSequenceBook(db: BookDb, ctx: { t: TempDb; m: BookMods
         sellDate: "2026-08-20",
         mtfFundedAmount: 8000,
         isOpen: true,
+        riskAmount: mtfCap,
+        riskSource: mtfCap == null ? null : "cap",
+        rMultiple: m.riskCap.capR(0, mtfCap),
       }),
     )
     .returning({ id: t.schema.trades.id })
@@ -504,7 +525,7 @@ export function snapshotTemplate(ctx: BookCtx): Template {
 
 /** A scenario's own context over the reset database. */
 export function freshCtx(t: TempDb, m: BookMods, ids: SeedIds): BookCtx {
-  return { t, m, ids, expectedQty: statementOf(), log: [], mayReadShort: new Set(), seq: 0 };
+  return { t, m, ids, expectedQty: statementOf(), log: [], mayReadShort: new Set(), seq: 0, frozenRisk: new Map() };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -773,6 +794,44 @@ export const OPS: BookOp[] = [
     },
   },
   {
+    // D1 (v4.4.0) — THE CAP IS A UNIT, so every R measured in it follows it
+    // (owner ruling OQ1). The risk editor posts every `risk_config` row on each
+    // save, so this op does the same and changes only the per-trade cap of the
+    // SEGMENT rows; the route stamps `capScheme` and re-prices every `'cap'`
+    // trade inside ONE transaction. Alternating between two figures so a second
+    // call in one sequence is a real second edit, not a no-op.
+    name: "editPerTradeCap",
+    needs: "nothing — the risk editor always has its rows",
+    drives: "POST /api/settings {type:'risk'} → repriceCapTrades (lib/queries/risk-cap.ts)",
+    run: async (_db, ctx) => {
+      const rows = ctx.t.db.select().from(ctx.t.schema.riskConfig).all();
+      if (rows.length === 0) return record(ctx, "editPerTradeCap", "skipped", "no risk_config rows");
+      const next = EDITED_PER_TRADE_CAPS[ctx.seq++ % EDITED_PER_TRADE_CAPS.length]!;
+      selectAccount(ctx, ctx.ids.acctA); // the audit line is filed in a real book (invariant 9)
+      const res = await ctx.m.settingsRoute.POST(
+        jsonReq("/api/settings", {
+          type: "risk",
+          // Every stored value posted back, the way the editor posts them: a
+          // field this body omits would be written NULL by the route.
+          rows: rows.map((r) => ({
+            id: r.id,
+            perTradeMaxLoss: r.scope === "segment" ? next : r.perTradeMaxLoss,
+            maxOpen: r.maxOpen,
+            maxTradesDay: r.maxTradesDay,
+            dailyLossStop: r.dailyLossStop,
+            concentrationPct: r.concentrationPct,
+            monthlyTargetBase: r.monthlyTargetBase,
+            monthlyTargetStretch: r.monthlyTargetStretch,
+          })),
+        }),
+      );
+      const out = (await res.json()) as { ok?: boolean; message?: string };
+      if (!out.ok) return record(ctx, "editPerTradeCap", "refused", `${res.status} ${out.message ?? ""}`);
+      // A cap edit moves a UNIT, never a quantity and never money.
+      record(ctx, "editPerTradeCap", "applied", `every segment cap → ${next}`);
+    },
+  },
+  {
     name: "legacifyLatestEnvelope",
     needs: "a Trash envelope that carries `ipoRefs`",
     drives: "the 4.2.x Trash writer — the field did not exist, so it is DELETED, not emptied",
@@ -789,6 +848,13 @@ export const OPS: BookOp[] = [
     },
   },
 ];
+
+/**
+ * The per-trade caps `editPerTradeCap` types into the risk editor, in turn.
+ * Neither is the legacy seed literal (₹9,500) and neither divides any fixture
+ * net evenly, so a stale denominator cannot coincide with the new one.
+ */
+export const EDITED_PER_TRADE_CAPS = [4000, 3000] as const;
 
 /** The look-alike's name — an ISSUE's name, as /ipos' own field is labelled. */
 export const LOOKALIKE_IPO_NAME = "Second G2 Sequence Issue Limited";
@@ -814,6 +880,55 @@ export const TAKEN_ID_SYMBOL = "GTAKEN";
  * variant that turned out to compose interestingly belongs in `OPS` instead.
  */
 export const VARIANTS: BookOp[] = [
+  {
+    // D1 / review S1 — THE MARK-ONLY SAVE. On /active the user pastes a price
+    // with no stop: `app/api/positions/risk/route.ts` writes `riskAmount` back
+    // on every save, and the version that stamped `'set'` unconditionally froze
+    // THAT row in the old cap while every other cap row moved — two units
+    // averaged into one Avg R. The row must still be `'cap'` afterwards, which
+    // the pair with `editPerTradeCap` is what proves.
+    //
+    // A VARIANT and not an OP: its whole subject is what the NEXT cap edit does
+    // to it, the pair the harness names explicitly, and seventeen more scenarios
+    // asking nothing that pair does not ask cost the Windows runner (> 15x
+    // slower on SQLite-file work) more than they are worth.
+    name: "markPriceNoStop",
+    needs: "the partly sold MTF row is in the journal",
+    drives: "POST /api/positions/risk with ONLY a price — no stop in the request",
+    run: async (_db, ctx) => {
+      const row = tradeById(ctx, ctx.ids.mtfTrade);
+      if (!row) return record(ctx, "markPriceNoStop", "skipped", "the MTF row is not in the journal");
+      selectAccount(ctx, row.accountId);
+      const res = await ctx.m.riskRoute.POST(jsonReq("/api/positions/risk", { tradeId: row.id, mtmPrice: 112 }));
+      const out = (await res.json()) as { ok?: boolean; message?: string };
+      if (!out.ok) return record(ctx, "markPriceNoStop", "refused", `${res.status} ${out.message ?? ""}`);
+      record(ctx, "markPriceNoStop", "applied", `marked #${row.id} at 112 with no stop`);
+    },
+  },
+  {
+    // D1 / review S2 — THE EDIT DIALOG RE-POSTING THE CAP. The dialog prefills
+    // the risk from the row and posts it on EVERY save, so a notes-only save
+    // posts the cap figure back. A writer that reads any posted risk as the
+    // user's choice turns that row into `'set'` at today's cap, and the next cap
+    // edit leaves it behind (the stale denominator S2 names). Re-posting what
+    // the row holds must leave a cap row following the cap.
+    //
+    // NOT asserted here: a dialog opened BEFORE a cap edit and saved after it
+    // posts a figure that differs from both the stored value and today's cap —
+    // by the D1 rule that IS a typed risk, and it is kept as `'set'`.
+    name: "saveEditDialogRepostingTheCap",
+    needs: "the Data Quality-joined lot is in the journal and follows the cap",
+    drives: "lib/import/commit.ts updateManualTrade with the risk the dialog prefilled",
+    run: async (_db, ctx) => {
+      const lot = tradeById(ctx, ctx.ids.dqLot);
+      if (!lot) return record(ctx, "saveEditDialogRepostingTheCap", "skipped", "the lot is not in the journal");
+      if (lot.riskSource !== "cap") return record(ctx, "saveEditDialogRepostingTheCap", "skipped", `the lot is ${String(lot.riskSource)}, not a cap row`);
+      selectAccount(ctx, lot.accountId);
+      const res = ctx.m.commit.updateManualTrade(lot.id, { riskAmount: lot.riskAmount });
+      if (!res.ok) return record(ctx, "saveEditDialogRepostingTheCap", "refused", res.message);
+      record(ctx, "saveEditDialogRepostingTheCap", "applied", `re-posted ${String(lot.riskAmount)} on #${lot.id}`);
+    },
+  },
   {
     name: "addLookalikeIpoRecord",
     needs: "the fixture's own IPO record is still stored",
@@ -1162,7 +1277,7 @@ export const isIncompatible = (first: string, second: string) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface Violation {
-  code: "I1" | "I2" | "I3" | "I4" | "I5" | "I6";
+  code: "I1" | "I2" | "I3" | "I4" | "I5" | "I6" | "I7";
   detail: string;
 }
 
@@ -1325,6 +1440,37 @@ export async function checkInvariants(db: BookDb, ctx: BookCtx): Promise<Violati
     for (const col of [...MONEY_COLUMNS, ...LEVEL_COLUMNS]) {
       const v = r[col];
       if (typeof v !== "number" || !Number.isFinite(v)) add("I6", `trades #${r.id}.${col} is ${JSON.stringify(v)}`);
+    }
+  }
+
+  // ── I7 CAP ROWS FOLLOW THE CAP ────────────────────────────────────────────
+  // v4.4.0 D1, owner ruling OQ1: a per-trade cap is a UNIT, so after EVERY
+  // operation each row that states it follows the cap holds the cap its OWN
+  // bucket/segment resolves to now, and an R computed from it by the writers'
+  // one formula (`capR`). Charges stay frozen on a rate edit because they are
+  // money; a cap-R is not money. A staged position's R is frozen at its first
+  // entry (invariant 4) and a `'frozen'` row is never re-priced at all, so
+  // those rows must come back byte-identical.
+  {
+    const caps = ctx.m.riskCap.readCapRows(ctx.t.sqlite);
+    for (const r of rows) {
+      if (r.staged || r.riskSource === "frozen") {
+        const sig = JSON.stringify([r.riskAmount, r.rMultiple, r.riskSource]);
+        const first = ctx.frozenRisk.get(r.id);
+        if (first === undefined) ctx.frozenRisk.set(r.id, sig);
+        else if (first !== sig) add("I7", `#${r.id} is ${r.staged ? "staged" : "'frozen'"} and its risk moved: ${first} → ${sig}`);
+        continue;
+      }
+      if (r.riskSource !== "cap") continue;
+      const cap = ctx.m.limits.resolvePerTradeCap(caps, r.bucket, r.segment);
+      if ((r.riskAmount ?? null) !== (cap ?? null)) {
+        add("I7", `#${r.id} (${r.bucket}/${r.segment}) follows the cap but holds ${String(r.riskAmount)}, the resolver says ${String(cap)}`);
+        continue;
+      }
+      const expected = ctx.m.riskCap.capR(r.netPnl, cap);
+      if ((r.rMultiple ?? null) !== (expected ?? null)) {
+        add("I7", `#${r.id} states R ${String(r.rMultiple)}, but ${r.netPnl} ÷ ${String(cap)} is ${String(expected)}`);
+      }
     }
   }
 

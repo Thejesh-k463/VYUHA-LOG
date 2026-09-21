@@ -812,3 +812,117 @@ describe("G3 — the dimensions of the matrix are the real ones", () => {
     expect(stored[3]).not.toBe(Math.round(((16000 * onPaid.mtfInterestAnnual * 30) / 365) * 100) / 100);
   });
 });
+
+/**
+ * D1 (v4.4.0) — THE RISK FIELD'S HINT IS THE RISK THE SAVE STORES.
+ *
+ * The Add form's risk input is a placeholder, not a value: with no stop and
+ * nothing typed it says "from SL, else your ₹X {segment} cap", and X comes from
+ * the preview route (`getPerTradeCap`). The save resolves the cap again, in
+ * `commitManualTrade`, from the segment IT classifies. Two resolutions of one
+ * figure is exactly the shape this file exists for — a per-segment cap makes
+ * them separable for the first time, and the form would state ₹7,000 above a
+ * row stored at ₹4,000 with an R to match.
+ *
+ * Both halves are the real ones: the preview is the route, the save is the
+ * server action the form submits to. The caps are made DISTINCT per segment
+ * first, so a resolver that reads the global row, or another segment's, cannot
+ * pass by coincidence.
+ */
+describe("D1 — the manual form's stated risk equals the risk it saves", () => {
+  /** A cap per segment, all different, none the legacy seed literal (₹9,500). */
+  const SEGMENT_CAPS: Record<string, number> = {
+    eq_delivery: 7000,
+    eq_mtf: 6250,
+    eq_intraday: 5100,
+    stock_option: 4300,
+  };
+  let riskHint: typeof import("@/components/trades/manual-trade-form").riskHint;
+  let buildManualPreviewBody: typeof import("@/components/trades/manual-preview-body").buildManualPreviewBody;
+  let createManualTrade: typeof import("@/app/trades/actions").createManualTrade;
+
+  beforeAll(async () => {
+    ({ riskHint } = await import("@/components/trades/manual-trade-form"));
+    ({ buildManualPreviewBody } = await import("@/components/trades/manual-preview-body"));
+    ({ createManualTrade } = await import("@/app/trades/actions"));
+    // Typed by the user in the risk editor: `capScheme` 1 is what makes a figure
+    // the user's own rather than the v1 seed literal (lib/risk/limits.ts).
+    for (const [segment, cap] of Object.entries(SEGMENT_CAPS)) {
+      t.sqlite.prepare("UPDATE risk_config SET per_trade_max_loss = ?, cap_scheme = 1 WHERE scope = 'segment' AND key = ?").run(cap, segment);
+    }
+  });
+
+  const shapes: [SegFixture, boolean][] = SEGMENTS.flatMap((seg) => [[seg, true] as [SegFixture, boolean], [seg, false] as [SegFixture, boolean]]);
+
+  it.each(shapes.map(([seg, open]) => [seg.segment, open, seg] as const))(
+    "%s, open %s: the hint states the cap the save stores, and the row follows it",
+    async (_segment, open, seg) => {
+      const sym = `RISK${++seq}`;
+      const tradingsymbol = seg.instrumentType === "option" ? `OPT ${sym} 24 Sep 2026 100 CE` : sym;
+      const equity = seg.instrumentType !== "option";
+      // What the form's preview effect assembles — no stop, no typed risk.
+      const body = buildManualPreviewBody({
+        broker: "zerodha",
+        tradingsymbol,
+        kind: equity ? "equity" : "fno",
+        productHint: null,
+        segment: equity ? seg.segment : null,
+        exchange: "NSE",
+        direction: "buy",
+        open,
+        entryQty: seg.qty,
+        entryPrice: seg.entry,
+        entryDate: BUY_ISO,
+        exitQty: open ? 0 : seg.qty,
+        exitPrice: open ? 0 : seg.exit,
+        exitDate: open ? null : "2026-08-14",
+        ownCapitalUsed: null,
+        daysHeld: 0,
+      });
+      const res = await POST(
+        new Request("http://localhost:3011/api/charges/preview", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const shown = (await res.json()) as { classification: { segment: string }; perTradeCap?: number | null };
+
+      const fd = new FormData();
+      const fields: Record<string, string> = {
+        broker: "zerodha",
+        tradingsymbol,
+        direction: "buy",
+        segment: equity ? seg.segment : "",
+        exchange: "NSE",
+        buyQty: String(seg.qty),
+        avgBuyPrice: String(seg.entry),
+        buyDate: BUY_ISO,
+        sellQty: open ? "" : String(seg.qty),
+        avgSellPrice: open ? "" : String(seg.exit),
+      };
+      if (open) fields.open = "true";
+      else fields.sellDate = "2026-08-14";
+      for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+      const saveRes = await createManualTrade({ ok: false, message: "" }, fd);
+      expect(saveRes, saveRes.message).toMatchObject({ ok: true });
+      const stored = row(saveRes.tradeId!);
+
+      // Both halves classified the same row (else they are answering about two
+      // different segments and the equality below would be a coincidence).
+      expect(shown.classification.segment).toBe(stored.segment);
+      expect(SEGMENT_CAPS[stored.segment], "the fixture must state a cap for this segment").toBeDefined();
+      // The figure the form STATED is the figure the save STORED, and the row
+      // follows the cap (so a later cap edit moves it — D1, ruling OQ1).
+      expect(shown.perTradeCap).toBe(SEGMENT_CAPS[stored.segment]);
+      expect(riskHint(shown as never)).toContain(`₹${SEGMENT_CAPS[stored.segment]!.toLocaleString("en-IN")}`);
+      expect([stored.riskAmount, stored.riskSource]).toEqual([shown.perTradeCap, "cap"]);
+      // `+ 0` on both sides: an open row's net is a small loss that rounds to
+      // NEGATIVE zero, and -0 is not +0 under Object.is — a signed zero, never
+      // a different number.
+      const zeroless = (n: number | null) => (n == null ? null : n + 0);
+      expect(zeroless(stored.rMultiple)).toBe(zeroless(stored.riskAmount ? Math.round((stored.netPnl / stored.riskAmount) * 100) / 100 : null));
+    },
+  );
+});

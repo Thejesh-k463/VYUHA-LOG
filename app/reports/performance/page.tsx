@@ -7,7 +7,7 @@ import { EquityCurve, UnderwaterCurve } from "@/components/dashboard/charts";
 import { monteCarloEquity } from "@/lib/analytics/monte-carlo";
 import { storedMarkFor } from "@/lib/analytics/positions";
 import { getPerformanceTrades } from "@/lib/queries/trades";
-import { getSettings } from "@/lib/queries/settings";
+import { getRiskFree, getSettings } from "@/lib/queries/settings";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getExternalCashFlows, getLedgerAggregates } from "@/lib/queries/ledger";
 import { getBucketCapital } from "@/lib/queries/capital";
@@ -35,7 +35,6 @@ function daysBetween(a: string, b: string): number {
   return Math.max(0, Math.round((new Date(b + "T00:00:00").getTime() - new Date(a + "T00:00:00").getTime()) / 86400000));
 }
 
-const RISK_FREE = 0.07; // India ~7% — used for Sharpe/Sortino
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function cellColor(ret: number | undefined): string {
@@ -83,7 +82,10 @@ export default function PerformancePage() {
   // the explainer can never state a basis the figure was not computed on.
   const daily = [...dailyPnl(trades).entries()].map(([date, net]) => ({ date, net }));
   const basis = annualisationBasis(daily.reduce((m, d) => (d.date > m ? d.date : m), "") || todayIstIso());
-  const helpVars = { riskFreePct: `${Math.round(RISK_FREE * 100)}%`, tradingDays: String(basis.days) };
+  // v4.4.0 D5 — the ONE dated risk-free setting (was a hard-coded 7% here, in
+  // the monthly report and in the Greeks). Its label rides beside every figure.
+  const riskFree = getRiskFree();
+  const helpVars = { riskFreePct: riskFree.pct, tradingDays: String(basis.days) };
   const noCapitalNote = capitalKnown
     ? undefined
     : 'This card shows "—" because no starting capital is configured — the figure would otherwise divide by an invented base. Set it under Settings → Capital & Go-Live.';
@@ -92,7 +94,7 @@ export default function PerformancePage() {
   // series shape and the ₹ drawdown (a peak-to-trough DIFFERENCE, so the base
   // cancels) stay right, while every %-figure is garbage — which is exactly
   // why each one is gated on capitalKnown below.
-  const p = computePerformance(daily, capital, RISK_FREE, basis.days);
+  const p = computePerformance(daily, capital, riskFree.annual, basis.days);
   const curve = equityCurve(trades);
 
   /**
@@ -211,7 +213,7 @@ export default function PerformancePage() {
   const portfolioReturns: ReturnByDate[] = p.series.map((s) => ({ date: s.date, ret: s.ret }));
   // Alpha/beta regress DAILY RETURNS, which are P&L over equity — unusable on
   // the ₹1 fallback base.
-  const bench = capitalKnown ? computeBenchmark(portfolioReturns, benchCloses, RISK_FREE, basis.days) : null;
+  const bench = capitalKnown ? computeBenchmark(portfolioReturns, benchCloses, riskFree.annual, basis.days) : null;
 
   // Underwater curve — the per-day drawdown series already computed by computePerformance.
   const underwater = p.series.map((s) => ({ date: s.date, ddPct: Math.round(s.drawdown * 10000) / 100 }));
@@ -243,7 +245,7 @@ export default function PerformancePage() {
       <PageHeader
         title="Performance"
         description="Risk-adjusted returns on realised P&L."
-        actions={<Badge variant="secondary">vs {Math.round(RISK_FREE * 100)}% risk-free</Badge>}
+        actions={<Badge variant="secondary">vs risk-free {riskFree.label}</Badge>}
       />
       <div className="space-y-5 p-6">
         {p.tradingDays === 0 ? (
@@ -536,7 +538,7 @@ export default function PerformancePage() {
                 The money-weighted <strong>XIRR</strong> is derived from the cash ledger (deposits/withdrawals) plus realised and
                 unrealised trading P&L over {inr(toRupees(terminalPaise), { decimals: 0 })} terminal value — accounting for the
                 size and timing of capital. The <strong>TWR</strong> chains daily P&L returns while neutralising the
-                timing of deposits/withdrawals — the manager-skill counterpart to XIRR. Sharpe/Sortino use a {Math.round(RISK_FREE * 100)}% annual risk-free rate; ratios annualise with {annualisationNote(basis)}.
+                timing of deposits/withdrawals — the manager-skill counterpart to XIRR. Sharpe/Sortino use a {riskFree.pct} annual risk-free rate ({riskFree.asOf ? `as of ${riskFree.asOf}` : "Vyuha default"}); ratios annualise with {annualisationNote(basis)}.
               </p>
             ) : (
               <p className="text-[0.6875rem] text-muted-foreground">

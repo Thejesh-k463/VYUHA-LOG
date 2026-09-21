@@ -33,8 +33,6 @@ import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
-import { resolvePerTradeCap, type CapRow } from "@/lib/risk/limits";
-import { capR, type RiskSource } from "@/lib/queries/risk-cap";
 import { ipoEditCharges, type IpoEditPricing } from "@/lib/analytics/ipo";
 import { sellChargerFor } from "@/lib/queries/ipos";
 // D20 (wave 2O): the ladder is the SINGLE writer of a staged parent's priced heads,
@@ -94,28 +92,9 @@ interface BuiltRow {
   dedup: string;
   buyOrderCount: number;
   sellOrderCount: number;
-  riskAmount: number | null;
+  riskAmount: number;
   rMultiple: number | null;
-  /** 'cap' — or 'frozen' for a staged import (invariant 4); null with no risk. */
-  riskSource: RiskSource | null;
   realisedPct: number | null;
-}
-
-/**
- * The risk a writer stores when it RE-PRICES an existing row (a supersede, a
- * reclassification, a close, a Data Quality join): a `'cap'` row re-resolves to
- * today's cap for the bucket/segment it will hold AFTER this write (D1 — a cap
- * is a unit, and the row must read in the one the book reads in); any other row
- * keeps the risk it states, because a typed or frozen risk is not the cap's.
- */
-function keptRisk(
-  row: { riskSource: string | null; riskAmount: number | null },
-  bucket: string,
-  segment: string,
-  capRows: readonly CapRow[],
-): { riskAmount: number | null; followsCap: boolean } {
-  if (row.riskSource === "cap") return { riskAmount: resolvePerTradeCap(capRows, bucket, segment), followsCap: true };
-  return { riskAmount: row.riskAmount, followsCap: false };
 }
 
 /** Apply auto-classification + any persisted override, then compute charges. */
@@ -123,7 +102,7 @@ function buildRow(
   t: NormalizedTrade,
   rates: RatesMap,
   overrides: Map<string, Override>,
-  defaults: { buyOrders: number; sellOrders: number; capRows: readonly CapRow[] },
+  defaults: { buyOrders: number; sellOrders: number; perTradeRisk: number },
 ): BuiltRow {
   const dedup = dedupHash(t);
   let cls = classify({
@@ -191,32 +170,24 @@ function buildRow(
   // Net non-zero, not just buyQty>sellQty — a pure sell-to-open (short) row has
   // buyQty=0 and must still be OPEN, not silently marked closed.
   const isOpen = t.buyQty !== t.sellQty;
-  // D1 (v4.4.0) — THE per-trade cap for the segment this row classified into
-  // (global < bucket < segment, lib/risk/limits.ts). It used to be the GLOBAL
-  // row only, with a `?? 9500` nobody configured: an index_option import
-  // ignored the index_option cap the breach checks enforced. No cap → no risk
-  // and no R (invariant 6). A staged import is 'frozen' like every staged row
-  // (invariant 4); anything else follows the cap.
-  const riskAmount = resolvePerTradeCap(defaults.capRows, cls.bucket, cls.segment);
-  const riskSource: RiskSource | null = stagedFromExecutions(t) ? (riskAmount == null ? null : "frozen") : "cap";
-  const rMultiple = capR(netPnl, riskAmount);
+  const riskAmount = defaults.perTradeRisk;
+  const rMultiple = riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null;
   const realisedPct = t.buyValue > 0 && !isOpen ? Math.round((t.grossPnl / t.buyValue) * 10000) / 100 : null;
 
-  return { classification: cls, charges, netPnl, isOpen, dedup, buyOrderCount, sellOrderCount, riskAmount, rMultiple, riskSource, realisedPct };
+  return { classification: cls, charges, netPnl, isOpen, dedup, buyOrderCount, sellOrderCount, riskAmount, rMultiple, realisedPct };
 }
 
 /** Rates and defaults only — for mutations of a row that already has an account. */
 function loadRatesContext() {
   const rates = loadRatesMap();
   const s = db.select().from(settingsTable).limit(1).all()[0];
-  // Every risk_config row, handed to the ONE resolver — never read here.
-  const capRows = db.select().from(riskConfig).all();
+  const globalRisk = db.select().from(riskConfig).where(eq(riskConfig.scope, "global")).all()[0];
   return {
     rates,
     defaults: {
       buyOrders: s?.defaultBuyOrders ?? 1,
       sellOrders: s?.defaultSellOrders ?? 1,
-      capRows,
+      perTradeRisk: globalRisk?.perTradeMaxLoss ?? 9500,
     },
   };
 }
@@ -1461,10 +1432,6 @@ export function commitParsedFile(
       if (target) {
         const before = tx.select().from(tradesTable).where(eq(tradesTable.id, target.id)).get();
         if (before) {
-          // D1 (v4.4.0): a 'cap' row re-resolves for the segment it holds (the
-          // supersede never re-classifies); a typed or frozen risk is kept.
-          const kept = keptRisk(before, before.bucket, before.segment, defaults.capRows);
-          const staged = stagedFromExecutions(t);
           const patch = {
             isin: t.isin,
             buyQty: t.buyQty,
@@ -1486,12 +1453,8 @@ export function commitParsedFile(
             isOpen: b.isOpen,
             buyOrderCount: b.buyOrderCount,
             sellOrderCount: b.sellOrderCount,
-            // R is the row's own risk figure (the user may have set it), not the
-            // default — unless the row follows the cap, which it then re-reads.
-            ...(kept.followsCap
-              ? { riskAmount: kept.riskAmount, riskSource: staged ? (kept.riskAmount == null ? null : ("frozen" as const)) : ("cap" as const) }
-              : {}),
-            rMultiple: capR(b.netPnl, kept.riskAmount),
+            // R is the row's own risk figure (the user may have set it), not the default.
+            rMultiple: (before.riskAmount ?? 0) > 0 ? Math.round((b.netPnl / before.riskAmount!) * 100) / 100 : null,
             brokerage: b.charges.brokerage,
             sttCtt: b.charges.sttCtt,
             exchangeTxn: b.charges.exchangeTxn,
@@ -1503,7 +1466,7 @@ export function commitParsedFile(
             mtfInterest: b.charges.mtfInterest,
             pledgeCharges: b.charges.pledgeCharges,
             dedupHash: b.dedup,
-            staged,
+            staged: stagedFromExecutions(t),
             // An unknown basis is the file's fact; a basis the user chose is theirs.
             acquisition:
               before.acquisition == null || before.acquisition === "unknown"
@@ -1570,7 +1533,6 @@ export function commitParsedFile(
           sellOrderCount: b.sellOrderCount,
           riskAmount: b.riskAmount,
           rMultiple: b.rMultiple,
-          riskSource: b.riskSource,
           brokerage: b.charges.brokerage,
           sttCtt: b.charges.sttCtt,
           exchangeTxn: b.charges.exchangeTxn,
@@ -1798,17 +1760,12 @@ export function commitManualTrade(
   const isShortOpen = isOpen && t.sellQty > t.buyQty;
   const entryPrice = isShortOpen ? t.avgSellPrice : t.avgBuyPrice;
   // Risk = explicit amount, else derived from SL (|entry − SL| × qty), else the cap.
-  // D1 (v4.4.0): the first two are the user's ('set'); the cap is THE resolver's
-  // for this row's segment ('cap' — it follows every later cap edit), and no cap
-  // configured means no risk and no R rather than a literal ₹9,500.
   const riskQty = Math.abs(isOpen ? t.buyQty - t.sellQty : t.buyQty) || t.buyQty;
-  const typedRisk =
+  const riskAmount =
     fields.riskAmount ??
     (fields.slPlanned != null && riskQty > 0
       ? Math.round(Math.abs(entryPrice - fields.slPlanned) * riskQty * 100) / 100
-      : null);
-  const riskAmount = typedRisk ?? resolvePerTradeCap(defaults.capRows, cls.bucket, cls.segment);
-  const riskSource: RiskSource = typedRisk != null ? "set" : "cap";
+      : defaults.perTradeRisk);
 
   const row = db
     .insert(tradesTable)
@@ -1847,8 +1804,7 @@ export function commitManualTrade(
       trailingSl: fields.trailingSl ?? null,
       targetPlanned: fields.targetPlanned ?? null,
       riskAmount,
-      rMultiple: capR(netPnl, riskAmount),
-      riskSource,
+      rMultiple: riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null,
       setupTag: fields.setupTag ?? null,
       notes: fields.notes ?? null,
       // v4.3.0 — the Signal book. An option only (the classifier's verdict, not
@@ -2062,15 +2018,10 @@ export function closePosition(
   const grossPnl = Math.round((sellValue - buyValue) * 100) / 100;
   const netPnl = Math.round((grossPnl - charges.total) * 100) / 100;
   const realisedPct = buyValue > 0 ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
-  // D1 (v4.4.0): the row keeps its own risk source; a 'cap' row re-reads today's cap.
-  const kept = keptRisk(t, t.bucket, t.segment, defaults.capRows);
-  const rMultiple = kept.followsCap
-    ? capR(netPnl, kept.riskAmount)
-    : t.riskAmount && t.riskAmount > 0 ? Math.round((netPnl / t.riskAmount) * 100) / 100 : t.rMultiple;
+  const rMultiple = t.riskAmount && t.riskAmount > 0 ? Math.round((netPnl / t.riskAmount) * 100) / 100 : t.rMultiple;
 
   db.update(tradesTable)
     .set({
-      ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
       buyQty,
       avgBuyPrice,
       buyValue,
@@ -2213,15 +2164,6 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       if (lot.accountId <= 0 || (view > 0 && view !== lot.accountId)) {
         return { ok: false, code: "OTHER_ACCOUNT", message: "That position belongs to a different account from the one you are viewing. Nothing was changed." };
       }
-      // v4.4.0 fix list (wave 2P's recorded unreadable-lot finding) — the join
-      // prices from the LOT's stored dates (the rate epoch, the MTF day count),
-      // so a lot stored as '2026-02-31' or '9999-99-99' is refused here in the
-      // sentence the other three stored-date writers state, before the pair is
-      // re-derived: the pure rule reads only the ISO shape, so the first joined
-      // (0 days of interest from a day the row does not state) and the second
-      // was refused NO_PAIR, a reason that is not the reason. Nothing is written.
-      const badStored = storedDateProblem(lot);
-      if (badStored) return { ok: false, code: "BAD_DATE", message: badStored };
 
       // 1 — re-derive, over the lot's own book only (pairs never cross books).
       const sym = lot.tradingsymbol.trim().toUpperCase();
@@ -2296,7 +2238,7 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       }
 
       // 3 — charges: the bill each side STATES, else charge_config for that side alone.
-      const { rates, defaults } = loadRatesContext();
+      const { rates } = loadRatesContext();
       const ratesOn = (day: string) => findRates(rates, lot.broker as Broker, lot.segment as Segment, lot.exchange as Exchange, day);
       const partsOf = (c: StaleChargeParts) => Object.fromEntries(STALE_CHARGE_PARTS.map((k) => [k, c[k]])) as StaleChargeParts;
       const side = (
@@ -2357,12 +2299,7 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       const grossPnl = r2(sellValue - buyValue);
       const netPnl = r2(grossPnl - chargesTotal);
       const realisedPct = buyValue > 0 ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
-      // D1 (v4.4.0): the lot keeps ITS risk source (the sale's leaves with the
-      // sale row); a 'cap' lot re-reads today's cap for its own segment.
-      const kept = keptRisk(lot, lot.bucket, lot.segment, defaults.capRows);
-      const rMultiple = kept.followsCap
-        ? capR(netPnl, kept.riskAmount)
-        : lot.riskAmount && lot.riskAmount > 0 ? Math.round((netPnl / lot.riskAmount) * 100) / 100 : lot.rMultiple;
+      const rMultiple = lot.riskAmount && lot.riskAmount > 0 ? Math.round((netPnl / lot.riskAmount) * 100) / 100 : lot.rMultiple;
       const importNotes = withStaleCloseNote(lot.importNotes, sale.dedupHash);
       const what = isShort ? "purchase" : "sale";
 
@@ -2389,7 +2326,6 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
           netPnl,
           realisedPct,
           rMultiple,
-          ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
           ...parts,
           mtfFundedAmount,
           importNotes,
@@ -2697,31 +2633,8 @@ export function updateManualTrade(
   // and both the net and the marker below take the not-repriced path.
   const netPnl = pricedHere ? Math.round((grossPnl - charges.total) * 100) / 100 : t.netPnl;
   const realisedPct = buyValue > 0 && !isOpen ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
-  // D1 (v4.4.0) — WHOSE risk this save stores. The dialog posts the risk on
-  // every save (prefilled from the row, edit-trade-dialog.tsx), so a posted
-  // figure is the user's choice ('set') only when it differs from BOTH the
-  // stored value AND today's cap for the row's segment: re-posting what the row
-  // holds, or typing exactly the cap, leaves a cap row following the cap. A
-  // posted null clears risk, source and R together; an omitted risk keeps the
-  // row's own, a 'cap' row re-reading today's cap.
-  const capNow = resolvePerTradeCap(defaults.capRows, t.bucket, t.segment);
-  const posted = fields.riskAmount;
-  let riskAmount: number | null;
-  let riskSource: string | null;
-  if (posted === null) {
-    riskAmount = null;
-    riskSource = null;
-  } else if (posted !== undefined && posted !== t.riskAmount && posted !== capNow) {
-    riskAmount = posted;
-    riskSource = "set";
-  } else if (t.riskSource === "cap" || (posted !== undefined && posted === capNow && posted !== t.riskAmount)) {
-    riskAmount = capNow;
-    riskSource = "cap";
-  } else {
-    riskAmount = t.riskAmount;
-    riskSource = t.riskSource;
-  }
-  const rMultiple = capR(netPnl, riskAmount);
+  const riskAmount = fields.riskAmount !== undefined ? fields.riskAmount : t.riskAmount;
+  const rMultiple = riskAmount && riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null;
 
   // H1 (M2 variant (c)) — an edit that re-makes the EXIT leg of a lot joined
   // from Data Quality leaves a close that is no longer the join's, so the join
@@ -2792,7 +2705,6 @@ export function updateManualTrade(
       realisedPct,
       riskAmount,
       rMultiple,
-      riskSource,
       slPlanned: fields.slPlanned !== undefined ? fields.slPlanned : t.slPlanned,
       trailingSl: fields.trailingSl !== undefined ? fields.trailingSl : t.trailingSl,
       targetPlanned: fields.targetPlanned !== undefined ? fields.targetPlanned : t.targetPlanned,
@@ -2912,7 +2824,7 @@ export function applyOverride(
   }
 
   // recompute charges for the trade under the new segment/exchange
-  const { rates, defaults } = loadRatesContext();
+  const { rates } = loadRatesContext();
   const r = findRates(rates, t.broker as Broker, segment, exchange, pricingDate(t, todayIstIso()));
   // MTF accrual follows the segment (same rules as updateManualTrade): a flip
   // TO eq_mtf estimates the funded principal (persisted amount first, else the
@@ -2952,9 +2864,6 @@ export function applyOverride(
     r,
   );
   const netPnl = Math.round((t.grossPnl - charges.total) * 100) / 100;
-  // D1 (v4.4.0): a 'cap' row re-resolves for its NEW segment — it used to keep
-  // the old segment's denominator; a typed risk stays the user's.
-  const kept = keptRisk(t, bucket, segment, defaults.capRows);
 
   db.update(tradesTable)
     .set({
@@ -2964,10 +2873,7 @@ export function applyOverride(
       setupTag: ov.setupTag ?? t.setupTag ?? null,
       chargesTotal: charges.total,
       netPnl,
-      ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
-      rMultiple: kept.followsCap
-        ? capR(netPnl, kept.riskAmount)
-        : t.riskAmount && t.riskAmount > 0 ? Math.round((netPnl / t.riskAmount) * 100) / 100 : t.rMultiple,
+      rMultiple: t.riskAmount && t.riskAmount > 0 ? Math.round((netPnl / t.riskAmount) * 100) / 100 : t.rMultiple,
       brokerage: charges.brokerage,
       sttCtt: charges.sttCtt,
       exchangeTxn: charges.exchangeTxn,

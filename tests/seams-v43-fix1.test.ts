@@ -768,6 +768,7 @@ describe("S5 · the restore re-key skips a frozen lot (F1 close-open-lots → F1
       ["ipo-account-rehome-v1", true],
       ["leg-trade-date-iso-v1", true], // 2P D4 layer 3: the leg-date ISO rewrite, registered third
       ["signal-notes-backfill-v1", true], // v4.3.0 Signal book: the seeded notes → signal_json backfill, registered fourth
+      ["risk-source-v1", true], // v4.4.0 D1: classifies risk_source on pre-0073 rows, registered fifth
     ]);
     expect(results[0].rekeyed, "no frozen row may be re-keyed").toBe(0);
 

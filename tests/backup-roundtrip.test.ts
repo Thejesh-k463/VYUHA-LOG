@@ -782,3 +782,65 @@ describe("the option strategy shelf (v4.3, migration 0071) is a PREFERENCE and T
     t.db.update(t.schema.settings).set({ strategyShelfJson: null }).run();
   });
 });
+
+/**
+ * v4.4.0 (migration 0073) — what a backup carries for D1 and D5, and what a
+ * file written BEFORE 0073 restores to.
+ *
+ * D5: the risk-free pair is a user CHOICE (BASELINE_SETTINGS_FIELDS, not
+ * SETTINGS_MACHINE_COLUMNS), so it travels; a pre-0073 file never stated it,
+ * so the restored row reads the column default — 7%, no date, "Vyuha default".
+ * D1: `trades.risk_source` and `risk_config.cap_scheme` travel with their rows;
+ * a pre-0073 file carries neither, so its caps keep the LEGACY reading (the
+ * seed literal inherits) and `risk-source-v1` — re-run after every restore —
+ * classifies its rows and re-prices the 'cap' ones against the restored caps.
+ */
+describe("migration 0073's columns in a backup", () => {
+  const pair = () => t.sqlite.prepare("SELECT risk_free_rate_ppm AS ppm, risk_free_as_of AS asOf FROM settings").get();
+
+  it("the risk-free pair round-trips", () => {
+    t.db.update(t.schema.settings).set({ riskFreeRatePpm: 65000, riskFreeAsOf: "2026-09-01" }).run();
+    const dump = backup.dumpDatabase(false);
+    expect((dump.tables.settings as Record<string, unknown>[])[0]).toMatchObject({ riskFreeRatePpm: 65000, riskFreeAsOf: "2026-09-01" });
+    t.db.update(t.schema.settings).set({ riskFreeRatePpm: 70000, riskFreeAsOf: null }).run();
+    expect(backup.restoreDatabase(dump).ok).toBe(true);
+    expect(pair()).toEqual({ ppm: 65000, asOf: "2026-09-01" });
+  });
+
+  it("a pre-0073 file restores the pair to the default: 7%, no date", () => {
+    t.db.update(t.schema.settings).set({ riskFreeRatePpm: 65000, riskFreeAsOf: "2026-09-01" }).run();
+    const dump = backup.dumpDatabase(false);
+    for (const s of dump.tables.settings as Record<string, unknown>[]) {
+      delete s.riskFreeRatePpm;
+      delete s.riskFreeAsOf;
+    }
+    expect(backup.restoreDatabase(dump).ok).toBe(true);
+    expect(pair()).toEqual({ ppm: 70000, asOf: null });
+  });
+
+  it("a pre-0073 file: the caps keep the legacy reading, and its rows are classified and re-priced against them", () => {
+    clearTrades();
+    t.sqlite.prepare("UPDATE risk_config SET per_trade_max_loss = 9500, cap_scheme = 1 WHERE scope <> 'global'").run();
+    t.sqlite.prepare("UPDATE risk_config SET per_trade_max_loss = 6000, cap_scheme = 1 WHERE scope = 'global'").run();
+    t.db.insert(t.schema.trades).values([
+      tradeRow({ symbol: "CAPROW", segment: "index_option", bucket: "active", netPnl: -3000, riskAmount: 9500, rMultiple: -0.32, riskSource: "cap" }),
+      tradeRow({ symbol: "TYPED", netPnl: -600, riskAmount: 1200, rMultiple: -0.5, riskSource: "set" }),
+    ]).run();
+    const dump = backup.dumpDatabase(false);
+    // The v4.3 envelope: no riskSource on a trade, no capScheme on a rate row.
+    for (const r of dump.tables.trades as Record<string, unknown>[]) delete r.riskSource;
+    for (const r of dump.tables.risk_config as Record<string, unknown>[]) delete r.capScheme;
+
+    expect(backup.restoreDatabase(dump).ok).toBe(true);
+    const caps = t.db.select().from(t.schema.riskConfig).all();
+    expect(caps.find((r) => r.key === "index_option")?.capScheme, "a pre-0073 row keeps the legacy reading").toBeNull();
+    const rows = t.db.select().from(t.schema.trades).all();
+    const cap = rows.find((r) => r.symbol === "CAPROW")!;
+    const typed = rows.find((r) => r.symbol === "TYPED")!;
+    // The seed literal on index_option inherits the global 6,000 — and the row is re-priced into it.
+    expect([cap.riskSource, cap.riskAmount, cap.rMultiple]).toEqual(["cap", 6000, -0.5]);
+    expect([typed.riskSource, typed.riskAmount, typed.rMultiple]).toEqual(["set", 1200, -0.5]);
+    clearTrades();
+    t.sqlite.prepare("UPDATE risk_config SET per_trade_max_loss = 9500, cap_scheme = 1 WHERE scope = 'global'").run();
+  });
+});

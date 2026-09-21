@@ -130,7 +130,7 @@ export function WinLossTab({ report, dist, tail }: { report: WinLossReport; dist
                 Two series because the R means two different things. <b>Plan-derived R</b> is measured against a
                 risk amount that verifiably derives from a recorded stop (the stored risk matches
                 |entry &minus; stop| &times; qty). <b>Default-cap R</b> is everything else — including trades that
-                recorded a stop but whose risk stayed the per-trade cap (₹9,500 by default) that imports fall
+                recorded a stop but whose risk stayed your per-segment cap, which imports fall
                 back to — it measures P&amp;L in cap units, <b>not</b> plan adherence, and a &minus;2 there does
                 not mean a stop was overrun.
                 {dist.noRCount > 0 && <> {dist.noRCount} trade{dist.noRCount === 1 ? "" : "s"} carry no R at all and sit in neither series.</>}

@@ -20,6 +20,7 @@ const FIELD_LABELS: Record<string, string> = {
   colorblindSafe: "colorblind mode", defaultBuyOrders: "default buy orders",
   defaultSellOrders: "default sell orders", autoMtmEnabled: "auto-MTM",
   strategyShelfJson: "strategy shelf",
+  riskFreeRatePpm: "risk-free rate", riskFreeAsOf: "risk-free rate date",
 };
 
 // v4.3.0 P12 + N25: restoreBaseline re-inserts the snapshot's charge rows WITH

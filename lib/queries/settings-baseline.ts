@@ -1,13 +1,14 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, sqlite } from "@/lib/db";
 import { settings, settingsBaseline, chargeConfig, marginConfig, riskConfig } from "@/lib/db/schema";
 import {
   buildBaseline, isBaseline, diffAgainstBaseline, pickBaselineSettings,
   type SettingsBaseline, type BaselineSettingsField,
 } from "@/lib/domain/settings-baseline";
 import { recordAudit } from "@/lib/audit";
-import { refreshChargeConfig } from "@/lib/db/seed-core";
+import { refreshChargeConfig, seedRiskConfig } from "@/lib/db/seed-core";
+import { repriceCapTrades } from "@/lib/queries/risk-cap";
 
 /**
  * Server half of "My Default Settings". The preference/state split lives in
@@ -100,6 +101,14 @@ export function restoreBaseline(): { ok: boolean; message: string } {
       for (const r of b.marginConfig) tx.insert(marginConfig).values(r as never).run();
       tx.delete(riskConfig).run();
       for (const r of b.riskConfig) tx.insert(riskConfig).values(r as never).run();
+      // D1 (v4.4.0): a snapshot captured before migration 0073 lacks the three
+      // segment rows it added (eq_delivery, eq_mtf, future) — re-seed every
+      // bucket/segment row the snapshot does not hold (INSERT OR IGNORE, so the
+      // restored rows are untouched), then put every cap-derived R on the caps
+      // just restored. Same transaction: a restore never leaves a 'cap' row
+      // priced in a cap that is no longer configured.
+      seedRiskConfig(tx);
+      repriceCapTrades(sqlite);
     });
   } catch (e) {
     return { ok: false, message: `Nothing was restored — ${e instanceof Error ? e.message : "unknown error"}. Your settings are unchanged.` };

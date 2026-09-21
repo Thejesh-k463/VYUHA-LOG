@@ -512,6 +512,13 @@
       "when": 1788800600000,
       "tag": "0072_trades-signal-json",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1788800700000,
+      "tag": "0073_per-segment-cap-risk-free",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ import {
 import { previousWeekStart, weekOverWeek } from "@/components/review/week-gap";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
+import { withSegmentCap } from "@/lib/risk/limits";
 import { getTrades } from "@/lib/queries/trades";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getSelectedAccount, getSelectedAccountId, isAggregateView } from "@/lib/queries/accounts";
@@ -79,8 +80,11 @@ export default function ReviewPage() {
   // Unset means unset (invariant 6): a limit the user never configured is not a
   // limit to measure their losses against.
   const risk = db.select().from(riskConfig).all();
+  // v4.4.0 (D1): a loser with no recorded risk is judged against the cap its
+  // OWN bucket/segment resolves to (`withSegmentCap` below), not the global row
+  // alone — so the score carries no second, broader fallback cap.
   const cfg = {
-    perTradeCap: risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? null,
+    perTradeCap: null,
     dailyStop: risk.find((r) => r.scope === "bucket" && r.key === "active")?.dailyLossStop ?? null,
   };
 
@@ -90,7 +94,7 @@ export default function ReviewPage() {
 
   // ONE bucketer for both panels and the history strip, so a week here is the
   // same week `weekly_reviews.week_start` means (lib/analytics/week.ts).
-  const weeks = processScoreByWeek(trades, cfg);
+  const weeks = processScoreByWeek(withSegmentCap(risk, trades), cfg);
   const byWeek = new Map(weeks.map((w) => [w.weekStart, w]));
   const scores = new Map<string, number | null>(weeks.map((w) => [w.weekStart, w.score]));
 

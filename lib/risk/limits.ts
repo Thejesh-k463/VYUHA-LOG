@@ -54,6 +54,104 @@ export interface LimitResult {
   orderRisk: number | null; // |entry − stop| × qty (null if no stop)
 }
 
+// ---------------------------------------------------------------------------
+// THE per-trade cap (v4.4.0, D1) — ONE resolver for every reader and writer.
+// ---------------------------------------------------------------------------
+
+/**
+ * The literal the v1–v4.3 seed stamped on EVERY bucket and segment row. On a
+ * bucket/segment row whose `capScheme` is NULL (written before migration 0073)
+ * this exact value is indistinguishable from "never set", so it reads as UNSET
+ * and the row inherits the broader cap. Untouched install → ₹9,500 everywhere,
+ * nothing moves; an edited GLOBAL cap reaches every segment (imports already
+ * used it). The undetectable edge: a user who edited the global cap AND typed
+ * exactly ₹9,500 on a segment before 0073 sees that segment inherit. The global
+ * row is never legacy — it keeps its value whatever it is.
+ */
+export const LEGACY_SEED_CAP = 9500;
+
+/** The four columns the resolver reads — a `risk_config` row, or its snapshot. */
+export interface CapRow {
+  scope: string;
+  key: string;
+  perTradeMaxLoss: number | null;
+  capScheme?: number | null;
+}
+
+/** The cap THIS row states, after the legacy-seed rule — null = inherit. */
+export function statedCap(row: CapRow | null | undefined): number | null {
+  if (!row || row.perTradeMaxLoss == null) return null;
+  if (row.scope !== "global" && row.capScheme == null && row.perTradeMaxLoss === LEGACY_SEED_CAP) return null;
+  return row.perTradeMaxLoss;
+}
+
+/** The global row, then the bucket row, then the segment row — broadest first. */
+function capLayers(rows: readonly CapRow[], bucket: string, segment: string): (CapRow | undefined)[] {
+  const pick = (scope: string, key: string) => rows.find((r) => r.scope === scope && r.key === key);
+  return [pick("global", ""), bucket ? pick("bucket", bucket) : undefined, segment ? pick("segment", segment) : undefined];
+}
+
+/**
+ * The per-trade cap for a bucket + segment: the most specific STATED value,
+ * global < bucket < segment (the precedence `resolveRules` has always used for
+ * every other rule). A null at a narrower scope does not clear a broader one.
+ * Null when nothing is stated — and then there is NO risk and NO R (invariant
+ * 6): the importer used to fall back to a literal ₹9,500 nobody configured.
+ *
+ * The importer, the manual create, the breach checks (`resolveRules`), the
+ * re-pricer and every page read the cap through here and nowhere else;
+ * tests/readers-follow-writers.test.ts (`risk-cap-resolver`) reports a raw
+ * `perTradeMaxLoss` read off a `risk_config` select anywhere in the tree.
+ */
+export function resolvePerTradeCap(rows: readonly CapRow[], bucket: string, segment: string): number | null {
+  let cap: number | null = null;
+  for (const layer of capLayers(rows, bucket, segment)) {
+    const v = statedCap(layer);
+    if (v != null) cap = v;
+  }
+  return cap;
+}
+
+/**
+ * What `row` would resolve to if it stated nothing — the figure the risk
+ * editor prints as "inherits ₹X from …" in a blank cell, and where it comes
+ * from. `from` is null when no broader row states a cap either.
+ */
+export function inheritedPerTradeCap(
+  rows: readonly CapRow[],
+  row: CapRow,
+  bucketOfSegment: (segment: string) => string,
+): { cap: number | null; from: "global" | "bucket" | null } {
+  if (row.scope === "global") return { cap: null, from: null };
+  const bucket = row.scope === "bucket" ? "" : bucketOfSegment(row.key);
+  const global = statedCap(capLayers(rows, "", "")[0]);
+  const fromBucket = bucket ? statedCap(capLayers(rows, bucket, "")[1]) : null;
+  if (fromBucket != null) return { cap: fromBucket, from: "bucket" };
+  if (global != null) return { cap: global, from: "global" };
+  return { cap: null, from: null };
+}
+
+/**
+ * The Process Score's "losses within the risk taken" measures each loser
+ * against its OWN recorded risk, else the configured per-trade cap. v4.4.0:
+ * that cap is the one the trade's OWN bucket/segment resolves to — the pages
+ * used to hand the score the global row alone, so an index_option loser was
+ * judged against a cap its segment never had. A row with a risk (> 0) is
+ * returned untouched; a row the resolver has no cap for stays unjudgeable, and
+ * the component refuses rather than invent one (invariant 6).
+ */
+export function withSegmentCap<T extends { riskAmount: number | null; bucket: string; segment: string }>(
+  rows: readonly CapRow[],
+  trades: readonly T[],
+): T[] {
+  return trades.map((t) =>
+    t.riskAmount != null && t.riskAmount > 0 ? t : { ...t, riskAmount: resolvePerTradeCap(rows, t.bucket, t.segment) },
+  );
+}
+
+/** True when the editor should render this row's cap cell BLANK (a legacy seed literal). */
+export const isLegacySeedCap = (row: CapRow): boolean => row.perTradeMaxLoss != null && statedCap(row) == null;
+
 const WARN_RATIO = 0.8; // ≥80% of a limit → warn
 const r2 = (n: number) => Math.round(n * 100) / 100;
 

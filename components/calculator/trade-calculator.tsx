@@ -563,7 +563,7 @@ export function TradeCalculator({
         <CardHeader><CardTitle>Size it for me</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <Field label="Risk budget ₹ (most you'll lose if the SL hits)">
-            <Input type="number" value={riskBudget} onChange={(e) => setRiskBudget(e.target.value)} placeholder="9500" className="h-8 tabular-nums" data-testid="calc-risk-budget" />
+            <Input type="number" value={riskBudget} onChange={(e) => setRiskBudget(e.target.value)} className="h-8 tabular-nums" data-testid="calc-risk-budget" />
           </Field>
           {!sizing ? (
             <p className="text-[0.6875rem] text-muted-foreground">

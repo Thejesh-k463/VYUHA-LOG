@@ -46,7 +46,7 @@ import path from "node:path";
  */
 const ts = createRequire(import.meta.url)("typescript") as typeof TS;
 
-export type RuleId = "mtf-funded-0" | "open-position-funded" | "own-capital-null" | "raw-date" | "ipo-link-scope";
+export type RuleId = "mtf-funded-0" | "open-position-funded" | "own-capital-null" | "raw-date" | "ipo-link-scope" | "risk-cap-resolver";
 
 export interface FieldRule {
   id: RuleId;
@@ -175,6 +175,28 @@ export const REGISTRY: FieldRule[] = [
     provenance:
       "wave 2I/2L 'one home for the counted-once rule with an unscoped link read'; the capital summary stated one " +
       "sale twice on All accounts while the tax pack, the ITR export and AIS stated it once.",
+  },
+  {
+    id: "risk-cap-resolver",
+    field: "perTradeMaxLoss",
+    rule:
+      "The per-trade cap is read through ONE resolver, `resolvePerTradeCap` (lib/risk/limits.ts): global < bucket < " +
+      "segment, the v1–v4.3 seed literal on a bucket/segment row inherits, and null means no cap, no risk and no R. " +
+      "Reading `perTradeMaxLoss` straight off a `risk_config` row is the pre-v4.4 rule — the global row alone, or a raw " +
+      "segment row that may be inheriting — and it measures a trade in a cap its own segment does not have.",
+    forbidden:
+      "`.perTradeMaxLoss` / `[\"perTradeMaxLoss\"]` (or destructuring it) on any CARRIER of a `.from(riskConfig)` select: " +
+      "the select itself, a local bound to it, its `[0]` / `.find(…)` / `.filter(…)`, a callback parameter over it, or a local helper returning one",
+    allowed:
+      "`resolvePerTradeCap(rows, bucket, segment)`, `withSegmentCap(rows, trades)`, `statedCap(row)`, handing the rows on " +
+      "unchanged, and a same-named property on anything that is NOT a `risk_config` select (a prop, a request body)",
+    triggers: ["perTradeMaxLoss"],
+    roots: ["lib", "app", "components"],
+    provenance:
+      "v4.4.0 metrics wave B, D1 (design review verdict REVISE): lib/import/commit.ts:184-190 read " +
+      "`globalRisk?.perTradeMaxLoss ?? 9500` off the global row while the breach checks resolved global < bucket < segment, " +
+      "so an index_option import ignored the index_option cap; the Process Score pages judged every segment's loser against " +
+      "the global row. Red fixture: 58bf72c:lib/import/commit.ts.",
   },
 ];
 
@@ -621,6 +643,104 @@ function scanIpoLink(sf: TS.SourceFile, file: string): Violation[] {
 }
 
 // ---------------------------------------------------------------------------
+// Rule 4 — the per-trade cap is read through the resolver (v4.4.0 D1).
+// ---------------------------------------------------------------------------
+
+/** The array methods whose callback receives an ELEMENT of the receiver (for `reduce`, the second parameter). */
+const ELEMENT_CALLBACKS = new Set(["find", "findLast", "filter", "map", "forEach", "some", "every", "flatMap", "sort", "reduce"]);
+
+/**
+ * Every expression in the file that carries a `risk_config` ROW (or rows) — the
+ * `carriersOf` machinery above, with a different origin: not a field read but
+ * a `.from(riskConfig)` select. A carrier is
+ *   - the select chain itself            `db.select().from(riskConfig).where(…).all()`
+ *   - anything taken off one             `[0]`, `.get()`, `.find(…)`, `.filter(…)`, `?.`
+ *   - a local bound to one               `const risk = db.select().from(riskConfig).all()`
+ *   - a callback parameter over one      `risk.find((r) => …)` → `r`
+ *   - a local helper returning one       `const segRisk = (k) => risk.find(…)`
+ * A same-named property on anything else (a component PROP, a request body) is
+ * not a carrier, which is what keeps target-active-client.tsx's `s.perTradeMaxLoss`
+ * — a resolved figure handed down as a prop — out of the report without an
+ * exception.
+ */
+function riskRowCarriers(sf: TS.SourceFile): (e: TS.Node | undefined) => boolean {
+  const names = new Set<string>();
+  const fns = new Set<string>();
+  const carries = (e: TS.Node | undefined): boolean => {
+    if (!e) return false;
+    if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isNonNullExpression(e)) return carries(e.expression);
+    if (ts.isIdentifier(e)) return names.has(e.text);
+    if (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) return carries(e.expression);
+    if (ts.isCallExpression(e)) {
+      const callee = e.expression;
+      if (ts.isPropertyAccessExpression(callee) && callee.name.text === "from") {
+        const arg = e.arguments[0];
+        if (arg && ts.isIdentifier(arg) && arg.text === "riskConfig") return true;
+      }
+      if (ts.isIdentifier(callee)) return fns.has(callee.text);
+      return carries(callee);
+    }
+    return false;
+  };
+  const returned = (body: TS.Node | undefined): TS.Node | undefined => {
+    if (!body) return undefined;
+    if (!ts.isBlock(body)) return body;
+    const rets = body.statements.filter(ts.isReturnStatement);
+    return rets.length === 1 ? rets[0].expression : undefined;
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    walk(sf, (n) => {
+      if (ts.isVariableDeclaration(n) && n.initializer) {
+        if (ts.isIdentifier(n.name) && carries(n.initializer)) names.add(n.name.text);
+        if (ts.isArrayBindingPattern(n.name) && carries(n.initializer)) {
+          for (const el of n.name.elements) if (ts.isBindingElement(el) && ts.isIdentifier(el.name)) names.add(el.name.text);
+        }
+        if (ts.isIdentifier(n.name) && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer)) && carries(returned(n.initializer.body))) {
+          fns.add(n.name.text);
+        }
+      }
+      if (ts.isFunctionDeclaration(n) && n.name && carries(returned(n.body))) fns.add(n.name.text);
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ELEMENT_CALLBACKS.has(n.expression.name.text) && carries(n.expression.expression)) {
+        const cb = n.arguments[0];
+        if (cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb))) {
+          const p = cb.parameters[n.expression.name.text === "reduce" ? 1 : 0];
+          if (p && ts.isIdentifier(p.name)) names.add(p.name.text);
+        }
+      }
+    });
+  }
+  return carries;
+}
+
+function scanRiskCap(sf: TS.SourceFile, file: string): Violation[] {
+  const out: Violation[] = [];
+  // Structural scope, not a file list: a file that never selects `risk_config`
+  // has no row to read the field off.
+  if (!sf.text.includes("riskConfig")) return out;
+  const carries = riskRowCarriers(sf);
+  const why =
+    "a `perTradeMaxLoss` read straight off a risk_config row is the old rule (the global row alone, or a raw segment row that may inherit): read it through resolvePerTradeCap";
+  walk(sf, (n) => {
+    // `x.perTradeMaxLoss` / `x["perTradeMaxLoss"]` on a carrier — a READ (the
+    // left side of an assignment is a write, and no writer does that anyway).
+    if (isFieldRead(n, "perTradeMaxLoss")) {
+      const target = (n as TS.PropertyAccessExpression | TS.ElementAccessExpression).expression;
+      const p = n.parent;
+      const isWrite = p && ts.isBinaryExpression(p) && p.left === n && p.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      if (!isWrite && carries(target)) out.push({ rule: "risk-cap-resolver", file, line: lineOf(sf, n), expr: oneLine(sf, n.parent && ts.isBinaryExpression(n.parent) ? n.parent : n), why });
+    }
+    // `const { perTradeMaxLoss } = risk.find(…)` — the destructured read.
+    if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && carries(n.initializer)) {
+      for (const el of n.name.elements) {
+        const prop = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : ts.isIdentifier(el.name) ? el.name.text : null;
+        if (prop === "perTradeMaxLoss") out.push({ rule: "risk-cap-resolver", file, line: lineOf(sf, n), expr: oneLine(sf, n), why });
+      }
+    }
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -645,6 +765,7 @@ export function scanSource(fileName: string, text: string, only?: RuleId[]): Vio
     }
     if (r.id === "raw-date") out.push(...scanRawDate(parse(), file));
     if (r.id === "ipo-link-scope") out.push(...scanIpoLink(parse(), file));
+    if (r.id === "risk-cap-resolver") out.push(...scanRiskCap(parse(), file));
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule));
 }

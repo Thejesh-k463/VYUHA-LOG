@@ -37,8 +37,10 @@ export function DashboardClient({
   workspace = "both",
 }: {
   trades: DashTrade[];
-  monthlyBase: number;
-  monthlyStretch: number;
+  /** null = no monthly target set (v4.4.0) — the ladder says so rather than
+   *  measuring against the ₹4.25L / ₹5.1L it used to substitute. */
+  monthlyBase: number | null;
+  monthlyStretch: number | null;
   workspace?: Workspace;
 }) {
   const router = useRouter();
@@ -356,7 +358,10 @@ export function DashboardClient({
           <CardHeader><CardTitle>Monthly target ladder (combined)</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {monthly.length === 0 && <Empty />}
-            {monthly.map((m) => (
+            {monthly.length > 0 && (monthlyBase == null || monthlyStretch == null || monthlyStretch <= 0) && (
+              <p className="text-sm text-muted-foreground">Set a monthly target (base and stretch) in Settings → Risk rules to see each month against it.</p>
+            )}
+            {monthlyBase != null && monthlyStretch != null && monthlyStretch > 0 && monthly.map((m) => (
               <MonthLadder key={m.month} month={m.month} net={m.net} base={monthlyBase} stretch={monthlyStretch} />
             ))}
           </CardContent>

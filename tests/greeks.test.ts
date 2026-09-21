@@ -111,14 +111,14 @@ describe("positionGreeks", () => {
   const base = { id: 1, symbol: "NIFTY", spot: 24000, strike: 24000, dte: 30, optionType: "CE" as const, ivPct: 15, qty: 75 };
 
   it("scales per-unit Greeks by qty for a long position", () => {
-    const g = positionGreeks({ ...base, side: "long" })!;
+    const g = positionGreeks({ ...base, side: "long" }, 0.07)!;
     expect(g.delta).toBeCloseTo(g.perUnit.delta * 75, 2);
     expect(g.thetaPerDay).toBeCloseTo(g.perUnit.thetaPerDay * 75, 2);
   });
 
   it("short flips the sign of every Greek vs the equivalent long", () => {
-    const long = positionGreeks({ ...base, side: "long" })!;
-    const short = positionGreeks({ ...base, side: "short" })!;
+    const long = positionGreeks({ ...base, side: "long" }, 0.07)!;
+    const short = positionGreeks({ ...base, side: "short" }, 0.07)!;
     expect(short.delta).toBeCloseTo(-long.delta, 6);
     expect(short.gamma).toBeCloseTo(-long.gamma, 6);
     expect(short.thetaPerDay).toBeCloseTo(-long.thetaPerDay, 6);
@@ -126,29 +126,39 @@ describe("positionGreeks", () => {
   });
 
   it("falls back to the default IV when none is set, and flags it", () => {
-    const g = positionGreeks({ ...base, ivPct: null, side: "long" })!;
+    const g = positionGreeks({ ...base, ivPct: null, side: "long" }, 0.07)!;
     expect(g.ivPct).toBe(DEFAULT_IV_PCT);
     expect(g.ivIsDefault).toBe(true);
     expect(g.ivSource).toBe("default");
   });
 
   it("IND-12 — falls back to the market IV (India VIX) before the flat default", () => {
-    const g = positionGreeks({ ...base, ivPct: null, marketIvPct: 13.24, side: "long" })!;
+    const g = positionGreeks({ ...base, ivPct: null, marketIvPct: 13.24, side: "long" }, 0.07)!;
     expect(g.ivPct).toBe(13.24);
     expect(g.ivIsDefault).toBe(true); // still "not the user's own" — market fallback also flagged
     expect(g.ivSource).toBe("market");
   });
 
   it("IND-12 — the position's own IV always wins over the market IV", () => {
-    const g = positionGreeks({ ...base, ivPct: 22, marketIvPct: 13.24, side: "long" })!;
+    const g = positionGreeks({ ...base, ivPct: 22, marketIvPct: 13.24, side: "long" }, 0.07)!;
     expect(g.ivPct).toBe(22);
     expect(g.ivIsDefault).toBe(false);
     expect(g.ivSource).toBe("position");
   });
 
   it("returns null when spot or dte is unavailable (can't be priced)", () => {
-    expect(positionGreeks({ ...base, spot: null, side: "long" })).toBeNull();
-    expect(positionGreeks({ ...base, dte: null, side: "long" })).toBeNull();
+    expect(positionGreeks({ ...base, spot: null, side: "long" }, 0.07)).toBeNull();
+    expect(positionGreeks({ ...base, dte: null, side: "long" }, 0.07)).toBeNull();
+  });
+
+  // v4.4.0 D5 — the rate is REQUIRED and actually reaches the model: the same
+  // position discounted at the user's 6.5% is not the 7% figure (a call's delta
+  // falls with r), and it equals blackScholes at that rate, unit for unit.
+  it("D5 — prices at the rate it is handed, not a constant of its own", () => {
+    const at7 = positionGreeks({ ...base, side: "long" }, 0.07)!;
+    const at65 = positionGreeks({ ...base, side: "long" }, 0.065)!;
+    expect(at65.perUnit.delta).toBeLessThan(at7.perUnit.delta);
+    expect(at65.perUnit).toEqual(blackScholes(24000, 24000, 30, "CE", 15, 0.065));
   });
 });
 
@@ -180,7 +190,7 @@ describe("portfolioGreeks", () => {
       { id: 2, symbol: "NIFTY", spot: 24000, strike: 24200, dte: 30, optionType: "CE" as const, ivPct: 15, qty: 75, side: "short" as const },
       { id: 3, symbol: "BANKNIFTY", spot: null, strike: 52000, dte: 30, optionType: "PE" as const, ivPct: null, qty: 30, side: "long" as const },
     ];
-    const port = portfolioGreeks(inputs);
+    const port = portfolioGreeks(inputs, 0.07);
     expect(port.count).toBe(2);
     expect(port.skipped).toBe(1);
     const manualDelta = port.positions.reduce((s, p) => s + p.delta, 0);
@@ -190,12 +200,12 @@ describe("portfolioGreeks", () => {
   it("counts positions priced with the default IV fallback", () => {
     const port = portfolioGreeks([
       { id: 1, symbol: "TCS", spot: 2000, strike: 2000, dte: 20, optionType: "CE" as const, ivPct: null, qty: 175, side: "long" as const },
-    ]);
+    ], 0.07);
     expect(port.usingDefaultIvCount).toBe(1);
   });
 
   it("handles an empty book", () => {
-    const port = portfolioGreeks([]);
+    const port = portfolioGreeks([], 0.07);
     expect(port.count).toBe(0);
     expect(port.delta).toBe(0);
   });

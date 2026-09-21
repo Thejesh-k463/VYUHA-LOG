@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { db, sqlite } from "@/lib/db";
 import { accounts, chargeConfig, riskConfig, settings, capitalSnapshots } from "@/lib/db/schema";
+import { repriceCapTrades } from "@/lib/queries/risk-cap";
+import { parseRiskFreeEdit, riskFreeOf } from "@/lib/domain/risk-free";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { and, eq, sql } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
@@ -196,27 +199,66 @@ export async function POST(req: Request) {
   if (body.type === "risk") {
     const rows = Array.isArray(body.rows) ? body.rows : [];
     let updated = 0;
-    for (const row of rows) {
-      const id = Number(row.id);
-      if (!Number.isFinite(id)) continue;
-      db.update(riskConfig)
-        .set({
-          perTradeMaxLoss: numOrNull(row.perTradeMaxLoss),
-          maxOpen: intOrNull(row.maxOpen),
-          maxTradesDay: intOrNull(row.maxTradesDay),
-          dailyLossStop: numOrNull(row.dailyLossStop),
-          concentrationPct: numOrNull(row.concentrationPct),
-          monthlyTargetBase: numOrNull(row.monthlyTargetBase),
-          monthlyTargetStretch: numOrNull(row.monthlyTargetStretch),
-          updatedAt: now,
-        })
-        .where(eq(riskConfig.id, id))
-        .run();
-      updated++;
-    }
-    for (const p of ["/", "/targets/equity", "/targets/active", "/reports/discipline", "/risk"]) revalidatePath(p);
-    recordAudit({ entity: "risk_config", action: "update", summary: `${updated} risk rule${updated === 1 ? "" : "s"} edited` });
-    return NextResponse.json({ ok: true, message: `Saved ${updated} risk rule${updated === 1 ? "" : "s"}.` });
+    let repriced = 0;
+    // D1 (v4.4.0) — ONE transaction: the rows, their `capScheme`, and the cap-R
+    // of every trade that follows the cap. A cap is a UNIT (owner ruling OQ1),
+    // so a save that moved it without re-pricing would leave two units averaged
+    // into one Avg R; a failure part-way leaves both exactly as they were.
+    //
+    // `capScheme: 1` on every posted row: the editor posts every row on each
+    // save, so from here on a 9500 in any row is a value the user saw and kept
+    // (a legacy seed literal renders BLANK in the editor and arrives as null =
+    // inherit — lib/risk/limits.ts `isLegacySeedCap`).
+    db.transaction((tx) => {
+      for (const row of rows) {
+        const id = Number(row.id);
+        if (!Number.isFinite(id)) continue;
+        tx.update(riskConfig)
+          .set({
+            perTradeMaxLoss: numOrNull(row.perTradeMaxLoss),
+            maxOpen: intOrNull(row.maxOpen),
+            maxTradesDay: intOrNull(row.maxTradesDay),
+            dailyLossStop: numOrNull(row.dailyLossStop),
+            concentrationPct: numOrNull(row.concentrationPct),
+            monthlyTargetBase: numOrNull(row.monthlyTargetBase),
+            monthlyTargetStretch: numOrNull(row.monthlyTargetStretch),
+            capScheme: 1,
+            updatedAt: now,
+          })
+          .where(eq(riskConfig.id, id))
+          .run();
+        updated++;
+      }
+      repriced = repriceCapTrades(sqlite);
+    });
+    for (const p of ["/", "/trades", "/targets/equity", "/targets/active", "/reports/discipline", "/risk"]) revalidatePath(p);
+    recordAudit({
+      entity: "risk_config",
+      action: "update",
+      summary: `${updated} risk rule${updated === 1 ? "" : "s"} edited${repriced ? `; ${repriced} cap-R trade${repriced === 1 ? "" : "s"} re-priced` : ""}`,
+    });
+    return NextResponse.json({
+      ok: true,
+      repriced,
+      message: `Saved ${updated} risk rule${updated === 1 ? "" : "s"}.${repriced ? ` ${repriced} trade${repriced === 1 ? "" : "s"} measured in your per-trade cap now read in the new cap.` : ""}`,
+    });
+  }
+
+  // D5 (v4.4.0) — the risk-free rate: ONE dated setting. A percentage in, ppm
+  // stored; the date is required (a rate is a statement about a day) and may
+  // not be in the future. Its own type, so the main settings form — which
+  // never sends it — cannot reset it.
+  if (body.type === "riskFree") {
+    const parsed = parseRiskFreeEdit({ ratePct: body.ratePct, asOf: body.asOf }, todayIstIso());
+    if (!parsed.ok) return NextResponse.json({ ok: false, message: parsed.message }, { status: 400 });
+    const existing = db.select().from(settings).limit(1).all()[0];
+    if (!existing) return NextResponse.json({ ok: false, message: "No settings row to save onto." }, { status: 400 });
+    const before = { riskFreeRatePpm: existing.riskFreeRatePpm, riskFreeAsOf: existing.riskFreeAsOf };
+    const after = { riskFreeRatePpm: parsed.ppm, riskFreeAsOf: parsed.asOf };
+    db.update(settings).set({ ...after, updatedAt: now }).where(eq(settings.id, existing.id)).run();
+    recordAudit({ entity: "settings", action: "update", summary: `risk-free rate → ${riskFreeOf(parsed.ppm, parsed.asOf).label}`, before, after });
+    for (const p of ["/reports/performance", "/reports/monthly", "/risk"]) revalidatePath(p);
+    return NextResponse.json({ ok: true, message: `Risk-free rate saved — ${riskFreeOf(parsed.ppm, parsed.asOf).label}.` });
   }
 
   if (body.type === "settings") {

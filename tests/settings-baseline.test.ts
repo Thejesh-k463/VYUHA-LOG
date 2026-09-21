@@ -46,6 +46,16 @@ describe("the preference/state split (pure)", () => {
     expect(SETTINGS_MACHINE_COLUMNS as readonly string[]).not.toContain("strategyShelfJson");
   });
 
+  it("the dated risk-free pair (v4.4.0 D5, migration 0073) is a preference on BOTH lists", () => {
+    // A rate the user chose and the day it was true on: "back to my defaults"
+    // returns it and a backup carries it. In SETTINGS_MACHINE_COLUMNS it would
+    // be blanked on every dump, and Sharpe would silently fall back to 7%.
+    for (const f of ["riskFreeRatePpm", "riskFreeAsOf"]) {
+      expect(BASELINE_SETTINGS_FIELDS as readonly string[], f).toContain(f);
+      expect(SETTINGS_MACHINE_COLUMNS as readonly string[], f).not.toContain(f);
+    }
+  });
+
   it("picks only baseline fields from a full row", () => {
     const picked = pickBaselineSettings({ theme: "dark", licenseKey: "SECRET", pnlRolledIn: 999, equityCapital: 100 });
     expect(picked.theme).toBe("dark");
@@ -254,3 +264,90 @@ describe("the restore copy promises only what restoreBaseline does (P12)", () =>
     }
   });
 });
+
+/**
+ * v4.4.0 — the two things "back to my defaults" gained with migration 0073.
+ *
+ * D1, review S3: a baseline captured BEFORE 0073 holds the v1 seed's eight
+ * risk rows and no `capScheme`. The restore deletes every `risk_config` row and
+ * re-inserts the snapshot's, so without a re-seed the three rows 0073 added
+ * (eq_delivery, eq_mtf, future) vanished until the next seed run. The restore
+ * now re-seeds them (INSERT OR IGNORE) and re-prices every cap-derived R
+ * against the caps it just restored — inside its one transaction.
+ *
+ * D5: the rate pair returns with a post-0073 baseline, and a pre-0073 one
+ * (which never recorded it) leaves the current pair alone.
+ */
+describe("back to my defaults, after migration 0073", () => {
+  const riskKeys = () => t.db.select().from(t.schema.riskConfig).all().map((r) => `${r.scope}:${r.key}`).sort();
+  const storeBaseline = (mutate: (b: Record<string, unknown>) => void) => {
+    q.saveCurrentAsBaseline();
+    const row = t.db.select().from(t.schema.settingsBaseline).get()!;
+    const payload = JSON.parse(JSON.stringify(row.payload)) as Record<string, unknown>;
+    mutate(payload);
+    t.db.update(t.schema.settingsBaseline).set({ payload }).run();
+  };
+
+  it("S3 — a pre-0073 baseline brings back its caps, re-seeds the three 0073 rows, and re-prices cap-R in the same restore", () => {
+    const acct = t.db.select().from(t.schema.accounts).all()[0]!.id;
+    const id = t.db
+      .insert(t.schema.trades)
+      .values({ ...tradeRowFor(acct), segment: "index_option", bucket: "active", netPnl: -2800, riskAmount: 9500, rMultiple: -0.29, riskSource: "cap" })
+      .returning({ id: t.schema.trades.id })
+      .get()!.id;
+    const all = riskKeys();
+    expect(all).toEqual(expect.arrayContaining(["segment:eq_delivery", "segment:eq_mtf", "segment:future"]));
+
+    // The v4.3 shape: the v1 eight, no capScheme key at all, index_option at 7,000.
+    storeBaseline((b) => {
+      const rows = (b.riskConfig as Record<string, unknown>[]).filter((r) => !["eq_delivery", "eq_mtf", "future"].includes(String(r.key)));
+      for (const r of rows) {
+        delete r.capScheme;
+        if (r.scope !== "global") r.perTradeMaxLoss = r.key === "index_option" ? 7000 : 9500;
+      }
+      b.riskConfig = rows;
+    });
+
+    expect(q.restoreBaseline().ok).toBe(true);
+    expect(riskKeys(), "every row 0073 added is back").toEqual(all);
+    const future = t.db.select().from(t.schema.riskConfig).all().find((r) => r.key === "future")!;
+    expect([future.perTradeMaxLoss, future.capScheme], "re-seeded as INHERIT").toEqual([null, 1]);
+    const legacy = t.db.select().from(t.schema.riskConfig).all().find((r) => r.key === "stock_option")!;
+    expect([legacy.perTradeMaxLoss, legacy.capScheme], "the snapshot's own row, legacy reading kept").toEqual([9500, null]);
+    const tr = t.db.select().from(t.schema.trades).all().find((r) => r.id === id)!;
+    expect([tr.riskAmount, tr.rMultiple, tr.riskSource], "re-priced against the RESTORED index_option cap").toEqual([7000, -0.4, "cap"]);
+    t.db.delete(t.schema.trades).run();
+  });
+
+  // One restore per `it` (~250 ms each locally, the cost every restore case in this file pays).
+  it("the risk-free pair comes back with a post-0073 baseline", () => {
+    t.db.update(t.schema.settings).set({ riskFreeRatePpm: 65000, riskFreeAsOf: "2026-09-01" }).run();
+    storeBaseline(() => {});
+    t.db.update(t.schema.settings).set({ riskFreeRatePpm: 80000, riskFreeAsOf: "2026-09-10" }).run();
+    expect(q.baselineDiff().fields).toEqual(expect.arrayContaining(["riskFreeRatePpm", "riskFreeAsOf"]));
+    expect(q.restoreBaseline().ok).toBe(true);
+    const row = t.db.select().from(t.schema.settings).get()!;
+    expect([row.riskFreeRatePpm, row.riskFreeAsOf]).toEqual([65000, "2026-09-01"]);
+  });
+
+  it("a pre-0073 baseline (which never recorded the pair) leaves the current pair alone", () => {
+    storeBaseline((b) => {
+      const s = b.settings as Record<string, unknown>;
+      delete s.riskFreeRatePpm;
+      delete s.riskFreeAsOf;
+    });
+    t.db.update(t.schema.settings).set({ riskFreeRatePpm: 80000, riskFreeAsOf: "2026-09-10" }).run();
+    expect(q.baselineDiff().fields, "a field the baseline predates is never a difference").not.toContain("riskFreeRatePpm");
+    expect(q.restoreBaseline().ok).toBe(true);
+    const row = t.db.select().from(t.schema.settings).get()!;
+    expect([row.riskFreeRatePpm, row.riskFreeAsOf]).toEqual([80000, "2026-09-10"]);
+    t.db.update(t.schema.settings).set({ riskFreeRatePpm: 70000, riskFreeAsOf: null }).run();
+  });
+});
+
+function tradeRowFor(accountId: number) {
+  return {
+    accountId, broker: "dhan", bucket: "equity", segment: "eq_delivery", instrumentType: "option", exchange: "NSE",
+    symbol: "NIFTY", tradingsymbol: "OPT NIFTY 29 Oct 2026 25000 CE", dedupHash: `baseline-s3-${accountId}`, isOpen: false,
+  };
+}

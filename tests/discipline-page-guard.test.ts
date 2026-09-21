@@ -48,12 +48,30 @@ const NO_INVENTED_LIMIT = [
   ...PAGES,
   "app/targets/active/page.tsx",
   "components/targets/target-active-client.tsx",
+  // v4.4.0 (D1's invented-limits sweep, DECISIONS 2026-09-18): the equity
+  // tracker substituted ₹9,500 / 6 open / 20% / ₹4.25L / ₹5.1L, the dashboard
+  // the two monthly targets, /review the global cap for every segment, and the
+  // importer a `?? 9500` nobody configured — each now passes null and says so.
+  "app/targets/equity/page.tsx",
+  "components/targets/target-equity-client.tsx",
+  "app/page.tsx",
+  "components/dashboard/dashboard-client.tsx",
+  "app/review/page.tsx",
+  "lib/import/commit.ts",
 ];
 const HELPER = "components/reports/weekly-score-average.ts";
 const DETAIL = "components/reports/process-score-detail.tsx";
 
-/** `?? 9500` / `|| 25000` — a per-trade cap or daily stop nobody set. */
-const INVENTED_LIMIT_FALLBACK = /(\?\?|\|\|)\s*(9500|25000)\b/;
+/** `?? 9500` / `|| 25000` / `?? 425000` — a per-trade cap, daily stop or monthly target nobody set. */
+const INVENTED_LIMIT_FALLBACK = /(\?\?|\|\|)\s*(9500|25000|425000|510000)\b/;
+
+/**
+ * `?.maxOpen ?? 6`, `?.concentrationPct ?? 20`, `…maxTradesDay ?? 15` — ANY
+ * number standing in for a limit field. The small limits cannot be matched by
+ * value (a 6 or a 20 is everywhere), so the guard reads the FIELD the fallback
+ * hangs off instead.
+ */
+const LIMIT_FIELD_FALLBACK = /\b(perTradeMaxLoss|maxOpen|maxTradesDay|dailyLossStop|concentrationPct|monthlyTargetBase|monthlyTargetStretch)\s*(\?\?|\|\|)\s*\d/;
 
 /** `w.score`, `week.score`, `latest?.score` — the legacy field that reads 0 on refusal. */
 const LEGACY_SCORE_READ = /(?:^|[^.\w])(?:w|week|latest)\s*\??\.\s*score\b/m;
@@ -81,6 +99,21 @@ describe("no surface invents a cap or a stop", () => {
           "makes the Process Score judge a rule that does not exist — see AGENTS.md invariant 6."
         : undefined,
     ).toBeNull();
+    const f = src.match(LIMIT_FIELD_FALLBACK);
+    expect(f, f ? `${file} substitutes a number for a limit the user never set (“${f[0]}”) — pass null and say "not set".` : undefined).toBeNull();
+  });
+
+  it("the widened guard SEES the v4.3 shapes it was widened for", () => {
+    for (const bad of [
+      "defaultRisk={globalRisk?.perTradeMaxLoss ?? 9500}",
+      "maxOpen={equityRisk?.maxOpen ?? 6}",
+      "concentrationLimit={equityRisk?.concentrationPct ?? 20}",
+      "monthlyBase={risk?.monthlyTargetBase ?? 425000}",
+      'optionsMaxTrades: segRisk("index_option")?.maxTradesDay ?? activeRisk?.maxTradesDay ?? 15,',
+    ]) {
+      expect(INVENTED_LIMIT_FALLBACK.test(normalise(bad)) || LIMIT_FIELD_FALLBACK.test(normalise(bad)), bad).toBe(true);
+    }
+    expect(LIMIT_FIELD_FALLBACK.test("maxOpen={equityRisk?.maxOpen ?? null}")).toBe(false);
   });
 
   it("the stripper hides a comment that names the old fallback, not live code", () => {

@@ -37,23 +37,28 @@ export function TargetEquityClient({
   monthlyStretch,
   mtf,
 }: {
-  defaultRisk: number;
+  /** v4.4.0 (D1): every limit below is NULL when the user never set it — the
+   *  page no longer substitutes ₹9,500 / 6 / 20% / ₹4.25L / ₹5.1L, and each
+   *  surface says "not set" instead (invariant 6). */
+  defaultRisk: number | null;
   /** 0 means NOT CONFIGURED — capital-relative figures render "—", never a
    *  stand-in number (the ₹13L fallback fabricated every gauge on a fresh
    *  install; invariant 6). */
   equityCapital: number;
   openCount: number;
-  maxOpen: number;
+  maxOpen: number | null;
   /** pct is null when capital is unknown — the ₹-largest position still names
    *  itself, but no concentration % is invented for it. */
   topConcentration: { symbol: string; pct: number | null } | null;
-  concentrationLimit: number;
+  concentrationLimit: number | null;
   monthly: { month: string; net: number }[];
-  monthlyBase: number;
-  monthlyStretch: number;
+  monthlyBase: number | null;
+  monthlyStretch: number | null;
   mtf: MtfSummary;
 }) {
-  const concBreach = topConcentration?.pct != null && topConcentration.pct > concentrationLimit;
+  const concBreach = concentrationLimit != null && topConcentration?.pct != null && topConcentration.pct > concentrationLimit;
+  const limitText = concentrationLimit != null ? `limit ${concentrationLimit}%` : "no concentration limit set";
+  const ladder = monthlyBase != null && monthlyStretch != null && monthlyStretch > 0 ? { base: monthlyBase, stretch: monthlyStretch } : null;
 
   return (
     <div className="space-y-5">
@@ -67,22 +72,25 @@ export function TargetEquityClient({
           </div>
           <div className="text-[10px] text-muted-foreground">
             {topConcentration == null
-              ? <>no open positions · limit {concentrationLimit}%</>
+              ? <>no open positions · {limitText}</>
               : topConcentration.pct == null
                 ? <>{topConcentration.symbol} · % of capital needs capital — set it in Settings</>
-                : <>{topConcentration.symbol} · limit {concentrationLimit}%</>}
+                : <>{topConcentration.symbol} · {limitText}</>}
           </div>
         </Card>
-        <KpiCard label="Per-trade max loss" valueNum={defaultRisk} format="inr0" sub={`${equityCapital > 0 ? ((defaultRisk / equityCapital) * 100).toFixed(2) : "—"}% of bucket`} />
+        {defaultRisk != null
+          ? <KpiCard label="Per-trade max loss" valueNum={defaultRisk} format="inr0" sub={`${equityCapital > 0 ? ((defaultRisk / equityCapital) * 100).toFixed(2) : "—"}% of bucket`} />
+          : <KpiCard label="Per-trade max loss" value="—" sub="not set — Settings → Risk rules" />}
       </section>
 
       <Card>
         <CardHeader><CardTitle>Monthly target ladder (combined buckets)</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {monthly.length === 0 && <p className="text-sm text-muted-foreground">No closed trades yet.</p>}
-          {monthly.map((m) => {
-            const pct = Math.max(0, Math.min(100, (m.net / monthlyStretch) * 100));
-            const basePct = (monthlyBase / monthlyStretch) * 100;
+          {monthly.length > 0 && !ladder && <p className="text-sm text-muted-foreground">Set a monthly target (base and stretch) in Settings → Risk rules to see each month against it.</p>}
+          {ladder && monthly.map((m) => {
+            const pct = Math.max(0, Math.min(100, (m.net / ladder.stretch) * 100));
+            const basePct = (ladder.base / ladder.stretch) * 100;
             const label = new Date(m.month + "-01T00:00:00").toLocaleDateString("en-IN", { month: "short", year: "numeric" });
             return (
               <div key={m.month}>
@@ -92,11 +100,11 @@ export function TargetEquityClient({
                 </div>
                 <div className="relative h-2.5 rounded-full bg-card-hover">
                   <div className="absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                  <div className="absolute inset-y-[-3px] w-0.5 bg-warning" style={{ left: `${Math.min(100, basePct)}%` }} title={`base ${inrCompact(monthlyBase)}`} />
-                  <div className="absolute inset-y-[-3px] right-0 w-0.5 bg-foreground/50" title={`stretch ${inrCompact(monthlyStretch)}`} />
+                  <div className="absolute inset-y-[-3px] w-0.5 bg-warning" style={{ left: `${Math.min(100, basePct)}%` }} title={`base ${inrCompact(ladder.base)}`} />
+                  <div className="absolute inset-y-[-3px] right-0 w-0.5 bg-foreground/50" title={`stretch ${inrCompact(ladder.stretch)}`} />
                 </div>
                 <div className="mt-0.5 flex justify-between text-[9px] text-muted-foreground">
-                  <span>base {inrCompact(monthlyBase)}</span><span>stretch {inrCompact(monthlyStretch)}</span>
+                  <span>base {inrCompact(ladder.base)}</span><span>stretch {inrCompact(ladder.stretch)}</span>
                 </div>
               </div>
             );

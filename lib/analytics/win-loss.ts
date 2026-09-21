@@ -21,8 +21,8 @@
 //   stays the import default (edit-trade-dialog's riskTouched blocks the
 //   SL-derived recompute), and rMultiple = netPnl / riskAmount, so that row's
 //   R is still measured in cap units. Everything unverifiable carries
-//   default-cap R — netPnl over the per-trade cap (₹9,500 default, see
-//   lib/import/commit.ts) — which measures P&L in cap units, NOT plan
+//   default-cap R — netPnl over your per-segment cap (resolvePerTradeCap,
+//   lib/risk/limits.ts) — which measures P&L in cap units, NOT plan
 //   adherence, and must never be presented unlabelled.
 // - Tail economics use the expectancy-GAP framing of behavior.ts
 //   mistakeReport: deep losses cost ₹X per trade versus the clean-loss

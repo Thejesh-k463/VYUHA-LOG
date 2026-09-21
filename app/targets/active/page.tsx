@@ -12,6 +12,7 @@ import { getBucketCapital } from "@/lib/queries/capital";
 import { goalProgress } from "@/lib/analytics/goal";
 import { GoalStrip } from "@/components/targets/goal-strip";
 import type { Segment } from "@/lib/domain/constants";
+import { resolvePerTradeCap } from "@/lib/risk/limits";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,10 @@ export default function TargetActivePage() {
     // the Settings risk editor writes NULL, so this is reachable, not
     // theoretical. The same refusal the discipline and monthly reports made in
     // v3.7.0; tests/discipline-page-guard.test.ts now covers this file too.
-    return { perTradeMaxLoss: c?.perTradeMaxLoss ?? null, maxTradesDay: c?.maxTradesDay ?? null, todayCount };
+    // v4.4.0 (D1): the per-trade cap is the RESOLVED one — a segment row that
+    // inherits (a legacy seed literal, or blank) shows the cap its trades are
+    // actually measured in, not "—" beside R figures priced in the global cap.
+    return { perTradeMaxLoss: resolvePerTradeCap(risk, "active", key), maxTradesDay: c?.maxTradesDay ?? null, todayCount };
   }
 
   // Expected-capital goal for THIS bucket (v3.6) — nothing renders without one.
@@ -89,14 +93,16 @@ export default function TargetActivePage() {
           daily={daily}
           limits={{
             dailyLossStop: activeRisk?.dailyLossStop ?? null,
-            optionsMaxTrades: segRisk("index_option")?.maxTradesDay ?? activeRisk?.maxTradesDay ?? 15,
-            intradayMaxTrades: segRisk("eq_intraday")?.maxTradesDay ?? 12,
-            commodityMaxTrades: segRisk("commodity_option")?.maxTradesDay ?? 10,
-            optionsMaxOpen: activeRisk?.maxOpen ?? 8,
+            // v4.4.0: a limit the user never set is null and the meter says
+            // "No limit set" — the 15 / 12 / 10 / 8 stand-ins were never theirs.
+            optionsMaxTrades: segRisk("index_option")?.maxTradesDay ?? activeRisk?.maxTradesDay ?? null,
+            intradayMaxTrades: segRisk("eq_intraday")?.maxTradesDay ?? null,
+            commodityMaxTrades: segRisk("commodity_option")?.maxTradesDay ?? null,
+            optionsMaxOpen: activeRisk?.maxOpen ?? null,
           }}
           openOptions={openOptions}
           segLimits={segLimits}
-          defaultRisk={risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? null}
+          defaultRisk={resolvePerTradeCap(risk, "active", "index_option")}
           undatedActive={undatedActive}
           goalStrip={activeGoal && goalProg ? <GoalStrip goal={activeGoal} progress={goalProg} /> : null}
         />

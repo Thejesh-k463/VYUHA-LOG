@@ -161,8 +161,8 @@ describe("no configured capital — never fabricate a denominator (AGENTS.md #6)
 
   it("annualises with the calendar basis the page derives — no literal 252 left on the page (v4.4.0 D4)", () => {
     expect(pageSrc).toMatch(/annualisationBasis\(/);
-    expect(pageSrc).toMatch(/computePerformance\(daily, capital, RISK_FREE, basis\.days\)/);
-    expect(pageSrc).toMatch(/computeBenchmark\(portfolioReturns, benchCloses, RISK_FREE, basis\.days\)/);
+    expect(pageSrc).toMatch(/computePerformance\(daily, capital, riskFree.annual, basis\.days\)/);
+    expect(pageSrc).toMatch(/computeBenchmark\(portfolioReturns, benchCloses, riskFree.annual, basis\.days\)/);
     expect(pageSrc).toMatch(/horizonDays: mcBasis\.days/);
     expect(pageSrc).toMatch(/tradingDays: String\(basis\.days\)/);
     expect(pageSrc).not.toMatch(/\b252\b/);

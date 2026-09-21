@@ -124,13 +124,15 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
     if (sl != null || tsl != null || target != null) {
       for (const t of bySymbol.get(key) ?? []) {
         const qty = Math.max(t.buyQty - t.sellQty, 0) || t.buyQty;
-        const riskAmount =
-          sl != null && qty > 0 ? Math.round(Math.abs(t.avgBuyPrice - sl) * qty * 100) / 100 : t.riskAmount;
+        // D1 (v4.4.0): a stop-derived risk is the user's ('set'); a line with no
+        // stop never touches the risk, so a cap-derived row keeps following the cap.
+        const slDerived = sl != null && qty > 0;
+        const riskAmount = slDerived && sl != null ? Math.round(Math.abs(t.avgBuyPrice - sl) * qty * 100) / 100 : t.riskAmount;
         const rMultiple =
           riskAmount && riskAmount > 0 ? Math.round((t.netPnl / riskAmount) * 100) / 100 : t.rMultiple;
         db.update(trades)
           .set({
-            ...(sl != null ? { slPlanned: sl, riskAmount, rMultiple } : {}),
+            ...(sl != null ? { slPlanned: sl, riskAmount, rMultiple, ...(slDerived ? { riskSource: "set" } : {}) } : {}),
             ...(tsl != null ? { trailingSl: tsl } : {}),
             ...(target != null ? { targetPlanned: target } : {}),
             updatedAt: now,

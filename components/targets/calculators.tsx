@@ -17,12 +17,14 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
   );
 }
 
-export function PositionSizeCalc({ defaultRisk, equityCapital }: { defaultRisk: number; equityCapital: number }) {
+/** `defaultRisk` only SEEDS the risk field; null (v4.4.0 — no per-trade cap
+ *  configured) opens it BLANK, like OptionLotCalc below. */
+export function PositionSizeCalc({ defaultRisk, equityCapital }: { defaultRisk: number | null; equityCapital: number }) {
   const [mode, setMode] = React.useState<"sl" | "points">("sl");
   const [entry, setEntry] = React.useState("100");
   const [stop, setStop] = React.useState("95");
   const [points, setPoints] = React.useState("5");
-  const [risk, setRisk] = React.useState(String(defaultRisk));
+  const [risk, setRisk] = React.useState(defaultRisk == null ? "" : String(defaultRisk));
   const [lot, setLot] = React.useState("");
 
   const e = Number(entry) || 0;
@@ -50,7 +52,9 @@ export function PositionSizeCalc({ defaultRisk, equityCapital }: { defaultRisk: 
           <Stat label="Capital req." value={inr(res.capitalRequired, { decimals: 0 })} />
         </div>
         <p className="text-[0.6875rem] text-muted-foreground">
-          {equityCapital > 0
+          {defaultRisk == null
+            ? "No per-trade cap is set — state the risk you will take, or set a cap in Settings → Risk rules."
+            : equityCapital > 0
             ? `₹${defaultRisk.toLocaleString("en-IN")} max loss ≈ ${((defaultRisk / equityCapital) * 100).toFixed(2)}% of the ₹${equityCapital.toLocaleString("en-IN")} equity bucket.`
             : "Set your equity bucket capital in Settings to see this as a % of capital."}
         </p>
@@ -62,7 +66,7 @@ export function PositionSizeCalc({ defaultRisk, equityCapital }: { defaultRisk: 
 /** `defaultRisk` only SEEDS the risk field. null = no per-trade cap is
  *  configured, so the box opens BLANK and the trader states their own — the
  *  lot sizer never opens pre-filled with a limit nobody set (invariant 6).
- *  The equity tracker still passes a number, so nothing there changes. */
+ *  Since v4.4.0 the equity tracker's PositionSizeCalc follows the same rule. */
 export function OptionLotCalc({ defaultRisk }: { defaultRisk: number | null }) {
   const [premium, setPremium] = React.useState("50");
   const [stopPremium, setStopPremium] = React.useState("30");

@@ -225,6 +225,7 @@ describe("signal-notes-backfill-v1", () => {
       "ipo-account-rehome-v1",
       "leg-trade-date-iso-v1",
       "signal-notes-backfill-v1",
+      "risk-source-v1", // v4.4.0 D1 — registered after it; the Signal fix stays last of the v4.3.0 four
     ]);
   });
 });

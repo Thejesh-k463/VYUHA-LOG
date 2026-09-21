@@ -20,13 +20,23 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 // which keeps the en-IN grouping the deleted local `signed` relied on
 // (`num()` prints its own "-", hence Math.abs on the magnitude).
 
-export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; latestVix?: number | null }) {
+export function GreeksPanel({
+  greeks,
+  latestVix,
+  riskFreeLabel,
+}: {
+  greeks: PortfolioGreeks;
+  latestVix?: number | null;
+  /** v4.4.0 D5 — the rate the Greeks were discounted at: "7% · Vyuha default" / "6.5% · as of 2026-09-18". */
+  riskFreeLabel: string;
+}) {
   return (
     <Card className="p-0">
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Option Greeks</CardTitle>
         <div className="flex items-center gap-2">
           {latestVix != null && <Badge variant="outline">India VIX {latestVix}</Badge>}
+          <Badge variant="outline">risk-free {riskFreeLabel}</Badge>
           <Badge variant="secondary">{greeks.count} option{greeks.count === 1 ? "" : "s"} priced</Badge>
         </div>
       </CardHeader>

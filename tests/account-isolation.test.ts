@@ -297,6 +297,16 @@ describe("account-scoped table registry", () => {
   // takes the id as an explicit parameter (validated like getWriteAccountId)
   // rather than reading the request-cached selection.
   const OWNERS: Record<string, string[]> = {
+    // v4.4.0 D1 — two more files WRITE `trades` and deliberately resolve NO
+    // account, so they are named here in prose rather than listed (the scan
+    // below would demand an account resolver they must not have):
+    //   lib/queries/risk-cap.ts  `repriceCapTrades` / `classifyUnsourcedRisk`
+    //   lib/db/data-fixes.ts     `risk-source-v1`, which calls them
+    // Both run ACROSS ACCOUNTS ON PURPOSE: `risk_config` has no `account_id`
+    // (the caps are per install — app/api/risk/live-desk/route.ts), so a row's
+    // cap does not depend on the book it sits in, and a cap edit re-prices the
+    // 'cap' rows of every book at once. They read and write only `risk_*`
+    // columns and never move a row between books.
     trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts", "lib/queries/account-delete.ts"],
     import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/account-delete.ts"],
     ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts", "lib/queries/account-delete.ts"],
