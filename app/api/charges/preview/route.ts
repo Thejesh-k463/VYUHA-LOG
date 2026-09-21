@@ -3,13 +3,14 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
-import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
+import { planAccountOf } from "@/lib/queries/broker-plan";
 import { hasLadder } from "@/lib/queries/staged";
 import { chargeInputsChanged, chargeInputsOf, patchMovesChargeInput, statesNoCharges, storedCharges } from "@/lib/domain/trade-edit";
 import type { ChargeBreakdown } from "@/lib/engine/types";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates, pricingDate } from "@/lib/engine/rates";
+import { pricingDate, ratesForTrade, resolvePlan } from "@/lib/engine/rates";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
@@ -63,6 +64,19 @@ const Body = z.object({
   // figure the save would not store. Today (IST) is only the fallback.
   buyDate: z.string().nullish(),
   sellDate: z.string().nullish(),
+  /**
+   * Wave U (design review item 4) — WHICH ACCOUNT this preview is for, so the
+   * broker PLAN it prices on is the plan the save will price on.
+   *
+   * The save resolves the account with `getWriteAccountId(explicit)`
+   * (lib/import/commit.ts), and in the All-accounts view the dialog's own
+   * account picker is the only thing that knows the answer — the preview used
+   * to carry only `tradeId`, so a new trade filed to a Plus account previewed
+   * at Basic and saved at Plus: ₹11.80 an order apart. Sent by the manual Add
+   * form's `WriteAccountPicker`. Ignored for a row being EDITED or CLOSED: that
+   * row already belongs to an account, and its own account's plan is used.
+   */
+  accountId: z.number().int().positive().nullish(),
 });
 
 /**
@@ -97,6 +111,8 @@ function keptCharges(
   tradeId: number,
   v: z.infer<typeof Body>,
 ): {
+  /** Wave U — the account the stored row belongs to, for its plan. */
+  accountId: number;
   row: Record<string, unknown>;
   kept: { breakdown: ChargeBreakdown; netPnl: number } | null;
   /** D20: set only for a STAGED parent — the sentence to state, and the gross the
@@ -151,6 +167,7 @@ function keptCharges(
       t,
     );
     return {
+      accountId: t.accountId,
       row: stagedRow,
       kept: { breakdown: storedCharges(stagedRow), netPnl: t.netPnl },
       ladder: { reason: moved ? LADDER_REFUSAL : LADDER_PRICES_IT, grossPnl: Number(t.grossPnl) || 0 },
@@ -188,8 +205,8 @@ function keptCharges(
     defaults,
   );
   const row = t as unknown as Record<string, unknown>;
-  if (statesNoCharges(row) || chargeInputsChanged(chargeInputsOf(t, defaults), next)) return { row, kept: null };
-  return { row, kept: { breakdown: storedCharges(row), netPnl: t.netPnl } };
+  if (statesNoCharges(row) || chargeInputsChanged(chargeInputsOf(t, defaults), next)) return { accountId: t.accountId, row, kept: null };
+  return { accountId: t.accountId, row, kept: { breakdown: storedCharges(row), netPnl: t.netPnl } };
 }
 
 export async function POST(req: Request) {
@@ -260,6 +277,27 @@ export async function POST(req: Request) {
   // from the STORED row, never from the body. The values are rounded to the paisa
   // exactly as the save rounds them, so the two agree by construction.
   const rates = loadRatesMap();
+  // Wave U (design review item 4) — WHICH PLAN THIS PREVIEW PRICES ON, by the
+  // SAME rule the save uses.
+  //
+  // For a stored row (the editor, the close dialog) it is that ROW's account —
+  // `updateManualTrade` / `closePosition` price on `planAccountOf(t.accountId)`.
+  // For a NEW trade it is where `commitManualTrade` would file it:
+  // `getWriteAccountId(body.accountId)`, the body's id resolved against the
+  // selection exactly as the save resolves it. That call THROWS when no account
+  // can be resolved (the All-accounts view with nothing picked); the save then
+  // refuses too, so the preview prices on "default" rather than 400 a dialog
+  // that is still being filled in.
+  const previewOn = pricingDate({ buyDate: v.buyDate, sellDate: v.sellDate }, todayIstIso());
+  const planAccount = (() => {
+    if (edited) return planAccountOf(edited.accountId);
+    try {
+      return planAccountOf(getWriteAccountId(v.accountId ?? null));
+    } catch {
+      return null;
+    }
+  })();
+  const plan = resolvePlan(planAccount, v.broker, previewOn, rates);
   if (edited) {
     const stored = edited.row;
     const gross = v.grossPnl ?? v.sellValue - v.buyValue;
@@ -272,7 +310,7 @@ export async function POST(req: Request) {
         buyDate: v.buyDate ?? null,
         sellDate: v.sellDate ?? null,
       },
-      sellChargerFor((stored.broker as string | null) ?? null, (stored.exchange as string | null) ?? "NSE", v.sellDate ?? null, rates),
+      sellChargerFor((stored.broker as string | null) ?? null, (stored.exchange as string | null) ?? "NSE", v.sellDate ?? null, rates, plan),
     );
     if (priced) {
       return NextResponse.json({
@@ -289,7 +327,7 @@ export async function POST(req: Request) {
 
   let breakdown;
   try {
-    const r = findRates(rates, v.broker, cls.segment, cls.exchange, pricingDate({ buyDate: v.buyDate, sellDate: v.sellDate }, todayIstIso()));
+    const r = ratesForTrade(rates, { broker: v.broker, segment: cls.segment, exchange: cls.exchange, symbol: v.tradingsymbol }, previewOn, plan);
     // Mirror commitManualTrade's MTF defaulting exactly, so the preview never
     // understates what actually gets saved: ownCapitalUsed (what YOU put in) is
     // the primary input, funded = buyValue − ownCapitalUsed; no explicit entry →

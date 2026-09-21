@@ -5,7 +5,8 @@ import { ProGate } from "@/components/system/pro-gate";
 import { getBucketCapital } from "@/lib/queries/capital";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates } from "@/lib/engine/rates";
+import { ratesForTrade } from "@/lib/engine/rates";
+import { planForView } from "@/lib/queries/broker-plan";
 import { BROKERS, type Broker, type Exchange, type Segment } from "@/lib/domain/constants";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import type { ChargeRates } from "@/lib/engine/types";
@@ -154,7 +155,15 @@ export function loadSizingLab(onDate = todayIstIso()): SizingLabData {
       let rates: ChargeRates | null = null;
       let source: LabSchedule["source"] = "charge_config";
       try {
-        rates = findRates(map, broker, segment, EXCHANGE_FOR[segment], onDate);
+        // Wave U — the Lab prices EVERY broker, so each one is priced on
+        // the plan the account(s) in view hold WITH THAT BROKER; a broker the
+        // user has no account with resolves to "default".
+        rates = ratesForTrade(
+          map,
+          { broker, segment, exchange: EXCHANGE_FOR[segment] },
+          onDate,
+          planForView(broker, onDate, map),
+        );
       } catch {
         // No configured row for this broker × segment × date. The dated
         // reference table is the stated fallback, and it is labelled as one.

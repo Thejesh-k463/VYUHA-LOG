@@ -28,7 +28,10 @@ describe("the Upstox schema-only caveat is retired everywhere it was stated", ()
     // report at NSE's 1-Mar-2026 transaction rate; the docs quote the same figure.
     // −271.92 → −355.66 on 2026-09-18 (v4.4.0): the Upstox F&O grammar is VERIFIED, so the report's three
     // option contracts price as options (4 → 5 positions; charges 136.47 → 220.21).
-    expect(golden, "the trade report's committed net").toContain("commit: { net: -355.66,");
+    // −355.66 → −443.14 on 2026-09-22 (v4.5.0 wave U): findings D2 (Upstox delivery brokerage is
+    // min(₹20, 2.5%), not 0.1%) and D3 (DP ₹20, not ₹18.50) reprice the two equity round trips;
+    // gross is unchanged at −135.45 and the option half at 156.76. Charges 220.21 → 307.69.
+    expect(golden, "the trade report's committed net").toContain("commit: { net: -443.14,");
   });
 
   for (const file of ["AGENTS.md", "docs/BROKER_FORMATS.md"]) {
@@ -52,8 +55,9 @@ describe("the Upstox schema-only caveat is retired everywhere it was stated", ()
       const text = readFileSync(path.join(root, file), "utf8");
       expect(text).toMatch(/golden-books\.test\.ts/);
       expect(text).toMatch(/−4\.28|-4\.28/);
-      // Follows the golden commit pinned above (−271.90 → −271.92, C-8, 2026-09-11).
-      expect(text).toMatch(/−355\.66|-355\.66/);
+      // Follows the golden commit pinned above (−271.90 → −271.92, C-8, 2026-09-11;
+      // → −355.66, the F&O grammar, 2026-09-18; → −443.14, D2/D3, 2026-09-22).
+      expect(text).toMatch(/−443\.14|-443\.14/);
     });
   }
 });

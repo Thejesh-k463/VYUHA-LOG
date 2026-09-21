@@ -54,6 +54,26 @@ let loadRatesMap: typeof import("@/lib/engine/rates-db").loadRatesMap;
 
 /** (broker, plan) as charge_config actually holds them. */
 let BROKER_PLANS: { broker: string; plan: string }[] = [];
+/**
+ * WAVE U (v4.5.0) — every (broker, plan) of the sweep is SEATED on an account
+ * that states it.
+ *
+ * Until this wave the plan dimension of this matrix was decorative: the rows
+ * were all filed in the seeded account, which states no plan, so both halves
+ * priced every cell at "default" and the "plan" column of the label was a name
+ * with no consequence. The pin at the foot of this file said so explicitly, and
+ * was green because NEITHER half passed a plan — a pin that a one-sided wiring
+ * would have turned red, and nothing else.
+ *
+ * Now each (broker, plan) has its OWN account, with `broker_plan` set to the
+ * plan and `broker_plan_from` blank (= always, owner ruling U1), and every row
+ * of the sweep is filed in the account of its own (broker, plan). So a cell on
+ * `upstox/plus` really is priced on the Plus card by whichever half resolves it
+ * — and the matrix's single question, preview === save, is now asked of the
+ * plan too.
+ */
+const PLAN_ACCOUNT = new Map<string, number>();
+const planKey = (broker: string, plan: string) => `${broker}|${plan}`;
 
 // Measured locally 2026-09-15: migrate + seed + the commit, route and dialog
 // imports ~1.5 s, inside the 3 s local hook budget. The raised timeout is for
@@ -72,6 +92,24 @@ beforeAll(async () => {
   // THE broker dimension, from the table itself (invariant 3: rates come only
   // from charge_config, so the list of rate cards does too).
   BROKER_PLANS = t.sqlite.prepare("SELECT DISTINCT broker, plan FROM charge_config ORDER BY broker, plan").all() as typeof BROKER_PLANS;
+  // Wave U — one account per (broker, plan), stating that plan from ALWAYS.
+  for (const { broker, plan } of BROKER_PLANS) {
+    const id = t.db
+      .insert(t.schema.accounts)
+      .values({ name: `${broker} ${plan}`, broker, brokerPlan: plan === "default" ? null : plan, brokerPlanFrom: null })
+      .returning({ id: t.schema.accounts.id })
+      .get()!.id;
+    PLAN_ACCOUNT.set(planKey(broker, plan), id);
+  }
+  // …and the sweep runs from the ALL-ACCOUNTS VIEW, stated rather than
+  // inherited. Before wave U this database held exactly one account, so
+  // `getSelectedAccountId` resolved it implicitly; seating the plans makes it a
+  // multi-account book and the aggregate is the honest place to sweep from —
+  // it is where the two halves are most likely to disagree about WHOSE plan
+  // prices a row, because the selection can no longer stand in for the row's
+  // own account. (Invariant 9: 0 is a view and never a write target, so the
+  // D1 block below, which SAVES a new trade, selects an account of its own.)
+  t.db.update(t.schema.settings).set({ selectedAccountId: 0 }).run();
   // Defaults that are NOT 1, so an omitted order count is distinguishable from
   // the route's old hard default (V4).
   t.db.update(t.schema.settings).set({ defaultBuyOrders: 3, defaultSellOrders: 2 }).run();
@@ -121,12 +159,16 @@ const saved = (id: number) => {
 };
 
 let seq = 0;
-function openRow(seg: SegFixture, broker: string, funded: number | null, storedCloseCount: number): number {
+function openRow(seg: SegFixture, broker: string, funded: number | null, storedCloseCount: number, plan = "default"): number {
   const sym = `M${++seq}`;
   return t.db
     .insert(t.schema.trades)
     .values(
       tradeRow({
+        // Wave U: the row lives in the account that states this plan, so the
+        // save prices it on that card — `closePosition` / `updateManualTrade`
+        // read `planAccountOf(t.accountId)`, never the selection.
+        accountId: PLAN_ACCOUNT.get(planKey(broker, plan)) ?? 1,
         broker,
         bucket: seg.bucket,
         segment: seg.segment,
@@ -189,7 +231,7 @@ async function closeSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft:
   const out: CellResult[] = [];
   for (const { broker, plan } of BROKER_PLANS) {
     for (const counts of ["sent", "omitted"] as const) {
-      const id = openRow(seg, broker, FUNDED[ft], counts === "sent" ? 2 : 0);
+      const id = openRow(seg, broker, FUNDED[ft], counts === "sent" ? 2 : 0, plan);
       const w = wire(id);
       const exitIso = resolveExitIso(exitRaw);
       // The dialog's own call site (components/trades/close-trade-dialog.tsx):
@@ -215,7 +257,7 @@ async function editSlice(seg: SegFixture, exitRaw: string, exitTag: string, ft: 
   const out: CellResult[] = [];
   for (const { broker, plan } of BROKER_PLANS) {
     for (const counts of ["sent", "omitted"] as const) {
-      const id = openRow(seg, broker, FUNDED[ft], counts === "sent" ? 2 : 0);
+      const id = openRow(seg, broker, FUNDED[ft], counts === "sent" ? 2 : 0, plan);
       const w = wire(id);
       // EditTradeDialog's own call site: an untouched "Own capital used" field
       // sends what the row STATES — buy value minus the stored funded amount —
@@ -787,12 +829,21 @@ describe("G3 — the dimensions of the matrix are the real ones", () => {
   });
 
   /**
-   * A paid plan cannot split the preview from the save, because NEITHER half
-   * passes one: `findRates` defaults to "default" in the route and in
-   * `closePosition` alike. Stated as a fact with its consequence measured, so
-   * that wiring a plan into one half and not the other reddens here.
+   * WAVE U (v4.5.0) — THIS PIN WAS INVERTED, AND IT WAS VACUOUS BEFORE.
+   *
+   * It used to read "neither half prices at a non-default plan", and it was
+   * green because the sweep seated no plan on any account: `findRates`
+   * defaulted to "default" in the route and in `closePosition` alike, so there
+   * was no plan for either half to get wrong. That made it a pin about the
+   * ABSENCE of a feature — it could only ever have caught a half-wired plan,
+   * and the moment the plan was wired into BOTH halves correctly, it went red
+   * for being right.
+   *
+   * Now every (broker, plan) of the sweep sits on an account that states it, so
+   * the assertion is the one this file exists to make: BOTH halves price at the
+   * ACCOUNT's plan, and it is a plan that visibly costs a different number.
    */
-  it("neither half prices at a non-default plan, though charge_config holds one that differs", async () => {
+  it("both halves price at the ACCOUNT's plan, and the paid card really is a different card", async () => {
     const paid = BROKER_PLANS.find((b) => b.plan !== "default")!;
     const map = loadRatesMap();
     const onDefault = findRates(map, paid.broker as never, "eq_mtf", "NSE", "2026-08-14");
@@ -801,15 +852,25 @@ describe("G3 — the dimensions of the matrix are the real ones", () => {
     expect(onPaid.mtfInterestAnnual).not.toBe(onDefault.mtfInterestAnnual);
 
     const seg = SEGMENTS.find((s) => s.segment === "eq_mtf")!;
-    const id = openRow(seg, paid.broker, 16000, 0);
+    const id = openRow(seg, paid.broker, 16000, 0, paid.plan);
     const w = wire(id);
     const shown = await preview(closePreviewBody(w, seg.exit, "2026-08-14", { buyDate: BUY_ISO, sellDate: "2026-08-14" }));
     expect(commit.closePosition(id, seg.exit, "2026-08-14").ok).toBe(true);
     const stored = saved(id);
+    // The whole point of the file: what the dialog showed is what the save wrote.
     expect(shown).toEqual(stored);
-    // Both at the DEFAULT card: the interest is 30 days at the default rate.
-    expect(stored[3]).toBe(Math.round(((16000 * onDefault.mtfInterestAnnual * 30) / 365) * 100) / 100);
-    expect(stored[3]).not.toBe(Math.round(((16000 * onPaid.mtfInterestAnnual * 30) / 365) * 100) / 100);
+    // …and it is the PAID card's interest, 30 days of it, not the free one's.
+    expect(stored[3]).toBe(Math.round(((16000 * onPaid.mtfInterestAnnual * 30) / 365) * 100) / 100);
+    expect(stored[3]).not.toBe(Math.round(((16000 * onDefault.mtfInterestAnnual * 30) / 365) * 100) / 100);
+
+    // The control: the SAME row in an account that states no plan prices at the
+    // free card, through both halves, so the plan is what moved the figure and
+    // not some other property of this account.
+    const free = openRow(seg, paid.broker, 16000, 0);
+    const shownFree = await preview(closePreviewBody(wire(free), seg.exit, "2026-08-14", { buyDate: BUY_ISO, sellDate: "2026-08-14" }));
+    expect(commit.closePosition(free, seg.exit, "2026-08-14").ok).toBe(true);
+    expect(shownFree).toEqual(saved(free));
+    expect(saved(free)[3]).toBe(Math.round(((16000 * onDefault.mtfInterestAnnual * 30) / 365) * 100) / 100);
   });
 });
 
@@ -845,6 +906,10 @@ describe("D1 — the manual form's stated risk equals the risk it saves", () => 
     ({ riskHint } = await import("@/components/trades/manual-trade-form"));
     ({ buildManualPreviewBody } = await import("@/components/trades/manual-preview-body"));
     ({ createManualTrade } = await import("@/app/trades/actions"));
+    // This block SAVES a new trade, and 0 is a view, never a write target
+    // (invariant 9) — so it names the account the write lands in. The seeded
+    // account states no plan, which is what the risk-cap question is about.
+    t.db.update(t.schema.settings).set({ selectedAccountId: 1 }).run();
     // Typed by the user in the risk editor: `capScheme` 1 is what makes a figure
     // the user's own rather than the v1 seed literal (lib/risk/limits.ts).
     for (const [segment, cap] of Object.entries(SEGMENT_CAPS)) {
@@ -925,4 +990,191 @@ describe("D1 — the manual form's stated risk equals the risk it saves", () => 
       expect(zeroless(stored.rMultiple)).toBe(zeroless(stored.riskAmount ? Math.round((stored.netPnl / stored.riskAmount) * 100) / 100 : null));
     },
   );
+});
+
+/**
+ * WAVE U (v4.5.0) — THE PLAN CROSSES THE SAME SEAM THE CHARGES DO.
+ *
+ * The plan is not a fifth column of the sweep above; it is a fact about the
+ * ACCOUNT, and the two halves of every door reach it by different routes:
+ *
+ *   · the manual Add  — the form sends `accountId` (its own write-account
+ *     picker) and the route resolves `getWriteAccountId(accountId)`; the save
+ *     resolves the SAME call in `commitManualTrade`. In the All-accounts view
+ *     nothing else knows the answer: the selection is 0, which is a view.
+ *   · the close dialog — the body carries no `tradeId`, so the route has only
+ *     `accountId` to go on; `closePosition` prices on the ROW's account. The
+ *     whole sweep above runs from the All-accounts view for that reason.
+ *   · an import — `previewParsedFile` and `commitParsedFile` both take the
+ *     account explicitly and must read the same plan from it.
+ *
+ * Each case below is ₹11.80 an order apart between the two cards, which is why
+ * a one-sided wiring is invisible in a screenshot and obvious here.
+ */
+describe("wave U — preview and save resolve the SAME account, and so the same plan", () => {
+  let buildManualPreviewBody: typeof import("@/components/trades/manual-preview-body").buildManualPreviewBody;
+  let createManualTrade: typeof import("@/app/trades/actions").createManualTrade;
+  /** The Upstox account on Plus, and one that states no plan — both real rows. */
+  let PLUS = 0;
+  let BASIC = 0;
+
+  beforeAll(async () => {
+    ({ buildManualPreviewBody } = await import("@/components/trades/manual-preview-body"));
+    ({ createManualTrade } = await import("@/app/trades/actions"));
+    PLUS = PLAN_ACCOUNT.get(planKey("upstox", "plus"))!;
+    BASIC = PLAN_ACCOUNT.get(planKey("upstox", "default"))!;
+    expect([PLUS, BASIC].every((x) => x > 0)).toBe(true);
+  });
+
+  const previewJson = async (body: unknown) => {
+    const res = await POST(
+      new Request("http://localhost:3011/api/charges/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+    expect(res.status).toBe(200);
+    return (await res.json()) as { breakdown: { total: number }; netPnl: number; grossPnl: number };
+  };
+
+  const manualBody = (accountId: number | null, sym: string) =>
+    buildManualPreviewBody({
+      broker: "upstox",
+      tradingsymbol: sym,
+      kind: "fno",
+      productHint: null,
+      segment: null,
+      exchange: "NSE",
+      direction: "buy",
+      open: false,
+      entryQty: 75,
+      entryPrice: 40,
+      entryDate: BUY_ISO,
+      exitQty: 75,
+      exitPrice: 44,
+      exitDate: "2026-08-14",
+      ownCapitalUsed: null,
+      daysHeld: 0,
+      accountId,
+    });
+
+  const manualSave = async (accountId: number | null, sym: string) => {
+    const fd = new FormData();
+    const fields: Record<string, string> = {
+      broker: "upstox",
+      tradingsymbol: sym,
+      direction: "buy",
+      segment: "",
+      exchange: "NSE",
+      buyQty: "75",
+      avgBuyPrice: "40",
+      buyDate: BUY_ISO,
+      sellQty: "75",
+      avgSellPrice: "44",
+      sellDate: "2026-08-14",
+    };
+    if (accountId != null) fields.accountId = String(accountId);
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    const res = await createManualTrade({ ok: false, message: "" }, fd);
+    expect(res, res.message).toMatchObject({ ok: true });
+    return row(res.tradeId!);
+  };
+
+  /**
+   * The Plus premium on these rows: ₹10 an order, plus 18% GST, over the order
+   * counts these doors actually bill. Neither the manual Add form nor a parsed
+   * import row states a count, so both take the SETTINGS defaults this file
+   * plants above (3 buy orders, 2 sell orders) — five orders, which is exactly
+   * the V4 defaulting the rest of this file exists to pin. Derived from those
+   * two numbers rather than written as a literal, so a change to them moves
+   * this figure instead of reddening it for the wrong reason.
+   */
+  const PREMIUM = Math.round((3 + 2) * 10 * 1.18 * 100) / 100;
+
+  it("the manual Add, from the ALL-ACCOUNTS view: the picker's account decides the plan for BOTH halves", async () => {
+    // Invariant 9 — 0 is a view, so the form's own picker is the only thing
+    // that knows where the write lands, and the preview must ask it too.
+    t.db.update(t.schema.settings).set({ selectedAccountId: 0 }).run();
+
+    const onPlus = `OPT PLUSADD${++seq} 24 Sep 2026 24000 CE`;
+    const shownPlus = await previewJson(manualBody(PLUS, onPlus));
+    const storedPlus = await manualSave(PLUS, onPlus);
+    expect(storedPlus.accountId).toBe(PLUS);
+    expect([shownPlus.breakdown.total, shownPlus.netPnl]).toEqual([storedPlus.chargesTotal, storedPlus.netPnl]);
+
+    const onBasic = `OPT BASICADD${++seq} 24 Sep 2026 24000 CE`;
+    const shownBasic = await previewJson(manualBody(BASIC, onBasic));
+    const storedBasic = await manualSave(BASIC, onBasic);
+    expect(storedBasic.accountId).toBe(BASIC);
+    expect([shownBasic.breakdown.total, shownBasic.netPnl]).toEqual([storedBasic.chargesTotal, storedBasic.netPnl]);
+
+    // …and the two accounts really are priced differently. A wiring where BOTH
+    // halves read the same wrong account would pass the two equalities above;
+    // this is what stops that.
+    expect(Math.round((storedPlus.chargesTotal - storedBasic.chargesTotal) * 100) / 100).toBe(PREMIUM);
+  });
+
+  it("the manual Add, from a SINGLE-account view: an omitted accountId falls back to the selection, both halves", async () => {
+    t.db.update(t.schema.settings).set({ selectedAccountId: PLUS }).run();
+    const sym = `OPT SELADD${++seq} 24 Sep 2026 24000 CE`;
+    const shown = await previewJson(manualBody(null, sym));
+    const stored = await manualSave(null, sym);
+    expect(stored.accountId).toBe(PLUS);
+    expect([shown.breakdown.total, shown.netPnl]).toEqual([stored.chargesTotal, stored.netPnl]);
+
+    t.db.update(t.schema.settings).set({ selectedAccountId: BASIC }).run();
+    const sym2 = `OPT SELADD${++seq} 24 Sep 2026 24000 CE`;
+    const shown2 = await previewJson(manualBody(null, sym2));
+    const stored2 = await manualSave(null, sym2);
+    expect([shown2.breakdown.total, shown2.netPnl]).toEqual([stored2.chargesTotal, stored2.netPnl]);
+    // The selection really did choose the card.
+    expect(Math.round((stored.chargesTotal - stored2.chargesTotal) * 100) / 100).toBe(PREMIUM);
+    t.db.update(t.schema.settings).set({ selectedAccountId: 0 }).run();
+  });
+
+  it("an IMPORT: previewParsedFile and commitParsedFile read the same account's plan", () => {
+    const one = {
+      broker: "upstox",
+      tradingsymbol: "OPT NIFTY 24 Sep 2026 24000 CE",
+      isin: null,
+      buyQty: 75,
+      avgBuyPrice: 40,
+      buyValue: 3000,
+      sellQty: 75,
+      avgSellPrice: 44,
+      sellValue: 3300,
+      closingPrice: null,
+      grossPnl: 300,
+      unrealisedPnl: 0,
+      buyDate: BUY_ISO,
+      sellDate: "2026-08-14",
+      exchangeHint: "NSE",
+      productHint: null,
+    };
+    const parsed = (n: number) =>
+      ({ broker: "upstox", source: "upstox", warnings: [], trades: [{ ...one, tradingsymbol: `OPT NIFTY${n} 24 Sep 2026 24000 CE` }] }) as unknown as Parameters<
+        typeof commit.previewParsedFile
+      >[0];
+
+    const nPlus = ++seq;
+    const pPlus = parsed(nPlus);
+    const pvPlus = commit.previewParsedFile(pPlus, null, PLUS);
+    expect(commit.commitParsedFile(pPlus, `plan-plus-${nPlus}.xlsx`, null, PLUS).added).toBe(1);
+    const storedPlus = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.accountId, PLUS)).all().at(-1)!;
+
+    const nBasic = ++seq;
+    const pBasic = parsed(nBasic);
+    const pvBasic = commit.previewParsedFile(pBasic, null, BASIC);
+    expect(commit.commitParsedFile(pBasic, `plan-basic-${nBasic}.xlsx`, null, BASIC).added).toBe(1);
+    const storedBasic = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.accountId, BASIC)).all().at(-1)!;
+
+    // Preview = save, in each account…
+    expect(pvPlus.rows[0].chargesTotal).toBe(storedPlus.chargesTotal);
+    expect(pvBasic.rows[0].chargesTotal).toBe(storedBasic.chargesTotal);
+    // …and the SAME file into two accounts is two different bills, by exactly
+    // the plan premium, on BOTH halves.
+    expect(Math.round((storedPlus.chargesTotal - storedBasic.chargesTotal) * 100) / 100).toBe(PREMIUM);
+    expect(Math.round((pvPlus.rows[0].chargesTotal - pvBasic.rows[0].chargesTotal) * 100) / 100).toBe(PREMIUM);
+  });
 });

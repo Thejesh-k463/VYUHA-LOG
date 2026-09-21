@@ -1,5 +1,6 @@
 import { buildChargeConfigSeed } from "@/lib/db/seed-data";
 import { BROKERS, type Broker, type Exchange, type Segment } from "@/lib/domain/constants";
+import { mtfRateFor } from "./charges";
 import type { ChargeRates } from "./types";
 
 /**
@@ -338,6 +339,206 @@ export function statutoryRatesFor(
     pledgeCharge: 0,
     unpledgeCharge: 0,
   };
+}
+
+// ---------------------------------------------------------------------------
+// PLANS — which pricing plan an ACCOUNT is on, and from when (v4.5.0 wave U)
+// ---------------------------------------------------------------------------
+
+/**
+ * The account facts a plan resolves from. Deliberately structural, not the
+ * Drizzle row type: this module is pure (invariant 2) and must stay importable
+ * from a test fixture that has no database.
+ */
+export interface PlanAccount {
+  /** The broker this account is with. Free text, nullable (schema.ts accounts). */
+  broker?: string | null;
+  /** The plan key in charge_config, e.g. "plus". Null = the user stated none. */
+  brokerPlan?: string | null;
+  /** `YYYY-MM-DD` the plan started. Blank/null = "always" (owner ruling U1). */
+  brokerPlanFrom?: string | null;
+}
+
+const normBroker = (b: string | null | undefined): string => (b ?? "").trim().toLowerCase();
+
+/** Every plan key on file for a broker, "default" first. Empty for an unknown broker. */
+export function plansFor(map: RatesMap, broker: string): string[] {
+  const b = normBroker(broker);
+  const seen = new Set<string>();
+  for (const k of map.keys()) {
+    const [kb, plan] = k.split("|");
+    if (kb === b) seen.add(plan);
+  }
+  const out = [...seen];
+  out.sort((x, y) => (x === "default" ? -1 : y === "default" ? 1 : x.localeCompare(y)));
+  return out;
+}
+
+/** True when `charge_config` holds at least one row for this (broker, plan). */
+function mapHasPlan(map: RatesMap, broker: string, plan: string): boolean {
+  const prefix = `${normBroker(broker)}|${plan}|`;
+  for (const k of map.keys()) if (k.startsWith(prefix)) return true;
+  return false;
+}
+
+/**
+ * WHICH PLAN PRICES THIS TRADE — the one rule, pure and total.
+ *
+ * The plan is an attribute of the ACCOUNT's relationship with ONE broker, not
+ * of a trade, so it applies only when all four things hold:
+ *
+ *   1. the account states a plan at all (null = the user never said, so Basic);
+ *   2. the account's broker IS the broker of the trade being priced — an
+ *      "upstox/plus" account holding a Zerodha row must not ask charge_config
+ *      for `zerodha | plus`, which would THROW and abort a whole import
+ *      (design review item 2);
+ *   3. `charge_config` actually holds that (broker, plan) — a plan name left
+ *      behind by an older build, or a row the user deleted, prices at default
+ *      rather than throwing;
+ *   4. the date being priced is on/after `brokerPlanFrom`. Blank = always,
+ *      which is the owner's own answer for Upstox (U1, "Plus, whole history").
+ *
+ * Anything else is "default". It NEVER throws: a mismatch is an ordinary fact
+ * about a book, not an error.
+ */
+export function resolvePlan(
+  account: PlanAccount | null | undefined,
+  tradeBroker: string | null | undefined,
+  onDate: string,
+  map: RatesMap,
+): string {
+  const plan = (account?.brokerPlan ?? "").trim();
+  if (!plan || plan === "default") return "default";
+  const broker = normBroker(account?.broker);
+  if (!broker || broker !== normBroker(tradeBroker)) return "default";
+  if (!mapHasPlan(map, broker, plan)) return "default";
+  const from = (account?.brokerPlanFrom ?? "").trim();
+  if (from && (isoDate(onDate) ?? onDate) < from) return "default";
+  return plan;
+}
+
+/**
+ * The plan for a trade priced in a VIEW rather than in one account — the three
+ * read-only estimate surfaces (/equity breakeven, /targets/equity, /sizing-lab)
+ * price positions that carry no account id of their own.
+ *
+ * Unanimity or nothing: in a single-account view that is simply that account's
+ * plan; in the All-accounts view every account on that broker must resolve to
+ * the SAME plan, otherwise "default". Two accounts on one broker under two
+ * plans have no single honest answer, and inventing one is invariant 6.
+ */
+export function resolvePlanAcross(
+  accountsInView: readonly PlanAccount[],
+  tradeBroker: string | null | undefined,
+  onDate: string,
+  map: RatesMap,
+): string {
+  const plans = new Set<string>();
+  for (const a of accountsInView) {
+    if (normBroker(a.broker) !== normBroker(tradeBroker)) continue;
+    plans.add(resolvePlan(a, tradeBroker, onDate, map));
+  }
+  return plans.size === 1 ? [...plans][0] : "default";
+}
+
+/** One slice of a holding period priced under a single plan. */
+export interface PlanSpan {
+  plan: string;
+  /** Inclusive start, `YYYY-MM-DD`. */
+  from: string;
+  /** Exclusive end, `YYYY-MM-DD`. */
+  to: string;
+}
+
+/**
+ * Split a holding period at `brokerPlanFrom`, so MTF interest already accrued
+ * under Basic is never restated at Plus's rate.
+ *
+ * Same contract as `epochSpans`: oldest first, the slices tile [from, to)
+ * exactly, and a period that never crosses the plan boundary yields ONE span —
+ * so the common case computes precisely as it did before this existed.
+ * DECISIONS 2026-08-30 decision 6: a stored P&L never moves silently.
+ */
+export function planSpans(
+  account: PlanAccount | null | undefined,
+  tradeBroker: string | null | undefined,
+  from: string,
+  to: string,
+  map: RatesMap,
+): PlanSpan[] {
+  if (to <= from) return [];
+  const atStart = resolvePlan(account, tradeBroker, from, map);
+  const atEnd = resolvePlan(account, tradeBroker, to, map);
+  if (atStart === atEnd) return [{ plan: atStart, from, to }];
+  const cut = (account?.brokerPlanFrom ?? "").trim();
+  if (!cut || cut <= from || cut >= to) return [{ plan: atEnd, from, to }];
+  return [
+    { plan: atStart, from, to: cut },
+    { plan: atEnd, from: cut, to },
+  ];
+}
+
+/**
+ * Interest accrued on one MTF position between two dates — PER PLAN span and
+ * then per RATE epoch (v4.5.0 wave U). Pure: the accrual job and the account
+ * editor's "N open MTF rows re-accrue: was X, will be Y" preview both read it,
+ * so the figure shown before a plan is set is the figure that gets written.
+ *
+ * Pricing the whole holding period at today's plan would restate interest the
+ * user already accrued under the old one, and the job writes `chargesTotal`
+ * and `netPnl` back — a stored P&L moving with no prompt and no audit row,
+ * which DECISIONS 2026-08-30 decision 6 forbids. `planSpans` tiles the period
+ * exactly, so a book on no plan accrues precisely as it did before this
+ * existed. Throws exactly where `epochSpans` does (a period no rate epoch
+ * covers); callers leave the row alone rather than invent a rate.
+ */
+export function mtfInterestOver(
+  map: RatesMap,
+  t: { broker: string; exchange: string },
+  funded: number,
+  account: PlanAccount | null | undefined,
+  from: string,
+  to: string,
+): number {
+  let acc = 0;
+  for (const p of planSpans(account, t.broker, from, to, map)) {
+    const spans = epochSpans(map, t.broker as Broker, "eq_mtf", t.exchange as Exchange, p.from, p.to, p.plan);
+    for (const s of spans) acc += (funded * mtfRateFor(funded, s.rates) * s.days) / 365;
+  }
+  return Math.round(acc * 100) / 100;
+}
+
+/**
+ * THE pricing entry point every product call site uses (design review item 1).
+ *
+ * It is `findRates` plus the plan, and it exists so that the plan (and, from
+ * wave 3a, the ETF overlay) is applied in ONE place rather than at twelve call
+ * sites — eleven of which would eventually miss it.
+ *
+ * ── SEAM FOR WAVE 3a: THE ETF STT OVERLAY ─────────────────────────────────
+ * An ETF is taxed at a different STT rate from an ordinary share while sharing
+ * the same segment, so wave 3a overlays `sttPct` on the row returned below —
+ * gated on `t.segment` being one of `eq_delivery | eq_intraday | eq_mtf`
+ * BEFORE any symbol/ISIN lookup, and returning a COPY (the map is never
+ * mutated), exactly as `statutoryRatesFor` does. `t.isin` and `t.symbol` are
+ * accepted here for that lookup and are deliberately unused today. Do NOT put
+ * the overlay in a call site: the other eleven would miss it.
+ */
+export function ratesForTrade(
+  map: RatesMap,
+  t: {
+    broker: Broker;
+    segment: Segment;
+    exchange: Exchange;
+    /** For the wave 3a ETF lookup. Unused today. */
+    isin?: string | null;
+    /** For the wave 3a ETF lookup. Unused today. */
+    symbol?: string | null;
+  },
+  onDate: string,
+  plan = "default",
+): ChargeRates {
+  return findRates(map, t.broker, t.segment, t.exchange, onDate, plan);
 }
 
 export function findRates(

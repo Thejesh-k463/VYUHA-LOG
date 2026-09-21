@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades as tradesTable, tradeLegs } from "@/lib/db/schema";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates, type RatesMap } from "@/lib/engine/rates";
+import { ratesForTrade, resolvePlan, type PlanAccount, type RatesMap } from "@/lib/engine/rates";
 import { todayIstIso, normalizeDate, unreadableDateMessage, calendarDaysHeld } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeRates } from "@/lib/engine/types";
@@ -15,6 +15,7 @@ import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
 // staged row is a function of that table (owner ruling Q-A, invariant 6).
 import { recordAudit } from "@/lib/audit";
 import { getSelectedAccountId } from "./accounts";
+import { planAccountOf } from "./broker-plan";
 import {
   summarise,
   markToMarket,
@@ -223,10 +224,41 @@ export function priceLegs(
     asOf?: string;
     /** D1 — the stored MTF figures of a closed null-funded ladder, kept through this rebuild. */
     mtfCarry?: { mtfInterest: number; pledgeCharges: number } | null;
+    /**
+     * Wave U — the plan facts of the account this ladder belongs to. The plan
+     * is resolved PER LEG, on the leg's own `tradeDate`: a ladder can straddle
+     * the day the account moved to a paid tier, and a tranche filled before it
+     * was billed at the old rate. The rate EPOCH is still the ladder's single
+     * `asOf` (the stated approximation in this module's header, unchanged) —
+     * only the plan varies per leg. Omitted = every leg prices on "default",
+     * exactly as before this existed.
+     */
+    planAccount?: PlanAccount | null;
   },
   ratesMap: RatesMap,
 ): PricedLeg[] {
-  const rates = findRates(ratesMap, ctx.broker, ctx.segment, ctx.exchange, ctx.asOf ?? todayIstIso());
+  const pricingDay = ctx.asOf ?? todayIstIso();
+  // One lookup per distinct plan, not per leg.
+  const ratesByPlan = new Map<string, ChargeRates>();
+  const ratesOnPlan = (plan: string): ChargeRates => {
+    const hit = ratesByPlan.get(plan);
+    if (hit) return hit;
+    const r = ratesForTrade(
+      ratesMap,
+      { broker: ctx.broker, segment: ctx.segment, exchange: ctx.exchange },
+      pricingDay,
+      plan,
+    );
+    ratesByPlan.set(plan, r);
+    return r;
+  };
+  const legDate = new Map(legs.map((l) => [l.id, l.tradeDate]));
+  const planForLeg = (legId: number): string =>
+    resolvePlan(ctx.planAccount ?? null, ctx.broker, normalizeDate(legDate.get(legId) ?? null) ?? pricingDay, ratesMap);
+  // Resolved eagerly, as the single `findRates` call here always was: a ladder
+  // whose broker has no rate epoch covering `asOf` must THROW before anything
+  // is written, which is what `lib/jobs/mtf-accrual.ts` catches to skip the row.
+  ratesOnPlan(resolvePlan(ctx.planAccount ?? null, ctx.broker, pricingDay, ratesMap));
   const shapes = legChargeShapes(legs, ctx.direction);
   const ordered = sortLegs(legs);
 
@@ -324,7 +356,8 @@ export function priceLegs(
   return shapes.map((shape) => {
     // Suppressing DP is done by zeroing the rate, which correctly drops it out
     // of the GST base too rather than subtracting it afterwards.
-    const legRates: ChargeRates = shape.suppressDp ? { ...rates, dpCharge: 0 } : rates;
+    const ownRates = ratesOnPlan(planForLeg(shape.legId));
+    const legRates: ChargeRates = shape.suppressDp ? { ...ownRates, dpCharge: 0 } : ownRates;
 
     const mtfDays = mtfDaysByLeg.get(shape.legId);
     const mtfFunded = mtfFundedByLeg.get(shape.legId);
@@ -486,6 +519,8 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction, asOf?
       direction: dir,
       mtfFundedAmount: t.mtfFundedAmount,
       mtfCarry,
+      // Wave U — the plan of the account this ladder belongs to, per leg date.
+      planAccount: planAccountOf(t.accountId),
       ...(asOf ? { asOf } : {}),
     },
     ratesMap,

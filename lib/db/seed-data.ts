@@ -373,13 +373,18 @@ function brokerageFor(
     }
   }
 
-  // Upstox — ₹20 or 0.1% (whichever lower) on delivery/intraday; flat ₹20 elsewhere.
+  // Upstox BASIC (the free default) — upstox.com/help-center/t-248665, read
+  // 2026-09-22. Delivery and MTF are "₹20 or 2.5%, whichever is lower"; only
+  // INTRADAY is the 0.1% form. D2 (v4.5.0): all three were seeded at 0.1%,
+  // which under-billed every Upstox delivery order below ₹20,000 (a ₹5,000 buy
+  // priced ₹5 where Upstox bills ₹20). The cap is unchanged at ₹20.
   if (broker === "upstox") {
     switch (segment) {
       case "eq_delivery":
-      case "eq_intraday":
       case "eq_mtf":
-        return { flat: null, pct: 0.001, cap: 20, floor: 0 };
+        return { flat: null, pct: 0.025, cap: 20, floor: 0 }; // min(20, 2.5%)
+      case "eq_intraday":
+        return { flat: null, pct: 0.001, cap: 20, floor: 0 }; // min(20, 0.1%)
       case "future":
       case "commodity_future":
       case "index_option":
@@ -482,8 +487,12 @@ function dpFor(broker: Broker): {
       return { dpCharge: 20.0, dpGstApplicable: true, dpMinValue: 100 }; // 3.5 + 16.5
     case "angelone":
       return { dpCharge: 20.0, dpGstApplicable: true, dpMinValue: 0 };
+    // D3 (v4.5.0, owner ruling U2): upstox.com/brokerage-charges states "₹ 20.0
+    // per scrip per day only on sell" (read 2026-09-22), not the 18.50 seeded
+    // here. The date it changed is published nowhere, so the whole history
+    // prices at ₹20 in FUTURE previews; no stored charge moves either way.
     case "upstox":
-      return { dpCharge: 18.5, dpGstApplicable: true, dpMinValue: 0 };
+      return { dpCharge: 20.0, dpGstApplicable: true, dpMinValue: 0 };
     // Kotak Neo bills DP as a PERCENTAGE with a floor: 0.04% of the value
     // sold, minimum ₹20, per scrip per day on delivery/BTST sells. It is the
     // only broker here that does, which is why `dpPct` exists at all.
@@ -610,8 +619,8 @@ const COMBOS: { segment: Segment; exchanges: Exchange[] }[] = [
 /**
  * Paid plans, in addition to the free "default" every broker has.
  *
- * Only Kotak Neo sells one among the brokers here — Angel One, Upstox, Dhan,
- * Zerodha, Groww, Paytm and Sahi all run a single flat structure. Each entry
+ * Kotak Neo and Upstox are the two that sell one — Angel One, Dhan, Zerodha,
+ * Groww, Paytm and Sahi all run a single flat structure. Each entry
  * lists ONLY the segments the paid plan actually changes; everything else
  * falls through to the broker's default rates.
  *
@@ -641,6 +650,49 @@ const PAID_PLANS: Partial<Record<Broker, PaidPlan[]>> = {
         eq_mtf: { flat: null, pct: 0.001, cap: null, floor: 0 },
       },
       mtfInterestAnnual: 0.0969,
+    },
+  ],
+  /**
+   * Upstox Plus (v4.5.0). upstox.com/plus/ and help-center 264072, both read
+   * 2026-09-22: "The flat fee per order increases from ₹20 to ₹30, but the
+   * percentage-based caps remain identical across both plans." So every
+   * segment's ₹20 — a FLAT in F&O, a CAP on equity — becomes ₹30 and every
+   * percentage is Basic's. Nothing else moves: DP, pledge and every statutory
+   * head fall through to the broker's default rows (`emit`).
+   *
+   * `monthly: 0` — OWNER RULING U3, verbatim: "No subscription charges, just
+   * few changes to other fees they charge". The ₹10/order premium IS the price
+   * of the tier, so the comparison must not amortise a fee nobody is billed;
+   * D4 gates the "· paid" badge on `subscriptionMonthly > 0` for that reason.
+   *
+   * MTF interest 14.60% p.a. = the published "₹20 per ₹50K borrowed" per day
+   * (0.04%/day × 365), against Basic's ₹20 per ₹40,000 slab (0.05%/day,
+   * 18.25%). Invariant 3: the figure is a RATE ROW here, never a literal in
+   * logic.
+   *
+   * NOT modelled, deliberately (owner addendum B): Plus's free net-banking
+   * transfers and instant withdrawals are cash-ledger lines, not per-trade
+   * charges, so they are not charge_config's; and the "Strategy Builder
+   * discount on multi-leg options" is a secondary-source claim the owner's own
+   * 2026-08-28 day contradicts (it backs out ₹29.86/order, no discount), so no
+   * multi-leg rule is seeded.
+   */
+  upstox: [
+    {
+      plan: "plus",
+      label: "Upstox Plus",
+      monthly: 0,
+      brokerage: {
+        eq_delivery: { flat: null, pct: 0.025, cap: 30, floor: 0 }, // min(30, 2.5%)
+        eq_mtf: { flat: null, pct: 0.025, cap: 30, floor: 0 }, // min(30, 2.5%)
+        eq_intraday: { flat: null, pct: 0.001, cap: 30, floor: 0 }, // min(30, 0.1%)
+        future: { flat: 30, pct: 0, cap: null, floor: 0 },
+        commodity_future: { flat: 30, pct: 0, cap: null, floor: 0 },
+        index_option: { flat: 30, pct: 0, cap: null, floor: 0 },
+        stock_option: { flat: 30, pct: 0, cap: null, floor: 0 },
+        commodity_option: { flat: 30, pct: 0, cap: null, floor: 0 },
+      },
+      mtfInterestAnnual: 0.146,
     },
   ],
 };

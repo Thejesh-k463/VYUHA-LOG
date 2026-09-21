@@ -6,7 +6,8 @@ import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { accrueMtfInterest } from "@/lib/jobs/mtf-accrual";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates } from "@/lib/engine/rates";
+import { ratesForTrade } from "@/lib/engine/rates";
+import { planForView } from "@/lib/queries/broker-plan";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { computeTradeCalc } from "@/lib/analytics/trade-calc";
 import type { Broker, Exchange } from "@/lib/domain/constants";
@@ -53,7 +54,17 @@ export default function EquityTrackerPage() {
       // interest accrued so far — needs charge_config rates, which the pure
       // positions.ts module deliberately doesn't touch.
       try {
-        const r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, todayIstIso());
+        // Wave U — priced on the plan of the account in view for this
+        // broker. An open position carries no account id of its own, so
+        // `planForView` answers from the view: the selected account's plan, or
+        // in the All-accounts view the plan every account on that broker
+        // agrees on — "default" when they do not (invariant 6).
+        const r = ratesForTrade(
+          rates,
+          { broker: p.broker as Broker, segment: "eq_mtf", exchange: p.exchange as Exchange, symbol: p.symbol },
+          todayIstIso(),
+          planForView(p.broker, todayIstIso(), rates),
+        );
         const calc = computeTradeCalc(
           {
             segment: "eq_mtf",

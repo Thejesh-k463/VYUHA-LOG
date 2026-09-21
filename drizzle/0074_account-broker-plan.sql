@@ -1,0 +1,29 @@
+-- v4.5.0 wave U — the account's BROKER PLAN, and from when.
+--
+-- Upstox sells two plans (Basic, free; Plus, +₹10 per executed order), and
+-- `charge_config` has carried a `plan` column since v3.x — but nothing said
+-- WHICH plan an account is on, so every trade in the product was priced on
+-- "default". These two columns say it.
+--
+-- `broker_plan`      — the plan key in charge_config ("plus"). NULL = not
+--                      stated, which prices at "default" (Basic). Never a
+--                      guess: an account that says nothing is on the free tier.
+-- `broker_plan_from` — YYYY-MM-DD the plan started, inclusive. NULL/blank =
+--                      "always" (owner ruling U1: Plus, whole history). A paid
+--                      tier is an OPT-IN, not a dated repricing of the market,
+--                      so the date belongs to the account's membership and not
+--                      to the rate row — which is why the plus rate rows keep
+--                      `effective_from = '1970-01-01'` like Kotak Neo's pro.
+--
+-- IT MOVES NO MONEY. No stored `charges_*` or `net_pnl` is touched here, and
+-- setting a plan later does not recompute a saved row: the plan changes only
+-- what is computed FRESH (an import preview/commit, a close/edit preview and
+-- its save, the MTF accrual, the calculator and the targets pages). The one
+-- place a stored figure CAN move is the daily MTF accrual on still-OPEN rows,
+-- and that is why the accounts route previews it and audits every moved row
+-- (DECISIONS 2026-08-30 decision 6).
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `accounts` ADD COLUMN `broker_plan` text;
+--> statement-breakpoint
+ALTER TABLE `accounts` ADD COLUMN `broker_plan_from` text;

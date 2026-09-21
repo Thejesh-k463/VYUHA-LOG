@@ -519,6 +519,13 @@
       "when": 1788800700000,
       "tag": "0073_per-segment-cap-risk-free",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1788800800000,
+      "tag": "0074_account-broker-plan",
+      "breakpoints": true
     }
   ]
 }

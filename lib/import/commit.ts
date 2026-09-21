@@ -15,7 +15,14 @@ import {
 import { eq, and, ne, or, sql, isNull, inArray, notInArray } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
+import { pricingDate, ratesForTrade, resolvePlan, type PlanAccount, type RatesMap } from "@/lib/engine/rates";
+// Wave U — WHICH PLAN prices this write. The plan is the ACCOUNT's, resolved
+// against the TRADE's broker and its own pricing date, so an account on a paid
+// tier never asks charge_config for another broker's plan key (design review
+// item 2). The account row is read ONCE per call here and the pure
+// `resolvePlan` decides per trade; it returns "default" for every case that is
+// not a match and cannot throw.
+import { planAccountOf } from "@/lib/queries/broker-plan";
 import { todayIstIso, normalizeDate, storedDateProblem, calendarDaysHeld, sameDay } from "@/lib/domain/trading-day";
 import { closingAggregate } from "@/lib/domain/close-aggregate";
 import { classifyStoredSignal, SIGNAL_TOMBSTONE } from "@/lib/domain/signal";
@@ -124,6 +131,8 @@ function buildRow(
   rates: RatesMap,
   overrides: Map<string, Override>,
   defaults: { buyOrders: number; sellOrders: number; capRows: readonly CapRow[] },
+  /** The account this import lands in, for the plan (wave U). Null = "default". */
+  planAccount: PlanAccount | null = null,
 ): BuiltRow {
   const dedup = dedupHash(t);
   let cls = classify({
@@ -148,7 +157,13 @@ function buildRow(
   const buyOrderCount = t.buyQty > 0 ? defaults.buyOrders : 0;
   const sellOrderCount = t.sellQty > 0 ? defaults.sellOrders : 0;
 
-  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIstIso()));
+  const on = pricingDate(t, todayIstIso());
+  const r = ratesForTrade(
+    rates,
+    { broker: t.broker, segment: cls.segment, exchange: cls.exchange, isin: t.isin, symbol: cls.symbol },
+    on,
+    resolvePlan(planAccount, t.broker, on, rates),
+  );
   const computed = computeCharges(
     {
       segment: cls.segment,
@@ -754,7 +769,9 @@ export function previewParsedFile(
   let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, supersededCount = 0, openCount = 0, openingSells = 0;
   const agg: Record<string, number> = { brokerage: 0, sttCtt: 0, exchangeTxn: 0, sebi: 0, stampDuty: 0, ipft: 0, gst: 0, dpCharges: 0 };
 
-  const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults) }));
+  // Wave U: the account row is read ONCE, not once per trade.
+  const planAccount = planAccountOf(accountId);
+  const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults, planAccount) }));
   // R43: the same plan the commit makes, against the same rows.
   const snapshot = planSnapshot(
     options.supersedeSnapshot,
@@ -1361,7 +1378,9 @@ export function commitParsedFile(
       .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
       .all();
     const existing = new Set(heldRows.flatMap((r) => heldIdentityHashes(r)));
-    const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults) }));
+    // Wave U: the account row is read ONCE, not once per trade.
+    const planAccount = planAccountOf(accountId);
+    const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults, planAccount) }));
     // R43: decided ONCE, against the account as it stands before any write.
     const snapshot = planSnapshot(
       options.supersedeSnapshot,
@@ -1759,7 +1778,17 @@ export function commitManualTrade(
 
   const buyOrderCount = t.buyQty > 0 ? fields.buyOrders ?? defaults.buyOrders : 0;
   const sellOrderCount = t.sellQty > 0 ? fields.sellOrders ?? defaults.sellOrders : 0;
-  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIstIso()));
+  const onDate = pricingDate(t, todayIstIso());
+  const r = ratesForTrade(
+    rates,
+    { broker: t.broker, segment: cls.segment, exchange: cls.exchange, isin: t.isin, symbol: cls.symbol },
+    onDate,
+    // Wave U — the plan of the account this trade is being FILED IN, on the
+    // trade's own pricing date. `getWriteAccountId` above already resolved
+    // which account that is, so the preview (/api/charges/preview, which now
+    // takes the same accountId) and this save ask the same question.
+    resolvePlan(planAccountOf(accountId), t.broker, onDate, rates),
+  );
 
   // Net non-zero, not just buyQty>sellQty — a pure sell-to-open (short option/future)
   // row has buyQty=0 and must still be OPEN, not silently marked closed.
@@ -2006,7 +2035,16 @@ export function closePosition(
   // The COMPUTED dates, not the stale row: `t.sellDate` is null for an open long,
   // so pricing off `t` would charge the exit at the ENTRY date's epoch — the exact
   // inverse of pricingDate's own rule that the sell side dominates the bill.
-  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIstIso()));
+  const onDate = pricingDate({ buyDate, sellDate }, todayIstIso());
+  const r = ratesForTrade(
+    rates,
+    { broker: t.broker as Broker, segment: t.segment as Segment, exchange: t.exchange as Exchange, isin: t.isin, symbol: t.symbol },
+    onDate,
+    // Wave U — the plan of the account this row ALREADY belongs to (never the
+    // selected one: a close from the All-accounts view prices the row's own
+    // book), on the date this close is priced at.
+    resolvePlan(planAccountOf(t.accountId), t.broker, onDate, rates),
+  );
 
   // MTF interest over the holding period (buy → exit), if this is an MTF position.
   // MTF is equity-only (never a short-open segment), so buyDate is always the entry.
@@ -2297,7 +2335,16 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
 
       // 3 — charges: the bill each side STATES, else charge_config for that side alone.
       const { rates, defaults } = loadRatesContext();
-      const ratesOn = (day: string) => findRates(rates, lot.broker as Broker, lot.segment as Segment, lot.exchange as Exchange, day);
+      // Wave U — the plan of the account the LOT belongs to (the sale is joined
+      // into it), resolved on each day this helper is asked about.
+      const lotPlanAccount = planAccountOf(lot.accountId);
+      const ratesOn = (day: string) =>
+        ratesForTrade(
+          rates,
+          { broker: lot.broker as Broker, segment: lot.segment as Segment, exchange: lot.exchange as Exchange, isin: lot.isin, symbol: lot.symbol },
+          day,
+          resolvePlan(lotPlanAccount, lot.broker, day, rates),
+        );
       const partsOf = (c: StaleChargeParts) => Object.fromEntries(STALE_CHARGE_PARTS.map((k) => [k, c[k]])) as StaleChargeParts;
       const side = (
         row: typeof lot,
@@ -2439,9 +2486,11 @@ function ipoEditChargesFor(
   t: { acquisition: string | null; broker: string; exchange: string },
   v: { buyValue: number; sellValue: number; sellQty: number; buyDate: string | null; sellDate: string | null },
   rates: RatesMap,
+  /** Wave U — the row's account plan, so the IPO branch prices like the rest. */
+  plan = "default",
 ): IpoEditPricing | null {
   if (t.acquisition !== "ipo") return null;
-  return ipoEditCharges(t as unknown as Record<string, unknown>, v, sellChargerFor(t.broker, t.exchange, v.sellDate, rates));
+  return ipoEditCharges(t as unknown as Record<string, unknown>, v, sellChargerFor(t.broker, t.exchange, v.sellDate, rates, plan));
 }
 
 export interface UpdateTradeFields {
@@ -2526,7 +2575,18 @@ export function updateManualTrade(
   // Resolved AFTER the edited dates are known. Moving a trade's sell date across
   // an epoch boundary must re-price it at the epoch it now falls in, otherwise
   // the stored charges disagree with what importing the same trade would produce.
-  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIstIso()));
+  const onDate = pricingDate({ buyDate, sellDate }, todayIstIso());
+  // Wave U — the plan of the row's OWN account, on the edited dates. The
+  // editor's preview (/api/charges/preview, which reads the stored row) asks
+  // the same question of the same account, so the dialog cannot show a figure
+  // priced on a different plan from the one this save stores.
+  const editPlan = resolvePlan(planAccountOf(t.accountId), t.broker, onDate, rates);
+  const r = ratesForTrade(
+    rates,
+    { broker: t.broker as Broker, segment: t.segment as Segment, exchange: t.exchange as Exchange, isin: t.isin, symbol: t.symbol },
+    onDate,
+    editPlan,
+  );
 
   if (buyQty <= 0 && sellQty <= 0) return { ok: false, message: "At least one side (buy or sell) needs a positive quantity." };
 
@@ -2665,7 +2725,7 @@ export function updateManualTrade(
   // /ipos price it by. D15: for an allotment with NO sale that helper answers the
   // row's own stored heads and `repriced: false`, so this save prices nothing at
   // all and the net and the marker stand.
-  const ipoPriced = repriced ? ipoEditChargesFor(t, { buyValue, sellValue, sellQty, buyDate, sellDate }, rates) : null;
+  const ipoPriced = repriced ? ipoEditChargesFor(t, { buyValue, sellValue, sellQty, buyDate, sellDate }, rates, editPlan) : null;
   const pricedHere = repriced && (ipoPriced == null || ipoPriced.repriced);
 
   const charges = repriced
@@ -2913,7 +2973,16 @@ export function applyOverride(
 
   // recompute charges for the trade under the new segment/exchange
   const { rates, defaults } = loadRatesContext();
-  const r = findRates(rates, t.broker as Broker, segment, exchange, pricingDate(t, todayIstIso()));
+  const onDate = pricingDate(t, todayIstIso());
+  const r = ratesForTrade(
+    rates,
+    { broker: t.broker as Broker, segment, exchange, isin: t.isin, symbol: t.symbol },
+    onDate,
+    // Wave U — the re-tag re-prices the row, so it prices it on the row's own
+    // account's plan; pricing a re-tag at "default" would move a Plus account's
+    // stored charges to Basic's figure.
+    resolvePlan(planAccountOf(t.accountId), t.broker, onDate, rates),
+  );
   // MTF accrual follows the segment (same rules as updateManualTrade): a flip
   // TO eq_mtf estimates the funded principal (persisted amount first, else the
   // margin-config estimate) and, for a closed trade, the held days; a flip

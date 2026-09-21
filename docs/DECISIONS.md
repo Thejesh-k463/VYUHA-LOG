@@ -8111,3 +8111,52 @@ plan fix, and the recorded-not-built fix list; ONE design review over all of it 
 builders, one Playwright runner, and a STOP for the owner's "tag". The three designs are drafted into
 `LIVE-DESK-RESEARCH/21-V450-BUILD/` **before** the `/clear`, deliberately: the next session then starts at the design
 review rather than spending its first hour re-deriving what this one already knows.
+
+## 2026-09-22 — v4.5.0 owner answers, the ONE design review, and wave U (Upstox plans, migration 0074)
+
+**Owner answers (11 questions, one group; `LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.5.0 design-question answers";
+`21-V450-BUILD/owner-answers-and-addendum.md`).** Upstox = **Plus, whole history**, no subscription fee, DP ₹20; auto-close
+ON by default with a per-import toggle; a null-date close is refused; deleting a batch a close depends on is refused with
+"un-close first"; the Dhan GTR re-key is automatic; CII blank; no cap-gains total for a year holding a slab bucket; the ETF
+list refreshes per MINOR. **Overruled:** the tax pack does NOT read "all accounts" — tax is per **TAX PERSON** (the existing,
+reader-less `accounts.tax_identity`; a blank identity is its own person — under-merge, never over-merge; no figure across two
+persons). Rejected alternative: always-all-accounts (it would merge a family member's book into the owner's exemption).
+Not modelled, by decision: Upstox Plus's free transfers / withdrawals (ledger lines, not per-trade charges) and its
+"Strategy Builder multi-leg discount" (a secondary source; the owner's 2026-08-28 day backs out ₹29.86/order — none visible).
+
+**The design review (Fable `vyuha-design-reviewer`, `21-V450-BUILD/design-review.md`): all four designs REVISE — 18 revisions,
+8 false claims about the code.** Precedence for builders: owner answers > the review > the three designs. Build order:
+U → W1 identity → W2a applier (dormant) → W3 lifecycle (un-close did not exist; it is specified there) → W2b ON → TP tax
+person (nine more account-scoped readers than the design named) → 3a ETF → 3b-i heads → 3b-ii P1 (per-fill rows, or the
+partial gain counts twice) → 3c seam. `commit.ts` and `data-quality.ts` are never open in two waves.
+
+**Wave U, as built.** Migration **0074** `accounts.broker_plan` + `broker_plan_from` (moves no money). The plan is keyed on
+**(account, trade broker)**: `resolvePlan` returns the plan only when the account's broker equals the trade's, the rate card
+holds that (broker, plan) key and the date is on or after `broker_plan_from` — otherwise `"default"`, and it never throws
+(a Zerodha row inside a Plus account must not abort an import). ONE pricing door, `ratesForTrade`, at **13** sites (the
+review's 12 + `app/api/ipos/route.ts`'s exit sync); an AST guard forbids `findRates(` outside `lib/engine/` and
+`lib/analytics/broker-compare.ts`. A staged ladder resolves the plan **per leg by the leg's own date**. Setting a plan
+previews "N open MTF rows re-accrue: was X, will be Y" and writes one audit row per moved trade (DECISIONS 2026-08-30
+decision 6); changing an account's broker nulls both columns. Seed: Upstox **Plus** (₹30 wherever Basic is ₹20, MTF 14.60%,
+`subscriptionMonthly` 0); **D2** Basic delivery / MTF brokerage `pct 0.025 cap 20` (was `0.001 cap 20`; the published
+min(2.5%, ₹20)); **D3** DP 18.50 → 20.00.
+
+**Measured.** The owner's 2026-08-28 option day: engine **156.89 default / 227.69 plus** vs the ledger's 226.57; the test pins
+the DIFFERENCE (6 orders × ₹10 × 1.18 = ₹70.80) and "within ₹2 of the ledger", never the absolute — the ~₹1 statutory
+rounding residual is a separate, open finding. **Golden book re-pinned:** the Upstox trade report commit
+`{net −355.66, charges 220.21}` → **`{net −443.14, charges 307.69}`**, gross −135.45 UNCHANGED: D2 +83.94 (four delivery legs
+go to the ₹20 cap) + D3 +3.54 (2 × 1.50 × 1.18); the option half stays 156.76. The broker-STATED realised-P&L pin
+(−1.05 / −4.28 / 3.23) did not move. Seed shape: keys 117 → 130, rows 558 → 620 (one broker × 13 combos).
+
+**A defect the seated matrix found (the review's revision 5 predicted the class):** the close dialog's preview sent no
+account, so it priced on the SELECTED account's plan while `closePosition` priced on the ROW's — 69 divergent cells; fixed
+by `accountId: trade.accountId` in `components/trades/close-trade-dialog.tsx`. `tests/preview-equals-save-matrix.test.ts:795`
+was VACUOUS-green (no plan was seated), not red — a pin that cannot fire is a finding. One `resolvePlan` guard is an
+equivalent mutant (the map-key guard subsumes it) — stated, not claimed proven.
+
+**Gate:** `npm run verify` EXIT 0 — **453 files / 10,371 passed / 35 skipped**, lint 3 pre-existing warnings, `next build`
+passed. Both builders hit the 150-turn cap even as TWO builders: from here a builder never runs the gate — `vyuha-verifier`
+does. **Recorded, not built (→ the fix-list wave):** the calculator's plan picker does not default to the account's plan;
+broker-compare's "current" badge matches `plan === "default"`; no "set your plan" line on the import preview;
+`applyOverride` (re-tag) re-prices with no stated-charge guard (pre-existing). Account #3 (Dhan, one plan, 42 closed rows):
+`resolvePlan` returns `"default"`, the accrual and the plan preview read open rows only — it cannot move.

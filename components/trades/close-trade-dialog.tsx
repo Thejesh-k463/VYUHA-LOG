@@ -68,6 +68,18 @@ export function closePreviewBody(
   const sellQty = isShort ? trade.sellQty : close.closeQty;
   const sellValue = isShort ? trade.sellValue : close.closeValue;
   return {
+    // WAVE U (v4.5.0) — WHOSE PLAN PRICES THIS CLOSE.
+    //
+    // `closePosition` prices on `planAccountOf(t.accountId)` — the row's OWN
+    // account, never the selected one. This body carries no `tradeId` (the
+    // close dialog is not an edit), so without this line the route fell back to
+    // `getWriteAccountId(null)` = the SELECTED account, and a close of an
+    // Upstox/Plus row from another account's view previewed at Basic and saved
+    // at Plus. Found by tests/preview-equals-save-matrix.test.ts the moment its
+    // sweep seated a plan on an account (₹145.11 shown, ₹180.51 stored).
+    // `getWriteAccountId(explicit)` returns an id that names a real account, so
+    // sending the row's own is exactly the save's resolution.
+    accountId: trade.accountId,
     broker: trade.broker,
     tradingsymbol: trade.tradingsymbol,
     segment: trade.segment,

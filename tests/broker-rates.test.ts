@@ -298,8 +298,10 @@ describe("pricing plans — the free tier and the paid tier are separate offers"
 
   it("leaves the single-structure brokers with no paid plan at all", () => {
     // Inventing a tier for a broker that does not sell one would be a claim
-    // about their pricing, not a gap in ours.
-    for (const broker of BROKERS.filter((b) => b !== "kotakneo")) {
+    // about their pricing, not a gap in ours. Upstox joined Kotak Neo on the
+    // multi-plan side in v4.5.0 wave U (Upstox Plus, owner rulings U1-U3), so
+    // it is excluded here and asserted by tests/broker-plan.test.ts instead.
+    for (const broker of BROKERS.filter((b) => b !== "kotakneo" && b !== "upstox")) {
       const plans = new Set([...rates.keys()].filter((k) => k.startsWith(`${broker}|`)).map((k) => k.split("|")[1]));
       expect([...plans], broker).toEqual(["default"]);
     }

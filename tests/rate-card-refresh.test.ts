@@ -25,12 +25,12 @@ import { refreshRateCards } from "../scripts/rate-card-refresh.mjs";
  * The defect this pins (v3.2.0 → v4.2): the refresh keyed on four columns while
  * charge_config_uq had become five (migration 0050 added effective_from), so on
  * every launch the UPDATE collided on the unique index after the INSERT had
- * already autocommitted — the owner's DB ended with 45 overlapping open-ended
+ * already autocommitted — the owner's DB ended with 50 overlapping open-ended
  * 1970 F&O epochs carrying the post-2026 STT.
  *
  * Since C-7 and C-8 (v4.3.0) a key is split at the UNION of its STT and
  * exchange-charge boundaries (R1 added the 2013, 2016 and 2023 F&O STT ones,
- * QS-EQ2012 the 2012 equity delivery STT one): 558 rows where bbdc4ec had 207. The owner's real
+ * QS-EQ2012 the 2012 equity delivery STT one): 620 rows where bbdc4ec had 230. The owner's real
  * DB still holds the 4.2.0 two-epoch F&O card, so the planted states below first
  * rebuild bbdc4ec's card from the template (plantPreC8), then collapse it; the
  * refresh must bring every state to the template with no change to
@@ -118,7 +118,7 @@ const PRE_C8 = {
  * three STT epochs (1970, 2024-10-01, 2026-04-01) and every other key its one
  * 1970 row, at bbdc4ec's flat exchange charges and 1970 F&O STT, each row re-closed at the next
  * surviving epoch (the newest left open). Checked once, row for row, against the
- * rows bbdc4ec's own buildChargeConfigSeed() emits. Returns the row count (207).
+ * rows bbdc4ec's own buildChargeConfigSeed() emits. Returns the row count (230).
  */
 function plantPreC8(db: Database.Database): number {
   db.prepare(
@@ -155,7 +155,7 @@ function plantPreC8(db: Database.Database): number {
  * (NULL = open), then the 2024-10-01 epoch is deleted. Returns the number of 1970 rows rewritten.
  */
 function collapse(db: Database.Database, sttFrom: string, to: string | null): number {
-  expect(plantPreC8(db)).toBe(207);
+  expect(plantPreC8(db)).toBe(230);
   const same = `n.broker = t.broker AND n.plan = t.plan AND n.segment = t.segment
                 AND n.exchange = t.exchange AND n.effective_from = '${sttFrom}'`;
   const changed = db
@@ -167,7 +167,7 @@ function collapse(db: Database.Database, sttFrom: string, to: string | null): nu
        WHERE t.effective_from = '1970-01-01' AND EXISTS (SELECT 1 FROM charge_config n WHERE ${same})`,
     )
     .run(to).changes;
-  expect(db.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2024}'`).run().changes).toBe(45);
+  expect(db.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2024}'`).run().changes).toBe(50);
   return changed;
 }
 /**
@@ -282,15 +282,15 @@ const SCENARIOS: Scenario[] = [
   {
     id: "(b)",
     title:
-      "the owner's real state (4.2.0: two epochs, 45 corrupted 1970 rows, pre-C-8 exchange charges): every missing epoch is added, the 1970 rows corrected, overlaps gone, each era priced at its own STT and exchange charge",
+      "the owner's real state (4.2.0: two epochs, 50 corrupted 1970 rows, pre-C-8 exchange charges): every missing epoch is added, the 1970 rows corrected, overlaps gone, each era priced at its own STT and exchange charge",
     run: (refresh) => {
       const u = userCopy();
-      expect(plantOwnerState(u)).toBe(45);
-      expect(overlaps(u)).toBe(45); // the planted state really has the defect
+      expect(plantOwnerState(u)).toBe(50);
+      expect(overlaps(u)).toBe(50); // the planted state really has the defect
 
       // THE DESKTOP FIRST-LAUNCH SIGNATURE on a 4.2.0 card. Re-pinned for QS-EQ2012 (measured):
       // 360 / 135 / 0 before, 396 / 135 / 0 after (+36 delivery/MTF 2012-07-01 epochs added).
-      expect(refresh(u)).toEqual({ added: 396, refreshed: 135, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
 
@@ -317,13 +317,13 @@ const SCENARIOS: Scenario[] = [
     title: "the correct two-epoch state (1970 → 2026-04-01 at the FY25 STT): the missing epochs are added and the 1970 row closed at 2016-06-01 (R1)",
     run: (refresh) => {
       const u = userCopy();
-      expect(plantFy25State(u)).toBe(45);
+      expect(plantFy25State(u)).toBe(50);
       expect(overlaps(u)).toBe(0);
       const was = rowsOf(u, DHAN, "1970-01-01") as { stt_pct: number; effective_to: string }[];
       expect(was).toMatchObject([{ effective_to: STT_EPOCH_2026 }]);
 
       // Re-pinned for QS-EQ2012 (measured): 360 / 135 / 0 before, 396 / 135 / 0 after.
-      expect(refresh(u)).toEqual({ added: 396, refreshed: 135, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
       // The FY25 rate the 1970 row carried now lives on the 2024 epoch, closed at NSE's 2026-03-01 change.
@@ -337,11 +337,11 @@ const SCENARIOS: Scenario[] = [
     title: "bbdc4ec's own state (C-7's three F&O epochs, pre-C-8 exchange charges): the C-8 epochs are added and every changed rate refreshed",
     run: (refresh) => {
       const u = userCopy();
-      expect(plantPreC8(u)).toBe(207);
+      expect(plantPreC8(u)).toBe(230);
       expect(overlaps(u)).toBe(0);
 
       // Re-pinned for QS-EQ2012 (measured): 315 / 171 / 0 before, 351 / 171 / 0 after.
-      expect(refresh(u)).toEqual({ added: 351, refreshed: 171, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 390, refreshed: 190, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
     },
@@ -351,12 +351,12 @@ const SCENARIOS: Scenario[] = [
     title: "the pre-v3.2 shape (one open 1970 row per key at current rates) gains every later epoch, no overlaps",
     run: (refresh) => {
       const u = userCopy();
-      expect(plantOwnerState(u)).toBe(45);
+      expect(plantOwnerState(u)).toBe(50);
       u.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2026}'`).run();
       // Re-pinned for QS-EQ2012 (measured): 405 before, 441 after (+36 delivery/MTF 2012-07-01 epochs).
-      expect(count(u)).toBe(count(tpl) - 441);
+      expect(count(u)).toBe(count(tpl) - 490);
 
-      expect(refresh(u)).toEqual({ added: 441, refreshed: 99, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 490, refreshed: 110, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
     },
@@ -368,7 +368,7 @@ const SCENARIOS: Scenario[] = [
       const u = userCopy();
       plantOwnerState(u);
       // Re-pinned for QS-EQ2012 (measured): 360 / 135 / 0 before, 396 / 135 / 0 after.
-      expect(refresh(u)).toEqual({ added: 396, refreshed: 135, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
       expect(refresh(u)).toEqual({ added: 0, refreshed: 0, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
     },
@@ -558,7 +558,7 @@ const SCENARIOS: Scenario[] = [
     run: (refresh) => {
       const u = userCopy();
       // Re-pinned for QS-EQ2012 (measured): 405 before, 441 after.
-      expect(u.prepare(`DELETE FROM charge_config WHERE effective_from > '1970-01-01'`).run().changes).toBe(441);
+      expect(u.prepare(`DELETE FROM charge_config WHERE effective_from > '1970-01-01'`).run().changes).toBe(490);
       u.exec(
         "DROP INDEX charge_config_uq; CREATE UNIQUE INDEX charge_config_uq ON charge_config (broker, plan, segment, exchange)",
       );
@@ -602,20 +602,20 @@ const SCENARIOS: Scenario[] = [
       // Reverse the ids (1..N -> N..1): a real user DB's ids follow its own insert history.
       const max = (u.prepare("SELECT max(id) AS m FROM charge_config").get() as { m: number }).m;
       u.exec(`UPDATE charge_config SET id = -id; UPDATE charge_config SET id = ${max} + 1 + id;`);
-      expect(plantOwnerState(u)).toBe(45);
+      expect(plantOwnerState(u)).toBe(50);
       const ids = () =>
         u.prepare("SELECT id, broker, plan, segment, exchange, effective_from FROM charge_config ORDER BY id").all();
       const before = ids();
 
       // Re-pinned for QS-EQ2012 (measured): 360 / 135 / 0 before, 396 / 135 / 0 after.
-      expect(refresh(u)).toEqual({ added: 396, refreshed: 135, removed: 0 });
-      // Every row that was there keeps its id; the 396 added epochs are the only new ones.
+      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
+      // Every row that was there keeps its id; the 440 added epochs are the only new ones.
       type IdRow = { broker: string; plan: string; segment: string; exchange: string; effective_from: string };
       const k = (r: IdRow) => `${r.broker}|${r.plan}|${r.segment}|${r.exchange}|${r.effective_from}`;
       const had = new Set((before as IdRow[]).map(k));
       const after = ids() as IdRow[];
       expect(after.filter((r) => had.has(k(r)))).toEqual(before);
-      expect(after.filter((r) => !had.has(k(r)))).toHaveLength(396);
+      expect(after.filter((r) => !had.has(k(r)))).toHaveLength(440);
       expect(snapshot(u)).toEqual(snapshot(tpl));
     },
   },
@@ -624,7 +624,7 @@ const SCENARIOS: Scenario[] = [
 const real = bind(refreshRateCards);
 
 describe("the fixture is not vacuous", () => {
-  it("the template holds 117 keys split at the union of their STT and exchange-charge boundaries (558 rows), and the user index is 5 columns", () => {
+  it("the template holds 130 keys split at the union of their STT and exchange-charge boundaries (620 rows), and the user index is 5 columns", () => {
     const shapes = tpl
       .prepare(
         `SELECT epochs, count(*) AS keys FROM (SELECT group_concat(effective_from, ' ') AS epochs FROM
@@ -633,19 +633,19 @@ describe("the fixture is not vacuous", () => {
       )
       .all();
     expect(shapes).toEqual([
-      { epochs: "1970-01-01", keys: 18 }, // MCX: nothing moved
+      { epochs: "1970-01-01", keys: 20 }, // MCX: nothing moved
       // QS-EQ2012 split the 27 BSE and 27 NSE cash keys: 18 delivery/MTF each gain 2012-07-01, 9 intraday do not.
-      { epochs: "1970-01-01 2012-07-01 2022-12-01", keys: 18 }, // BSE delivery + MTF
-      { epochs: "1970-01-01 2012-07-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01", keys: 18 }, // NSE delivery + MTF
-      { epochs: "1970-01-01 2013-06-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01 2026-04-01", keys: 9 }, // NSE futures
-      { epochs: "1970-01-01 2016-06-01 2022-05-02 2023-04-01 2023-11-01 2024-05-13 2024-10-01 2026-04-01", keys: 9 }, // BSE index options
-      { epochs: "1970-01-01 2016-06-01 2022-05-02 2023-04-01 2024-10-01 2026-04-01", keys: 9 }, // BSE stock options
-      { epochs: "1970-01-01 2016-06-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01 2026-04-01", keys: 18 }, // NSE options
-      { epochs: "1970-01-01 2022-12-01", keys: 9 }, // BSE intraday
-      { epochs: "1970-01-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01", keys: 9 }, // NSE intraday
+      { epochs: "1970-01-01 2012-07-01 2022-12-01", keys: 20 }, // BSE delivery + MTF
+      { epochs: "1970-01-01 2012-07-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01", keys: 20 }, // NSE delivery + MTF
+      { epochs: "1970-01-01 2013-06-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01 2026-04-01", keys: 10 }, // NSE futures
+      { epochs: "1970-01-01 2016-06-01 2022-05-02 2023-04-01 2023-11-01 2024-05-13 2024-10-01 2026-04-01", keys: 10 }, // BSE index options
+      { epochs: "1970-01-01 2016-06-01 2022-05-02 2023-04-01 2024-10-01 2026-04-01", keys: 10 }, // BSE stock options
+      { epochs: "1970-01-01 2016-06-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01 2026-04-01", keys: 20 }, // NSE options
+      { epochs: "1970-01-01 2022-12-01", keys: 10 }, // BSE intraday
+      { epochs: "1970-01-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01", keys: 10 }, // NSE intraday
     ]);
     // Re-pinned for QS-EQ2012 (measured): 522 before, 558 after.
-    expect(count(tpl)).toBe(558);
+    expect(count(tpl)).toBe(620);
     const idx = (tpl.prepare("PRAGMA index_info(charge_config_uq)").all() as { name: string }[]).map((c) => c.name);
     expect(idx).toEqual(["broker", "plan", "segment", "exchange", "effective_from"]);
   });

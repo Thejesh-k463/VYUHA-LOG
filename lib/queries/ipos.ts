@@ -3,12 +3,13 @@ import { db } from "@/lib/db";
 import { ipos, trades } from "@/lib/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { computeIpo, ipoRatesDate, ipoSellChargeBreakdown, ipoVenue, isPriceableExitDate, summariseIpos, type IpoComputed, type IpoSellCharger, type IpoSummary } from "@/lib/analytics/ipo";
-import { findRates, statutoryRatesFor } from "@/lib/engine/rates";
+import { ratesForTrade, resolvePlan, statutoryRatesFor } from "@/lib/engine/rates";
 import type { ChargeBreakdown, ChargeRates } from "@/lib/engine/types";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { Broker } from "@/lib/domain/constants";
 import { getSelectedAccountId } from "./accounts";
+import { planAccountsById } from "./broker-plan";
 
 /**
  * Exit charges from the SAME engine and charge_config rates every other trade
@@ -51,6 +52,13 @@ export function chargeBreakdownFor(
   exchange: string,
   exitDate: string | null,
   ratesMap: ReturnType<typeof loadRatesMap>,
+  /**
+   * Wave U — the PLAN of the account this IPO belongs to, resolved by the
+   * caller (`resolvePlan`, lib/engine/rates.ts) against this same broker. It
+   * only ever narrows the broker branch below; the statutory fallback carries
+   * no brokerage at all, so a plan cannot reach it.
+   */
+  plan = "default",
 ): (sellValue: number, allottedValue: number) => ChargeBreakdown | null {
   const venue = ipoVenue(exchange);
   let rates: ChargeRates | null = null;
@@ -60,7 +68,10 @@ export function chargeBreakdownFor(
       try {
         // The same sale + allotment-stamp split as the fallback, over the broker's
         // row: exchange txn, SEBI, IPFT and their GST on the SELL value only (W2-IPO2).
-        return { ...findRates(ratesMap, broker as Broker, "eq_delivery", venue, on), sttSide: "sell" };
+        return {
+          ...ratesForTrade(ratesMap, { broker: broker as Broker, segment: "eq_delivery", exchange: venue }, on, plan),
+          sttSide: "sell",
+        };
       } catch {
         /* no row for this broker on this date — the statutory columns below */
       }
@@ -80,8 +91,10 @@ export function sellChargerFor(
   exchange: string,
   exitDate: string | null,
   ratesMap: ReturnType<typeof loadRatesMap>,
+  /** Wave U — the IPO account's plan for this broker; see chargeBreakdownFor. */
+  plan = "default",
 ): IpoSellCharger {
-  const breakdown = chargeBreakdownFor(broker, exchange, exitDate, ratesMap);
+  const breakdown = chargeBreakdownFor(broker, exchange, exitDate, ratesMap, plan);
   return (sellValue, allottedValue) => {
     if (exitDate && !isPriceableExitDate(exitDate)) return null;
     return sellValue <= 0 ? 0 : breakdown(sellValue, allottedValue);
@@ -94,8 +107,10 @@ export function chargerFor(
   exchange: string,
   exitDate: string | null,
   ratesMap: ReturnType<typeof loadRatesMap>,
+  /** Wave U — the IPO account's plan for this broker; see chargeBreakdownFor. */
+  plan = "default",
 ): (sellValue: number, allottedValue: number) => number | null {
-  const charge = sellChargerFor(broker, exchange, exitDate, ratesMap);
+  const charge = sellChargerFor(broker, exchange, exitDate, ratesMap, plan);
   return (sellValue, allottedValue) => {
     const c = charge(sellValue, allottedValue);
     return c == null || typeof c === "number" ? c : c.total;
@@ -117,6 +132,10 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
   // then writes nothing to it.
   const accountId=getSelectedAccountId(); const q=db.select({ ipo: ipos, linkedTradeId: trades.id, linkedSellDate: trades.sellDate, linkedSellQty: trades.sellQty, linkedSellPrice: trades.avgSellPrice }).from(ipos).leftJoin(trades, and(eq(trades.id, ipos.tradeId), eq(trades.accountId, ipos.accountId))); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
   const ratesMap = loadRatesMap();
+  // Wave U — each IPO prices on ITS OWN account's plan (an IPO row carries an
+  // account_id, so the All-accounts view prices each row in its own book), on
+  // the exit date the charger already prices at. One read for the whole page.
+  const planAccounts = planAccountsById();
   const rows = raw.map(({ ipo: r, linkedTradeId, linkedSellDate, linkedSellQty, linkedSellPrice }) => ({
     ...computeIpo({
       id: r.id,
@@ -138,7 +157,7 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
       listingDate: r.listingDate,
       exitDate: r.exitDate,
       notes: r.notes,
-    }, sellChargerFor(r.broker, r.exchange, r.exitDate, ratesMap)),
+    }, sellChargerFor(r.broker, r.exchange, r.exitDate, ratesMap, resolvePlan(planAccounts.get(r.accountId), r.broker, r.exitDate || todayIstIso(), ratesMap))),
     linked: linkedTradeId != null,
     linkedSellDate: linkedTradeId != null ? linkedSellDate : null,
     linkedSellQty: linkedTradeId != null ? linkedSellQty : null,

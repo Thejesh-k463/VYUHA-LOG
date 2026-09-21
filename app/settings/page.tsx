@@ -29,6 +29,7 @@ import { getLicenseStatus, getEntitlement } from "@/lib/queries/license";
 import { CapitalGrowth } from "@/components/dashboard/charts";
 import { AccountManager } from "@/components/settings/account-manager";
 import { getAccounts } from "@/lib/queries/accounts";
+import { brokerPlanOptions } from "@/lib/queries/broker-plan";
 import { TelegramCard } from "@/components/settings/telegram-card";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +105,7 @@ export default function SettingsPage() {
           </Section>
           <Section id="settings-workspace"><WorkspaceCard /></Section>
           <Section id="settings-preferences"><PreferencesCard /></Section>
-          <Section id="settings-accounts"><AccountManager accounts={getAccounts()} /></Section>
+          <Section id="settings-accounts"><AccountManager accounts={getAccounts()} planOptions={brokerPlanOptions()} /></Section>
           <Section id="settings-defaults"><DefaultSettingsCard /></Section>
           <Section id="settings-risk-rules">
             {/* v4.4.0 D5 — the dated risk-free rate sits with the risk rules

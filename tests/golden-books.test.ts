@@ -447,8 +447,27 @@ const GOLDEN: Golden[] = [
     // priced at Upstox's index-option rate card: 53.24 + 51.93 + 51.59 = 156.76 (per position, pinned in
     // the v4.4.0 describe below). Our arithmetic, not a broker statement — see that describe for how far
     // it sits from Upstox's own F&O bill.
-    commit: { net: -355.66, gross: -135.45, charges: 220.21 },
-    note: "Trade report, 11 execution rows → 5 positions (2 equity round trips, 3 option contracts — the 2026-09-16 re-download of the same window carries the identical 11 rows); the parser sets no `sourceRows`. No reference: a trade report states neither P&L nor charges. It carries no product column either, so the engine prices both same-day equity round trips as delivery (PRECISIO 28.06, where Upstox's own contract note and realised P&L state 3.23 intraday).",
+    // RE-DERIVED 2026-09-22 (v4.5.0 wave U, findings D2 and D3): charges 220.21 → 307.69,
+    // net −355.66 → −443.14. GROSS IS UNCHANGED at −135.45 — no fill moved; only the Upstox
+    // BASIC rate card was corrected, so this is a repricing and not a re-parse.
+    //   · the OPTION half is untouched: 53.24 + 51.93 + 51.59 = 156.76, exactly as above. Basic's
+    //     F&O brokerage is still ₹20 flat; D2 and D3 touch neither.
+    //   · D2 — Upstox delivery/MTF brokerage is "₹20 OR 2.5%, whichever is LOWER", not 0.1%
+    //     (only intraday is the 0.1% form). Both equity round trips are delivery here, so all four
+    //     legs move from 0.1% of turnover to the ₹20 cap:
+    //       GNG      turnover 3,109.40 + 3,103.00 → brokerage 6.21 → 40.00
+    //       PRECISIO turnover 1,329.90 + 1,328.85 → brokerage 2.66 → 40.00
+    //     MEASURED with D3 alone reverted: GNG 35.39 → 75.27 (+39.88), PRECISIO 28.06 → 72.12
+    //     (+44.06) — Σ +83.94 (the brokerage delta grossed up by 18% GST).
+    //   · D3 — the DP charge on a delivery SELL is ₹20.00, not the ₹18.50 seeded. GST applies, so
+    //     each of the two positions gains exactly 1.50 × 1.18 = 1.77 — Σ +3.54.
+    //   · 220.21 + 83.94 + 3.54 = 307.69; −135.45 − 307.69 = −443.14. Equity half 63.45 → 150.93
+    //     (GNG 77.04 + PRECISIO 73.89), option half 156.76 unchanged.
+    // The Upstox realised-P&L row above is BROKER-STATED (gross −1.05, net −4.28, charges 3.23) and
+    // did NOT move: that position is INTRADAY, whose 0.1% form D2 leaves alone, and an intraday sell
+    // attracts no DP charge, so D3 cannot reach it either.
+    commit: { net: -443.14, gross: -135.45, charges: 307.69 },
+    note: "Trade report, 11 execution rows → 5 positions (2 equity round trips, 3 option contracts — the 2026-09-16 re-download of the same window carries the identical 11 rows); the parser sets no `sourceRows`. No reference: a trade report states neither P&L nor charges. It carries no product column either, so the engine prices both same-day equity round trips as delivery (PRECISIO 73.89 since D2/D3, where Upstox's own contract note and realised P&L state 3.23 intraday).",
   },
   {
     file: "upstox-ledger-2025-07-19_2026-09-04.xlsx",

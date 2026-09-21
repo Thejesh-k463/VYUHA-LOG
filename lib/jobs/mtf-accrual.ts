@@ -4,10 +4,9 @@ import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { epochSpans } from "@/lib/engine/rates";
-import { mtfRateFor } from "@/lib/engine/charges";
+import { mtfInterestOver } from "@/lib/engine/rates";
 import { rebuildStagedTrade, legCountOf } from "@/lib/queries/staged";
-import type { Broker, Exchange } from "@/lib/domain/constants";
+import { planAccountsById } from "@/lib/queries/broker-plan";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -35,6 +34,8 @@ export function accrueMtfInterest(today = todayIstIso()): {
   if (open.length === 0) return { updated: 0, totalAccrued: 0, skipped: 0 };
 
   const rates = loadRatesMap();
+  // The plan each row's own ACCOUNT is on, read once for the whole run (wave U).
+  const planAccounts = planAccountsById();
   // No margin_config read: nothing here estimates a funded amount any more (Q-A).
   let updated = 0;
   let totalAccrued = 0;
@@ -161,10 +162,10 @@ export function accrueMtfInterest(today = todayIstIso()): {
      */
     let interest: number;
     try {
-      const spans = epochSpans(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange, buyIso, today);
-      let acc = 0;
-      for (const s of spans) acc += (funded * mtfRateFor(funded, s.rates) * s.days) / 365;
-      interest = r2(acc);
+      // …and PER PLAN epoch too (wave U): the row's account may have moved to
+      // a paid plan part-way through the holding period, and the days before
+      // that date keep the rate they accrued at. See `mtfInterestOver`.
+      interest = mtfInterestOver(rates, t, funded, planAccounts.get(t.accountId) ?? null, buyIso, today);
     } catch {
       // No rate epoch covers part of this holding period. Accruing at a
       // neighbouring rate would invent a number; leaving it alone is honest.

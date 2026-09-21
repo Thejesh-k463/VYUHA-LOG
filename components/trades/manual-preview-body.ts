@@ -46,6 +46,14 @@ export interface ManualPreviewInput {
   /** MTF only; ignored server-side unless the classified segment is eq_mtf. */
   ownCapitalUsed: number | null;
   daysHeld: number;
+  /**
+   * v4.5.0 wave U — the account the save will file this trade in, when the
+   * form asked (the All-accounts view with 2+ accounts). The route resolves it
+   * with the save's own `getWriteAccountId`, so the preview prices on the same
+   * broker PLAN the save will. Null/absent = "the selected account", the only
+   * answer there was before.
+   */
+  accountId?: number | null;
 }
 
 export interface ManualPreviewBody {
@@ -64,6 +72,8 @@ export interface ManualPreviewBody {
   isOpen: boolean;
   buyDate: string | null;
   sellDate: string | null;
+  /** Wave U — see ManualPreviewInput.accountId. Omitted when the form did not ask. */
+  accountId?: number;
 }
 
 const round2 = (x: number) => Math.round(x * 100) / 100;
@@ -107,5 +117,7 @@ export function buildManualPreviewBody(i: ManualPreviewInput): ManualPreviewBody
     // Priced at the dates the save stores (R56): the sell date, else the buy date.
     buyDate,
     sellDate,
+    // …and in the account the save stores it in (wave U), when one was chosen.
+    ...(i.accountId != null && i.accountId > 0 ? { accountId: i.accountId } : {}),
   };
 }

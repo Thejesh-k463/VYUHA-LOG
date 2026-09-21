@@ -15,10 +15,12 @@ import {
   type LinkedSync,
 } from "@/lib/analytics/ipo-link";
 import { ipoChargeFactsOf, ipoHoldingCharges, isPriceableExitDate, type IpoInput } from "@/lib/analytics/ipo";
-import { dayOf, normalizeDate } from "@/lib/domain/trading-day";
+import { dayOf, normalizeDate, todayIstIso } from "@/lib/domain/trading-day";
 import type { ChargeBreakdown } from "@/lib/engine/types";
 import { loadRatesMap } from "@/lib/engine/rates-db";
+import { resolvePlan } from "@/lib/engine/rates";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
+import { planAccountOf } from "@/lib/queries/broker-plan";
 import { sellChargerFor } from "@/lib/queries/ipos";
 import { hasLadder } from "@/lib/queries/staged";
 
@@ -238,7 +240,7 @@ const refuseUndatedClose = () =>
  * an unreadable date) or charge_config has no row to price it from; the caller then keeps
  * the trade's own charges rather than write a 0 it does not know (invariant 6).
  */
-function ipoExitCharges(values: Record<string, unknown>): ChargeBreakdown | number | null {
+function ipoExitCharges(values: Record<string, unknown>, accountId: number): ChargeBreakdown | number | null {
   try {
     const input = { id: 0, ...values } as IpoInput;
     // D4 (wave 2N): the SAME pure helper `computeIpo` prices the listing through
@@ -247,7 +249,12 @@ function ipoExitCharges(values: Record<string, unknown>): ChargeBreakdown | numb
     // state three different bills for one sale.
     const facts = ipoChargeFactsOf(input);
     if (!facts) return null;
-    return ipoHoldingCharges(facts, sellChargerFor(input.broker, input.exchange, input.exitDate ?? null, loadRatesMap()));
+    // Wave U — the SAME plan /ipos prices the saved row on (getIposComputed),
+    // resolved from the IPO's own account against the IPO's own broker, so the
+    // sync and the page cannot state two bills for one sale.
+    const ratesMap = loadRatesMap();
+    const plan = resolvePlan(planAccountOf(accountId), input.broker, input.exitDate || todayIstIso(), ratesMap);
+    return ipoHoldingCharges(facts, sellChargerFor(input.broker, input.exchange, input.exitDate ?? null, ratesMap, plan));
   } catch {
     return null;
   }
@@ -338,7 +345,7 @@ const refuseForeignClose = () =>
  * the close the holding carries is the sync's own (J4) — never what is written.
  */
 function syncLinkedTrade(tradeId: number, accountId: number, values: Record<string, unknown>, stored: Record<string, unknown> | null) {
-  const priced = ipoExitCharges(values);
+  const priced = ipoExitCharges(values, accountId);
   const patch = tradePatchFromIpo(linkInput(values), typeof priced === "number" ? priced : priced?.total ?? null);
   // An application that was not allotted produced no shares, so there is
   // nothing to write — the trade is left exactly as it was.

@@ -89,7 +89,7 @@ function staleCard(): Row[] {
     }
     rows.push(row);
   }
-  expect(rows).toHaveLength(117);
+  expect(rows).toHaveLength(130);
   return rows;
 }
 

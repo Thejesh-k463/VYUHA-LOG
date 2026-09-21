@@ -237,6 +237,14 @@ export interface QualityInputs {
    * beside the holding's.
    */
   unlinkedIpoRecords?: IpoRecordFacts[];
+  /**
+   * v4.5.0 wave U — accounts whose broker sells MORE THAN ONE pricing plan and
+   * which state none, resolved by the DB reader (lib/queries/data-quality.ts)
+   * from `charge_config` — never from a hard-coded broker name. Optional in the
+   * same way as the two above: a caller that has not read them gets exactly the
+   * report it got before.
+   */
+  accountsWithoutPlan?: { id: number; name: string; brokerLabel: string }[];
 }
 
 export interface QualityReport {
@@ -1530,6 +1538,25 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
     },
     ghosts.map((r) => r.id),
   );
+
+  /**
+   * INFO, not a warning: nothing is WRONG. The account prices on the broker's
+   * free plan, which is what an account that has not opted in is on — the
+   * figure is honest, it is just not the one a Plus/Pro subscriber would see,
+   * and only the user knows which they are on. It matters most after a restore
+   * from a pre-0074 backup, where the column comes back NULL (design review
+   * item 6). One issue per account, so the sentence can name it.
+   */
+  for (const a of i.accountsWithoutPlan ?? []) {
+    add({
+      code: `broker_plan:${a.id}`,
+      severity: "info",
+      title: `${a.brokerLabel} account with no plan stated`,
+      detail: `${a.name} is with ${a.brokerLabel}, which sells more than one brokerage plan, and states none — so new imports, previews and the calculator price it on the free plan. Set it in Settings › Accounts if you are on a paid or opt-in tier. No saved trade is re-priced either way.`,
+      count: 1,
+      href: "/settings#settings-accounts",
+    });
+  }
 
   add({ code: "stale_mtm", severity: "info", title: "Stale MTM marks", detail: "Refresh or confirm prices before relying on unrealised P&L and breach alerts.", count: i.staleMtmCount, href: "/risk" });
   add({ code: "missing_attachment", severity: "warning", title: "Attachment records with missing files", detail: "The journal points to images that are no longer present on disk.", count: i.missingAttachmentFiles, href: "/backup" });

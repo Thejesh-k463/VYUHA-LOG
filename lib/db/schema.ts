@@ -1359,6 +1359,19 @@ export const accounts = sqliteTable("accounts", {
   broker: text("broker"),
   accountRef: text("account_ref"),
   taxIdentity: text("tax_identity"),
+  /**
+   * Which of the broker's PRICING PLANS this account is on (the `plan` key in
+   * charge_config, e.g. "plus"), and from when. v4.5.0 migration 0074.
+   *
+   * NULL = the user has not stated one, so pricing falls to "default" — the
+   * free tier every account has unless it opts in. The DATE lives here and not
+   * on the rate row because a paid tier is an opt-in, not a dated repricing of
+   * the market: `broker_plan_from` blank means "always" (owner ruling U1).
+   * Resolved by the pure `resolvePlan` in lib/engine/rates.ts, which also
+   * refuses the plan when this account's broker is not the trade's broker.
+   */
+  brokerPlan: text("broker_plan"),
+  brokerPlanFrom: text("broker_plan_from"),
   equityCapital: real("equity_capital"),
   activeCapital: real("active_capital"),
   /** Realised P&L already compounded into THIS account's capital. Lives here,

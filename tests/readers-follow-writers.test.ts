@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import fs from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
+// Wave U's `findRates` door guard walks the same AST with the same compiler
+// that already ships in node_modules — no new dependency (AGENTS.md).
+import ts from "typescript";
 import { REGISTRY, RULE, format, listSourceFiles, scanSource, scanTree, type RuleId, type ScanReport, type Violation } from "./helpers/field-rules";
 // Pure (no DB, no React), so the WRITE half of the raw-date rule is asserted by
 // behaviour here and not only by the shape of the source text.
@@ -548,5 +551,78 @@ export const f = (t: Row) => t.mtfFundedAmount ?? 0;`;
     const fifty = performance.now() - t1;
     // 50 further scans of the same text cost less than 50x the first parse.
     expect(fifty).toBeLessThan(first * 50 + 50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WAVE U (v4.5.0) — ONE DOOR INTO THE RATE CARD
+// ---------------------------------------------------------------------------
+
+/**
+ * `findRates` takes a `plan` argument, and until v4.5.0 every call site outside
+ * lib/engine/ passed none — so the argument existed, was correct, and priced
+ * nothing. Wave U wired the account's plan into pricing, and did it by adding
+ * ONE entry point, `ratesForTrade`, which is `findRates` plus the plan (and,
+ * from wave 3a, the ETF STT overlay). Twelve call sites would eventually miss
+ * one of those; one would not.
+ *
+ * So the door is guarded structurally: outside the engine itself, only
+ * `lib/analytics/broker-compare.ts` may call `findRates` directly — that screen
+ * exists to sweep EVERY (broker, plan) pair deliberately, which is the one job
+ * `ratesForTrade`'s single-plan signature cannot do. Everything else in lib/,
+ * app/ and components/ goes through `ratesForTrade`.
+ *
+ * AST, not grep, for the same reason the rest of this file is: a call written
+ * `rates.findRates(...)`, split across lines, or quoted in a comment, is a
+ * different thing to a line-based scan and the same thing to a parser.
+ */
+describe("wave U — findRates is called only inside the engine (and the comparison screen)", () => {
+  /** Every call expression whose callee is named `findRates`, with its line. */
+  const findRatesCalls = (file: string, src: string): { file: string; line: number; text: string }[] => {
+    const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, /\.tsx$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    const hits: { file: string; line: number; text: string }[] = [];
+    const nameOf = (e: ts.Expression): string | null =>
+      ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
+    const walk = (n: ts.Node) => {
+      if (ts.isCallExpression(n) && nameOf(n.expression) === "findRates") {
+        hits.push({ file, line: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1, text: n.getText(sf).split("\n")[0].slice(0, 90) });
+      }
+      ts.forEachChild(n, walk);
+    };
+    walk(sf);
+    return hits;
+  };
+
+  /** The two scopes allowed to hold one, stated structurally — nothing is allow-listed per file. */
+  const allowed = (rel: string) => rel.startsWith("lib/engine/") || rel === "lib/analytics/broker-compare.ts";
+
+  it("no call site outside lib/engine/ and lib/analytics/broker-compare.ts calls findRates", () => {
+    const root = process.cwd();
+    const offenders = listSourceFiles(["lib", "app", "components"])
+      .map((abs) => ({ abs, rel: path.relative(root, abs).split(path.sep).join("/") }))
+      .filter(({ rel }) => !allowed(rel))
+      .flatMap(({ abs, rel }) => findRatesCalls(rel, fs.readFileSync(abs, "utf8")));
+    expect(offenders.map((o) => `${o.file}:${o.line} ${o.text}`), "use ratesForTrade(map, t, onDate, plan) instead").toEqual([]);
+  });
+
+  it("…and the scan can SEE one: the same walk over an inline call site reports it", () => {
+    // A green scan is not evidence on its own (this file's own standing rule).
+    const hits = findRatesCalls("lib/queries/made-up.ts", [
+      "import { findRates } from '@/lib/engine/rates';",
+      "export const price = (m: RatesMap) => findRates(m, 'upstox', 'eq_delivery', 'NSE', '2026-08-28');",
+      "export const viaNs = (m: RatesMap) => rates.findRates(m, 'upstox', 'eq_mtf', 'NSE', '2026-08-28');",
+      "// a COMMENT saying findRates(map, …) is not a call site",
+    ].join("\n"));
+    expect(hits.map((h) => h.line)).toEqual([2, 3]);
+  });
+
+  it("the two allowed scopes really do hold calls, so the rule is not vacuous", () => {
+    const root = process.cwd();
+    const inScope = listSourceFiles(["lib"])
+      .map((abs) => ({ abs, rel: path.relative(root, abs).split(path.sep).join("/") }))
+      .filter(({ rel }) => allowed(rel))
+      .flatMap(({ abs, rel }) => findRatesCalls(rel, fs.readFileSync(abs, "utf8")));
+    expect(inScope.some((h) => h.file === "lib/analytics/broker-compare.ts")).toBe(true);
+    expect(inScope.some((h) => h.file.startsWith("lib/engine/"))).toBe(true);
   });
 });

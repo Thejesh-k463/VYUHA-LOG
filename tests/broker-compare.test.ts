@@ -62,10 +62,12 @@ describe("compareBrokers — against the real seed rate cards", () => {
   const r = compareBrokers(trades, map, [...BROKERS], "dhan");
 
   it("returns one cost row per broker PLAN with positive totals", () => {
-    // One row per offer, not per broker: Kotak Neo sells a paid tier alongside
-    // its free one, and the whole point is to see them side by side.
-    expect(r.brokers.length).toBe(BROKERS.length + 1);
-    expect(r.brokers.filter((b) => b.plan !== "default").map((b) => b.broker)).toEqual(["kotakneo"]);
+    // One row per offer, not per broker: Kotak Neo and (since v4.5.0 wave U)
+    // Upstox each sell a paid tier alongside their free one, and the whole
+    // point is to see them side by side. +2, re-pinned from +1 when Upstox Plus
+    // joined the seed.
+    expect(r.brokers.length).toBe(BROKERS.length + 2);
+    expect(r.brokers.filter((b) => b.plan !== "default").map((b) => b.broker).sort()).toEqual(["kotakneo", "upstox"]);
     expect(r.cheapest).not.toBeNull();
     for (const b of r.brokers) {
       expect(b.covered).toBe(2);

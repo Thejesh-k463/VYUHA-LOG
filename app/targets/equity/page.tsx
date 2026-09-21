@@ -8,7 +8,8 @@ import { riskConfig } from "@/lib/db/schema";
 import { deriveOpenPositions, mtfFundedStated } from "@/lib/analytics/positions";
 import { dailyPnl } from "@/lib/analytics/metrics";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates } from "@/lib/engine/rates";
+import { ratesForTrade } from "@/lib/engine/rates";
+import { planForView } from "@/lib/queries/broker-plan";
 import { mtfRateFor } from "@/lib/engine/charges";
 import { getGoalView } from "@/lib/queries/goals";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
@@ -84,7 +85,14 @@ export default function TargetEquityPage() {
     if (fundedRow == null) continue;
     let r;
     try {
-      r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, today);
+      // Wave U — the plan of the account in view for this broker (see
+      // `planForView`); a position row carries no account id of its own.
+      r = ratesForTrade(
+        rates,
+        { broker: p.broker as Broker, segment: "eq_mtf", exchange: p.exchange as Exchange, symbol: p.symbol },
+        today,
+        planForView(p.broker, today, rates),
+      );
     } catch {
       value += p.currentValue;
       continue;

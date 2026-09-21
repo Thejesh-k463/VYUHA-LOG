@@ -114,9 +114,11 @@ this is about catching it before the push, not instead of CI.
   Upstox was the last schema-only broker — its first three real exports carried zero data rows.
   That caveat is DISCHARGED as of 2026-09-04: `tests/golden-books.test.ts` pins a POPULATED
   realised-P&L export against Upstox's own stated figures (gross −1.05, net −4.28, charges 3.23,
-  met to the paisa) and a populated trade report (11 executions → 5 positions, net −355.66 — our
+  met to the paisa) and a populated trade report (11 executions → 5 positions, net −443.14 — our
   arithmetic, since a trade report states no P&L; it read 4 positions / −271.92 until v4.4.0 verified
-  the Upstox F&O grammar and priced the three option contracts as options). Its layouts AND its
+  the Upstox F&O grammar and priced the three option contracts as options, and −355.66 until v4.5.0's
+  findings D2/D3 corrected Upstox's delivery brokerage to min(₹20, 2.5%) and its DP charge to ₹20 —
+  gross is unchanged at −135.45 through both). Its layouts AND its
   realised-P&L value behaviour are VERIFIED; the Upstox ledger has its own parser (`upstox-ledger`).
 - **Every DB-reading page/layout is `force-dynamic`.**
 - **Native/heavy modules are `serverExternalPackages`** in `next.config.ts`: `better-sqlite3`,

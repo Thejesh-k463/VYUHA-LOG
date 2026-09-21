@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { db, attachmentsDir } from "@/lib/db";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
-import { instruments, ipos, mtmPrices, tradeAttachments, tradeLegs, trades } from "@/lib/db/schema";
+import { accounts as accountsTable, instruments, ipos, mtmPrices, tradeAttachments, tradeLegs, trades } from "@/lib/db/schema";
 import { trashedTradeIds } from "@/lib/trash";
 import {
   assessDataQuality,
@@ -17,6 +17,7 @@ import {
   type StaleSaleRow,
 } from "@/lib/analytics/data-quality";
 import { getSelectedAccountId } from "./accounts";
+import { brokerPlanOptions } from "./broker-plan";
 import { getTrades } from "./trades";
 import { collectIdChunks } from "./delete";
 
@@ -187,5 +188,15 @@ export function getDataQualityReport(now = new Date()) {
   const knownSymbols = new Set(db.select({ symbol: instruments.symbol }).from(instruments).all().map((x) => x.symbol.toUpperCase()));
   const ipoLinkedTradeIds = new Set(db.select({ tradeId: ipos.tradeId }).from(ipos).all().map((x) => x.tradeId).filter((x): x is number => x != null));
   const missingAttachmentFiles = db.select().from(tradeAttachments).all().filter((a) => !fs.existsSync(path.join(attachmentsDir, path.basename(a.storedName)))).length;
-  return assessDataQuality({ trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords() });
+  // Wave U — accounts on a multi-plan broker that state no plan. The set of
+  // multi-plan brokers is DERIVED from charge_config (`brokerPlanOptions`), so
+  // this line never names a broker.
+  const planOptions = brokerPlanOptions();
+  const accountsWithoutPlan = db
+    .select({ id: accountsTable.id, name: accountsTable.name, broker: accountsTable.broker, brokerPlan: accountsTable.brokerPlan, archived: accountsTable.archived })
+    .from(accountsTable)
+    .all()
+    .filter((a) => !a.archived && !a.brokerPlan && (planOptions[(a.broker ?? "").trim().toLowerCase()]?.length ?? 0) > 1)
+    .map((a) => ({ id: a.id, name: a.name, brokerLabel: (a.broker ?? "").trim() }));
+  return assessDataQuality({ trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords(), accountsWithoutPlan });
 }

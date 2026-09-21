@@ -156,9 +156,19 @@ export default function BrokerComparePage() {
                               {/* A paid plan is a different offer from the same
                                   broker, so it gets its own row and its own
                                   label — with the fee it costs. */}
+                              {/* D4 (v4.5.0) — "· paid" is a CLAIM ABOUT MONEY and is
+                                  made only when the plan actually carries a
+                                  subscription. Upstox Plus has none (owner ruling
+                                  U3: the ₹10/order premium IS its price), so
+                                  labelling it "paid" beside a ₹0 fee would be a
+                                  false claim in the very report meant to compare
+                                  cost. A zero-fee tier reads "opt-in". */}
                               {b.plan !== "default" && (
-                                <Badge variant="secondary" title={`₹${b.subscription} over ${b.months} month(s)`}>
-                                  {b.planLabel ?? b.plan} · paid
+                                <Badge
+                                  variant="secondary"
+                                  title={b.subscription > 0 ? `₹${b.subscription} over ${b.months} month(s)` : "No subscription fee — the plan is priced through its own brokerage"}
+                                >
+                                  {b.planLabel ?? b.plan} · {b.subscription > 0 ? "paid" : "opt-in"}
                                 </Badge>
                               )}
                               {isCheapest ? <Badge variant="profit">cheapest</Badge> : null}

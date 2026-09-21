@@ -749,8 +749,11 @@ describe("S3 · the C-7/C-8 card, delivered by the desktop refresh, is what comm
   // Re-pinned 2026-09-14 (v4.3.0 fix wave 2, QS-EQ2012): the 36 delivery/MTF keys
   // gained FATAX20990's 2012-07-01 epoch (seed 522 -> 558), so the first launch reads
   // 396 / 135 / 0 where it read 360 / 135 / 0; the second launch is still 0 / 0 / 0. Measured.
-  it("the real sidecar refresh moves that card onto the template: 396 added, 135 refreshed, 0 removed, then 0 / 0 / 0", () => {
-    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 396, refreshed: 135, removed: 0 });
+  // Re-pinned 2026-09-22 (v4.5.0 wave U, measured): the seed gained the `upstox|plus` plan
+  // (13 keys / 62 rows, one per combo Upstox already had), so the first launch reads
+  // 440 / 150 / 0 where it read 396 / 135 / 0; the second launch is still 0 / 0 / 0.
+  it("the real sidecar refresh moves that card onto the template: 440 added, 150 refreshed, 0 removed, then 0 / 0 / 0", () => {
+    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 440, refreshed: 150, removed: 0 });
     expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 0, refreshed: 0, removed: 0 });
   });
 

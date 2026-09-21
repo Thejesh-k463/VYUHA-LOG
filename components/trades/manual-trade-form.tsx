@@ -99,6 +99,12 @@ export function ManualTradeForm({
   const [buyDate, setBuyDate] = useState("");
   const [sellDate, setSellDate] = useState("");
   const [preview, setPreview] = useState<PreviewResp | null>(null);
+  // Wave U — WHICH ACCOUNT this trade will be filed in, held in state so the
+  // charge PREVIEW can price on that account's broker plan exactly as the save
+  // does (`getWriteAccountId`). The picker renders only in the All-accounts
+  // view with 2+ accounts; otherwise this stays undefined and the server falls
+  // back to the selected account, as it always did.
+  const [writeAccountId, setWriteAccountId] = useState<number | undefined>(writeAccounts[0]?.id);
   const [limit, setLimit] = useState<LimitResult | null>(null);
 
   // F&O structured entry (task: strike/CE-PE/DTE/lots/direction — see manual-trade-form).
@@ -223,6 +229,12 @@ export function ManualTradeForm({
       // MTF-only (ignored server-side unless the classified segment is eq_mtf).
       ownCapitalUsed: Number(ownCapitalUsed) >= 0 && ownCapitalUsed !== "" ? Number(ownCapitalUsed) : null,
       daysHeld: Number(daysHeld) || 0,
+      // Wave U — WHICH ACCOUNT the save will file this in, so the preview
+      // prices on that account's broker plan exactly as `commitManualTrade`
+      // will (`getWriteAccountId`). Only ever set when the picker is really on
+      // screen (the All-accounts view with 2+ accounts); otherwise the server
+      // falls back to the selected account, as it always did.
+      accountId: writeAccounts.length > 1 ? writeAccountId ?? null : null,
     });
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
@@ -237,7 +249,7 @@ export function ManualTradeForm({
       } catch { /* aborted */ }
     }, 300);
     return () => { clearTimeout(id); ctrl.abort(); };
-  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, ownCapitalUsed, daysHeld, open, buyDate, sellDate, kind, direction]);
+  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, ownCapitalUsed, daysHeld, open, buyDate, sellDate, kind, direction, writeAccountId, writeAccounts.length]);
 
   // Pre-trade limits check (open trades only) — block/warn before saving (P1.4).
   useEffect(() => {
@@ -349,7 +361,7 @@ export function ManualTradeForm({
 
       {/* Ambiguous only in the "All accounts" view with 2+ accounts; renders
           nothing otherwise. */}
-      <WriteAccountPicker accounts={writeAccounts} />
+      <WriteAccountPicker accounts={writeAccounts} value={writeAccountId} onChange={setWriteAccountId} />
 
       <div className="flex rounded-lg border border-border bg-background/40 p-0.5 text-xs">
         {(["equity", "fno"] as const).map((k) => (

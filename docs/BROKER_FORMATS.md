@@ -26,10 +26,11 @@ codes, PANs and names). This document deliberately contains **no identifiers**.
 > now pins two POPULATED Upstox exports: a realised-P&L export whose single row is
 > checked against Upstox's own stated figures (gross −1.05, net −4.28, charges
 > 3.23, met to the paisa by the engine's estimate), and a trade report of 11
-> executions → 5 positions committing net −355.66 (a trade report states neither
+> executions → 5 positions committing net −443.14 (a trade report states neither
 > P&L nor charges, so that one pins our own arithmetic, not the broker's; it was
 > 4 positions / −271.92 until v4.4.0 verified the F&O grammar and the three option
-> contracts stopped being priced as NSE cash). Upstox
+> contracts stopped being priced as NSE cash, and −355.66 until v4.5.0's D2/D3
+> corrected Upstox's delivery brokerage and DP charge). Upstox
 > value behaviour is therefore VERIFIED for the realised-P&L export and pinned for
 > the trade report; the Upstox ledger has had a parser since v3.9. What the data
 > changed is recorded per broker below and in DECISIONS.md 2026-08-20.
@@ -379,8 +380,9 @@ Three real exports examined 2026-08-20 were **all schema-only** (that account ha
 no trades). A fourth and fifth, examined 2026-09-04, are POPULATED and pinned by
 `tests/golden-books.test.ts` — a realised-P&L export checked against Upstox's own
 stated figures (gross −1.05, net −4.28, charges 3.23, met to the paisa) and a trade
-report of 11 executions → 5 positions committing net −355.66 (4 positions / −271.92
-until v4.4.0 — see the F&O grammar below). So the layouts below
+report of 11 executions → 5 positions committing net −443.14 (4 positions / −271.92
+until v4.4.0 — see the F&O grammar below; −355.66 until v4.5.0's D2/D3 repriced the
+two equity round trips at min(₹20, 2.5%) brokerage and a ₹20 DP charge). So the layouts below
 are VERIFIED, and value behaviour is VERIFIED for the realised-P&L export and pinned
 (against our own arithmetic, not a broker statement) for the trade report; the
 ledger parser shipped in v3.9 (`upstox-ledger`); the F&O tradingsymbol grammar is
