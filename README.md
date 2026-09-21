@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-9698%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-93%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-9745%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-110%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
 [![Where](https://img.shields.io/badge/where-desktop%20or%20web-black)](#-your-data-your-choice-of-home)
@@ -28,7 +28,46 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v4.3.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v4.4.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v4.4.0 — four more of your broker's own files, chrome that moves, and
+> metrics that show their working.** The importer learns the **Zerodha Console
+> ledger**, the **Groww balance statement** from the Cash & Ledger screen
+> (18 segment types, each row placed by its own balance because the file is not
+> in posting order), and the **equity contract notes** of **Groww** and
+> **Upstox** — a Groww note's wrapped 19-digit BSE order numbers are re-joined
+> rather than dropped. F&O contract notes are still not read. An **Upstox**
+> trade report's F&O rows are read with Upstox's own grammar, so **NIFTY** and
+> **SENSEX** option trades land as **option contracts** and are charged as
+> options. The **sidebar resizes** — drag its edge between 180 and 420 px, use
+> the arrow keys on the focused handle, double-click to reset — and the width
+> is kept **on this device**. **Appearance** moves to the **end** of Settings
+> with a **Save of its own**, most pages open in a new default card order, and
+> **Rearrange** — move-only, kept on this device — is on **Settings and the
+> Dashboard only**. On the metrics side the per-trade risk cap becomes editable
+> **per segment** (global, then bucket, then segment): **Avg R moves on imported
+> trades with no plan stop wherever a segment cap differs from ₹9,500**, a limit
+> never set reads **"—"**, and a breach check for a never-set segment follows
+> the global cap as you edited it. **Avg R** now states the split between R
+> derived from your **plan** stop, R you **typed** and R sized by the **default
+> cap**, everywhere it is printed — inside the exported share-card PNG included.
+> F&O rows carry a per-lot second line, **"1R = ₹X per lot"**, with the lot size
+> and its date. **Profit factor is stated after charges**, with a drill-down
+> that reproduces it and a free **per-segment table**. Ratios annualise on the
+> bundled **NSE calendar** — **245 sessions in 2026** — so **Sharpe, Sortino
+> and volatility read about 1.4% lower and alpha about 2.8% lower** than in
+> 4.3.0 on the same trades, and the Monte Carlo horizon is 245; **CAGR, Calmar,
+> total return and drawdown are unchanged**. The risk-free rate is **one dated
+> setting** (7% by default) instead of three hard-coded copies, an empty figure
+> reads **"—"** instead of 0, and **every metric explainer is rewritten** to
+> your own arithmetic — no invented bands, and any statement about other traders
+> carries a cited source. Fixes: the Outcome lens states **"Share of trades"**;
+> every trade-form number goes through one rule ("1,23,456.50" is read as
+> written, "14,48" is refused); closing a stale lot refuses an unreadable stored
+> date; the **Signal book** has its help entry. Pro **Monthly is ₹999 for the
+> first month**, then **₹1,499/month**; **Annual ₹7,999** and **Lifetime
+> ₹29,999** are unchanged. **One database upgrade, 0073**, applied on first
+> launch — it adds columns, moves no money and no cap. No dependency changes.
 >
 > **v4.3.0 — option structures by name, and the signal behind the trade.**
 > **`/strategies`** names what your open option legs add up to, from a catalogue
@@ -573,8 +612,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **9698** | **49** | **0** |
-| tests, 93 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
+| **9745** | **49** | **0** |
+| tests, 110 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -892,13 +931,13 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.2.x to v4.3.0:** the installer runs the v4.2.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0071 and 0072 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.3.x to v4.4.0:** the installer runs the v4.3.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migration 0073 runs on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy; upgrading from v4.2.x applies 0071, 0072 and 0073 in order. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v4.3.0**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v4.4.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.
@@ -929,8 +968,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       9698 unit + integration tests across 450 files (+ tests/load: 16 load cases, run separately)
-e2e/         93 Playwright flows through the real app, in 32 specs
+tests/       9745 unit + integration tests across 450 files (+ tests/load: 16 load cases, run separately)
+e2e/         110 Playwright flows through the real app, in 32 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -950,7 +989,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **9698 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **9745 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -966,8 +1005,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (9698 tests) |
-| `npm run test:e2e` | Playwright e2e — 93 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm test` | Vitest unit + integration suite (9745 tests) |
+| `npm run test:e2e` | Playwright e2e — 110 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -1036,7 +1075,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 9698 Vitest unit + integration tests (+ tests/load)
+  tests/          # 9745 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

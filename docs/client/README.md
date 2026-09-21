@@ -34,6 +34,44 @@ single trader — needs something specific, a tuned build is on the table.
 
 You don't get that from software with a support queue.
 
+## New in v4.4.0
+
+The release where four more of your broker's own files import themselves, the chrome moves where you want it, and every
+metric shows its working.
+
+| Upgrade | What it gives you |
+|---|---|
+| **Zerodha Console ledger** | The funds ledger exported from **Zerodha Console** imports. Every entry's Net Balance reconciles against the opening balance, and the closing balance matches the statement's own. |
+| **Groww balance statement** | The statement from Groww's **Cash & Ledger** screen imports, across its **18** segment types. Its rows are sorted by settlement date but not by posting order within a day, so each row is placed by its own balance rather than by where it sits in the file — that is what makes a 447-row statement reconcile with no breaks. |
+| **Groww and Upstox contract notes — equity** | The **equity** contract note of either broker imports its fills, its charges and its net obligation. A Groww note's BSE fills whose 19-digit order number wraps onto a second line are re-joined rather than dropped. **F&O contract notes are not read** in this release; only the equity ones. |
+| **Upstox F&O lands as option contracts** | An Upstox trade report's F&O rows are read with Upstox's own grammar (European Call/Put, FON/FOB, BSX = SENSEX, dd-mm-yyyy expiry), so **NIFTY** and **SENSEX** option trades land as **options** and are charged as options instead of as equity. |
+| **The sidebar resizes** | Drag the sidebar's edge between **180 and 420 px**, or focus the handle and use the arrow keys; **double-click resets** it to the default. The width is remembered **on this device**, and it is re-clamped on every read, so a width saved on a wide monitor still leaves room on a narrow one. |
+| **Appearance has its own Save** | The **Appearance** block now sits at the **end** of Settings and saves on its own, so a theme change no longer depends on another section's save. |
+| **A new default card order, and Rearrange** | Most pages open in a new default card order. **Settings** and the **Dashboard** — and only those two — gain a **Rearrange** button that **moves** sections into the order you want; nothing is hidden or added, and the order is kept **on this device**. |
+| **The per-trade risk cap is per segment** | The cap that sizes a trade with no plan stop can now be set **per segment** on top of the global one. **Avg R moves on imported trades that carry no plan stop wherever a segment cap differs from the ₹9,500 default** — that is the point of the setting, and editing a cap re-prices those trades. A limit that was never set reads **"—"** rather than an invented number, and a breach check for a never-set segment follows the global cap as you have edited it. |
+| **Avg R says where its R came from** | Beside Avg R, everywhere it is printed — inside the exported **share-card PNG** included — is the split between R derived from your **plan** stop, R you **typed**, and R sized by the **default cap**. |
+| **A per-lot line on F&O rows** | Where the lot size is known and the quantity is a whole number of lots, an F&O row also states **"1R = ₹X per lot"**, with the lot size and the date it was read from. A row whose lot size cannot be established reads "—" rather than guess. |
+| **Profit factor, after charges** | The headline profit factor is computed **after charges**, and a drill-down reproduces it from the same winners' and losers' net figures it divides. A **per-segment table** sits beside it, free on every copy. |
+| **Annualised on the NSE calendar** | Ratios annualise over the trading days in the bundled NSE calendar — **245 sessions in 2026** — instead of a 252 convention. On the same trades, **Sharpe, Sortino and volatility read about 1.4% lower and alpha about 2.8% lower** than in 4.3.0, and the Monte Carlo horizon is 245. **CAGR, Calmar, total return and drawdown are unchanged**: they are calendar-day figures and never used the 252. |
+| **One dated risk-free rate** | Settings holds a single risk-free rate with the date it applies from, **7%** by default, replacing three rates that were hard-coded in separate places. |
+| **Empty figures read "—", and every explainer was rewritten** | A figure with no denominator prints a dash instead of 0. Every metric explainer now works the figure out from **your own arithmetic**, and any statement about other traders carries a **cited source**; the invented "healthy" bands are gone. |
+| **Four fixes** | The **Outcome lens** states **"Share of trades"** — it is a count, and it says so. Every **trade-form number** goes through one rule: "1,23,456.50" is read as written, ".5" gets its leading zero, and an ambiguous "14,48" is **refused** rather than guessed at. Closing a **stale lot** refuses an unreadable stored date instead of joining it at zero days of interest. The **Signal book** has its help entry. |
+| **The monthly plan** | Pro — Monthly is **₹999 for your first month** as a launch offer, then **₹1,499 a month**. **Pro — Annual (₹7,999/yr)** and **Journal — Lifetime (₹29,999)** are unchanged. It is given on request — message us and a one-month key is issued; nothing auto-renews and no card is stored. |
+| **Upgrades in place** | A v4.3.0 journal opens straight into v4.4.0. **One database upgrade** (0073) is applied on first launch: it adds columns, and it moves **no money figure and no risk cap** — an install whose cap was never edited stays at ₹9,500 and a cap you edited is left exactly as you set it. Before it runs, the app writes a full copy of your database to `backups\pre-migrate-<timestamp>.sqlite` in your data folder. Upgrading from **v4.2.0** applies **0071, 0072 and 0073** in order. The installer runs the v4.3.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. |
+
+**Not in this release, said plainly.** An execution that closes a position your journal already holds is **not** matched
+against it automatically — an imported or pulled exit still lands as its own row, and Data Quality is where you join the
+two. **F&O contract notes** are not read; only the equity ones, and only from Groww and Upstox. Kotak Neo, Sahi and
+Paytm F&O files still belong to the generic column mapper, where you say whose file it is. **Rearrange** is on Settings
+and the Dashboard only, it moves sections and never hides or adds one, and the order is stored on this device rather
+than in your journal — the same is true of the sidebar width. Tabs are not movable. No Greek changed, there is no
+scanner, there is no post-tax view and no benchmark series. The Upstox and Angel One price sources still price equity
+positions only. Telegram messages for a stop or target are not built and are not part of Pro. The rate card is still not
+exact everywhere: a date before the earliest schedule verified from the exchanges' own circulars (NSE before 1 January
+2021, BSE cash before 1 March 2021, BSE options before 20 August 2019) takes that earliest schedule; the card has one
+BSE index-option rate, which follows Sensex and Bankex; MCX charges are unchanged; other BSE stock groups and BSE's own
+investor-protection contribution are not modelled; and charges already stored on trades are not rewritten.
+
 ## New in v4.3.0
 
 The release where the option legs you hold are named, and where the signal a trade was taken on is recorded beside it.

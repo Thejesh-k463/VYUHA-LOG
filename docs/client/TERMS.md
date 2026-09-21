@@ -1,6 +1,6 @@
 # Terms of use
 
-**Last updated:** 2026-09-18 · **Applies to:** Vyuha v4.3.0 and later
+**Last updated:** 2026-09-21 · **Applies to:** Vyuha v4.4.0 and later
 
 ## 1. What you are buying
 
