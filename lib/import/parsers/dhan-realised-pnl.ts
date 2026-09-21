@@ -37,6 +37,8 @@ import type { NormalizedTrade } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile, ReferenceRow } from "../types";
 import { workbookOf } from "../types";
+import { bundledSymbolByIsin, securityByCompanyName } from "../isin-symbol";
+import { DEDUP_LABEL_PREFIX } from "../trade-identity";
 import { fyOfDate } from "@/lib/analytics/ais";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[^a-z&%]/g, "");
@@ -324,10 +326,20 @@ export function parseDhanRealisedPnl(ctx: ParseContext): ParsedFile {
       const buyValue = parseTextMoney(r[cBuyVal]);
       const sellValue = parseTextMoney(r[cSellVal]);
       const isin = (r[cIsin] ?? "").trim();
+      const validIsin = /^[A-Z]{2}[A-Z0-9]{10}$/.test(isin) ? isin : null;
+      // F-L1-3 (v4.5.0 W1) — the same rule as the GTR and the P&L export: this
+      // report states a SECURITY NAME, and a book that holds "Aarti
+      // Industries" beside AARTIIND holds one instrument twice. Here the row's
+      // own ISIN answers first (it is the stronger identity and the file
+      // states it), the company name second. Identity stays the NAME
+      // (`dedupLabel`), so no stored hash moves and a re-import of a
+      // pre-4.5.0 file is still a duplicate.
+      const ticker = (validIsin ? bundledSymbolByIsin(validIsin) : null) ?? securityByCompanyName(name)?.symbol ?? null;
       trades.push({
         broker: "dhan",
-        tradingsymbol: name,
-        isin: /^[A-Z]{2}[A-Z0-9]{10}$/.test(isin) ? isin : null,
+        tradingsymbol: ticker ?? name,
+        isin: validIsin,
+        dedupLabel: ticker ? name : null,
         buyQty: qty,
         avgBuyPrice: parseTextMoney(r[cBuyAvg]) || (qty ? buyValue / qty : 0),
         buyValue,
@@ -342,7 +354,9 @@ export function parseDhanRealisedPnl(ctx: ParseContext): ParsedFile {
         productHint: null, // no product column → equity defaults to delivery
         exchangeHint: kind.exchangeHint,
         sourceFile: ctx.filename,
-        importNotes: [`Dhan Realised P&L report, ${title}`],
+        importNotes: ticker
+          ? [`Dhan Realised P&L report, ${title}`, `${DEDUP_LABEL_PREFIX}${name}`]
+          : [`Dhan Realised P&L report, ${title}`],
       });
     }
     i += 1;

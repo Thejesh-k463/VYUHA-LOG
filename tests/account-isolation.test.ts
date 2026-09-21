@@ -307,6 +307,19 @@ describe("account-scoped table registry", () => {
     // cap does not depend on the book it sits in, and a cap edit re-prices the
     // 'cap' rows of every book at once. They read and write only `risk_*`
     // columns and never move a row between books.
+    //
+    // v4.5.0 W1 — a third, for the same reason:
+    //   lib/db/data-fixes.ts     `dhan-gtr-symbols-v1`
+    // It puts a stored Dhan report row under the TICKER the rest of the book
+    // is keyed on ("Aarti Industries" → AARTIIND). What a company NAME resolves
+    // to is a fact about the SECURITY, not about the book the row sits in — the
+    // bundled listing snapshot has no `account_id` either — so it runs across
+    // accounts on purpose and takes no account resolver. It writes
+    // `tradingsymbol`, `symbol`, `isin` and an `import_notes` `gtr-name:`
+    // segment and NOTHING else: no money column, no `dedup_hash`, no
+    // `account_id`, so it can never move a row between books
+    // (tests/trade-identity-db.test.ts diffs every column of every row it
+    // touches, and every column of the ones it must not).
     trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts", "lib/queries/account-delete.ts"],
     import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/account-delete.ts"],
     ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts", "lib/queries/account-delete.ts"],

@@ -8160,3 +8160,38 @@ does. **Recorded, not built (→ the fix-list wave):** the calculator's plan pic
 broker-compare's "current" badge matches `plan === "default"`; no "set your plan" line on the import preview;
 `applyOverride` (re-tag) re-prices with no stated-charge guard (pre-existing). Account #3 (Dhan, one plan, 42 closed rows):
 `resolvePlan` returns `"default"`, the accrual and the plan preview read open rows only — it cannot move.
+
+## 2026-09-22 — v4.5.0 wave W1: ONE trade identity (`executionIdentity`), F-L1-7 and F-L1-3 fixed, no stored hash moved
+
+**One door.** `lib/import/trade-identity.ts` — `executionIdentity()` is the single identity function for the import preview, the
+import commit and manual trades (`lib/import/commit.ts` `buildRow` + `commitManualTrade`). Design D1's `source` field was NOT built:
+it had no consumer.
+
+**F-L1-7 (a second sale on the same hash dropped), per design-review revision 7.** The stored `dedup_hash` column and
+`trades_account_broker_dedup_uq` are untouched. Rows of ONE file sharing a hash across k (segment|exchange) scopes are sorted by
+scope string; the FIRST keeps the legacy hash, the others store `sha1(hash|scope)`. The book comparison stays HASH-ONLY (comparing
+scope against stored rows would duplicate a row after any exchange edit). Rejected: a wider unique index (moves every stored hash).
+Stated limitation, in the module header: the cross-file NSE/BSE collision remains.
+
+**F-L1-3 (Dhan GTR company name vs API ticker), per revision 8 — with a correction.** The hash KEEPS the raw scrip name; the
+parser resolves the name to a ticker for display and grouping only (`securityByCompanyName`: a unique normalised name over the
+listing snapshot then the index map; two securities on one name → null, never first-writer-wins) and records `gtr-name:<raw>` in
+`import_notes`. The data fix `dhan-gtr-symbols-v1` (`lib/db/data-fixes.ts`) re-keys existing batched Dhan rows the same way —
+`tradingsymbol` / `symbol` / `isin` only; `dedup_hash`, every money column and P&L untouched; idempotent. **Its selection JOINs
+`import_batches`, so a row with `import_batch_id IS NULL` is unselectable by construction** — that is what keeps account #3 (Dhan,
+manual, 42 closed option rows) byte-identical, proven on a seeded row of that exact shape. `import_batches` carries no source id,
+so "a dhan-gtr batch" is expressed as a Dhan batch whose `tradingsymbol` contains a lowercase letter (no ticker does).
+**The review's scope was wrong:** `dhan-csv.ts` (the P&L export) and `dhan-realised-pnl.ts` state company names too, and
+`detectCrossSourceDuplicates` buckets on `norm(tradingsymbol)` — resolving only the GTR de-synchronised the pair and cut the
+owner's real cross-source collisions from >30 to 16 (`tests/cross-source-live.test.ts`); the same rule is applied to all three.
+Two labels in that test moved (STERLITE → STLTECH, BHANSALI → BEPL): the positions are identical, only their name changed.
+
+**Measured.** The real redacted GTR (178 positions): first import 178 added, hashes moved **0**, 99 rows now show a ticker;
+re-import 0 added / 178 skipped. A two-scope file: preview 2 new / 0 dup, commit 2 added; same hash + same scope still 1 added /
+1 skipped (the re-key is narrow). Tests: `tests/trade-identity.test.ts` (44, pure; identity pinned against the FILE's own bytes as
+an independent oracle — the first draft was a tautology) + `tests/trade-identity-db.test.ts` (21, one temp DB, a full-column
+before/after diff on the data fix); all nine red-on-revert rows red then restored. Full vitest 455 files / 10,436 passed / 35 skipped.
+
+**Recorded, not built.** `lib/import/parsers/dhan-holdings.ts` states scrip names (holdings, not trades) — untouched. The three
+parsers write a `gtr-name:` note even when the ticker equals the stated name — redundant, harmless. A later wave needing "which
+parser wrote this batch" needs a migration (0075 is the next free number). Release note owed: Dhan rows regroup under tickers.

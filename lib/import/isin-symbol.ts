@@ -267,6 +267,91 @@ export function searchListingsByName(query: string, limit = 20): Listing[] {
 }
 
 // ---------------------------------------------------------------------------
+// Company NAME → security (v4.5.0 W1, F-L1-3)
+// ---------------------------------------------------------------------------
+
+/**
+ * A company name reduced to what two sources can actually agree on.
+ *
+ * Upper-cased, `&` read as AND, every other non-alphanumeric run read as one
+ * space, and the corporate suffixes that are noise on both sides stripped from
+ * the END only (LIMITED / LTD / PRIVATE / PVT, repeatedly — "…Private Limited").
+ * A LEADING "THE" goes too. Nothing else is stripped: "Gabriel India" and
+ * "Gabriel" are two different companies, and a normaliser that collapsed them
+ * would be the silent merge this whole module exists to prevent.
+ */
+export function normalizeCompanyName(name: string): string {
+  let s = String(name ?? "")
+    .toUpperCase()
+    .replace(/&/g, " AND ")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+  if (s.startsWith("THE ")) s = s.slice(4).trim();
+  for (;;) {
+    const next = s.replace(/\s+(LIMITED|LTD|PRIVATE|PVT)$/u, "").trim();
+    if (next === s) break;
+    s = next;
+  }
+  return s;
+}
+
+/** What a name resolves to: the ticker every other surface is keyed on, and the ISIN. */
+export interface NamedSecurity {
+  symbol: string;
+  isin: string;
+}
+
+/** normalised NAME → the single security that answers to it, built on first use. */
+let byName: Map<string, NamedSecurity | null> | null = null;
+
+function names(): Map<string, NamedSecurity | null> {
+  if (byName) return byName;
+  const m = new Map<string, NamedSecurity | null>();
+  // A name held by TWO securities resolves to NOTHING (the value is null) —
+  // "Technocrat" is two companies with two ISINs, and answering with either is
+  // the merge this module refuses to make. The listing snapshot is the first
+  // source; the index map fills in only names the snapshot does not carry, so
+  // the same company under both never reads as a collision.
+  const put = (key: string, hit: NamedSecurity) => {
+    if (!key) return;
+    const prior = m.get(key);
+    if (prior === undefined) m.set(key, hit);
+    else if (prior && (prior.symbol !== hit.symbol || prior.isin !== hit.isin)) m.set(key, null);
+  };
+  const raw = snapshot.byIsin ?? {};
+  for (const [isin, t] of Object.entries(raw)) {
+    if (!t[1] || !t[0]) continue;
+    put(normalizeCompanyName(t[1]), { symbol: t[0], isin: isin.trim().toUpperCase() });
+  }
+  const idx = (nseIndexMap as { symbols?: Record<string, { isin?: string | null; name?: string | null }> }).symbols ?? {};
+  for (const [symbol, meta] of Object.entries(idx)) {
+    const key = normalizeCompanyName(String(meta?.name ?? ""));
+    const isin = String(meta?.isin ?? "").trim().toUpperCase();
+    if (!key || !isin || m.has(key)) continue;
+    m.set(key, { symbol, isin });
+  }
+  byName = m;
+  return m;
+}
+
+/**
+ * The security a COMPANY NAME names — the bundled half of the resolution chain
+ * (the user's own Instruments table is the DB half and is applied by the
+ * caller that has a connection; this module imports no DB, invariant 2).
+ *
+ * Exactly one answer or none: an ambiguous name, an abbreviated one ("Gujarat
+ * Narmada Valley Fert & Chem" against "…Fertilizers & Chemicals Limited") and
+ * an unknown one all return null, and the caller then KEEPS the name the file
+ * stated. A wrong ticker merges two companies' trades; a name on screen is a
+ * question the user can answer.
+ */
+export function securityByCompanyName(name: string): NamedSecurity | null {
+  const key = normalizeCompanyName(name);
+  if (!key) return null;
+  return names().get(key) ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Coded-symbol substitution
 // ---------------------------------------------------------------------------
 

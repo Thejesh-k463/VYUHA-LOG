@@ -113,6 +113,14 @@ export interface NormalizedTrade {
    * same clothes as a reported one.
    */
   productDerived?: boolean;
+  /**
+   * The label this execution is KEYED on, when the parser resolved the label
+   * the file carried into a better `tradingsymbol` (v4.5.0 W1 revision 8).
+   * Identity follows the FILE's own word; the ticker is only what is shown and
+   * grouped on. See `DedupInput.dedupLabel` (lib/import/dedup.ts). Dhan's
+   * Global Transaction Report is the one writer.
+   */
+  dedupLabel?: string | null;
   /** Per-row provenance notes, carried through to the trade record. */
   importNotes?: string[] | null;
 }

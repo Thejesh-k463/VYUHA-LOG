@@ -34,7 +34,7 @@ import type { CommitResult, EnrichmentRow, ParsedFile, ReferenceRow } from "./ty
 import { referenceVsBookNote, relabelledFromWarnings, type ImportShape } from "@/lib/domain/import-shape";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
-import { dedupHash } from "./dedup";
+import { executionIdentity, scopedHashes } from "./trade-identity";
 import { recordAudit } from "@/lib/audit";
 import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
@@ -98,7 +98,18 @@ interface BuiltRow {
   charges: ChargeBreakdown;
   netPnl: number;
   isOpen: boolean;
+  /**
+   * The hash this row is stored and de-duplicated under. `executionIdentity`'s
+   * own hash until `applyScopedIdentity` re-keys it — which happens only where
+   * rows of THIS file share a hash across more than one scope (F-L1-7).
+   */
   dedup: string;
+  /**
+   * `segment|exchange` from the FILE's own classification, before any
+   * `classification_overrides` row is applied (lib/import/trade-identity.ts).
+   * Compared between rows of one file and never against a stored row.
+   */
+  scope: string;
   buyOrderCount: number;
   sellOrderCount: number;
   riskAmount: number | null;
@@ -134,7 +145,6 @@ function buildRow(
   /** The account this import lands in, for the plan (wave U). Null = "default". */
   planAccount: PlanAccount | null = null,
 ): BuiltRow {
-  const dedup = dedupHash(t);
   let cls = classify({
     tradingsymbol: t.tradingsymbol,
     broker: t.broker,
@@ -142,6 +152,11 @@ function buildRow(
     productHint: t.productHint,
     exchangeHint: t.exchangeHint,
   });
+  // W1: the ONE identity door (lib/import/trade-identity.ts). `hash` is
+  // `dedupHash` unchanged; `scope` is taken HERE, off the file's own
+  // classification, so it cannot depend on an override keyed by the hash.
+  const id = executionIdentity({ ...t, segment: cls.segment, exchange: cls.exchange });
+  const dedup = id.hash;
 
   const ov = overrides.get(dedup);
   if (ov) {
@@ -217,7 +232,39 @@ function buildRow(
   const rMultiple = capR(netPnl, riskAmount);
   const realisedPct = t.buyValue > 0 && !isOpen ? Math.round((t.grossPnl / t.buyValue) * 10000) / 100 : null;
 
-  return { classification: cls, charges, netPnl, isOpen, dedup, buyOrderCount, sellOrderCount, riskAmount, rMultiple, riskSource, realisedPct };
+  return { classification: cls, charges, netPnl, isOpen, dedup, scope: id.scope, buyOrderCount, sellOrderCount, riskAmount, rMultiple, riskSource, realisedPct };
+}
+
+/**
+ * W1 / F-L1-7 — give each row of THIS file the hash it must be stored and
+ * de-duplicated under, in place.
+ *
+ * `dedupHash` carries no exchange and no segment, so an NSE sale and a BSE sale
+ * of the same symbol, quantity, price and day collide and the second was
+ * dropped as a duplicate of the first (since v1.10.0). `scopedHashes` re-keys
+ * only the rows that actually collide across scopes — every other file's hashes
+ * come back byte-for-byte as v4.4.0 wrote them, which is what makes a re-import
+ * of a pre-4.5.0 file neither duplicate nor drop anything.
+ *
+ * A re-keyed row is then re-built when a classification override is stored
+ * under its NEW hash: `buildRow` had to read overrides under the legacy one
+ * (the override lookup precedes the classification that scope is taken from),
+ * and a re-tag saved on such a row is keyed by what the ROW stores. Scope is
+ * pre-override, so the second build cannot move the hash again.
+ */
+function applyScopedIdentity(
+  built: { t: NormalizedTrade; b: BuiltRow }[],
+  overrides: Map<string, Override>,
+  rebuild: (t: NormalizedTrade, overrides: Map<string, Override>) => BuiltRow,
+): void {
+  const hashes = scopedHashes(built.map(({ b }) => ({ hash: b.dedup, scope: b.scope })));
+  for (const [i, hash] of hashes.entries()) {
+    const row = built[i]!;
+    if (hash === row.b.dedup) continue;
+    const ov = overrides.get(hash);
+    if (ov) row.b = rebuild(row.t, new Map([[row.b.dedup, ov]]));
+    row.b = { ...row.b, dedup: hash };
+  }
 }
 
 /** Rates and defaults only — for mutations of a row that already has an account. */
@@ -772,6 +819,9 @@ export function previewParsedFile(
   // Wave U: the account row is read ONCE, not once per trade.
   const planAccount = planAccountOf(accountId);
   const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults, planAccount) }));
+  // W1 (F-L1-7): the same re-key the commit makes, so the preview's duplicate
+  // count is the commit's.
+  applyScopedIdentity(built, overrides, (t, ov) => buildRow(t, rates, ov, defaults, planAccount));
   // R43: the same plan the commit makes, against the same rows.
   const snapshot = planSnapshot(
     options.supersedeSnapshot,
@@ -854,7 +904,9 @@ export function previewParsedFile(
         sellValue: t.sellValue ?? 0,
         buyDate: t.buyDate ?? null,
         sellDate: t.sellDate ?? null,
-        dedupHash: dedupHash({ ...t, broker: parsed.broker } as never),
+        // W1: the row's OWN identity, the one the commit will store — not a
+        // second derivation of it (this line used to re-hash the trade here).
+        dedupHash: built[i]!.b.dedup,
         // R43: a snapshot row that will NOT replace today's earlier one meets
         // that earlier one — on its own key only — here, and is reported
         // whatever the relation, so the pull asks instead of adding a second row.
@@ -1381,6 +1433,10 @@ export function commitParsedFile(
     // Wave U: the account row is read ONCE, not once per trade.
     const planAccount = planAccountOf(accountId);
     const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults, planAccount) }));
+    // W1 (F-L1-7): two rows of this file that differ only by exchange or
+    // segment are two executions, not one — the second no longer dies as a
+    // duplicate of the first. Nothing stored is re-keyed.
+    applyScopedIdentity(built, overrides, (t, ov) => buildRow(t, rates, ov, defaults, planAccount));
     // R43: decided ONCE, against the account as it stands before any write.
     const snapshot = planSnapshot(
       options.supersedeSnapshot,
@@ -1768,7 +1824,10 @@ export function commitManualTrade(
     };
   }
 
-  const dedup = dedupHash(t);
+  // W1: the same identity door as the import path. One manual row is its own
+  // file, so there is no second scope to disambiguate it against and the hash
+  // is `dedupHash` exactly as before.
+  const dedup = executionIdentity({ ...t, segment: cls.segment, exchange: cls.exchange }).hash;
   const dup = db
     .select({ id: tradesTable.id })
     .from(tradesTable)

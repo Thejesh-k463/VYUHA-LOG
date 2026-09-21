@@ -4,6 +4,8 @@ import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
 import { isDhanDividendText, isDhanGtrText, isDhanLedgerText } from "./dhan-ledger";
+import { securityByCompanyName } from "../isin-symbol";
+import { DEDUP_LABEL_PREFIX } from "../trade-identity";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -159,10 +161,22 @@ export function parseDhanCsv(ctx: ParseContext): ParsedFile {
     if (r[0].startsWith("NOTE")) continue;
     if (r.length < 12) continue;
 
+    // F-L1-3 (v4.5.0 W1) — the SAME rule the Global Transaction Report now
+    // follows: this file states a company NAME ("Reliance Industries") where
+    // Dhan's API states RELIANCE, so the book held one instrument twice and
+    // the cross-source scan — which buckets on `norm(tradingsymbol)` — could
+    // not see a P&L export landing on top of a GTR already imported
+    // (tests/cross-source-live.test.ts is that exact pair of the owner's real
+    // files). Identity STAYS the name (`dedupLabel`), so no stored hash moves
+    // and a re-import of a pre-4.5.0 file is still a duplicate.
+    const scrip = r[0].trim();
+    const resolved = securityByCompanyName(scrip);
     trades.push({
       broker: "dhan",
-      tradingsymbol: r[0].trim(),
-      isin: null,
+      tradingsymbol: resolved?.symbol ?? scrip,
+      isin: resolved?.isin ?? null,
+      dedupLabel: resolved ? scrip : null,
+      importNotes: resolved ? [`${DEDUP_LABEL_PREFIX}${scrip}`] : null,
       buyQty: toNum(r[1]),
       avgBuyPrice: toNum(r[2]),
       buyValue: toNum(r[3]),

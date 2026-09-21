@@ -37,6 +37,8 @@ import { inferProduct, corroborate, splitMixedRow, productReason } from "../prod
 import { pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
 import { deriveBasisFromFooter } from "@/lib/analytics/acquisition";
 import { parseInstrumentName } from "@/lib/engine/classify";
+import { securityByCompanyName } from "../isin-symbol";
+import { DEDUP_LABEL_PREFIX } from "../trade-identity";
 import { COMMODITY_UNDERLYINGS } from "@/lib/domain/constants";
 
 const COMMODITY_SET = new Set<string>(COMMODITY_UNDERLYINGS);
@@ -399,10 +401,30 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
       );
     }
 
+    /**
+     * F-L1-3 (v4.5.0 W1 revision 8) — the bill states a company NAME where
+     * Dhan's own API states a ticker, so the same instrument read as two
+     * instruments: neither dedup nor the cross-source duplicate scan (which
+     * buckets on `norm(tradingsymbol)`) could see the C-6 remedy re-importing
+     * days the API had already brought in.
+     *
+     * The name is resolved to the ticker every other surface is keyed on, and
+     * to its ISIN — but IDENTITY STAYS THE NAME (`dedupLabel`). The hash is
+     * therefore byte-for-byte what v4.4.0 wrote, so this report re-imports as a
+     * duplicate of itself with no `dedup_hash` write and no alias, and a later
+     * listing-snapshot refresh that stopped resolving a name could not re-add
+     * the whole report. A name that resolves to nothing — abbreviated
+     * ("Gujarat Narmada Valley Fert & Chem"), ambiguous, or an F&O contract —
+     * is kept exactly as the file states it.
+     */
+    const resolved = securityByCompanyName(p.symbol);
+    if (resolved) notes.push(`${DEDUP_LABEL_PREFIX}${p.symbol}`);
+
     return {
       broker: "dhan",
-      tradingsymbol: p.symbol,
-      isin: null,
+      tradingsymbol: resolved?.symbol ?? p.symbol,
+      isin: resolved?.isin ?? null,
+      dedupLabel: resolved ? p.symbol : null,
       buyQty: p.buyQty,
       avgBuyPrice: p.buyQty > 0 ? r2(p.buyValue / p.buyQty) : 0,
       buyValue: p.buyValue,

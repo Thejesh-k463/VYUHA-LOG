@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
 import { dedupHash, PAYTM_BROKER } from "@/lib/import/dedup";
 import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
+import { dedupLabelFromNotes, withDedupLabelNote } from "@/lib/import/trade-identity";
+import { bundledSymbolByIsin, normalizeCompanyName, securityByCompanyName } from "@/lib/import/isin-symbol";
 import { normalizeDate } from "@/lib/domain/trading-day";
 import { parseSeededSignalNotes, serializeSignal } from "@/lib/domain/signal";
 import { classifyUnsourcedRisk, repriceCapTrades } from "@/lib/queries/risk-cap";
@@ -26,6 +28,7 @@ export const IPO_ACCOUNT_REHOME_FIX = "ipo-account-rehome-v1";
 export const LEG_TRADE_DATE_ISO_FIX = "leg-trade-date-iso-v1";
 export const SIGNAL_NOTES_BACKFILL_FIX = "signal-notes-backfill-v1";
 export const RISK_SOURCE_FIX = "risk-source-v1";
+export const DHAN_GTR_SYMBOL_FIX = "dhan-gtr-symbols-v1";
 
 export interface DataFixResult {
   name: string;
@@ -315,12 +318,129 @@ function applyRiskSource(sqlite: Database.Database): DataFixResult {
   return { name: RISK_SOURCE_FIX, applied: true, rekeyed: classified + repriced, skippedCollisions: 0 };
 }
 
+/**
+ * dhan-gtr-symbols-v1 (v4.5.0 W1, F-L1-3) — put a Dhan Global Transaction
+ * Report row under the TICKER the rest of the book is keyed on, and nothing
+ * else.
+ *
+ * The GTR states a company NAME ("Aarti Industries") and no ISIN where Dhan's
+ * own API states AARTIIND, so the same instrument sat in the book as two: the
+ * duplicate scan buckets on `norm(tradingsymbol)` and could not see the C-6
+ * remedy ("import a Dhan tradebook for …") re-importing days the API pull had
+ * already brought in. The three Dhan report parsers that state a NAME (the
+ * GTR, the P&L export, the Realised P&L) resolve it from now on; this is the
+ * retrofit for rows already stored, and it covers all three the same way —
+ * `import_batches` carries no source id, so the selection is "a Dhan batch,
+ * labelled with something no ticker can be".
+ *
+ * IT WRITES `tradingsymbol`, `symbol` AND `isin`, AND NOTHING ELSE. No money
+ * column, no re-classification, no `dedup_hash` and NO alias: identity stays
+ * the name the bill stated, recorded as the `gtr-name:` segment this fix adds
+ * to `import_notes` (lib/import/trade-identity.ts), which is exactly what the
+ * parser now writes — so a re-import of the same report still de-duplicates
+ * against these rows, with the hash unmoved. No position's P&L can move; only
+ * which symbol a row groups under does, and the release notes say so.
+ *
+ * WHAT IT WILL NOT TOUCH:
+ *   • a row with `import_batch_id IS NULL` — the JOIN alone refuses it. That is
+ *     what protects a hand-entered or seeded book: the owner's account #3 is 42
+ *     manual Dhan option rows (net ₹75,132.75) and none of them has a batch.
+ *   • a row whose identity is FROZEN (an alias or an auto-close note) — the
+ *     same guard the Paytm re-key makes (S-2).
+ *   • a row already carrying a `gtr-name:` segment (idempotent; the markers are
+ *     forgotten on every restore and this fix runs again).
+ *   • a row whose `tradingsymbol` is a TICKER. A company name is mixed case
+ *     ("Cupid"); no broker's ticker ever is, so `GLOB '*[a-z]*'` keeps every
+ *     Dhan tradebook / API row in the same batch table out of this fix even
+ *     when a one-word company name would otherwise have matched one.
+ *   • a row that resolves to NOTHING — an abbreviated name ("Gujarat Narmada Valley
+ *     Fert & Chem"), ambiguous, or an F&O contract. It is left exactly as
+ *     stated and counted: a wrong ticker merges two companies (invariant 6).
+ *
+ * The chain is the documented one: the user's own Instruments table, then the
+ * bundled listing snapshot, then the index map, then keep the name.
+ */
+function applyDhanGtrSymbols(sqlite: Database.Database): DataFixResult {
+  const result: DataFixResult = { name: DHAN_GTR_SYMBOL_FIX, applied: true, rekeyed: 0, skippedCollisions: 0 };
+  const rows = sqlite
+    .prepare(
+      `SELECT t.id AS id, t.tradingsymbol AS tradingsymbol, t.isin AS isin,
+              t.import_notes AS import_notes, t.dedup_hash AS dedup_hash
+         FROM trades t
+         JOIN import_batches b ON b.id = t.import_batch_id
+        WHERE t.import_batch_id IS NOT NULL
+          AND t.broker = 'dhan'
+          AND b.broker = 'dhan'
+          AND t.tradingsymbol GLOB '*[a-z]*'
+        ORDER BY t.id`,
+    )
+    .all() as { id: number; tradingsymbol: string; isin: string | null; import_notes: string | null; dedup_hash: string }[];
+  if (rows.length === 0) return result;
+
+  // The user's own Instruments table first — the only source that can know a
+  // security listed after our snapshot. A key held by two instruments answers
+  // with neither.
+  const ownByName = new Map<string, { symbol: string; isin: string | null } | null>();
+  const ownByIsin = new Map<string, string | null>();
+  for (const r of sqlite
+    .prepare("SELECT symbol, name, isin FROM instruments")
+    .all() as { symbol: string; name: string | null; isin: string | null }[]) {
+    const key = normalizeCompanyName(r.name ?? "");
+    if (key) {
+      const prior = ownByName.get(key);
+      if (prior === undefined) ownByName.set(key, { symbol: r.symbol, isin: r.isin });
+      else if (prior && prior.symbol !== r.symbol) ownByName.set(key, null);
+    }
+    const id = (r.isin ?? "").trim().toUpperCase();
+    if (id) {
+      const prior = ownByIsin.get(id);
+      if (prior === undefined) ownByIsin.set(id, r.symbol);
+      else if (prior && prior !== r.symbol) ownByIsin.set(id, null);
+    }
+  }
+
+  const write = sqlite.prepare("UPDATE trades SET tradingsymbol = ?, symbol = ?, isin = ?, import_notes = ? WHERE id = ?");
+  const unresolved: string[] = [];
+  for (const r of rows) {
+    if (isLotIdentityFrozen({ dedupHash: r.dedup_hash, importNotes: r.import_notes })) continue;
+    if (dedupLabelFromNotes(r.import_notes) != null) continue;
+    const name = r.tradingsymbol;
+    const isin = (r.isin ?? "").trim().toUpperCase() || null;
+    // The row's OWN ISIN answers first when it states one (the Realised P&L
+    // report does); the company name second. Each through the user's table
+    // before the bundled snapshots.
+    const byName = ownByName.get(normalizeCompanyName(name)) ?? securityByCompanyName(name);
+    const symbol =
+      (isin ? (ownByIsin.get(isin) ?? bundledSymbolByIsin(isin)) : null) ?? byName?.symbol ?? null;
+    if (!symbol) {
+      result.skippedCollisions++;
+      unresolved.push(name);
+      continue;
+    }
+    // Nothing to regroup: the row already sits under the ticker.
+    if (symbol.trim().toUpperCase() === name.trim().toUpperCase()) continue;
+    write.run(symbol, symbol, isin ?? byName?.isin ?? null, withDedupLabelNote(r.import_notes, name), r.id);
+    result.rekeyed++;
+  }
+  // Logged as a COUNT plus a sample: most of a real report's misses are F&O
+  // contract names, which resolve to nothing by design, and a 79-name line on
+  // every restore is noise nobody reads (measured on the owner's own GTR).
+  if (unresolved.length) {
+    const distinct = [...new Set(unresolved)];
+    console.log(
+      `[data-fix] ${DHAN_GTR_SYMBOL_FIX}: ${distinct.length} scrip name(s) not resolved (F&O contracts and abbreviated names resolve to nothing by design), left exactly as the report states them — e.g. ${distinct.slice(0, 5).join(", ")}`,
+    );
+  }
+  return result;
+}
+
 const FIXES: { name: string; apply: (sqlite: Database.Database) => DataFixResult }[] = [
   { name: PAYTM_DEDUP_FIX, apply: applyPaytmDedupIsin },
   { name: IPO_ACCOUNT_REHOME_FIX, apply: applyIpoAccountRehome },
   { name: LEG_TRADE_DATE_ISO_FIX, apply: applyLegTradeDateIso },
   { name: SIGNAL_NOTES_BACKFILL_FIX, apply: applySignalNotesBackfill },
   { name: RISK_SOURCE_FIX, apply: applyRiskSource },
+  { name: DHAN_GTR_SYMBOL_FIX, apply: applyDhanGtrSymbols },
 ];
 
 /**

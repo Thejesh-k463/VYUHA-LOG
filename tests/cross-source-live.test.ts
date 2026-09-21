@@ -68,8 +68,15 @@ describe("the user's real GTR + P&L pair", () => {
     expect([...symbols].some((s) => s.includes("RELIANCE"))).toBe(true);
     // Sterlite and Bhansali: open in the P&L window (sold 27 Jul, after its
     // 26 Jul cutoff) — the "still open" ghosts.
-    expect([...symbols].some((s) => s.includes("STERLITE"))).toBe(true);
-    expect([...symbols].some((s) => s.includes("BHANSALI"))).toBe(true);
+    //
+    // v4.5.0 W1 (F-L1-3): both Dhan reports state a company NAME, and both now
+    // resolve it to the ticker the rest of the book is keyed on before the row
+    // is stored — so the collision is reported under STLTECH and BEPL, not
+    // under "Sterlite Technologies" and "Bhansali Engineering Polymers". The
+    // POSITIONS flagged are the same two; only the label they are named by
+    // changed. (Reliance above resolves to RELIANCE and still matches.)
+    expect([...symbols].some((s) => s.includes("STLTECH"))).toBe(true);
+    expect([...symbols].some((s) => s.includes("BEPL"))).toBe(true);
   });
 
   it("step 4 — every collision names the GTR as the earlier source", () => {
