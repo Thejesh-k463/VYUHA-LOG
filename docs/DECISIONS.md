@@ -8074,3 +8074,13 @@ a source AND a year beside any band or any number about other traders. 14 new ex
 Release: bump `80eb164`; `npm run verify` EXIT 0, 450 files / 10,307 passed / 35 skipped (9,745 on CI — the owner-file parity cases skip); CI 6/6; installer SHA-256
 `A3BB74F4…5C7F9CF2`, both signatures verify with key id `4FF85F3BBE1DA21D`; steward READY TO TAG, 0 unsubstantiated claims. A one-off: `seams-v42-fix2` S7a threw a
 collect-time STACK_TRACE_ERROR inside one full run, passed alone and in the next two full runs — not reproduced, recorded.
+
+## 2026-09-21 — v4.4.0 PUBLISHED
+
+Tag `v4.4.0` = `8cc6ac6` (annotated, the owner's "Tag"), pushed only after CI run 35624639602 was 6/6 on that exact sha (the docs-only close-out commit was HEAD, so its run
+was waited for rather than tagging the bump commit). Release run 35625730563 3/3; `release:verify v4.4.0 -- --deep`: 3 signatures, key id `4FF85F3BBE1DA21D`, verified over the
+published bytes; published `--latest` 17:03:46 UTC; `latest.json` serves 4.4.0 for six platforms; `revocations` still a prerelease; the Pages site fetched live (v4.4.0,
+₹1,499/month, no v4.3.0 string). winget manifest generated from the GitHub asset sha `499ad123…35465fbc` — `npm run winget:manifest` needs `--sha <SHA256>`, and `gh release
+view --json assets` already carries the asset `digest`, so no download is needed. The WDSI hash is the CLIENT ZIP installer's (`A3BB74F4…5C7F9CF2`), a different build from the
+CI asset. NOT done, the owner's: the non-build-machine install, WDSI. The steward's WDSI draft called the app "fully offline" — wrong since the broker feeds; the form says
+"data stays local; network = the update check and the broker feeds the user switches on".
