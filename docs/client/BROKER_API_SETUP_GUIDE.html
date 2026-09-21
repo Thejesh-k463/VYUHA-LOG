@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vyuha · Broker API setup guide</title>
+<style>
+  /* ── Vyuha broker API setup guide · scrolling document · palette shared with the OpenAlgo guide ── */
+  :root {
+    --bg: #0a0e14; --surface: #0e141d; --card: #111a26; --card2: #16212f;
+    --border: #1f2b3a; --fg: #e6edf3; --mut: #8a98a7;
+    --teal: #2dd4bf; --blue: #2f81f7; --green: #16c784; --red: #f6465d; --amber: #f0b90b;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  .page { max-width: 880px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.hero {
+    padding: 40px 0 28px; border-bottom: 1px solid var(--border); margin-bottom: 36px;
+    background: radial-gradient(700px 320px at 50% -30%, #101c26 0%, transparent 70%);
+  }
+  .kicker { color: var(--teal); font-size: 12px; letter-spacing: .3em; text-transform: uppercase; font-weight: 600; }
+  h1 { font-size: 34px; letter-spacing: -0.02em; margin: 10px 0 8px; }
+  h2 { font-size: 24px; letter-spacing: -0.01em; margin: 48px 0 12px; }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+  p { margin: 10px 0; }
+  .sub { color: var(--mut); font-size: 16px; max-width: 64ch; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  a { color: var(--teal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul, ol { margin: 10px 0 10px 22px; }
+  li { margin: 6px 0; }
+  li::marker { color: var(--teal); }
+
+  .cards { display: flex; gap: 16px; width: 100%; flex-wrap: wrap; margin: 18px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 18px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.35); flex: 1; min-width: 220px; }
+  .card h3 { font-size: 16px; margin: 8px 0 6px; }
+  .card p { color: var(--mut); font-size: 14px; line-height: 1.5; margin: 0; }
+  .card .ico { font-size: 22px; }
+  .hero-card { border-color: color-mix(in oklab, var(--teal) 30%, var(--border));
+    background-image: linear-gradient(160deg, color-mix(in oklab, var(--teal) 9%, transparent), transparent 45%); }
+
+  .chip { display: inline-block; border: 1px solid var(--border); background: var(--card2);
+    border-radius: 99px; padding: 4px 12px; font-size: 13px; color: var(--mut); margin: 3px 4px 3px 0; }
+  .chip b { color: var(--fg); }
+  .chip.live { border-color: color-mix(in oklab, var(--green) 45%, var(--border)); color: var(--green); }
+  .chip.doc { border-color: color-mix(in oklab, var(--amber) 40%, var(--border)); color: var(--amber); }
+  .good { color: var(--green); } .bad { color: var(--red); } .warn { color: var(--amber); } .teal { color: var(--teal); }
+
+  .keybox { font-family: var(--mono); background: #0d1520; border: 1px dashed var(--teal); border-radius: 8px;
+    padding: 12px 14px; font-size: 13.5px; color: var(--teal); word-break: break-all; margin: 12px 0; }
+  code { font-family: var(--mono); background: var(--card2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 6px; font-size: .92em; }
+
+  .strip { border: 1px solid color-mix(in oklab, var(--blue) 35%, var(--border)); background: color-mix(in oklab, var(--blue) 8%, var(--card));
+    border-radius: 10px; padding: 12px 14px; font-size: 14.5px; margin: 16px 0; }
+  .strip.warn-strip { border-color: color-mix(in oklab, var(--amber) 40%, var(--border));
+    background: color-mix(in oklab, var(--amber) 7%, var(--card)); }
+  .strip.danger-strip { border-color: color-mix(in oklab, var(--red) 40%, var(--border));
+    background: color-mix(in oklab, var(--red) 7%, var(--card)); }
+
+  .step-list { counter-reset: step; list-style: none; margin: 16px 0; padding: 0; }
+  .step-list > li { counter-increment: step; position: relative; padding: 0 0 0 46px; margin: 14px 0; }
+  .step-list > li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--card2); border: 1px solid color-mix(in oklab, var(--teal) 40%, var(--border));
+    color: var(--teal); font-family: var(--mono); font-size: 14px;
+  }
+
+  .broker { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 22px; margin: 18px 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.35); }
+  .broker h3 { margin: 0 0 6px; font-size: 18px; }
+  .broker .meta { margin-bottom: 8px; }
+  .broker p, .broker li { font-size: 14.5px; }
+  .broker p { color: var(--mut); }
+  .broker p b, .broker li b { color: var(--fg); }
+
+  .table-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+  th { text-align: left; background: var(--card2); color: var(--fg); padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--mut); background: var(--card); }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { color: var(--fg); white-space: nowrap; }
+
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin: 20px 0; }
+  .toc ol { margin: 6px 0 2px 20px; }
+  .toc a { color: var(--fg); }
+  .toc a:hover { color: var(--teal); }
+  .toc .sec { color: var(--mut); font-size: 13px; }
+
+  footer { border-top: 1px solid var(--border); margin-top: 56px; padding-top: 18px;
+    color: var(--mut); font-size: 13.5px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .page { max-width: none; padding: 0; }
+    .card, .broker, .toc, .strip, td { background: #fff; }
+    .card p, .broker p, td, .sub, .chip { color: #444; }
+    a { color: #0a7c6e; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <div class="kicker">Vyuha · Broker connections</div>
+  <h1>Connecting your broker's own API</h1>
+  <p class="sub">Plain-language setup for the four brokers Vyuha talks to directly — <b>Angel One</b>,
+    <b>Dhan</b>, <b>Upstox</b> and <b>Zerodha</b>. What each form asks for, what to paste where in
+    Vyuha, and what to do when something is refused. No programming knowledge assumed.</p>
+  <div style="margin-top:14px">
+    <span class="chip"><b>As of Sep 2026</b></span>
+    <span class="chip">Windows</span>
+    <span class="chip">Read-only pull</span>
+    <span class="chip">Credentials encrypted on this computer</span>
+  </div>
+</header>
+
+<div class="toc">
+  <div class="sec">In this guide</div>
+  <ol>
+    <li><a href="#doors">Which door do I use?</a></li>
+    <li><a href="#what">What an API key is, in one minute</a></li>
+    <li><a href="#angel">Angel One (SmartAPI) — the form, field by field</a></li>
+    <li><a href="#dhan">Dhan (DhanHQ v2)</a></li>
+    <li><a href="#upstox">Upstox (Analytics token)</a></li>
+    <li><a href="#kite">Zerodha (Kite Connect)</a></li>
+    <li><a href="#live">Live prices on the Live Desk</a></li>
+    <li><a href="#trouble">Troubleshooting</a></li>
+    <li><a href="#safety">Safety — and how to switch it off</a></li>
+  </ol>
+</div>
+
+<h2 id="doors">0 · Which door do I use?</h2>
+
+<div class="cards">
+  <div class="card hero-card"><div class="ico">📄</div><h3>A file from your broker</h3>
+    <p>Download a tradebook or P&amp;L export and drop it on <b>Journal → Import</b>. Nothing to set up,
+    works for years of history, and it is the only way to bring in the past.</p></div>
+  <div class="card"><div class="ico">🔌</div><h3>Your broker's own API</h3>
+    <p>A one-time setup that lets Vyuha fetch <b>the current trading day</b> from Angel One, Dhan,
+    Upstox or Zerodha with one click after the close. This guide.</p></div>
+  <div class="card"><div class="ico">🌉</div><h3>The OpenAlgo bridge</h3>
+    <p>For brokers with no direct connection of their own — Groww, Paytm Money, Kotak Neo and others —
+    a free program you run yourself. Its own guide: <b>OPENALGO_SETUP_GUIDE.html</b>.</p></div>
+</div>
+
+<p><b>The file door.</b> Every broker publishes exports. You download one, drag it onto the Import
+screen, Vyuha reads it, recomputes the charges from your own rate card and shows you a preview
+before anything is written. This path needs no keys, no forms and no permissions, and it is the
+only one that reaches back into last year. If you are here because you want your old trades in,
+this is your door — and you can stop reading.</p>
+
+<p><b>The direct-API door.</b> Four brokers let Vyuha ask them, over the internet, for what you
+traded <i>today</i>. You fill in one form on your broker's developer site, paste a few values into
+Vyuha once, and after that a pull is one click. It replaces the download-and-drag ritual for each
+new day; it does not replace the file import for history, because these endpoints only state the
+current trading day (Dhan additionally lets Vyuha fill in the days you missed). This is what the
+rest of this guide covers.</p>
+
+<p><b>The OpenAlgo door.</b> If your broker is not one of the four — Groww, Paytm Money, Kotak Neo,
+and thirty more — a free open-source program called OpenAlgo can sit between your broker and
+Vyuha, on your own computer. It is more to set up and it holds your broker credentials itself, so
+it earns its place only when your broker has no direct connection. The full walkthrough ships in
+this same package as <b>OPENALGO_SETUP_GUIDE.html</b> (and <b>OPENALGO_SETUP_GUIDE.docx</b>).</p>
+
+<div class="strip">You can use all three at once. A file import, an API pull and an OpenAlgo pull
+all land through the same preview, the same charge computation and the same duplicate check — the
+same trade arriving twice is recognised and skipped.</div>
+
+<h2 id="what">1 · What an API key is, in one minute</h2>
+
+<p>An <b>API key</b> is a long password that you give to a program instead of to a person. Your
+broker's website is for you; the API is the same account with the screens taken away, so another
+program can ask questions in a form a program understands. Creating one does not change your
+account, your holdings or your fees — it only creates a second way in, which you can close again at
+any time.</p>
+
+<p>Because it is a way in, the interesting question is not <i>what can it do</i> but <i>what does
+Vyuha do with it</i>.</p>
+
+<h3>What Vyuha does</h3>
+<ul>
+  <li><b>Asks your broker what you traded, and nothing else.</b> Angel One: today's trade book.
+    Zerodha: today's executions. Upstox: today's fills. Dhan: today's positions — the one source
+    that states <b>MTF</b> outright — plus its dated trade history, so a pull you skipped for four
+    days is not lost.</li>
+  <li><b>Imports it exactly like a file.</b> Preview first, charges computed from your rate card,
+    duplicates detected and skipped. A pull that adds nothing says so.</li>
+  <li><b>Keeps the credentials on this computer</b>, encrypted at rest with a key bound to this
+    machine. They are sent nowhere except to that broker itself. Copying your journal to another
+    computer does not carry a usable copy of them.</li>
+</ul>
+
+<h3>What Vyuha never does</h3>
+<div class="strip danger-strip"><b>Vyuha never places, modifies or cancels an order.</b> The code
+that talks to a broker exports a login and a read of your trades, and nothing else — there is no
+order function in it to call, and an automated check refuses any change that would add one. It also
+never transfers funds, never changes any setting in your broker account, and never sends your
+credentials, your trades or your journal to us or to anyone else.</div>
+
+<h3>The only outside addresses involved</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Broker</th><th>Address Vyuha contacts</th></tr></thead>
+  <tbody>
+    <tr><td>Angel One</td><td><code>apiconnect.angelone.in</code></td></tr>
+    <tr><td>Dhan</td><td><code>api.dhan.co</code>, and <code>auth.dhan.co</code> for the PIN + TOTP sign-in</td></tr>
+    <tr><td>Upstox</td><td><code>api.upstox.com</code></td></tr>
+    <tr><td>Zerodha</td><td><code>api.kite.trade</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Each is the broker's own address. <b>PRIVACY.md</b> in this package states the full list of
+moments Vyuha ever uses the network, and what each request carries.</p>
+
+<h2 id="angel">2 · Angel One (SmartAPI) — the form, field by field</h2>
+
+<p class="meta"><span class="chip live">Free — SmartAPI has no subscription</span>
+<span class="chip">Nothing expires on you</span> <span class="chip">Pulls today's trade book</span></p>
+
+<p>Angel One is the easiest of the four to live with: once set up, there is no daily token to paste
+and no browser login to complete. Vyuha signs itself in at pull time from a six-digit code it works
+out on your own machine.</p>
+
+<h3>Step A — turn on TOTP for your Angel One account</h3>
+<p>Do this first; the sign-in cannot work without it.</p>
+<ol class="step-list">
+  <li>Open <b>smartapi.angelone.in/enable-totp</b> in your browser.</li>
+  <li>Enter your Angel One <b>client ID</b> and your trading password or PIN.</li>
+  <li>Enter the one-time password Angel One sends to your registered email and mobile.</li>
+  <li>A <b>QR code</b> appears. Scan it with any authenticator app (Google Authenticator, Microsoft
+    Authenticator, Authy) — that app will now show a fresh 6-digit code every 30 seconds.</li>
+  <li><b>Also copy the long text string shown with the QR code, and keep it.</b> That string is the
+    <b>TOTP secret</b> — the one value Vyuha needs. Angel One's own moderators state it plainly:
+    "The string which you need to pass in the TOTP is the one generated below the QR code in TOTP
+    Generation", and it "is not the secret key generated along with the API key in the app".</li>
+</ol>
+
+<div class="strip warn-strip"><b>The TOTP secret is NOT the 6-digit code.</b> The 6-digit number in
+your authenticator app changes every 30 seconds and is useless to paste anywhere permanent. The
+<b>secret</b> is the long block of capital letters and digits shown with the QR code at enrollment —
+it never changes, and it is what lets Vyuha work out today's 6-digit code by itself. If you paste a
+6-digit number into Vyuha's <b>TOTP secret</b> box, every pull will be refused.</div>
+
+<div class="strip">If you scanned the QR code and closed the page without copying the string, you
+cannot read it back later — run the enrollment at <b>smartapi.angelone.in/enable-totp</b> again and
+copy it this time. Re-enrolling replaces the previous one, so re-scan the new QR code into your
+authenticator app as well.</div>
+
+<h3>Step B — create the app (the "Add App" form)</h3>
+<p>Sign in at <b>smartapi.angelone.in</b> and choose <b>Add App</b>. This is the form in front of
+you, field by field:</p>
+
+<div class="broker">
+  <h3>App Name</h3>
+  <p>Anything you like — it is a label for you, not a setting. <span class="teal">Vyuha Journal</span>
+  is as good as any. Some accounts are limited in how many apps they may have; one app is enough for
+  everything in this guide.</p>
+</div>
+
+<div class="broker">
+  <h3>Redirect URL <span class="chip">required</span></h3>
+  <p>This field belongs to a different way of logging in — the kind where your browser is sent to a
+  web page and then bounced back to the app's own website. <b>Vyuha does not use it.</b> Vyuha signs
+  in with your client code, your PIN and a code from your TOTP secret; nothing is redirected
+  anywhere, so no address here is ever visited on your behalf.</p>
+  <p>Angel One still makes the field compulsory, and its moderators state the rule for what it will
+  accept: "only URLs secured with HTTPS are allowed in the redirect URL. HTTP, localhost, IPs are
+  not allowed as redirect URL anymore." So it must begin <code>https://</code> — a plain
+  <code>http://</code> address, <code>localhost</code>, or a numeric address will be rejected.</p>
+  <p><b>Observed on the form itself (21 September 2026):</b> typing
+  <code>https://127.0.0.1</code> is refused in red with <i>"Localhost is not allowed"</i>. So
+  <b>do not type <code>127.0.0.1</code> or <code>localhost</code></b> — nor any numeric address —
+  however tempting it looks for a program that runs on your own computer. The form wants a real,
+  public <code>https://</code> web address.</p>
+  <p><b>Angel One publishes no guidance for an app that never redirects</b>, so there is no official
+  "correct" value to give you. Any real public <code>https://</code> address you are comfortable
+  naming satisfies the form — for example <code>https://www.angelone.in</code>. Nothing is ever sent
+  there on your behalf, because Vyuha does not use this login style at all. <b>If your entry is
+  refused, contact Angel One support</b> and ask what they want in that field for an app that signs
+  in with client code, PIN and TOTP; do not guess your way around a rejection.</p>
+</div>
+
+<div class="broker">
+  <h3>Post back URL <span class="chip">optional</span></h3>
+  <p>An address Angel One would notify when an order's status changes. Vyuha never places an order,
+  so there is nothing to be notified about. <b>Leave it empty.</b></p>
+</div>
+
+<div class="broker">
+  <h3>Primary Static IP <span class="chip">required</span></h3>
+  <p>A "static IP" is an internet address that does not change. Angel One added this field to comply
+  with SEBI's rules on client-side trading programs, and what it governs is <b>order placement</b>,
+  not reading.</p>
+  <p>Angel One's own announcement is specific: <i>"Effective from 01-Apr-2026, API order execution
+  will only be accepted if it originates from your registered primary static IP"</i> — and on the
+  SmartAPI forum: <i>"For APIs other than Orders &amp; GTT, using a static IP is not mandatory."</i>
+  Vyuha only ever reads your trade book, so it falls on the "not mandatory" side.</p>
+  <p>The form still insists on a value. Most home broadband connections get an address that changes
+  every few days; you can see today's at any "what is my IP" website, or ask your internet provider
+  whether yours is fixed. Enter the address you have. <b>If reading ever stops working because that
+  address changed</b>, you can update it: Angel One says the mapped static IP may be updated
+  <i>"as needed, but not more than once a calendar week"</i>, from the same SmartAPI dashboard — log
+  in, and edit the app. If your provider will not give you a fixed address and Angel One refuses the
+  app, <b>contact Angel One support</b> and ask what they require for read-only use; use the file
+  import in the meantime.</p>
+</div>
+
+<div class="broker">
+  <h3>Secondary Static IP <span class="chip">optional</span></h3>
+  <p>A backup address — for people who run their program from two places. <b>Leave it empty.</b></p>
+</div>
+
+<p>Submit the form. Angel One shows you an <b>API key</b> (and a separate app "secret", which Vyuha
+does not use and you do not need). Copy the API key.</p>
+
+<h3>Step C — what to paste into Vyuha</h3>
+<p>In Vyuha: <b>Journal → Import → Connect broker</b>, tab <b>Angel One (SmartAPI)</b>.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Vyuha field</th><th>What to paste</th><th>Where it came from</th></tr></thead>
+  <tbody>
+    <tr><td>API key</td><td>The SmartAPI app key</td><td>The app you just created at smartapi.angelone.in</td></tr>
+    <tr><td>Client code</td><td>Your Angel One client ID, e.g. A123456</td><td>The one you log in to Angel One with</td></tr>
+    <tr><td>Login PIN</td><td>Your Angel One app PIN — <b>not</b> your password</td><td>The PIN you unlock the Angel One app with</td></tr>
+    <tr><td>TOTP secret</td><td>The long string from enrollment — <b>not</b> the 6-digit code</td><td>Step A, shown with the QR code</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Pick the account this connection belongs to if you keep more than one book, then <b>Save</b>.</p>
+
+<h3>How to know it worked</h3>
+<ul>
+  <li>The connection appears as a saved row with the mode <b>"no token needed"</b> — Angel One is the
+    one broker of the four that never asks you for a daily token.</li>
+  <li>Press <b>Preview pull</b> on a day you traded, after the close. It shows what would land —
+    trades aggregated per contract, charges computed from your rate card — and writes nothing.</li>
+  <li>Then <b>Pull &amp; commit</b>. Pulling twice is safe: the second pull recognises the same
+    executions and skips them.</li>
+  <li>An empty pull on a day you did not trade is correct, not broken. The trade book covers the
+    <b>current trading day</b> only — your history still comes in by file.</li>
+</ul>
+
+<h3>Common errors</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>What you see</th><th>What it usually is</th></tr></thead>
+  <tbody>
+    <tr><td>The sign-in is refused, or the TOTP is rejected</td>
+      <td>Three usual causes, in order of likelihood. <b>(1)</b> A 6-digit code was pasted into the
+      TOTP secret box instead of the long enrollment string. <b>(2)</b> The wrong secret — the app's
+      API "secret" from the Add App page is a different value and will never work. <b>(3)</b> Your
+      computer's clock has drifted: these codes are derived from the time, so a clock a minute out
+      produces a code Angel One will not accept. In Windows, Settings → Time &amp; language → Date
+      &amp; time → Sync now.</td></tr>
+    <tr><td>Vyuha stops trying and asks you to re-save</td>
+      <td>After three refused sign-ins Vyuha stops rather than hammering your account. Fix the cause,
+      re-save the credentials (or restart Vyuha) and it resumes.</td></tr>
+    <tr><td>The Angel One row in <b>Settings → Live feed</b> is greyed out</td>
+      <td>That row stays unavailable until the client code, PIN and TOTP secret are saved under
+      Import → Connect broker. Save them there first, then pick Angel One as the price source.</td></tr>
+    <tr><td>Nothing arrives, and the day was a trading day</td>
+      <td>Pull after you have finished trading. The trade book is the current day's, and it is empty
+      before your first fill.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="dhan">3 · Dhan (DhanHQ v2)</h2>
+
+<p class="meta"><span class="chip">Free</span> <span class="chip">Today's positions — and MTF, stated</span></p>
+
+<p>Dhan is the only source of any kind that says outright whether a position was <b>MTF</b>
+(margin-funded). No Dhan file can: a P&amp;L export has no product column, and in a transaction
+report an MTF position carries exactly the same STT and stamp duty as delivery, while the financing
+interest sits in the ledger.</p>
+
+<h3>Get the credentials</h3>
+<ol class="step-list">
+  <li>Log in at <b>web.dhan.co</b>. Dhan's own documentation gives the path as <b>My Profile →
+    "Access DhanHQ APIs"</b> (the same screens are labelled <b>DhanHQ Trading APIs</b> in places).</li>
+  <li>Generate an <b>access token</b>. Dhan states it is <b>valid for 24 hours</b> from generation —
+    so on this path you paste a fresh one each day you want to pull.</li>
+  <li>Note your <b>Client ID</b> — the number you log in to Dhan with.</li>
+</ol>
+
+<h3>The better path: connect once with PIN + TOTP</h3>
+<p>Dhan also offers a sign-in that mints the day's token for you, which removes the daily paste
+altogether. Dhan's documentation states you may generate a token by sending your client ID, PIN and
+a TOTP code, <i>"if TOTP is enabled for your account"</i> — so enable TOTP in your Dhan account
+first, exactly the way section 2 describes for Angel One, and keep the enrollment secret.</p>
+
+<div class="strip warn-strip"><b>Storing your Dhan PIN and TOTP secret makes Vyuha a second factor
+for your Dhan account.</b> Vyuha says so on screen and asks you to agree before it will store them —
+that consent is recorded in the Audit Log. If you would rather not, the 24-hour token paste above
+keeps working. Either way the sign-in call goes only to Dhan's own address,
+<code>auth.dhan.co</code>.</div>
+
+<h3>What to paste into Vyuha</h3>
+<p><b>Journal → Import → Connect broker</b>, tab <b>Dhan (DhanHQ v2)</b>.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Vyuha field</th><th>What to paste</th></tr></thead>
+  <tbody>
+    <tr><td>Client ID</td><td>Your Dhan client ID</td></tr>
+    <tr><td>Access token</td><td>The 24-hour token from Dhan — optional if you use the PIN + TOTP mode below</td></tr>
+    <tr><td>PIN</td><td>Your Dhan PIN (connect-once mode)</td></tr>
+    <tr><td>TOTP secret</td><td>The enrollment string from Dhan's TOTP setup — not the 6-digit code (connect-once mode)</td></tr>
+  </tbody>
+</table>
+</div>
+<p><b>How to know it worked:</b> Preview pull shows today's positions, with the product — CNC,
+intraday, MARGIN or MTF — stated rather than guessed. A pasted token that has aged past its 24 hours
+is reported as expired, with the time it expired, rather than failing vaguely.</p>
+
+<h2 id="upstox">4 · Upstox (Analytics token)</h2>
+
+<p class="meta"><span class="chip live">Read-only by design</span> <span class="chip">Lasts about a year</span>
+<span class="chip warn">Needs a registered IPv4 address</span></p>
+
+<p>The simplest of the four to keep running, and the only one whose credential cannot place an order
+even in principle: Upstox issues the <b>Analytics token</b> as a read-only credential, and its write
+endpoints reject it. It lasts about a year, so there is no daily ritual at all.</p>
+
+<h3>Two one-time steps at Upstox</h3>
+<ol class="step-list">
+  <li>At <b>account.upstox.com → Apps → Analytics</b>, generate the <b>Analytics token</b> and copy
+    it. Keep it somewhere private — it is a password.</li>
+  <li>On the same Apps screen, under <b>Static IPs</b>, register the <b>IPv4 address</b> your
+    internet connection currently uses. Upstox answers account requests <i>only</i> from a registered
+    address; this is Upstox's rule, and unlike Angel One's it applies to reading too.</li>
+</ol>
+
+<div class="strip warn-strip"><b>If pulls suddenly fail with a 401 after months of working, your
+connection's address changed.</b> Most home connections are handed a new one from time to time.
+Re-register the new address under Apps → Static IPs and the pull resumes. Nothing about the token
+itself has gone wrong.</div>
+
+<h3>What to paste into Vyuha</h3>
+<p><b>Journal → Import → Connect broker</b>, tab <b>Upstox (Analytics token)</b>: one field,
+<b>Analytics token</b>. Save, then Preview pull.</p>
+
+<div class="strip"><b>One token, two jobs.</b> The same token can price the Live Desk (section 6) —
+no second credential and no second login. And generating a fresh Analytics token at Upstox
+<b>revokes the old one</b>, so a regeneration stops the import and the price feed at the same
+moment. Paste the new token back under Import → Connect broker and both work again.</div>
+
+<h2 id="kite">5 · Zerodha (Kite Connect)</h2>
+
+<p class="meta"><span class="chip warn">Zerodha charges for this API</span>
+<span class="chip">A login every trading day</span></p>
+
+<p>Zerodha's API is called <b>Kite Connect</b>, and it differs from the other three in two ways
+worth knowing before you start.</p>
+<ul>
+  <li><b>It is a paid service.</b> Zerodha's own API page listed <b>₹500 a month</b> per app when
+    this guide was written (September 2026) — check <b>zerodha.com/products/api</b> for the current
+    figure before you commit. The other three connections in this guide cost nothing.</li>
+  <li><b>Its sessions are invalidated every trading day, by regulation</b> — around 6 AM IST. There
+    is no way around this: every Kite Connect user logs in again each day.</li>
+</ul>
+
+<h3>Set it up</h3>
+<ol class="step-list">
+  <li>Create a Kite Connect app at <b>developers.kite.trade</b>. It gives you an <b>API key</b> and
+    an <b>API secret</b>.</li>
+  <li>The app asks for a <b>redirect URL</b>. Unlike Angel One, Kite genuinely uses it: your daily
+    login ends by sending your browser there, carrying a one-time <b>request token</b> in the web
+    address. Use an address you can read the result from — your own site, or whatever Zerodha's
+    current app form accepts. <b>If you are unsure what Zerodha wants there, ask Zerodha support</b>
+    rather than guessing.</li>
+  <li>In Vyuha, <b>Journal → Import → Connect broker</b>, tab <b>Zerodha (Kite Connect)</b>: paste
+    the <b>API key</b>, and — this is the part that saves you time — also paste the <b>API secret</b>
+    in the optional field below. With the secret saved, the daily ritual becomes one login plus one
+    short paste, instead of hunting down a raw token.</li>
+</ol>
+
+<h3>The daily login</h3>
+<p>When a pull finds the session dead, Vyuha shows you the Kite login link and one box. You open the
+link, log in to Zerodha, and the page you land on carries <code>request_token=…</code> in its
+address bar. Copy that value into the box; Vyuha exchanges it with Zerodha for the day's session
+using the official mechanism, and the pull continues. If you did not save the API secret, paste the
+day's <b>access token</b> instead.</p>
+
+<p><b>How to know it worked:</b> Preview pull lists today's executions with fill times. A pull after
+the session has expired says so and asks for the day's request token — it does not fail silently.</p>
+
+<h2 id="live">6 · Live prices on the Live Desk</h2>
+
+<p>From v4.2, two of these connections can do a second job: pricing your open positions on the
+<b>Live Desk</b>, with <b>no second credential and no second login</b>.</p>
+<ul>
+  <li><b>Upstox</b> — reuses the Analytics token you saved under Import → Connect broker.</li>
+  <li><b>Angel One</b> — reuses the client code, PIN and TOTP secret you saved there, and signs
+    itself in.</li>
+</ul>
+<p>Turn it on in <b>Settings → Live feed</b>: pick the source and accept its disclosure. Each row
+stays greyed out until that broker's credentials are saved on the Import screen — that is the normal
+state, not a fault. The request carries the trading symbols or instrument keys of the open positions
+of the selected account and nothing else about them: no quantity, no entry price, no profit or loss,
+no account name. Equities only in this release; futures and options rows show the position's
+recorded close, or a dash, and say so on the row. Prices refresh on screen — one mark per position
+per day is what reaches your journal.</p>
+
+<h2 id="trouble">7 · Troubleshooting</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Symptom</th><th>Cause and fix</th></tr></thead>
+  <tbody>
+    <tr><td>Angel One: "invalid TOTP" or a refused sign-in</td>
+      <td>A 6-digit code was pasted instead of the enrollment secret; or the app's API "secret" was
+      pasted instead of the TOTP secret; or this computer's clock has drifted — sync it in Windows
+      Settings → Time &amp; language.</td></tr>
+    <tr><td>Upstox: worked for months, now every pull is refused (401)</td>
+      <td>Your connection's IPv4 address changed. Re-register it at account.upstox.com → Apps →
+      Static IPs.</td></tr>
+    <tr><td>Upstox: the import AND the Live Desk feed stopped at the same moment</td>
+      <td>An Analytics token was regenerated, which revokes the previous one. Paste the new token
+      under Import → Connect broker; both recover.</td></tr>
+    <tr><td>Zerodha: the pull asks for a request token</td>
+      <td>Normal. Kite sessions are invalidated around 6 AM IST every trading day. Open the login
+      link, and paste the <code>request_token</code> from the address you land on.</td></tr>
+    <tr><td>Dhan: "the pasted access token expired"</td>
+      <td>Dhan tokens last 24 hours. Generate a new one, or switch to the connect-once PIN + TOTP
+      mode so Vyuha mints the day's token itself.</td></tr>
+    <tr><td>A broker's row in <b>Settings → Live feed</b> cannot be selected</td>
+      <td>Its credentials are not saved yet under <b>Import → Connect broker</b>, or its disclosure
+      has not been accepted. Do both, in that order.</td></tr>
+    <tr><td>The pull returns nothing on a day you traded</td>
+      <td>Pull after you have finished trading — these endpoints state the current trading day. For
+      an older day, import the broker's file instead.</td></tr>
+    <tr><td>The same trades look like they arrived twice</td>
+      <td>They did not. Re-pulls are matched and skipped, and a pull that adds nothing lists what it
+      matched. Check the preview before committing if you are unsure.</td></tr>
+    <tr><td>A form on the broker's site refuses what you entered</td>
+      <td>Contact that broker's support. Only the broker can say what its own form requires, and a
+      guessed value is worse than a question.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="safety">8 · Safety — and how to switch it off</h2>
+
+<ul>
+  <li><b>Never share your TOTP secret or your API key with anyone — including us.</b> Support will
+    never need them. If you send us a screenshot, cover those boxes first.</li>
+  <li><b>They live on this computer only</b>, encrypted at rest with a key bound to this machine, and
+    are sent nowhere except to that broker.</li>
+  <li><b>Vyuha never places, modifies or cancels an order</b>, never moves funds, and never changes
+    a setting in your broker account.</li>
+  <li><b>You can revoke at any time, from the broker's side</b>, without Vyuha's help: delete or
+    regenerate the app at <b>smartapi.angelone.in</b> (Angel One), generate a new Analytics token or
+    remove the app at <b>account.upstox.com → Apps</b> (Upstox, which revokes the old token), revoke
+    the API access from <b>web.dhan.co</b> (Dhan), or delete the app at
+    <b>developers.kite.trade</b> (Zerodha). A revoked credential simply stops working — nothing in
+    your journal is affected.</li>
+  <li><b>And from Vyuha's side</b>, remove the saved connection on <b>Import → Connect broker</b>.
+    Your imported trades stay; only the ability to fetch new ones goes.</li>
+  <li>If you ever suspect a credential has been seen by someone else, revoke it at the broker first,
+    then create a new one. That is the fastest way to be certain.</li>
+</ul>
+
+<div class="strip">Vyuha is a record-keeping and analytics product. Nothing in it, and nothing in
+this guide, is investment advice.</div>
+
+<footer>
+  <span>Vyuha — trade journal &amp; analytics · record-keeping, not investment advice</span>
+  <span>Broker API setup guide · As of Sep 2026</span>
+</footer>
+
+</div>
+</body>
+</html>

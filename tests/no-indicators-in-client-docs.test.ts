@@ -67,7 +67,7 @@ const stripHtmlComments = (s: string) => s.replace(/<!--[\s\S]*?-->/g, "");
 describe("client-facing docs never mention the invite-only indicators", () => {
   it("covers the files that ship to buyers", () => {
     const names = scanned.map((f) => path.basename(f));
-    for (const must of ["README.md", "TERMS.md", "PRIVACY.md", "REFUND_POLICY.md", "INSTALLATION_GUIDE.md", "GETTING_STARTED_DECK.html", "OPENALGO_SETUP_GUIDE.html", "landing-page.html"]) {
+    for (const must of ["README.md", "TERMS.md", "PRIVACY.md", "REFUND_POLICY.md", "INSTALLATION_GUIDE.md", "GETTING_STARTED_DECK.html", "OPENALGO_SETUP_GUIDE.html", "BROKER_API_SETUP_GUIDE.html", "landing-page.html"]) {
       expect(names, `${must} missing from the checked set`).toContain(must);
     }
   });

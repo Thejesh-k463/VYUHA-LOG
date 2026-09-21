@@ -63,6 +63,7 @@ const SURFACES = [
   // Ships in the installer AND in the client ZIP, so a buyer reads it.
   "docs/client/THIRD-PARTY-NOTICES.txt",
   "docs/client/OPENALGO_SETUP_GUIDE.html",
+  "docs/client/BROKER_API_SETUP_GUIDE.html",
   "src-tauri/tauri.conf.json",
   "src-tauri/loading/index.html",
   "app/layout.tsx",

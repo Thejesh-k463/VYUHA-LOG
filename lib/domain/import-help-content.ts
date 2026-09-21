@@ -63,6 +63,14 @@ const OPENALGO_GUIDE: NonNullable<ImportHelpCard["guide"]> = {
   files: ["OPENALGO_SETUP_GUIDE.html", "OPENALGO_SETUP_GUIDE.docx"],
 };
 
+/** Every card with a DIRECT broker-API section ends at the same pointer: the
+ *  standalone walkthrough in the client package, which covers the broker's own
+ *  form field by field (Angel One's Redirect URL and Static IP boxes included).
+ *  Named files, never a link — desktop-webview anchors are inert and the files
+ *  live in the buyer's own download. */
+const API_GUIDE_POINTER =
+  "The step-by-step version of this setup — every field on the broker's own form — ships inside your client package as BROKER_API_SETUP_GUIDE.html and BROKER_API_SETUP_GUIDE.docx.";
+
 export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
   {
     id: "zerodha",
@@ -78,6 +86,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
       "Kite Connect pulls today's executions, with fill times, through the normal classify → charges → dedup pipeline (re-pulls are idempotent).",
       "Needs a Kite Connect app and the day's access token — tokens expire every trading day, so this is a per-day paste, not a set-and-forget.",
       "The credentials are stored encrypted at rest with a machine-bound key and sent nowhere except to Zerodha itself.",
+      API_GUIDE_POINTER,
     ],
     openalgo: [
       "As of Aug 2026: OpenAlgo drives Zerodha through the same kind of Kite Connect app (developers.kite.trade) — its key and secret go into the instance's .env, with the app's redirect URL pointed at your instance.",
@@ -102,6 +111,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
       "Pulls today's positions with your Client ID and an access token from web.dhan.co → DhanHQ Trading APIs; the token lasts 24 hours by default.",
       "The API is the only Dhan source that states MTF. No Dhan file can: a P&L export has no product column, and in a transaction report an MTF position carries exactly the same STT and stamp duty as delivery while the financing interest sits in the ledger.",
       "The credentials are stored encrypted at rest with a machine-bound key and sent nowhere except to Dhan itself.",
+      API_GUIDE_POINTER,
     ],
     openalgo: [
       "As of Aug 2026: Dhan's .env line is a composite — BROKER_API_KEY is your Dhan client id and API key joined as clientid:::apikey (three colons, one value). The key itself appears on web.dhan.co only after you switch your profile to API-Key Mode.",
@@ -149,6 +159,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
       // pointer, not as a second copy of the setup: the TOTP secret's origin is
       // the step above, and repeating it is how two help cards drift.
       "The same four credentials can also price the Live Desk: pick Angel One in Settings → Live feed, accept its disclosure, and the desk prices your open equity positions from this connection. Nothing extra to set up here.",
+      API_GUIDE_POINTER,
     ],
     openalgo: [
       "As of Aug 2026: the instance's .env takes your SmartAPI key as BROKER_API_KEY — and BROKER_API_SECRET is genuinely UNUSED for Angel One, because the login exchanges your TOTP instead of a secret. The redirect callback path is \"angel\".",
@@ -171,6 +182,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
       "Two one-time steps at account.upstox.com → Apps: generate the Analytics token, and register your current IPv4 address under Static IPs — Upstox answers account APIs only from that address, so if pulls ever start failing with a 401, your connection's IP changed: re-register it there.",
       "The token is stored encrypted at rest with a machine-bound key and sent nowhere except to Upstox itself.",
       "From v4.2 the SAME token can price the Live Desk, if you pick Upstox in Settings → Live feed: no second credential, and no second login. Generating a fresh Analytics token at account.upstox.com → Apps revokes the old one, so a regeneration stops this pull and that source at the same moment — paste the new token back here.",
+      API_GUIDE_POINTER,
     ],
     openalgo: [
       "As of Aug 2026: OpenAlgo needs its own Upstox developer app, created at account.upstox.com — the Analytics token above will not do. Set the app's redirect URL to your instance's /upstox/callback and put the app's key and secret in the .env.",

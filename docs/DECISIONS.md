@@ -8084,3 +8084,15 @@ published bytes; published `--latest` 17:03:46 UTC; `latest.json` serves 4.4.0 f
 view --json assets` already carries the asset `digest`, so no download is needed. The WDSI hash is the CLIENT ZIP installer's (`A3BB74F4…5C7F9CF2`), a different build from the
 CI asset. NOT done, the owner's: the non-build-machine install, WDSI. The steward's WDSI draft called the app "fully offline" — wrong since the broker feeds; the form says
 "data stays local; network = the update check and the broker feeds the user switches on".
+
+## 2026-09-21 — A broker API setup guide joins the client package (after v4.4.0 published; the installer is unchanged)
+
+A paying client was stuck on Angel One's SmartAPI "Add App" form; the ZIP carried a guide for OpenAlgo and nothing for the DIRECT broker APIs. Added
+`docs/client/BROKER_API_SETUP_GUIDE.html` + `.docx` (Angel One, Dhan, Upstox, Zerodha Kite), claiming only what the code does. Measured / verified: the form refuses
+localhost and bare IPs in Redirect URL (observed: `https://127.0.0.1` → "Localhost is not allowed"; Angel's forum: "HTTP, localhost, IPs are not allowed") — the
+orchestrator's first answer to the owner suggested 127.0.0.1 and was WRONG; any real public https address works because VYUHA signs in with client code + PIN + TOTP and
+never uses the redirect. The Primary Static IP gates ORDER execution only (Angel One, effective 2026-04-01; "for APIs other than Orders & GTT … not mandatory"); VYUHA
+places no orders, so a dynamic home IP is harmless; the IP can be changed at most once a calendar week. The TOTP secret is the string under the enrolment QR, not the
+6-digit code and not the API secret. Kite Connect's price is written DATED ("₹500 a month, September 2026 — check the page"). The docx renderer was extracted to
+`scripts/docx-render.mjs` (the OpenAlgo docx regenerates byte-identical). Rejected: waiting for 4.5.0 to ship the guide — the ZIP packs docs at build time, so a
+docs-only rebuild reaches clients today with the same installer hash.

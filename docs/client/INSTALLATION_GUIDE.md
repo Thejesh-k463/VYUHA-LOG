@@ -85,6 +85,8 @@ You have two paths — use either or both:
    TOTP secret, and all API credentials are stored encrypted, bound to this machine, and sent
    nowhere except the broker itself. Any other broker's CSV/XLSX
    imports through the column mapper — Vyuha asks once and remembers.
+   *Setting up a broker API? **BROKER_API_SETUP_GUIDE.html** in this package walks through each
+   broker's own form, field by field — including Angel One's Redirect URL and Static IP boxes.*
    *Tradebook exports list every individual fill, so a position you scaled into arrives with its
    real entry ladder instead of one blended average — see Staged positions below.*
 3. Vyuha auto-detects the broker, parses the trades, recomputes charges from your rate card, and
