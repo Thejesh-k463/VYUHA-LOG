@@ -13,8 +13,13 @@ test("bundled NSE map: load, sectors appear, theme card comes alive", async ({ p
   await page.goto("/instruments");
   await page.waitForLoadState("networkidle");
 
-  // The one-click panel states its snapshot date — the honesty stamp.
-  await expect(page.getByText(/snapshot as of/i)).toBeVisible();
+  // The one-click panel states its snapshot date — the honesty stamp. Since
+  // v4.5.0 the page carries TWO: the index map's and the bundled ETF list's
+  // (owner ruling T4: asOf + sha256 in the UI), so the bare locator is a strict-
+  // mode violation and both are pinned instead.
+  await expect(page.getByText(/snapshot as of/i)).toHaveCount(2);
+  await expect(page.getByText(/Official industry/i)).toBeVisible();
+  await expect(page.getByText(/Bundled NSE ETF list/i)).toBeVisible();
 
   // "Add every symbol" so the assertion doesn't depend on which symbols the
   // fixture happened to import.
