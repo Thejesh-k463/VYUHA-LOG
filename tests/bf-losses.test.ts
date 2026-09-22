@@ -297,7 +297,11 @@ describe("the pages actually pass the seed (drift guard on the one-line wiring)"
       // …and both surfaces must pass the SeedGuard, or a lot colliding with a
       // journalled FY silently double-counts that FY's loss.
       expect(
-        /toSeedLots\(\s*(?:bfRows|getBfLossRows\(\))\s*,\s*(?:seedGuard|\{\s*journalledFys)/.test(src),
+        // v4.5.0 wave TP — the reader now takes the TAX PERSON's accounts
+        // (`getBfLossRows(scope.accountIds)`, lib/queries/tax-scope.ts), so the
+        // call is no longer argument-less. The guard is about the SEED GUARD
+        // being passed, so the reader's own arguments are not its business.
+        /toSeedLots\(\s*(?:bfRows|getBfLossRows\([^)]*\))\s*,\s*(?:seedGuard|\{\s*journalledFys)/.test(src),
         `${rel} seeds without the journalled-FY guard`,
       ).toBe(true);
     }

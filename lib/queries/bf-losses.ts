@@ -6,6 +6,7 @@ import type { CarryForwardLot, LossBucket } from "@/lib/analytics/capital-gains"
 import { lossExpiryFy } from "@/lib/analytics/capital-gains";
 import { currentFy } from "@/lib/analytics/tax";
 import { getSelectedAccountId } from "./accounts";
+import { accountScopeWhere } from "./tax-scope";
 import { getSettings } from "./settings";
 import { recordAudit } from "@/lib/audit";
 
@@ -76,13 +77,18 @@ function fyOfDate(dateStr: string, fyStartMonth: number): string {
  * trades bucket under TODAY'S FY (the tax page's own fallback), so their
  * presence alone still journals the current FY.
  */
-export function earliestJournalledFy(): string | null {
-  const accountId = getSelectedAccountId();
+export function earliestJournalledFy(
+  /** v4.5.0 TAX PERSON scope (lib/queries/tax-scope.ts): the seed guard must ask
+   *  the question over the SAME rows the tax timeline is built from, or one of
+   *  the person's accounts journals an FY the other's seed then double-counts. */
+  accountIds?: readonly number[],
+): string | null {
   const cond = eq(trades.isOpen, false);
+  const scope = accountScopeWhere(trades.accountId, accountIds);
   const agg = db
     .select({ minSell: sql<string | null>`min(${trades.sellDate})`, closed: sql<number>`count(*)` })
     .from(trades)
-    .where(accountId > 0 ? and(cond, eq(trades.accountId, accountId)) : cond)
+    .where(scope ? and(cond, scope) : cond)
     .get();
   if (!agg || agg.closed === 0) return null;
   const fyStartMonth = getSettings()?.fyStartMonth ?? 4;
@@ -92,11 +98,21 @@ export function earliestJournalledFy(): string | null {
   return fy < cur ? fy : cur;
 }
 
-/** The selected account's b/f loss rows (aggregate view: every account's). */
-export function getBfLossRows(): BfLossRow[] {
-  const accountId = getSelectedAccountId();
+/**
+ * The selected account's b/f loss rows (aggregate view: every account's).
+ *
+ * v4.5.0 wave TP: the tax surfaces pass the TAX PERSON's accounts
+ * (lib/queries/tax-scope.ts), so a loss carried in one of a person's accounts
+ * sets off gains in another — that is what a single return does. The lots are
+ * SUMMED across the person's accounts by the engine seed; each row keeps its
+ * own `accountId`, which the editor shows as the source account. Two accounts
+ * of one person holding the same (incurredFy, head) lot is a Data Quality
+ * warning, NEVER an automatic de-duplication (design review item 14).
+ */
+export function getBfLossRows(accountIds?: readonly number[]): BfLossRow[] {
   const q = db.select().from(bfLossLots);
-  const rows = (accountId > 0 ? q.where(eq(bfLossLots.accountId, accountId)) : q).all();
+  const where = accountScopeWhere(bfLossLots.accountId, accountIds);
+  const rows = (where ? q.where(where) : q).all();
   return rows.sort((a, b) => a.incurredFy.localeCompare(b.incurredFy) || a.head.localeCompare(b.head));
 }
 

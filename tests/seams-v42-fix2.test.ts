@@ -953,6 +953,9 @@ const codeOnly = (src: string): string =>
   src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 
 describe("S7 — every reader of broker_connections resolves the selected account, or is a named exemption", () => {
+  // v4.5.0 wave TP - measured locally at 1024 ms alone (2026-09-22, vitest
+  // --reporter=verbose); it timed out at the 5 s default only under full-suite
+  // load, on SQLite-file work (AGENTS.md Testing).
   it("S7a  the exemption set is exactly the three whole-DB sweeps and the one explicit-id module", () => {
     const walk = (dir: string, out: string[] = []): string[] => {
       for (const e of fs.readdirSync(path.join(REPO, dir), { withFileTypes: true })) {
@@ -1005,5 +1008,5 @@ describe("S7 — every reader of broker_connections resolves the selected accoun
         `"${rel}"`,
       );
     }
-  });
+  }, 20_000);
 });

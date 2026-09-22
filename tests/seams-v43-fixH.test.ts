@@ -797,6 +797,35 @@ describe("H5 · a replayed IPO record's trade reference (the envelope states it 
     };
   }
 
+
+/**
+ * v4.5.0 wave TP — "the All-accounts view", restated as ONE TAX PERSON.
+ *
+ * From v4.5.0 the tax base, the ITR export and the AIS reconciliation read a tax
+ * PERSON (lib/queries/tax-scope.ts, owner ruling T1), never an account and never
+ * "all accounts": a book stating no `tax_identity` is its OWN person, so the
+ * All-accounts view over this file's many books yields NO tax figure at all
+ * (invariant 6 — a total spanning two persons is one nobody can file).
+ *
+ * H5 asks a cross-account question, so they state that the books
+ * they span belong to ONE person and read THAT person's view: the same rows,
+ * in a scope a user can actually file. The identity is set for the read and
+ * cleared afterwards, so every single-account case keeps reading one book.
+ */
+  async function countedAcross() {
+    const aggregate = await counted(0); // capital stays ACCOUNT-scoped
+    const set = (v: string | null) => {
+      for (const id of [H5_TGT, H5_SRC, H5_LEG]) t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(v, id);
+    };
+    set("H5 one holder");
+    try {
+      const person = await counted(H5_TGT);
+      return { ...person, capital: aggregate.capital };
+    } finally {
+      set(null);
+    }
+  }
+
   it("a duplicate that CANNOT come back leaves its record unlinked (and says so), while a cross-account link the delete never touched is replayed verbatim — one sale, once, in every reader and in both views", async () => {
     freezeAt("2026-09-08T09:30:00.000Z");
     // ── PART A: merge → un-merge where the duplicate cannot land ─────────────
@@ -846,7 +875,7 @@ describe("H5 · a replayed IPO record's trade reference (the envelope states it 
 
     selectAccount(0);
     expect(ipoQueries.getIpoTradeLinks().get(sourceTrade), "nothing badges the trade this record never named").toBeUndefined();
-    const all = await counted(0);
+    const all = await countedAcross();
     // On HEAD: ["H5OTHER", "H5TAKEN"] — the record's own sale left the ITR
     // export, the capital summary and both AIS sides with the stolen link.
     expect(all.itr, "All accounts: the record's own sale is stated, once, beside the two trades").toEqual([

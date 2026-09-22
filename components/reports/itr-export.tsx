@@ -23,16 +23,29 @@ const COLS: ExportColumn<ItrExportRow>[] = [
   { key: "taxableGain", label: "Taxable gain (grandfathered)" },
 ];
 
-export function ItrExportButtons({ filename, total }: { filename: string; total: number }) {
+export function ItrExportButtons({
+  filename,
+  total,
+  person,
+  note,
+}: {
+  filename: string;
+  total: number;
+  /** v4.5.0 wave TP — the tax person key the page is showing. The export is
+   *  built over THAT person's accounts, never the selected account alone. */
+  person?: string;
+  /** "Tax person: <label> — accounts: A, B", written above the header row. */
+  note?: string;
+}) {
   const [busy, setBusy] = useState<"csv" | "xlsx" | null>(null);
 
   async function run(format: "csv" | "xlsx") {
     setBusy(format);
     try {
-      const res = await fetch("/api/tax-itr");
+      const res = await fetch(`/api/tax-itr${person ? `?person=${encodeURIComponent(person)}` : ""}`);
       const json = await res.json().catch(() => null);
       if (!json?.ok || !Array.isArray(json.rows)) return;
-      await exportRows(filename, COLS, json.rows as ItrExportRow[], format);
+      await exportRows(filename, COLS, json.rows as ItrExportRow[], format, note);
     } finally {
       setBusy(null);
     }

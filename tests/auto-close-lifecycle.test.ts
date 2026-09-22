@@ -678,8 +678,8 @@ describe("11 · the realised sale is counted ONCE after a close, an un-close and
     const hash = execHashOf(closed);
     expect(unClose(ACC, hash).ok).toBe(true);
     const open = await oracle.readOracleView(t, ACC);
-    expect([open.capital.totalRealised, open.taxNets, open.itrCount], "an un-closed position realises nothing").toEqual([0, [], 0]);
-    expect(open.ais["2025-26 sale"] ?? 0, "and neither AIS side counts an open row").toBe(0);
+    expect([open.capital.totalRealised, open.person.taxNets, open.person.itrCount], "an un-closed position realises nothing").toEqual([0, [], 0]);
+    expect(open.person.ais["2025-26 sale"] ?? 0, "and neither AIS side counts an open row").toBe(0);
 
     // Close it again, through the same door the import used.
     const res = reClose(ACC, hash, parsed([sellRow("AXISBANK", 100, 120, "2025-09-20")]), "sell.csv");
@@ -689,7 +689,7 @@ describe("11 · the realised sale is counted ONCE after a close, an un-close and
     expect(rowsOf(ACC), "one closed row, exactly as the first close left it").toHaveLength(1);
     expect(again, "every consumer, in this book's view, back to one sale counted once").toEqual(first);
     expect(again.capital.totalRealised).toBe(rowsOf(ACC)[0].netPnl);
-    expect(again.itrCount).toBe(1);
+    expect(again.person.itrCount).toBe(1);
     expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.accountId, 0)).all(), "invariant 9").toEqual([]);
   });
 });

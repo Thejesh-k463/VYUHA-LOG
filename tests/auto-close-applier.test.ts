@@ -625,13 +625,18 @@ describe("16 · the stored book: invariant 5, no NaN, and realised P&L counted O
     const view = await oracle.readOracleView(t, ACC);
     expect(view.capital.equityRealised, "capital").toBe(closed.netPnl);
     expect(view.capital.totalRealised).toBe(closed.netPnl);
-    expect(view.taxNets, "the tax base counts one gain, once").toEqual([closed.netPnl]);
-    expect(view.itrCount, "one exported ITR row").toBe(1);
-    expect(view.itrScrips).toEqual([closed.symbol]);
-    expect(view.deliveryConsideration).toBe(closed.sellValue);
+    // v4.5.0 wave TP — this book states no `tax_identity`, so it is its OWN tax
+    // person (under-merge, never over-merge) and its person-scoped pack is
+    // exactly this one account's.
+    expect(view.person.taxNets, "the tax base counts one gain, once").toEqual([closed.netPnl]);
+    expect(view.person.itrCount, "one exported ITR row").toBe(1);
+    expect(view.person.itrScrips).toEqual([closed.symbol]);
+    expect(view.person.deliveryConsideration).toBe(closed.sellValue);
     expect(view.kpi, "the /trades KPI strip").toMatchObject({ count: 1, open: 0, net: closed.netPnl });
-    expect(view.fyRealised["2025-26"]).toBe(closed.netPnl);
-    expect(view.ais["2025-26 sale"]).toBe(closed.sellValue);
+    expect(view.person.fyRealised["2025-26"]).toBe(closed.netPnl);
+    expect(view.person.ais["2025-26 sale"]).toBe(closed.sellValue);
+    expect(view.person.header, "and every export names that person and its account")
+      .toBe("Tax person: counted-once — accounts: counted-once");
   });
 });
 

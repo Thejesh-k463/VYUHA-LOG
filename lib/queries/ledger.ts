@@ -5,13 +5,19 @@ import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { LedgerEntryInput, LedgerGroupRow, LedgerType, RunningRow } from "@/lib/analytics/ledger";
 import { toPaise } from "@/lib/money";
 import { getSelectedAccountId } from "./accounts";
+import { accountScopeWhere } from "./tax-scope";
 import { getBucketCapital } from "./bucket-capital";
 
 /** All ledger entries (latest first). Amounts are signed paise. */
-export function getLedgerEntries(): (LedgerEntryInput & { symbol: string | null })[] {
-  const accountId = getSelectedAccountId();
+export function getLedgerEntries(
+  /** v4.5.0 TAX PERSON scope (lib/queries/tax-scope.ts). /api/ais passes it:
+   *  AIS is issued per PAN, so the dividend side must read the person's
+   *  accounts, not the selected one. Omitted = the legacy account scope. */
+  accountIds?: readonly number[],
+): (LedgerEntryInput & { symbol: string | null })[] {
   const q = db.select().from(ledgerEntries);
-  return (accountId > 0 ? q.where(eq(ledgerEntries.accountId, accountId)) : q)
+  const where = accountScopeWhere(ledgerEntries.accountId, accountIds);
+  return (where ? q.where(where) : q)
     .orderBy(desc(ledgerEntries.date), desc(ledgerEntries.id))
     .all()
     .map((r) => ({
@@ -34,16 +40,20 @@ export function getLedgerEntries(): (LedgerEntryInput & { symbol: string | null 
  * (non-empty symbol), and the ORDER BY matches `getLedgerEntries`, so
  * per-company float sums accumulate in the same order — identical rupees out.
  */
-export function getDividendLedgerEntries(): (LedgerEntryInput & { symbol: string })[] {
-  const accountId = getSelectedAccountId();
+export function getDividendLedgerEntries(
+  /** v4.5.0 TAX PERSON scope: dividend income is the PERSON's, so /reports/tax
+   *  reads every account of the person whose pack it is showing. */
+  accountIds?: readonly number[],
+): (LedgerEntryInput & { symbol: string })[] {
   const isDividend = and(
     eq(ledgerEntries.type, "dividend"),
     isNotNull(ledgerEntries.symbol),
     ne(ledgerEntries.symbol, ""),
   );
+  const scope = accountScopeWhere(ledgerEntries.accountId, accountIds);
   const q = db.select().from(ledgerEntries);
   return q
-    .where(accountId > 0 ? and(isDividend, eq(ledgerEntries.accountId, accountId)) : isDividend)
+    .where(scope ? and(isDividend, scope) : isDividend)
     .orderBy(desc(ledgerEntries.date), desc(ledgerEntries.id))
     .all()
     .map((r) => ({

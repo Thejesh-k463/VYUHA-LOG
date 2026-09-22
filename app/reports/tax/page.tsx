@@ -17,7 +17,9 @@ import {
 } from "@/lib/analytics/capital-gains";
 import { buildLossLedger } from "@/lib/analytics/loss-ledger";
 import { getBfLossRows, toSeedLots, excludedSeedLots, displayRows, HEAD_LABELS, LOSS_HEADS } from "@/lib/queries/bf-losses";
-import { isAggregateView } from "@/lib/queries/accounts";
+import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
+import { needsPersonChoice, resolveTaxScope, taxScopeHeader } from "@/lib/queries/tax-scope";
+import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { BfLossEditor } from "@/components/reports/bf-loss-editor";
 import { section } from "@/lib/analytics/statute";
 import { summariseByCompanyFy, TDS_THRESHOLD, type DividendEvent } from "@/lib/analytics/dividend-tds";
@@ -56,16 +58,39 @@ const MONTH_HEAD_COLS = [
   { key: "charges", label: "Charges" }, { key: "trades", label: "Trades" },
 ];
 
-export default function TaxReportPage() {
+export default async function TaxReportPage({
+  searchParams,
+}: {
+  // v4.5.0 wave TP — the person picker's choice arrives here. A VIEW param:
+  // nothing is written and nothing is persisted (invariant 9).
+  searchParams: Promise<{ person?: string }>;
+}) {
+  const { person } = await searchParams;
+  // TAX PERSON, not account (owner ruling T1): this page's every figure is
+  // computed over ONE person's accounts, archived included, and never across
+  // two persons. With All accounts selected and more than one person in the
+  // book, the picker replaces the page (invariant 6).
+  const scope = resolveTaxScope(person);
   const settings = getSettings();
   const fyStartMonth = settings?.fyStartMonth ?? 4;
+
+  if (needsPersonChoice(scope)) {
+    return (
+      <>
+        <PageHeader title="Tax Summary (informational)" description="Per financial year — scaffold only." />
+        <div className="space-y-5 p-6">
+          <TaxPersonPicker scope={scope} basePath="/reports/tax" />
+        </div>
+      </>
+    );
+  }
 
   // The book projected to the 15 tax columns, exited IPOs folded in, and the
   // capital-gains inputs — one shared builder (lib/queries/tax-itr.ts) feeds
   // this page AND the on-demand /api/tax-itr export, so the two can never
   // drift. Same rows, same order, same JS filters as before — only the 59
   // never-read columns stopped being fetched.
-  const { trades, closedTrades, ipoTaxRows, cgTrades } = getTaxBase();
+  const { trades, closedTrades, ipoTaxRows, cgTrades } = getTaxBase(person);
   // Undated closed trades bucket under TODAY'S FY — passed explicitly so this
   // page and the analytics module can never disagree on the fallback year.
   const currentFy = deriveCurrentFy(fyStartMonth);
@@ -82,7 +107,9 @@ export default function TaxReportPage() {
   // clicked — shipping all of them as client props serialised ~4.8 MB of
   // never-rendered rows into every visit's RSC payload at 25k trades. Only
   // the count (for the disabled state) is computed here.
-  const itrCount = countItrRows();
+  const itrCount = countItrRows(person);
+  // Every export carries the person line (owner ruling T1).
+  const scopeNote = taxScopeHeader(scope);
   const byFy = aggregateTradesByFy(cgTrades, fyStartMonth, currentFy);
   // Pre-journal brought-forward losses seed the timeline as CarryForwardLots:
   // pruneExpired drops already-expired vintages on entry, the rest absorb
@@ -90,7 +117,11 @@ export default function TaxReportPage() {
   // drops any lot whose FY the journal itself covers (its loss is already
   // computed from imported trades — seeding it would double-count) plus any
   // future-dated lot; the dropped vintages are named in the warning below.
-  const bfRows = getBfLossRows();
+  // The person's lots, SUMMED across their accounts (design review item 14):
+  // one return sets off one person's carried losses, wherever they sit.
+  const bfRows = getBfLossRows(scope.accountIds);
+  const accountNameById = new Map(getAccounts().map((a) => [a.id, a.name]));
+  const bfSourceNames = [...new Set(bfRows.map((r) => accountNameById.get(r.accountId) ?? `#${r.accountId}`))];
   const seedGuard = { journalledFys: new Set(byFy.map((f) => f.fy)), currentFy };
   const ignoredBfRows = excludedSeedLots(bfRows, seedGuard);
   const timeline = computeTaxTimeline(byFy, toSeedLots(bfRows, seedGuard));
@@ -123,7 +154,7 @@ export default function TaxReportPage() {
   // IND-6 — dividend & TDS: group "dividend" ledger entries (posted by corporate
   // actions) by company + FY and estimate the 10%-above-₹5,000 TDS per section 194.
   // Filtered in SQL — see getDividendLedgerEntries; same rows, same order.
-  const dividendEvents: DividendEvent[] = getDividendLedgerEntries()
+  const dividendEvents: DividendEvent[] = getDividendLedgerEntries(scope.accountIds)
     .map((e) => ({
       symbol: e.symbol,
       fy: fyOf(e.date, fyStartMonth, currentFy),
@@ -146,6 +177,7 @@ export default function TaxReportPage() {
     <>
       <PageHeader title="Tax Summary (informational)" description="Per financial year — scaffold only." />
       <div className="space-y-5 p-6">
+        <TaxPersonLine scope={scope} />
         <ProGate>
         <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-warning/90">
           <Info className="size-4 shrink-0" />
@@ -161,7 +193,7 @@ export default function TaxReportPage() {
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Per financial year</CardTitle>
-            <ExportButtons filename="vyuha-tax-summary" columns={COLS} rows={rows} />
+            <ExportButtons filename="vyuha-tax-summary" columns={COLS} rows={rows} note={scopeNote} />
           </CardHeader>
           <CardContent className="p-0">
             {rows.length === 0 ? (
@@ -212,7 +244,7 @@ export default function TaxReportPage() {
                 <CardTitle>Realised by head, by month</CardTitle>
                 <p className="mt-1 max-w-3xl text-xs text-muted-foreground">{MONTHLY_HEAD_CAVEAT}</p>
               </div>
-              <ExportButtons filename="vyuha-monthly-by-head" columns={MONTH_HEAD_COLS} rows={monthHeads} />
+              <ExportButtons filename="vyuha-monthly-by-head" columns={MONTH_HEAD_COLS} rows={monthHeads} note={scopeNote} />
             </CardHeader>
             <CardContent className="p-0">
               <ReportTable>
@@ -252,7 +284,7 @@ export default function TaxReportPage() {
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle>Capital-gains tax &amp; set-off (informational)</CardTitle>
             <div className="flex items-center gap-2">
-              <ItrExportButtons filename="vyuha-capital-gains-itr" total={itrCount} />
+              <ItrExportButtons filename="vyuha-capital-gains-itr" total={itrCount} person={scope.personKey} note={scopeNote} />
               <Badge variant="secondary">rates change {RATE_CUTOVER_DATE}</Badge>
             </div>
           </CardHeader>
@@ -379,6 +411,16 @@ export default function TaxReportPage() {
                   the set-off above computes {ignoredBfRows.length === 1 ? "its" : "their"} losses from the imported trades instead. Delete the
                   {ignoredBfRows.length === 1 ? " lot" : " lots"} to clear this notice.
                 </span>
+              </p>
+            )}
+            {/* v4.5.0 wave TP — the lots below are the TAX PERSON's, summed
+                across their accounts (design review item 14). Each source
+                account is named here: a row seeded in a sibling account is
+                still the same person's carried loss, and the editor writes
+                only to the selected account (invariant 9). */}
+            {bfSourceNames.length > 1 && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Lots from: {bfSourceNames.join(", ")}. Edits are saved to the selected account.
               </p>
             )}
             <BfLossEditor

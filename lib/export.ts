@@ -27,10 +27,24 @@ export async function exportRows<T>(
   columns: ExportColumn<T>[],
   rows: T[],
   format: "csv" | "xlsx",
+  /**
+   * An optional single line ABOVE the header row (v4.5.0 wave TP): the tax
+   * surfaces pass "Tax person: <label> — accounts: A, B", because a tax file
+   * that names no person is a figure nobody can attribute (owner ruling T1).
+   * Omitted everywhere else, and the sheet is then byte-identical to before.
+   */
+  note?: string,
 ) {
   const XLSX = await import("xlsx");
   const data = toMatrix(columns, rows);
-  const ws = XLSX.utils.json_to_sheet(data, { header: columns.map((c) => c.label) });
+  const header = columns.map((c) => c.label);
+  const ws = note
+    ? (() => {
+        const sheet = XLSX.utils.aoa_to_sheet([[note]]);
+        XLSX.utils.sheet_add_json(sheet, data, { header, origin: "A2" });
+        return sheet;
+      })()
+    : XLSX.utils.json_to_sheet(data, { header });
   if (format === "csv") {
     const csv = XLSX.utils.sheet_to_csv(ws);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

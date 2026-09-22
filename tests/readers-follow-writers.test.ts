@@ -596,6 +596,12 @@ describe("wave U — findRates is called only inside the engine (and the compari
   /** The two scopes allowed to hold one, stated structurally — nothing is allow-listed per file. */
   const allowed = (rel: string) => rel.startsWith("lib/engine/") || rel === "lib/analytics/broker-compare.ts";
 
+  // v4.5.0 wave TP - the wave-U AST scan over the whole tree, measured locally
+  // at 2481 ms alone (2026-09-22, vitest --reporter=verbose). It timed out at
+  // vitest 5 s default under full-suite load, where this file competes for I/O
+  // with every other worker (AGENTS.md Testing: the Windows runner is > 15x
+  // slower again). The walk is the TypeScript compiler API over lib/ + app/ +
+  // components/ - the cost is the tree, not this case.
   it("no call site outside lib/engine/ and lib/analytics/broker-compare.ts calls findRates", () => {
     const root = process.cwd();
     const offenders = listSourceFiles(["lib", "app", "components"])
@@ -603,7 +609,7 @@ describe("wave U — findRates is called only inside the engine (and the compari
       .filter(({ rel }) => !allowed(rel))
       .flatMap(({ abs, rel }) => findRatesCalls(rel, fs.readFileSync(abs, "utf8")));
     expect(offenders.map((o) => `${o.file}:${o.line} ${o.text}`), "use ratesForTrade(map, t, onDate, plan) instead").toEqual([]);
-  });
+  }, 20_000);
 
   it("…and the scan can SEE one: the same walk over an inline call site reports it", () => {
     // A green scan is not evidence on its own (this file's own standing rule).

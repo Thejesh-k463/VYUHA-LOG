@@ -11,7 +11,9 @@ import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
 import { computeAdvanceTax } from "@/lib/analytics/advance-tax";
 import { section } from "@/lib/analytics/statute";
 import { advanceTaxFyWindow, challanTotalsByFy, findDuplicateChallan, getChallans, todayIstIso } from "@/lib/queries/challans";
-import { isAggregateView } from "@/lib/queries/accounts";
+import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
+import { needsPersonChoice, resolveTaxScope } from "@/lib/queries/tax-scope";
+import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { fmtDate } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
 
@@ -22,7 +24,27 @@ const EQUITY_SEGMENTS = new Set(["eq_delivery", "eq_mtf"]);
 const daysHeld = (a: string | null, b: string) =>
   a ? Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000) : 0;
 
-export default function AdvanceTaxPage() {
+export default async function AdvanceTaxPage({
+  searchParams,
+}: {
+  /** v4.5.0 wave TP — the person picker's choice; a view param, never a write. */
+  searchParams: Promise<{ person?: string }>;
+}) {
+  const { person } = await searchParams;
+  // TAX PERSON, not account (owner ruling T1): advance tax is one PAN's
+  // liability, and the challans that discharge it are that person's wherever
+  // they were paid from. Never a figure across two persons (invariant 6).
+  const scope = resolveTaxScope(person);
+  if (needsPersonChoice(scope)) {
+    return (
+      <>
+        <PageHeader title="Advance tax planner" description="Plan your instalments." />
+        <div className="space-y-5 p-6">
+          <TaxPersonPicker scope={scope} basePath="/reports/advance-tax" />
+        </div>
+      </>
+    );
+  }
   // ONE clock for this page and the ledger it writes to. `todayIstIso()` is the
   // same India-anchored day `upsertChallan` validates against, so the planner
   // cannot say "45% paid" and "₹4,50,000 short now" about the same money, and
@@ -42,7 +64,7 @@ export default function AdvanceTaxPage() {
   // The harvest projection carries everything this page reads (isOpen,
   // sellDate, netPnl) PLUS the lot fields — one book read instead of the
   // whole-table getTrades() this page used before.
-  const trades = getHarvestTrades();
+  const trades = getHarvestTrades(scope.accountIds);
 
   // Realised net P&L booked this FY (closed, dated trades) — all segments,
   // because the calculator estimates TOTAL tax, not capital gains alone.
@@ -95,7 +117,9 @@ export default function AdvanceTaxPage() {
   // too. Estimated tax 0 is deliberate — only the dates are read.
   const rungs = computeAdvanceTax({ estimatedAnnualTax: 0, taxPaidToDate: 0, today, fyStartMonth });
   const fy = rungs.fyLabel;
-  const ledger = challanTotalsByFy(fy);
+  // The PERSON's challans for the FY, summed across their accounts; each row
+  // names the account it was paid from (design review item 14).
+  const ledger = challanTotalsByFy(fy, scope.accountIds);
   const aggregate = isAggregateView();
   // s.408(3) draws its line at 31 March whatever the journal's FY start month
   // is, and so does the engine's ladder — so the ledger's own window is the
@@ -110,7 +134,8 @@ export default function AdvanceTaxPage() {
     return rung ? `${rung.label} (${rung.cumPct}%)` : `after 15 Mar — still ${fy} advance tax`;
   };
 
-  const challanRows: ChallanEditorRow[] = getChallans(fy).map((r) => ({
+  const accountNameById = new Map(getAccounts().map((a) => [a.id, a.name]));
+  const challanRows: ChallanEditorRow[] = getChallans(fy, scope.accountIds).map((r) => ({
     id: r.id,
     paidOn: r.paidOn,
     paidOnLabel: fmtDate(r.paidOn),
@@ -118,12 +143,15 @@ export default function AdvanceTaxPage() {
     bsrCode: r.bsrCode,
     challanSerial: r.challanSerial,
     note: r.note,
-    countsTowards: countsTowards(r.paidOn),
+    // v4.5.0 wave TP — with more than one account in the person, every payment
+    // NAMES the account it was made from (design review item 14: sum across
+    // the person's accounts, each source named). One account: unchanged text.
+    countsTowards: countsTowards(r.paidOn) + (scope.accountIds.length > 1 ? ` · ${accountNameById.get(r.accountId) ?? `#${r.accountId}`}` : ""),
     // findDuplicateChallan declares its amount parameter in PAISE (rupee floats
     // are not safe to compare for equality); this ×100 is that documented
     // parameter boundary, NOT a second money conversion — the row itself stays
     // in rupees everywhere else on this page (invariant 1).
-    duplicate: findDuplicateChallan(fy, r.paidOn, Math.round(r.amount * 100), r.id) !== null,
+    duplicate: findDuplicateChallan(fy, r.paidOn, Math.round(r.amount * 100), r.id, scope.accountIds) !== null,
   }));
 
   return (
@@ -134,6 +162,7 @@ export default function AdvanceTaxPage() {
         actions={<Badge variant="secondary">FY from {fyStart}</Badge>}
       />
       <div className="space-y-5 p-6">
+        <TaxPersonLine scope={scope} />
         <ProGate>
         <AdvanceTaxCalc
           initialGains={realisedFy}

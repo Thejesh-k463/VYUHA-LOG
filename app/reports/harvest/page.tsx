@@ -3,6 +3,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getHarvestTrades } from "@/lib/queries/trades";
+import { needsPersonChoice, resolveTaxScope } from "@/lib/queries/tax-scope";
+import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { daysBetween, fyWindowFor, type OpenLot } from "@/lib/analytics/harvest";
@@ -26,13 +28,33 @@ const EQUITY_SEGMENTS = new Set(["eq_delivery", "eq_mtf"]);
 const daysHeld = (a: string | null, b: string) =>
   a ? Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000) : 0;
 
-export default function HarvestPage() {
+export default async function HarvestPage({
+  searchParams,
+}: {
+  /** v4.5.0 wave TP — the person picker's choice; a view param, never a write. */
+  searchParams: Promise<{ person?: string }>;
+}) {
+  const { person } = await searchParams;
+  // TAX PERSON, not account (owner ruling T1): harvest headroom is a person's
+  // 112A exemption and a person's set-off position, computed over all of that
+  // person's accounts and never across two persons (invariant 6).
+  const scope = resolveTaxScope(person);
+  if (needsPersonChoice(scope)) {
+    return (
+      <>
+        <PageHeader title="Tax harvesting" description="Informational — never a recommendation to trade." />
+        <div className="space-y-5 p-6">
+          <TaxPersonPicker scope={scope} basePath="/reports/harvest" />
+        </div>
+      </>
+    );
+  }
   const today = todayIstIso();
   // The book projected to the 13 harvest columns (of 74) — same rows, same
   // order, and the filters below are unchanged, so every figure and every
   // rendered row order is identical; only never-read columns stopped being
   // fetched and mapped (this was the whole-book getTrades() call).
-  const trades = getHarvestTrades();
+  const trades = getHarvestTrades(scope.accountIds);
   const mtm = getMtmMap();
   const settings = getSettings();
   const fyStartMonth = settings?.fyStartMonth ?? 4;
@@ -124,6 +146,7 @@ export default function HarvestPage() {
         actions={<Badge variant={daysToFyEnd <= 45 ? "warning" : "secondary"}>{daysToFyEnd}d to FY end</Badge>}
       />
       <div className="space-y-5 p-6">
+        <TaxPersonLine scope={scope} />
         <ProGate>
         {/* KPIs + what-if simulator. computeHarvest is pure, so it moved into
             the client component and re-runs live on the user's selection —

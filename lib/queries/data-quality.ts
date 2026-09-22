@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { db, attachmentsDir } from "@/lib/db";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
-import { accounts as accountsTable, instruments, ipos, mtmPrices, tradeAttachments, tradeLegs, trades } from "@/lib/db/schema";
+import { accounts as accountsTable, bfLossLots, instruments, ipos, mtmPrices, tradeAttachments, tradeLegs, trades } from "@/lib/db/schema";
 import { trashedTradeIds } from "@/lib/trash";
 import {
   assessDataQuality,
@@ -20,6 +20,7 @@ import { getSelectedAccountId } from "./accounts";
 import { brokerPlanOptions } from "./broker-plan";
 import { getTrades } from "./trades";
 import { collectIdChunks } from "./delete";
+import { taxPersonKey } from "@/lib/domain/tax-person";
 
 /** A stale pair as the screen shows it: `blocked` is why it gets no button. */
 export interface StaleOpenView extends StaleOpenPair {
@@ -198,5 +199,24 @@ export function getDataQualityReport(now = new Date()) {
     .all()
     .filter((a) => !a.archived && !a.brokerPlan && (planOptions[(a.broker ?? "").trim().toLowerCase()]?.length ?? 0) > 1)
     .map((a) => ({ id: a.id, name: a.name, brokerLabel: (a.broker ?? "").trim() }));
-  return assessDataQuality({ trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords(), accountsWithoutPlan });
+  // v4.5.0 wave TP — the same (incurredFy, head) lot held by TWO accounts of
+  // ONE tax person. Read across every account on purpose: the question is
+  // about a PERSON, not about the selected book, and the tax pages seed the
+  // engine from all of that person's lots. Never de-duplicated here.
+  const accountRows = db.select({ id: accountsTable.id, name: accountsTable.name, taxIdentity: accountsTable.taxIdentity }).from(accountsTable).all();
+  const personOf = new Map(accountRows.map((a) => [a.id, taxPersonKey(a)]));
+  const nameOf = new Map(accountRows.map((a) => [a.id, a.name]));
+  const lotGroups = new Map<string, { person: string; fy: string; head: string; accounts: Set<number> }>();
+  for (const lot of db.select({ accountId: bfLossLots.accountId, incurredFy: bfLossLots.incurredFy, head: bfLossLots.head }).from(bfLossLots).all()) {
+    const person = personOf.get(lot.accountId);
+    if (!person) continue;
+    const key = `${person}|${lot.incurredFy}|${lot.head}`;
+    const held = lotGroups.get(key) ?? { person, fy: lot.incurredFy, head: lot.head, accounts: new Set<number>() };
+    held.accounts.add(lot.accountId);
+    lotGroups.set(key, held);
+  }
+  const duplicateBfLots = [...lotGroups.values()]
+    .filter((g) => g.accounts.size > 1)
+    .map((g) => ({ person: g.person, fy: g.fy, head: g.head, accounts: [...g.accounts].sort((a, b) => a - b).map((id) => nameOf.get(id) ?? `#${id}`) }));
+  return assessDataQuality({ trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords(), accountsWithoutPlan, duplicateBfLots });
 }

@@ -8303,3 +8303,50 @@ deleted). The growth is turbopack's dev compile cache, which scales with source 
 `lib/import/commit.ts`, a route and components, and that crossed the threshold on the 7 GB macOS runner where Ubuntu had headroom.
 `--max-old-space-size=4096` changed nothing (it IS Node's 64-bit default); **6144 MiB on the Playwright webServer** → 115 / 115,
 zero restarts. Recorded so the next "flaky macOS job" is read from its log, not re-run five times.
+
+## 2026-09-22 — v4.5.0 wave TP: tax is per TAX PERSON, never per account and never "all" (the owner's ruling over the design's P2)
+
+**The rule (owner 2026-09-22, overruling the design's "always all accounts").** A tax return is filed by a PERSON; a person may
+hold several broking accounts, and a family's accounts may sit in one journal. So every tax surface (/reports/tax, /itr, /harvest,
+/advance-tax, the tax-pack and ITR exports, /api/ais) reads the accounts of ONE tax person — the set of accounts sharing one
+normalised `accounts.tax_identity` (a column that existed since migration 0034 with zero readers; no migration needed). **Under-merge,
+never over-merge:** a blank identity is its own person (`account:<id>`); two blank accounts are NEVER merged (merging a spouse's
+book into the owner's ₹1.25 L exemption is the silent wrong number; an un-merged second account is visible and the page says so).
+Archived accounts belong to their person (their sales are taxable). Rejected alternatives: always-all (a family total nobody can
+file); per-account with a warning (a per-book exemption is simply wrong); a toggle (two numbers on one page is how a wrong one
+gets filed).
+
+**Resolution (`lib/queries/tax-scope.ts`, the ONE deliberate widening of invariant 8, registered in prose in
+`tests/account-isolation.test.ts` with four behavioural pins).** `resolveTaxScope(?person)`: a `?person=` naming a known person
+wins (case-insensitive; an unknown key falls through, never invents a scope); selected account N → N's person → all its accounts;
+"All accounts" with exactly one person → it; with more than one → an EMPTY id list, a person picker and NO figure (invariant 6).
+`accountScopeWhere(col, ids)`: an empty list filters to NO rows, never to all. Writes are untouched — every tax write still resolves
+ONE account (invariant 9). Threaded readers: trades / tax base / harvest trades; IPOs (both); brought-forward losses (both);
+challans (three); the dividend ledger AND `getLedgerEntries` (a reader the design review's list of nine missed — AIS reads it and
+AIS is per PAN); `/reports/itr` no longer reads the account-scoped `getTrades()`. **Found false in the review:** `getMtmMap` is not
+account-scoped (`mtm_prices` has no `account_id`) — a shared price table, nothing to thread. Brought-forward lots and challans SUM
+across the person's accounts with each source account named; a same-(FY, head) lot in two accounts of one person raises a Data
+Quality warning and is never auto-deduped. Merge: the merged rows take the TARGET's person; the preview says so when they differ.
+The account editor labels the field "Tax person (name or PAN — accounts sharing this are taxed together)", offers the identities in
+use, never validates it as a PAN and never sends it anywhere.
+
+**Two defects found inside the wave.** `app/api/accounts/route.ts` had `archived: z.boolean().default(false)` — a partial upsert
+(the new tax-person save) would have silently UN-ARCHIVED the account; now optional. `resolveTaxScope` upper-cased `?person=` while
+an unassigned key is `account:<id>` — the picker link for an unassigned account resolved to nothing.
+
+**Fixtures re-seeded, no pin loosened (design-review revision 15).** The oracle now holds A1 + A2 as one person and A3 as a second:
+A3's sale is counted ONCE in its own pack and ZERO times in the other's, the All-accounts view states NO figure, capital and the
+/trades KPI stay account-scoped; the harness's two books share one identity, so I2 still holds in the account-0 view; five other
+files read the person's view instead of view 0 — eight files in all; the first gate run found three more the test builder had not reached
+(`trash-restore-ipo-legacy` D4/D11, `seams-v43-fixF` F14/F39, `seams-v43-fixH` H5), fixed the same way, F14 now also proving an
+ARCHIVED book is in its person's scope. **Measured:** the full vitest run grew 105 → 138 s across v4.5.0's waves, and four
+whole-tree source scans hit vitest's 5 s under that load while passing alone (today-clock 1,226 / 803 ms; the wave-U `findRates`
+AST scan 2,481 ms; seams-v42-fix2 S7a 1,024 ms) — each raised to 20 s with the measured time in a comment, walks not widened
+(they never saw tests/ or e2e/). The next run timed out two DIFFERENT files (2.8 s and 7.5 s per file alone) — and the cause was
+the machine, not the tree: **3.9 GB free of 32 GB, the owner's browser holding ~14 GB**, so vitest's worker pool swapped. A
+moving 5 s timeout across unrelated files with the suite's cumulative CPU time up 60 % is a memory-pressure signature — check
+free memory before raising a third timeout. Account #3 (Dhan, manual, no identity) is its own person; this wave writes no
+stored column. **Recorded, not built:** `lib/queries/trades.ts` inlines the scope rule twice instead of calling
+`accountScopeWhere` — same behaviour, two places to drift; one-line edit for the fix-list wave. Nothing browser-verified: the picker,
+the datalist and the export note line are typed and lint-clean but unrendered — the release gate's Playwright pass must open
+/reports/tax with two persons seeded.

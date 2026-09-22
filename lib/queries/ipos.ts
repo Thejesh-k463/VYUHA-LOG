@@ -9,6 +9,7 @@ import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { Broker } from "@/lib/domain/constants";
 import { getSelectedAccountId } from "./accounts";
+import { accountScopeWhere } from "./tax-scope";
 import { planAccountsById } from "./broker-plan";
 
 /**
@@ -124,13 +125,22 @@ export function chargerFor(
  * guesses what the route's sync will compare against. Z2 (wave 2H): also its sell
  * quantity and price, so the form pre-fills the holding's date only for the IPO's own sale.
  */
-export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } {
+export function getIposComputed(
+  /** v4.5.0 TAX PERSON scope (lib/queries/tax-scope.ts): omitted = the legacy
+   *  account scope; an array = this person's accounts; EMPTY = no rows. The tax
+   *  surfaces pass it so an IPO gain is filed under the person who realised it. */
+  accountIds?: readonly number[],
+): { rows: IpoComputed[]; summary: IpoSummary } {
   // The join is account-scoped too (invariant 8, wave 2I): an IPO and the holding
   // it became belong to ONE book, so a trade_id naming another account's row reads
   // as NOT LINKED rather than surfacing that book's sale date, quantity and price
   // on this form — and the route, which re-reads the trade in the IPO's account,
   // then writes nothing to it.
-  const accountId=getSelectedAccountId(); const q=db.select({ ipo: ipos, linkedTradeId: trades.id, linkedSellDate: trades.sellDate, linkedSellQty: trades.sellQty, linkedSellPrice: trades.avgSellPrice }).from(ipos).leftJoin(trades, and(eq(trades.id, ipos.tradeId), eq(trades.accountId, ipos.accountId))); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
+  const q=db.select({ ipo: ipos, linkedTradeId: trades.id, linkedSellDate: trades.sellDate, linkedSellQty: trades.sellQty, linkedSellPrice: trades.avgSellPrice }).from(ipos).leftJoin(trades, and(eq(trades.id, ipos.tradeId), eq(trades.accountId, ipos.accountId)));
+  // accountScopeWhere() applies `accountId > 0 ? filter : all` itself when no
+  // person scope is passed — the same invariant-8 rule, one implementation.
+  const where = accountScopeWhere(ipos.accountId, accountIds);
+  const raw=(where?q.where(where):q).orderBy(desc(ipos.createdAt)).all();
   const ratesMap = loadRatesMap();
   // Wave U — each IPO prices on ITS OWN account's plan (an IPO row carries an
   // account_id, so the All-accounts view prices each row in its own book), on
@@ -194,12 +204,17 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
  * account-scoped (U3/wave 2I): whose sale DATE and price a form may pre-fill is
  * about one book; whether a sale was already counted is about the view.
  */
-export function ipoIdsCountedThroughTrades(countedTradeIds: ReadonlySet<number>): Set<number> {
+export function ipoIdsCountedThroughTrades(
+  countedTradeIds: ReadonlySet<number>,
+  /** v4.5.0 tax-person scope — the SAME rows the consumer saw through
+   *  `getIposComputed(accountIds)`, so "already counted" is asked of one view. */
+  accountIds?: readonly number[],
+): Set<number> {
   const through = new Set<number>();
   if (countedTradeIds.size === 0) return through;
-  const accountId = getSelectedAccountId();
   const q = db.select({ id: ipos.id, tradeId: ipos.tradeId }).from(ipos);
-  for (const r of (accountId > 0 ? q.where(eq(ipos.accountId, accountId)) : q).all()) {
+  const where = accountScopeWhere(ipos.accountId, accountIds);
+  for (const r of (where ? q.where(where) : q).all()) {
     if (r.tradeId != null && countedTradeIds.has(r.tradeId)) through.add(r.id);
   }
   return through;

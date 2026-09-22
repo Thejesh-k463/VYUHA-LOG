@@ -75,18 +75,57 @@ import type { ParsedFile } from "@/lib/import/types";
  *                     account 1 whatever book the holding was in). Inserted
  *                     directly, because no build still writes it.
  *
- * ── THE THREE VIEWS, AND WHY THEY ARE NOT ADDITIVE ──────────────────────────
+ *  account 3 (v4.5.0 wave TP — A SECOND TAX PERSON)
+ *   A3SOLD    closed   10 @100 -> 10 @200   gross 1000  charges 10.00  net  990.00
+ *                     No IPO record, no ledger entry, no open row: the second
+ *                     person's book is deliberately the simplest thing that can
+ *                     be counted, so "counted ONCE here and ZERO times there" is
+ *                     one number in one place.
+ *
+ * ── THE FOUR VIEWS, AND WHY THEY ARE NOT ADDITIVE ───────────────────────────
  *
  * ORACLE-LEGACY is counted in account 1 (its holding is not in that view) and
  * NOT in All accounts (its holding is). So All ≠ a1 + a2, deliberately: that is
  * the counted-once rule doing its job, and a guard that asserted additivity
  * would demand the double count back.
+ *
+ * ── TWO SCOPES PER VIEW (v4.5.0 wave TP, owner ruling T1) ───────────────────
+ *
+ * From v4.5.0 a view reads TWO scopes at once, and the fixture states both:
+ *
+ *   ACCOUNT-scoped (invariant 8, unchanged): the capital summary, the /trades
+ *     KPI strip and /ipos' own book total.
+ *   PERSON-scoped (lib/queries/tax-scope.ts): the tax base, the ITR export,
+ *     taxByFy and the AIS reconciliation — a return is filed by a PERSON, so
+ *     one person's accounts are read together and two persons are NEVER merged.
+ *
+ * Accounts 1 and 2 carry ONE `tax_identity` (ORACLE_PERSON_1) and account 3
+ * carries another (ORACLE_PERSON_2). So:
+ *
+ *   view account 1  account block = account 1's,  person block = P1 (a1 + a2)
+ *   view account 2  account block = account 2's,  person block = P1 (the same)
+ *   view account 3  account block = account 3's,  person block = P2 (a3 alone)
+ *   view All (0)    account block = every book's, person block = NO FIGURE —
+ *                   a total spanning two tax persons is a number nobody can
+ *                   file (invariant 6), so the pages show a picker instead.
+ *
+ * That makes the wave's own rule assertable as arithmetic on READ figures:
+ * P1's realised total is the All-accounts capital total MINUS account 3's —
+ * i.e. the second person's sale is counted ONCE in its own pack and ZERO times
+ * in P1's. (It holds because account 3 owns no IPO record and no record names
+ * a trade of its, both pinned in `assertLiveFixture`.)
  */
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export const ORACLE_A1 = 1; // the seeded default account
 export const ORACLE_A2 = 2;
+/** The SECOND tax person's only account (v4.5.0 wave TP). */
+export const ORACLE_A3 = 3;
+
+/** Accounts 1 and 2 are one person; account 3 is another. Free text, as typed. */
+export const ORACLE_PERSON_1 = "Oracle Holder";
+export const ORACLE_PERSON_2 = "Oracle Spouse";
 export const ORACLE_FY = "2025-26";
 export const ORACLE_BUY_DATE = "2025-06-10";
 export const ORACLE_SELL_DATE = "2025-09-20";
@@ -107,6 +146,8 @@ export interface OracleIds {
   a1JoinSaleSnapshot: string;
   a2Sold: number;
   a2IpoHolding: number;
+  /** The second tax person's only realised sale (account 3). */
+  a3Sold: number;
   /** ipos.id of the record `pushTradeToIpoAction` created for A2IPOH. */
   linkedIpo: number;
   /** ipos.id of the unlinked exited allotment in account 2. */
@@ -115,8 +156,22 @@ export interface OracleIds {
   legacyIpo: number;
 }
 
-export interface OracleView {
-  capital: { equityRealised: number; activeRealised: number; ipoRealised: number; totalRealised: number };
+/**
+ * The PERSON-scoped half of a view (v4.5.0 wave TP): what the tax surfaces,
+ * the ITR export and the AIS reconciliation read for the tax person the
+ * selected account names. Every field is EMPTY when no person is resolved —
+ * the All-accounts view over a book with two persons, which yields no figure at
+ * all rather than a merged total (owner ruling T1, invariant 6).
+ */
+export interface OraclePersonFigures {
+  /** `resolveTaxScope().label` as the tax base itself resolved it; "" = none. */
+  label: string;
+  /**
+   * The scope line the exports carry, READ OUT OF THE AIS ROUTE's answer — so
+   * the route and the tax base are pinned to have resolved the SAME person in
+   * two different files.
+   */
+  header: string;
   /** cgTrades' nets — one entry per gain the tax base counts, sorted. */
   taxNets: number[];
   /** The exited IPOs the tax base folds in, by name, sorted. */
@@ -137,13 +192,20 @@ export interface OracleView {
   fyRealised: Record<string, number>;
   /** POST /api/ais journal totals, "<fy> purchase" / "<fy> sale". */
   ais: Record<string, number | null>;
-  /** The /trades KPI strip: tradeStatsOf(getJournalTrades()). */
-  kpi: { count: number; open: number; net: number };
-  /** getIpoRealisedNet() with NO countedTradeIds — the IPO book alone. */
-  ipoBookNet: number;
 }
 
-export type OracleSnapshot = { a1: OracleView; a2: OracleView; all: OracleView };
+/** One view of the book: its ACCOUNT-scoped half, and its person's half. */
+export interface OracleView {
+  capital: { equityRealised: number; activeRealised: number; ipoRealised: number; totalRealised: number };
+  /** The /trades KPI strip: tradeStatsOf(getJournalTrades()) — account-scoped. */
+  kpi: { count: number; open: number; net: number };
+  /** getIpoRealisedNet() with NO countedTradeIds — account-scoped, the IPO book alone. */
+  ipoBookNet: number;
+  /** Everything the tax person's return is built from (v4.5.0 wave TP). */
+  person: OraclePersonFigures;
+}
+
+export type OracleSnapshot = { a1: OracleView; a2: OracleView; a3: OracleView; all: OracleView };
 
 export interface OracleBook {
   ids: OracleIds;
@@ -152,6 +214,13 @@ export interface OracleBook {
   /** The name `pushTradeToIpoAction` gave A2IPOH's record (the symbol). */
   linkedIpoName: string;
   expected: OracleSnapshot;
+  /**
+   * The ACCOUNT-scoped half of a view over accounts 1 and 2 TOGETHER — what
+   * account 1 reads once account 2 has been merged into it. Not a view of the
+   * seeded book (the All-accounts view also holds the second person's account
+   * 3), so it is stated here rather than read.
+   */
+  a12: Omit<OracleView, "person">;
 }
 
 // ── the product modules, loaded once the temp database exists ───────────────
@@ -202,8 +271,12 @@ export const selectOracleAccount = (t: TempDb, id: number) =>
 
 // ── reading the six consumers, in one view ─────────────────────────────────
 
-/** POST /api/ais with nothing to parse: every journal FY total surfaces as its own figure. */
-async function aisTotals(): Promise<Record<string, number | null>> {
+/**
+ * POST /api/ais with nothing to parse: every journal FY total surfaces as its
+ * own figure — for the TAX PERSON the route resolved, whose scope line it now
+ * states back (v4.5.0 wave TP).
+ */
+async function aisRead(): Promise<{ totals: Record<string, number | null>; header: string }> {
   const res = await consumers().ais.POST(
     new Request("http://local/api/ais", {
       method: "POST",
@@ -212,10 +285,11 @@ async function aisTotals(): Promise<Record<string, number | null>> {
     }),
   );
   expect(res.status, "the AIS route answered").toBe(200);
-  const { recon } = (await res.json()) as {
+  const { recon, scope } = (await res.json()) as {
     recon: { fyTotals: { fy: string; kind: string; journal: number | null }[] };
+    scope: string;
   };
-  return Object.fromEntries(recon.fyTotals.map((f) => [`${f.fy} ${f.kind}`, f.journal]));
+  return { totals: Object.fromEntries(recon.fyTotals.map((f) => [`${f.fy} ${f.kind}`, f.journal])), header: scope };
 }
 
 /** Every consumer, read in the account currently selected. */
@@ -229,6 +303,7 @@ export async function readOracleView(t: TempDb, accountId: number): Promise<Orac
   // Exactly the call /reports/tax makes (app/reports/tax/page.tsx:72).
   const fyRows = tax.taxByFy([...base.trades, ...base.ipoTaxRows], settings.getSettings()?.fyStartMonth ?? 4);
   const kpi = trades.tradeStatsOf(trades.getJournalTrades());
+  const ais = await aisRead();
 
   return {
     capital: {
@@ -237,16 +312,20 @@ export async function readOracleView(t: TempDb, accountId: number): Promise<Orac
       ipoRealised: c.ipoRealised,
       totalRealised: c.totalRealised,
     },
-    taxNets: base.cgTrades.map((r) => r.netPnl).sort((a, b) => a - b),
-    ipoNames: base.exitedIpos.map((r) => r.name).sort(),
-    itrScrips: itr.map((r) => r.scrip).sort(),
-    itrCount: taxItr.countItrRows(),
-    deliveryConsideration: r2(itr.filter((r) => r.term !== "").reduce((s, r) => s + r.consideration, 0)),
-    deliveryCost: r2(itr.filter((r) => r.term !== "").reduce((s, r) => s + r.cost, 0)),
-    fyRealised: Object.fromEntries(fyRows.map((r) => [r.fy, r.totalRealised])),
-    ais: await aisTotals(),
     kpi: { count: kpi.count, open: kpi.open, net: kpi.net },
     ipoBookNet: r2(ipos.getIpoRealisedNet()),
+    person: {
+      label: base.scope.label,
+      header: ais.header,
+      taxNets: base.cgTrades.map((r) => r.netPnl).sort((a, b) => a - b),
+      ipoNames: base.exitedIpos.map((r) => r.name).sort(),
+      itrScrips: itr.map((r) => r.scrip).sort(),
+      itrCount: taxItr.countItrRows(),
+      deliveryConsideration: r2(itr.filter((r) => r.term !== "").reduce((s, r) => s + r.consideration, 0)),
+      deliveryCost: r2(itr.filter((r) => r.term !== "").reduce((s, r) => s + r.cost, 0)),
+      fyRealised: Object.fromEntries(fyRows.map((r) => [r.fy, r.totalRealised])),
+      ais: ais.totals,
+    },
   };
 }
 
@@ -264,11 +343,12 @@ export function oracleIpoPrice(t: TempDb, ipoId: number): { grossPnl: number; ne
   return { grossPnl: r2(row.grossPnl), netPnl: r2(row.netPnl) };
 }
 
-/** The three views the account switcher offers: each book, and the aggregate. */
+/** The four views the account switcher offers: each book, and the aggregate. */
 export async function readOracle(t: TempDb): Promise<OracleSnapshot> {
   return {
     a1: await readOracleView(t, ORACLE_A1),
     a2: await readOracleView(t, ORACLE_A2),
+    a3: await readOracleView(t, ORACLE_A3),
     all: await readOracleView(t, 0),
   };
 }
@@ -352,7 +432,9 @@ export function resetOracleBook(t: TempDb): void {
     !!t.sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
   for (const name of tables) if (exists(name)) t.sqlite.prepare(`DELETE FROM ${name}`).run();
   t.sqlite.prepare("DELETE FROM accounts WHERE id <> ?").run(ORACLE_A1);
-  t.sqlite.prepare("UPDATE accounts SET pnl_rolled_in = 0, archived = 0 WHERE id = ?").run(ORACLE_A1);
+  // The identity is re-stated by `seedOracleBook`; clearing it here means a
+  // scenario that edited it cannot leak into the next one's person grouping.
+  t.sqlite.prepare("UPDATE accounts SET pnl_rolled_in = 0, archived = 0, tax_identity = NULL WHERE id = ?").run(ORACLE_A1);
   t.sqlite.prepare("UPDATE settings SET selected_account_id = ?").run(ORACLE_A1);
 }
 
@@ -368,7 +450,13 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
   const { actions, del, ipos } = consumers();
   const { dedupHash } = await import("@/lib/import/dedup");
 
-  t.db.insert(t.schema.accounts).values({ id: ORACLE_A2, name: "oracle 2", isDefault: false }).run();
+  // v4.5.0 wave TP — WHO FILES THESE GAINS. Accounts 1 and 2 are one trader's
+  // two broking accounts (one tax person, one return); account 3 is a second
+  // person in the same journal, whose sale must be counted ONCE in its own pack
+  // and ZERO times in the first person's.
+  t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(ORACLE_PERSON_1, ORACLE_A1);
+  t.db.insert(t.schema.accounts).values({ id: ORACLE_A2, name: "oracle 2", isDefault: false, taxIdentity: ORACLE_PERSON_1 }).run();
+  t.db.insert(t.schema.accounts).values({ id: ORACLE_A3, name: "oracle 3", isDefault: false, taxIdentity: ORACLE_PERSON_2 }).run();
 
   // ── account 1 ────────────────────────────────────────────────────────────
   const a1Sold1 = closedRow(t, ORACLE_A1, "A1SOLD1", { qty: 10, buy: 100, sell: 150, charges: 9.75 });
@@ -422,6 +510,10 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
 
   // ── account 2 ────────────────────────────────────────────────────────────
   const a2Sold = closedRow(t, ORACLE_A2, "A2SOLD", { qty: 10, buy: 100, sell: 150, charges: 9.75 });
+  // ── account 3, THE SECOND TAX PERSON ─────────────────────────────────────
+  // One closed round trip and nothing else. Its net (990.00) is unlike every
+  // other figure in the book, so a pack that swallowed it could not hide.
+  const a3Sold = closedRow(t, ORACLE_A3, "A3SOLD", { qty: 10, buy: 100, sell: 200, charges: 10 });
   const a2IpoHolding = closedRow(t, ORACLE_A2, "A2IPOH", {
     qty: 10, buy: 100, sell: 150, charges: 9.75,
     over: { broker: "dhan", acquisition: "ipo", dedupHash: dedupHash(oracleReimportTrade()) },
@@ -465,10 +557,10 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
   const ids: OracleIds = {
     a1Sold1, a1Sold2, a1Open, a1Part, a1MtfZero, a1MtfNull, a1Staged, a1Join,
     a1JoinSaleSnapshot: joinDel.snapshotId!,
-    a2Sold, a2IpoHolding, linkedIpo, looseIpo, legacyIpo,
+    a2Sold, a2IpoHolding, a3Sold, linkedIpo, looseIpo, legacyIpo,
   };
 
-  return { ids, ipoNet, linkedIpoName, expected: expectedFor(ipoNet) };
+  return { ids, ipoNet, linkedIpoName, expected: expectedFor(ipoNet), a12: a12Accounts(ipoNet) };
 }
 
 /**
@@ -493,26 +585,109 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
  *       + ORACLE-LEGACY's allotment 10 × 100                     =  1000 -> 49000
  *   a2  1000 + 1000 = 2000, + ORACLE-LOOSE 20 × 50 = 1000        ->  3000
  *       (the linked record's allotment is A2IPOH's purchase, counted already)
- *   all 48000 + 2000 + 1000                                      -> 51000
+ *   P1  48000 + 2000 + 1000                                      -> 51000
+ *   P2  account 3's own purchase 10 × 100                        ->  1000
  * AIS sale (CLOSED delivery/MTF rows by sell-date FY):
  *   a1  1500 + 1200 + 25000 = 27700, + ORACLE-LEGACY 10 × 150    -> 29200
  *   a2  1500 + 1500 =  3000, + ORACLE-LOOSE 20 × 70 = 1400       ->  4400
- *   all 27700 + 3000 + 1400                                      -> 32100
+ *   P1  27700 + 3000 + 1400                                      -> 32100
+ *   P2  account 3's own sale 10 × 200                            ->  2000
+ *
+ * (The a1 / a2 AIS lines are what those BOOKS hold; from v4.5.0 the route reads
+ * the PERSON, so both views state P1's 51000 / 32100.)
  *
  * /trades KPI (`tradeStatsOf` sums EVERY row, open included):
  *   a1  8 rows, 5 open, net 490.25+192+0+115+0+0+194+4970        = 5961.25
  *   a2  2 rows, 0 open, net 490.25 + 490.25                      =  980.50
- *   all 10 rows, 5 open                                          = 6941.75
+ *   a3  1 row,  0 open, net 990.00                               =  990.00
+ *   all 11 rows, 5 open                                          = 7931.75
  *
  * `ipoBookNet` is /ipos' own page total — every exited record in the view, with
  * no counted-once subtraction at all (that argument is the consumer's). It is
  * here so a change that "fixed" double counting by zeroing the IPO book would
  * be caught rather than congratulated.
+ *
+ * ── THE PERSON HALF (v4.5.0 wave TP) ────────────────────────────────────────
+ *
+ * P1 (accounts 1 + 2) reads EXACTLY what the All-accounts view read before this
+ * wave — the two books together, with the counted-once rule applied across
+ * them — and BOTH the account-1 and the account-2 views state it, because the
+ * selector names a person, not a book. P2 (account 3) reads its one sale. The
+ * All-accounts view reads NOTHING: two persons, no filable total.
  */
-function expectedFor(ipoNet: { linked: number; loose: number; legacy: number }): OracleSnapshot {
+const PERSON_TOTALS = (ipoNet: { linked: number; loose: number; legacy: number }) => {
   const A1_TRADES = r2(490.25 + 192 + 4970); // 5652.25
   const A2_TRADES = r2(490.25 + 490.25); //      980.50
-  const ALL_TRADES = r2(A1_TRADES + A2_TRADES); // 6632.75
+  return { A1_TRADES, A2_TRADES, P1_TRADES: r2(A1_TRADES + A2_TRADES), ipoNet };
+};
+
+/** The scope line every tax page and export carries, per person. */
+export const ORACLE_HEADER_P1 = `Tax person: ${ORACLE_PERSON_1} — accounts: Primary, oracle 2`;
+export const ORACLE_HEADER_P2 = `Tax person: ${ORACLE_PERSON_2} — accounts: oracle 3`;
+/** What the All-accounts view states while the book holds two tax persons. */
+export const ORACLE_HEADER_NONE = "Tax person: not chosen — no figure";
+
+/** P1's pack: accounts 1 and 2 together, whichever of them is selected. */
+function personOne(ipoNet: { linked: number; loose: number; legacy: number }): OraclePersonFigures {
+  const { P1_TRADES } = PERSON_TOTALS(ipoNet);
+  return {
+    label: ORACLE_PERSON_1,
+    header: ORACLE_HEADER_P1,
+    taxNets: [490.25, 192, 4970, 490.25, 490.25, ipoNet.loose].sort((a, b) => a - b),
+    ipoNames: ["ORACLE-LOOSE"],
+    itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+    itrCount: 6,
+    deliveryConsideration: 32100,
+    deliveryCost: 25000,
+    fyRealised: { [ORACLE_FY]: r2(P1_TRADES + ipoNet.loose) },
+    ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 32100 },
+  };
+}
+
+/** P2's pack: account 3's single round trip, 1000 bought and 2000 sold. */
+function personTwo(): OraclePersonFigures {
+  return {
+    label: ORACLE_PERSON_2,
+    header: ORACLE_HEADER_P2,
+    taxNets: [990],
+    ipoNames: [],
+    itrScrips: ["A3SOLD"],
+    itrCount: 1,
+    deliveryConsideration: 2000,
+    deliveryCost: 1000,
+    fyRealised: { [ORACLE_FY]: 990 },
+    ais: { [`${ORACLE_FY} purchase`]: 1000, [`${ORACLE_FY} sale`]: 2000 },
+  };
+}
+
+/**
+ * NO FIGURE — what a view whose person cannot be resolved reads: the
+ * All-accounts view over two persons, and any view of an account that no longer
+ * exists. Not a zero total dressed as an answer: the pages show a picker.
+ */
+export const ORACLE_NO_FIGURE: OraclePersonFigures = {
+  label: "", header: ORACLE_HEADER_NONE,
+  taxNets: [], ipoNames: [], itrScrips: [], itrCount: 0,
+  deliveryConsideration: 0, deliveryCost: 0, fyRealised: {}, ais: {},
+};
+
+/** The account-scoped half of a view over accounts 1 and 2 together. */
+function a12Accounts(ipoNet: { linked: number; loose: number; legacy: number }): Omit<OracleView, "person"> {
+  const { P1_TRADES } = PERSON_TOTALS(ipoNet);
+  return {
+    capital: {
+      equityRealised: P1_TRADES, activeRealised: 0, ipoRealised: ipoNet.loose,
+      totalRealised: r2(P1_TRADES + ipoNet.loose),
+    },
+    kpi: { count: 10, open: 5, net: 6941.75 },
+    ipoBookNet: r2(ipoNet.linked + ipoNet.loose + ipoNet.legacy),
+  };
+}
+
+function expectedFor(ipoNet: { linked: number; loose: number; legacy: number }): OracleSnapshot {
+  const { A1_TRADES, A2_TRADES, P1_TRADES } = PERSON_TOTALS(ipoNet);
+  const A3_TRADES = 990;
+  const ALL_TRADES = r2(P1_TRADES + A3_TRADES); // 7622.75
 
   return {
     a1: {
@@ -520,48 +695,33 @@ function expectedFor(ipoNet: { linked: number; loose: number; legacy: number }):
         equityRealised: A1_TRADES, activeRealised: 0, ipoRealised: ipoNet.legacy,
         totalRealised: r2(A1_TRADES + ipoNet.legacy),
       },
-      taxNets: [490.25, 192, 4970, ipoNet.legacy].sort((a, b) => a - b),
-      ipoNames: ["ORACLE-LEGACY"],
-      itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "ORACLE-LEGACY (IPO)"],
-      itrCount: 4,
-      deliveryConsideration: 29200, // == the AIS sale side, read out of the OTHER consumer
-      deliveryCost: 23000, //          1000 + 1000 + 20000 + the legacy allotment 1000
-      fyRealised: { [ORACLE_FY]: r2(A1_TRADES + ipoNet.legacy) },
-      ais: { [`${ORACLE_FY} purchase`]: 49000, [`${ORACLE_FY} sale`]: 29200 },
       kpi: { count: 8, open: 5, net: 5961.25 },
       ipoBookNet: ipoNet.legacy,
+      person: personOne(ipoNet),
     },
     a2: {
       capital: {
         equityRealised: A2_TRADES, activeRealised: 0, ipoRealised: ipoNet.loose,
         totalRealised: r2(A2_TRADES + ipoNet.loose),
       },
-      taxNets: [490.25, 490.25, ipoNet.loose].sort((a, b) => a - b),
-      ipoNames: ["ORACLE-LOOSE"],
-      itrScrips: ["A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-      itrCount: 3,
-      deliveryConsideration: 4400, // 1500 + 1500 + the loose allotment's exit 1400
-      deliveryCost: 3000,
-      fyRealised: { [ORACLE_FY]: r2(A2_TRADES + ipoNet.loose) },
-      ais: { [`${ORACLE_FY} purchase`]: 3000, [`${ORACLE_FY} sale`]: 4400 },
       kpi: { count: 2, open: 0, net: 980.5 },
       ipoBookNet: r2(ipoNet.linked + ipoNet.loose),
+      person: personOne(ipoNet),
+    },
+    a3: {
+      capital: { equityRealised: A3_TRADES, activeRealised: 0, ipoRealised: 0, totalRealised: A3_TRADES },
+      kpi: { count: 1, open: 0, net: 990 },
+      ipoBookNet: 0,
+      person: personTwo(),
     },
     all: {
       capital: {
         equityRealised: ALL_TRADES, activeRealised: 0, ipoRealised: ipoNet.loose,
         totalRealised: r2(ALL_TRADES + ipoNet.loose),
       },
-      taxNets: [490.25, 192, 4970, 490.25, 490.25, ipoNet.loose].sort((a, b) => a - b),
-      ipoNames: ["ORACLE-LOOSE"],
-      itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-      itrCount: 6,
-      deliveryConsideration: 32100,
-      deliveryCost: 25000,
-      fyRealised: { [ORACLE_FY]: r2(ALL_TRADES + ipoNet.loose) },
-      ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 32100 },
-      kpi: { count: 10, open: 5, net: 6941.75 },
+      kpi: { count: 11, open: 5, net: 7931.75 },
       ipoBookNet: r2(ipoNet.linked + ipoNet.loose + ipoNet.legacy),
+      person: ORACLE_NO_FIGURE,
     },
   };
 }
@@ -585,7 +745,7 @@ export function assertLiveFixture(book: OracleBook): void {
     expect(net, `${name}: the engine billed something`).toBeLessThan(gross);
     expect(net, `${name}: the engine did not bill the whole gain away`).toBeGreaterThan(gross * 0.9);
   }
-  const tradeNets = [490.25, 192, 4970, 115, 194];
+  const tradeNets = [490.25, 192, 4970, 115, 194, 990];
   for (const n of tradeNets) {
     expect(ipoNet.legacy, "the legacy IPO's net is not a trade's").not.toBe(n);
     expect(ipoNet.loose, "the loose IPO's net is not a trade's").not.toBe(n);

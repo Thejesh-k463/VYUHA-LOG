@@ -80,6 +80,32 @@ async function aisOf(accountId: number): Promise<Record<string, number | null>> 
   return Object.fromEntries(recon.fyTotals.map((f) => [`${f.fy} ${f.kind}`, f.journal]));
 }
 
+/**
+ * The two books read TOGETHER (v4.5.0 wave TP, owner ruling T1).
+ *
+ * The tax base, the ITR export and the AIS reconciliation are scoped to a tax
+ * PERSON from v4.5.0, not to an account and never to "all accounts": an
+ * identity-less account is its OWN person (under-merge, never over-merge), so
+ * the All-accounts view over these two books states NO tax figure at all.
+ *
+ * The third case this file has always had — the record AND its holding both in
+ * scope, so the record is excluded — is therefore now the case where ONE PERSON
+ * holds both books, which is exactly the situation a legacy cross-account link
+ * describes. The identity is set for the duration of the read and cleared
+ * afterwards, so the two single-account cases above it keep reading one book
+ * each, as two separate persons.
+ */
+async function asOnePerson<T>(read: () => T | Promise<T>): Promise<T> {
+  const set = (v: string | null) =>
+    t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id IN (?, ?)").run(v, IPO_ACCT, TRADE_ACCT);
+  set("Counted Once Holder");
+  try {
+    return await read();
+  } finally {
+    set(null);
+  }
+}
+
 beforeAll(async () => {
   t = await openTempDb("ipo-counted-once-home", { seed: true });
   capital = await import("@/lib/queries/capital");
@@ -158,16 +184,28 @@ describe("a cross-account link counts the sale ONCE in every view", () => {
     expect(capitalOf(0), "All accounts").toEqual([TRADE_NET, 0, TRADE_NET]);
   });
 
-  it("the tax pack and the ITR export: one row per view, the IPO's own only where its holding was not counted", () => {
+  it("the tax pack and the ITR export: one row per scope, the IPO's own only where its holding was not counted", async () => {
     expect(taxOf(IPO_ACCT), "IPO account").toEqual({ ipoNames: [IPO_NAME], cgNets: [ipoNet], itrScrips: [`${IPO_NAME} (IPO)`], itrCount: 1 });
     expect(taxOf(TRADE_ACCT), "trade account").toEqual({ ipoNames: [], cgNets: [TRADE_NET], itrScrips: [SYMBOL], itrCount: 1 });
-    expect(taxOf(0), "All accounts").toEqual({ ipoNames: [], cgNets: [TRADE_NET], itrScrips: [SYMBOL], itrCount: 1 });
+    // Both books in one scope (see `asOnePerson`): the holding is counted, so
+    // the record is excluded — one sale, one row.
+    expect(await asOnePerson(() => taxOf(IPO_ACCT)), "one tax person holding both books")
+      .toEqual({ ipoNames: [], cgNets: [TRADE_NET], itrScrips: [SYMBOL], itrCount: 1 });
   });
 
-  it("both AIS sides: purchase 1,000 and sale 1,500 in every view, never doubled", async () => {
-    for (const id of [IPO_ACCT, TRADE_ACCT, 0]) {
+  it("the All-accounts view states no tax figure at all rather than merging two persons", () => {
+    // The v4.5.0 rule (invariant 6): these two books state no shared identity,
+    // so they are two tax persons and no filable total spans them. The page
+    // shows a person picker; it does NOT show a zero, and it does NOT show a sum.
+    expect(taxOf(0), "All accounts over two persons").toEqual({ ipoNames: [], cgNets: [], itrScrips: [], itrCount: 0 });
+  });
+
+  it("both AIS sides: purchase 1,000 and sale 1,500 in every scope, never doubled", async () => {
+    for (const id of [IPO_ACCT, TRADE_ACCT]) {
       expect(await aisOf(id), `account ${id}`).toEqual({ [`${FY} purchase`]: 1000, [`${FY} sale`]: 1500 });
     }
+    expect(await asOnePerson(() => aisOf(IPO_ACCT)), "one tax person holding both books")
+      .toEqual({ [`${FY} purchase`]: 1000, [`${FY} sale`]: 1500 });
   });
 
   it("/ipos itself is unchanged: with no countedTradeIds the IPO book still states its own realised net", () => {

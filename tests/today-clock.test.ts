@@ -172,16 +172,30 @@ describe("the scanner", () => {
 });
 
 describe("source guard — one today", () => {
+  // v4.5.0 wave TP — a whole-tree SOURCE SCAN, measured locally at 1226 ms alone
+  // (2026-09-22, vitest --reporter=verbose, this file alone). It timed out at vitest's 5 s default under full-suite
+  // load, where the file competes for I/O with every other worker; the
+  // Windows runner is > 15x slower again on file work (AGENTS.md Testing).
+  // The walk is already narrowed to lib/ + app/ + components/ — the cost is
+  // the tree, not this case — so the timeout is raised rather than the scan
+  // loosened.
   it("todayIstIso is DEFINED exactly once, in lib/domain/trading-day.ts", () => {
     const defs = scan(/function todayIstIso\b/);
     expect(defs.map((l) => l.split(":")[0])).toEqual(["lib/domain/trading-day.ts"]);
-  });
+  }, 20_000);
 
+  // v4.5.0 wave TP — a whole-tree SOURCE SCAN, measured locally at 803 ms alone
+  // (2026-09-22, same run). It timed out at vitest's 5 s default under full-suite
+  // load, where the file competes for I/O with every other worker; the
+  // Windows runner is > 15x slower again on file work (AGENTS.md Testing).
+  // The walk is already narrowed to lib/ + app/ + components/ — the cost is
+  // the tree, not this case — so the timeout is raised rather than the scan
+  // loosened.
   it("no todayIso (UTC) definition or reference survives", () => {
     // Word-bounded so todayIstIso does not match. Comments are stripped, so
     // the trading-day docblock's mention of the retired export cannot count.
     expect(scan(/\btodayIso\b/)).toEqual([]);
-  });
+  }, 20_000);
 
   it("no inline IST copy: toLocaleDateString(en-CA, Asia/Kolkata) lives only in the helper", () => {
     const hits = scan(/toLocaleDateString\(\s*"en-CA"/).filter((l) => !l.startsWith("lib/domain/trading-day.ts:"));

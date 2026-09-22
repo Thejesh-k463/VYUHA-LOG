@@ -1656,10 +1656,41 @@ describe("F14 · an IPO record whose holding lives in an ARCHIVED account (runDa
     };
   }
 
-  it("the re-home leaves it where it is (an archived book cannot be selected), and the link it leaves counts that sale ONCE in this book, the other book and All accounts", async () => {
+
+/**
+ * v4.5.0 wave TP — "the All-accounts view", restated as ONE TAX PERSON.
+ *
+ * From v4.5.0 the tax base, the ITR export and the AIS reconciliation read a tax
+ * PERSON (lib/queries/tax-scope.ts, owner ruling T1), never an account and never
+ * "all accounts": a book stating no `tax_identity` is its OWN person, so the
+ * All-accounts view over this file's many books yields NO tax figure at all
+ * (invariant 6 — a total spanning two persons is one nobody can file).
+ *
+ * F14 asks a cross-account question, so they state that the books
+ * they span belong to ONE person and read THAT person's view: the same rows,
+ * in a scope a user can actually file. The identity is set for the read and
+ * cleared afterwards, so every single-account case keeps reading one book.
+ */
+  async function countedBothBooks() {
+    const aggregate = await counted(0); // capital stays ACCOUNT-scoped
+    const set = (v: string | null) => {
+      for (const id of [F14_REC, F14_ARCH]) t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(v, id);
+    };
+    set("F14 one holder");
+    try {
+      // …and the ARCHIVED book is in its person's scope, which is F14's own
+      // subject: a closed account's realised sales are still taxable.
+      const person = await counted(F14_REC);
+      return { ...person, capital: aggregate.capital };
+    } finally {
+      set(null);
+    }
+  }
+
+  it("the re-home leaves it where it is (an archived book cannot be selected), and the link it leaves counts that sale ONCE in this book, the other book and both together", async () => {
     // The All-accounts view carries every other seam's rows too, so that view is
     // read as a DELTA around this one sale; the two empty books are read whole.
-    const allBefore = await counted(0);
+    const allBefore = await countedBothBooks();
     t.db.update(t.schema.accounts).set({ archived: true }).where(eq(t.schema.accounts.id, F14_ARCH)).run();
     const holding = t.db
       .insert(t.schema.trades)
@@ -1707,8 +1738,8 @@ describe("F14 · an IPO record whose holding lives in an ARCHIVED account (runDa
     // account-scoped LEFT JOIN: All accounts counted the trade AND the IPO — the
     // IPO's own net added on top of the holding's — while the tax pack, the ITR
     // export and both AIS sides, reading the raw link, counted it once).
-    const all = await counted(0);
-    expect(all.ipoNames, "All accounts: the holding is counted, so the IPO is left out").not.toContain("F14-IPO");
+    const all = await countedBothBooks();
+    expect(all.ipoNames, "both books, one person: the holding is counted, so the IPO is left out").not.toContain("F14-IPO");
     expect(all.cgNets.filter((n) => n === TRADE_NET), "…once, as the trades book states it").toHaveLength(1);
     expect(all.itrScrips.filter((s) => s === "F14-IPO"), "one ITR row for one sale").toEqual(["F14-IPO"]);
     expect([
@@ -3728,6 +3759,35 @@ describe("F39 · a merge whose dropped duplicate is named by a record in a THIRD
     };
   }
 
+
+/**
+ * v4.5.0 wave TP — "the All-accounts view", restated as ONE TAX PERSON.
+ *
+ * From v4.5.0 the tax base, the ITR export and the AIS reconciliation read a tax
+ * PERSON (lib/queries/tax-scope.ts, owner ruling T1), never an account and never
+ * "all accounts": a book stating no `tax_identity` is its OWN person, so the
+ * All-accounts view over this file's many books yields NO tax figure at all
+ * (invariant 6 — a total spanning two persons is one nobody can file).
+ *
+ * F39 asks a cross-account question, so they state that the books
+ * they span belong to ONE person and read THAT person's view: the same rows,
+ * in a scope a user can actually file. The identity is set for the read and
+ * cleared afterwards, so every single-account case keeps reading one book.
+ */
+  async function countedAcross() {
+    const aggregate = await counted(0); // capital / ipoRealised stay ACCOUNT-scoped
+    const set = (v: string | null) => {
+      for (const id of [F39_TGT, F39_SRC, F39_OTHER]) t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(v, id);
+    };
+    set("F39 one holder");
+    try {
+      const person = await counted(F39_TGT);
+      return { ...person, ipoRealised: aggregate.ipoRealised };
+    } finally {
+      set(null);
+    }
+  }
+
   it("the foreign record is removed with the duplicate it names, counted once in every reader and in every view, and an un-merge puts it back in its own book", async () => {
     const targetTrade = soldAllotment(F39_TGT, "F39IPO");
     const sourceTrade = soldAllotment(F39_SRC, "F39IPO");
@@ -3736,7 +3796,7 @@ describe("F39 · a merge whose dropped duplicate is named by a record in a THIRD
     exitedRecord(F39_TGT, "F39IPO", targetTrade); // the survivor's own
     const foreign = exitedRecord(F39_OTHER, "F39-XBOOK", sourceTrade); // a THIRD book's
 
-    const beforeAll3 = await counted(0);
+    const beforeAll3 = await countedAcross();
     const beforeOther = await counted(F39_OTHER);
     // The third book's OWN view states the record (its holding is in another
     // book, so nothing else in this view states that sale — L5, one home);
@@ -3751,7 +3811,7 @@ describe("F39 · a merge whose dropped duplicate is named by a record in a THIRD
     // to the account-filtered form: the third book's record is left behind and
     // the blanket unlink cuts it loose — an exited record realised on its own
     // figure beside the survivor's equity sale, in EVERY one of these readers).
-    const afterAll3 = await counted(0);
+    const afterAll3 = await countedAcross();
     expect([afterAll3.ipoRealised, afterAll3.ipoNames], "All accounts: no second statement of that sale").toEqual([beforeAll3.ipoRealised, beforeAll3.ipoNames]);
     expect(afterAll3.itrScrips.filter((s) => s === "F39-XBOOK (IPO)"), "no second ITR row for one sale").toEqual([]);
     // Both AIS sides move by exactly ONE holding — the duplicate the merge
@@ -3772,7 +3832,7 @@ describe("F39 · a merge whose dropped duplicate is named by a record in a THIRD
     const restored = trash.restoreTrashSnapshot(res.snapshotId!);
     expect(restored.ok, restored.message).toBe(true);
     expect([ipoRowOf(foreign).accountId, ipoRowOf(foreign).tradeId], "back where it was filed, linked as it was").toEqual([F39_OTHER, sourceTrade]);
-    const undone = await counted(0);
+    const undone = await countedAcross();
     expect([undone.ipoRealised, undone.aisPurchase, undone.aisSale], "…and counted once after the un-merge").toEqual([
       beforeAll3.ipoRealised, beforeAll3.aisPurchase, beforeAll3.aisSale,
     ]);

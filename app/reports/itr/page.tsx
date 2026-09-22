@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
+import { needsPersonChoice, resolveTaxScope, taxScopeHeader } from "@/lib/queries/tax-scope";
+import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { getSettings } from "@/lib/queries/settings";
 import { ProGate } from "@/components/system/pro-gate";
 import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy } from "@/lib/analytics/itr";
@@ -46,10 +48,36 @@ const CHALLAN_COLS = [
   { key: "amount", label: "Amount" }, { key: "note", label: "Note" },
 ];
 
-export default function ItrPackPage() {
+export default async function ItrPackPage({
+  searchParams,
+}: {
+  /** v4.5.0 wave TP — the person picker's choice; a view param, never a write. */
+  searchParams: Promise<{ person?: string }>;
+}) {
+  const { person } = await searchParams;
+  // TAX PERSON, not account (owner ruling T1). This page used to read the
+  // ACCOUNT-scoped `getTrades()` while the Tax Summary read the same book —
+  // so one person's two accounts produced two half-returns (design review
+  // item 14). Every read below now takes this scope, and the All-accounts
+  // view with more than one person shows a picker and no figure.
+  const scope = resolveTaxScope(person);
   const settings = getSettings();
   const fyStartMonth = settings?.fyStartMonth ?? 4;
-  const trades = getTrades();
+
+  if (needsPersonChoice(scope)) {
+    return (
+      <>
+        <PageHeader title="ITR pack" description="Per financial year — informational." />
+        <div className="space-y-5 p-6">
+          <TaxPersonPicker scope={scope} basePath="/reports/itr" />
+        </div>
+      </>
+    );
+  }
+  const scopeNote = taxScopeHeader(scope);
+  // `getTrades(scope.accountIds)` and not `getTaxTrades`: the schedule builder
+  // reads `sttCtt`, which the tax projection does not carry.
+  const trades = getTrades(scope.accountIds);
   const packs = itrPackByFy(
     trades.map((t) => ({
       segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
@@ -76,7 +104,7 @@ export default function ItrPackPage() {
   // surfaces by construction), so Schedule CFL cannot drift from it.
   const timeline = computeTaxTimeline(
     byFy,
-    toSeedLots(getBfLossRows(), { journalledFys: new Set(byFy.map((f) => f.fy)), currentFy: deriveCurrentFy(fyStartMonth) }),
+    toSeedLots(getBfLossRows(scope.accountIds), { journalledFys: new Set(byFy.map((f) => f.fy)), currentFy: deriveCurrentFy(fyStartMonth) }),
   );
   const carryForwardByFy = new Map<string, CarryForwardLot[]>(
     timeline.map((r) => [r.fy, r.newCarryForward]),
@@ -101,7 +129,7 @@ export default function ItrPackPage() {
   // omitted here reads as an FY with no tax due — and a blank is not a nil
   // payment (invariant 6, enforced in taxesPaidByFy).
   const taxesPaid = taxesPaidByFy(
-    getChallans().map((c) => ({
+    getChallans(undefined, scope.accountIds).map((c) => ({
       fy: c.fy, paidOn: c.paidOn, amount: c.amount,
       bsrCode: c.bsrCode, challanSerial: c.challanSerial, note: c.note,
     })),
@@ -126,6 +154,7 @@ export default function ItrPackPage() {
         actions={<Badge variant="secondary">informational</Badge>}
       />
       <div className="space-y-5 p-6">
+        <TaxPersonLine scope={scope} />
         <ProGate>
         <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-4 text-xs">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
@@ -244,7 +273,7 @@ export default function ItrPackPage() {
 
         {packs.length > 0 && (
           <div className="flex items-center justify-end">
-            <ExportButtons filename="vyuha-itr-pack" columns={EXPORT_COLS} rows={exportRows} />
+            <ExportButtons filename="vyuha-itr-pack" columns={EXPORT_COLS} rows={exportRows} note={scopeNote} />
           </div>
         )}
 
@@ -264,7 +293,7 @@ export default function ItrPackPage() {
                   return&apos;s own item codes. Statutory citations follow the Act in force for each year.
                 </p>
               </div>
-              <ExportButtons filename="vyuha-itr-schedules" columns={SCHEDULE_COLS} rows={scheduleExportRows(schedules)} />
+              <ExportButtons filename="vyuha-itr-schedules" columns={SCHEDULE_COLS} rows={scheduleExportRows(schedules)} note={scopeNote} />
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-start gap-2 rounded-md border border-accent/40 bg-accent/5 p-3 text-xs">
@@ -340,7 +369,7 @@ export default function ItrPackPage() {
                   where the dates also drive the instalment maths.
                 </p>
               </div>
-              <ExportButtons filename="vyuha-itr-taxes-paid" columns={CHALLAN_COLS} rows={challanExportRows} />
+              <ExportButtons filename="vyuha-itr-taxes-paid" columns={CHALLAN_COLS} rows={challanExportRows} note={scopeNote} />
             </CardHeader>
             <CardContent className="space-y-6">
               {taxesPaid.map((b) => (

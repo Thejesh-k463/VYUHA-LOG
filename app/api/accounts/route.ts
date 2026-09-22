@@ -8,7 +8,12 @@ import { recordAudit } from "@/lib/audit";
 import { deleteAccount, previewAccountDelete } from "@/lib/queries/account-delete";
 import { applyPlanChange, previewPlanChange } from "@/lib/queries/broker-plan";
 export const runtime="nodejs";
-const upsert=z.object({action:z.literal("upsert"),id:z.number().int().positive().optional(),name:z.string().trim().min(1).max(60),broker:z.string().max(30).nullable().optional(),accountRef:z.string().max(80).nullable().optional(),taxIdentity:z.string().max(80).nullable().optional(),equityCapital:z.number().nonnegative().nullable().optional(),activeCapital:z.number().nonnegative().nullable().optional(),archived:z.boolean().default(false),
+const upsert=z.object({action:z.literal("upsert"),id:z.number().int().positive().optional(),name:z.string().trim().min(1).max(60),broker:z.string().max(30).nullable().optional(),accountRef:z.string().max(80).nullable().optional(),taxIdentity:z.string().max(80).nullable().optional(),equityCapital:z.number().nonnegative().nullable().optional(),activeCapital:z.number().nonnegative().nullable().optional(),/** v4.5.0 wave TP — OPTIONAL, no longer `.default(false)`. A partial upsert
+   *  (the tax-person field saves id + name + taxIdentity) used to carry a
+   *  defaulted `archived:false` into the UPDATE and silently un-archive the
+   *  account it was editing. Omitted now means "leave it alone"; an INSERT
+   *  still defaults to false below. */
+  archived:z.boolean().optional(),
   /** v4.5.0 wave U — which of the broker's pricing plans this account is on,
    *  and from when (blank = always). Both null = "not stated", which prices at
    *  the free tier. An omitted field leaves the stored value alone, as every
@@ -57,7 +62,7 @@ export async function POST(req:Request){const body=await req.json().catch(()=>nu
   // also refuses to do at pricing time — two doors, one rule).
   const prior=id?db.select().from(accounts).where(eq(accounts.id,id)).get():null;
   const brokerChanged=!!prior&&values.broker!==undefined&&(prior.broker??null)!==(values.broker??null);
-  const write={...values,...(brokerChanged?{brokerPlan:null,brokerPlanFrom:null}:{})};
+  const write={...values,...(brokerChanged?{brokerPlan:null,brokerPlanFrom:null}:{}),...(id?{}:{archived:values.archived??false})};
   // The rows this plan change re-accrues, priced BEFORE the account row moves
   // (the preview the editor showed is computed the same way).
   const planMoves=id&&!brokerChanged&&(values.brokerPlan!==undefined||values.brokerPlanFrom!==undefined)

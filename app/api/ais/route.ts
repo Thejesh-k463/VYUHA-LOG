@@ -15,6 +15,7 @@ import {
   type JournalFyTotal,
 } from "@/lib/analytics/ais";
 import { extractAisJson } from "@/lib/import/ais-json";
+import { resolveTaxScope, taxScopeHeader } from "@/lib/queries/tax-scope";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "Paste AIS rows or upload the AIS JSON." }, { status: 400 });
   }
 
+  // v4.5.0 wave TP — AIS is issued PER PAN, so the journal side of this
+  // reconciliation is the TAX PERSON's book: every account of the person the
+  // selector names, archived included, and never two persons at once (owner
+  // ruling T1). `?person=` carries the picker's choice from the tax pages. An
+  // All-accounts selection spanning more than one person yields an EMPTY scope
+  // — no rows, no totals — rather than a merged statement nobody can file
+  // (invariant 6). Read-only: nothing here writes.
+  const scope = resolveTaxScope(new URL(req.url).searchParams.get("person"));
   const fyStartMonth = getSettings()?.fyStartMonth ?? 4;
   const aliasMap = getAliasMap();
   const resolve = (name: string) => resolveTicker(name.toUpperCase(), aliasMap);
@@ -37,7 +46,7 @@ export async function POST(req: Request) {
 
   // Journal dividends: the ledger rows written by Corporate Actions (gross +, TDS −).
   const divMap = new Map<string, JournalDividend>();
-  for (const e of getLedgerEntries()) {
+  for (const e of getLedgerEntries(scope.accountIds)) {
     if (e.type !== "dividend" && e.type !== "dividend_tds") continue;
     const fy = fyOf(e.date);
     const symbol = (e.symbol ?? "").toUpperCase();
@@ -68,14 +77,14 @@ export async function POST(req: Request) {
   // holding's purchase was counted above, its exit when the holding's sale was.
   const purchaseCounted = new Set<number>();
   const saleCounted = new Set<number>();
-  for (const t of getTrades()) {
+  for (const t of getTrades(scope.accountIds)) {
     if (!DELIVERY.has(t.segment)) continue;
     if (bump(fyOf(t.buyDate), "purchase", t.buyValue)) purchaseCounted.add(t.id);
     if (!t.isOpen && bump(fyOf(t.sellDate), "sale", t.sellValue)) saleCounted.add(t.id);
   }
-  const allotmentThroughTrade = ipoIdsCountedThroughTrades(purchaseCounted);
-  const exitThroughTrade = ipoIdsCountedThroughTrades(saleCounted);
-  for (const ipo of getIposComputed().rows) {
+  const allotmentThroughTrade = ipoIdsCountedThroughTrades(purchaseCounted, scope.accountIds);
+  const exitThroughTrade = ipoIdsCountedThroughTrades(saleCounted, scope.accountIds);
+  for (const ipo of getIposComputed(scope.accountIds).rows) {
     if (ipo.allotted && ipo.allottedQty > 0) {
       if (!allotmentThroughTrade.has(ipo.id)) {
         bump(fyOf(ipo.allotmentDate ?? ipo.listingDate ?? ipo.appliedDate ?? null), "purchase", ipo.investedAllotted);
@@ -105,5 +114,5 @@ export async function POST(req: Request) {
     [...totals.values()].sort((a, b) => a.fy.localeCompare(b.fy)),
     resolve,
   );
-  return NextResponse.json({ ok: true, recon });
+  return NextResponse.json({ ok: true, recon, scope: taxScopeHeader(scope) });
 }

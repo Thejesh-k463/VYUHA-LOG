@@ -193,6 +193,33 @@ async function aisOf(): Promise<Record<string, number | null>> {
   return Object.fromEntries(recon.fyTotals.map((f) => [`${f.fy} ${f.kind}`, f.journal]));
 }
 
+
+/**
+ * v4.5.0 wave TP — "the All-accounts view", restated as ONE TAX PERSON.
+ *
+ * From v4.5.0 the tax base, the ITR export and the AIS reconciliation read a tax
+ * PERSON (lib/queries/tax-scope.ts, owner ruling T1), never an account and never
+ * "all accounts": a book stating no `tax_identity` is its OWN person, so the
+ * All-accounts view over this file's many books yields NO tax figure at all
+ * (invariant 6 — a total spanning two persons is one nobody can file).
+ *
+ * The cases below ask a cross-account question, so they state that the books
+ * they span belong to ONE person and read THAT person's view: the same rows,
+ * in a scope a user can actually file. The identity is set for the read and
+ * cleared afterwards, so every single-account case keeps reading one book.
+ */
+function asOnePerson<T>(ids: number[], read: () => T): T {
+  const set = (v: string | null) => {
+    for (const id of ids) t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(v, id);
+  };
+  set("TP one holder");
+  try {
+    return read();
+  } finally {
+    set(null);
+  }
+}
+
 const issueOf = (code: string) => dq.getDataQualityReport().issues.find((x) => x.code === code);
 
 // Measured locally (2026-09-15): the hook is ~1.2 s (migrate + seed + three accounts).
@@ -653,19 +680,28 @@ describe("D4 · a purged book's record naming ANOTHER book's holding comes back 
     // The record is filed in the book about to be purged; the holding it names
     // is not (invariant 8 — the two reads are deliberately different scopes).
     const record = ipoRecord(ACC_XLINK, "XLINK", foreignTrade);
-    const views = [ACC_XLINK, ACC_XHOLD, 0];
+    // The third view is the two books TOGETHER (see `asOnePerson`): the record's
+    // and the holding's, which is the scope the All-accounts view used to give.
+    const BOTH = -1;
+    const views = [ACC_XLINK, ACC_XHOLD, BOTH];
     // The ITR export, narrowed to the three scrips THIS case owns: the
     // All-accounts view reads every book in this file's single temp database
     // (AGENTS.md: one temp database per FILE), so an absolute total there would
     // be every case's. A scrip filter is absolute about the one thing under test.
     const MINE = ["XLINK", "XOWN", "XLINK (IPO)"];
+    const itrMine = () => taxItr.getItrExportRows().map((r) => r.scrip).filter((s) => MINE.includes(s)).sort();
     const perView = () =>
       views.map((v) => {
+        if (v === BOTH) {
+          // CAPITAL stays ACCOUNT-scoped (invariant 8, untouched by wave TP), so
+          // it is still read in the aggregate view; only the ITR export moved to
+          // the person.
+          selectAccount(0);
+          const capital = capitalOf();
+          return { capital, itr: asOnePerson([ACC_XLINK, ACC_XHOLD], () => { selectAccount(ACC_XLINK); return itrMine(); }) };
+        }
         selectAccount(v);
-        return {
-          capital: capitalOf(),
-          itr: taxItr.getItrExportRows().map((r) => r.scrip).filter((s) => MINE.includes(s)).sort(),
-        };
+        return { capital: capitalOf(), itr: itrMine() };
       });
     const before = perView();
     // The shape is only interesting because the record's own sale is NOT stated
@@ -760,6 +796,8 @@ describe("D11 · a record whose reference names no row in the journal is UNLINKE
       .filter((r) => r.holdingRef != null)
       .map((r) => ({ id: r.id, holdingRef: r.holdingRef, holdingInTrash: r.holdingInTrash }));
   };
+  /** The record's book and the holding's, read as ONE tax person (see above). */
+  const itrAcross = (ids: number[], mine: string[]) => asOnePerson(ids, () => itrIn(ids[0], mine));
   const itrIn = (view: number, mine: string[]) => {
     selectAccount(view);
     return taxItr.getItrExportRows().map((r) => r.scrip).filter((s) => mine.includes(s)).sort();
@@ -792,7 +830,7 @@ describe("D11 · a record whose reference names no row in the journal is UNLINKE
     expect(codesIn(ACC_GHOST_REC), "no unlinked holding shares the book, so no pair question").not.toContain(`ipo_record_link:account:${ACC_GHOST_REC}`);
     // Every money reader: the record counts its own exit, once (the holding is not in the journal).
     expect(itrIn(ACC_GHOST_REC, MINE)).toEqual(["GHOST (IPO)"]);
-    expect(itrIn(0, MINE)).toEqual(["GHOST (IPO)"]);
+    expect(itrAcross([ACC_GHOST_REC, ACC_GHOST_HOLD], MINE)).toEqual(["GHOST (IPO)"]);
     selectAccount(0);
     expect(capitalOf().ipoRealised).toBeGreaterThan(0);
 
@@ -810,7 +848,7 @@ describe("D11 · a record whose reference names no row in the journal is UNLINKE
     expect(linkOf(R)).toBe(T);
     expect(ghostsListedIn(0).some((r) => r.id === R)).toBe(false);
     expect(codesIn(ACC_GHOST_REC)).not.toContain("ipo_record_ghost");
-    expect(itrIn(0, MINE), "All accounts: the holding is counted, the record is not").toEqual(["GHOST"]);
+    expect(itrAcross([ACC_GHOST_REC, ACC_GHOST_HOLD], MINE), "both books, one person: the holding is counted, the record is not").toEqual(["GHOST"]);
   });
 
   it("(c3) the holding's envelope purged and the file re-imported: the double count is named on BOTH sides, and a same-book twin gets the pair question too", () => {
@@ -833,12 +871,12 @@ describe("D11 · a record whose reference names no row in the journal is UNLINKE
     expect(ghostIn(ACC_GONE_REC)!.detail).toContain(
       `#${R} GONE names holding #${T}, no longer in the journal; its exit is counted from the record itself — if the holding was entered again, the two state one sale twice: link them on IPOs when both are in one book, otherwise remove one`,
     );
-    expect(itrIn(0, MINE), "before the re-import: once, by the record").toEqual(["GONE (IPO)"]);
+    expect(itrAcross([ACC_GONE_REC, ACC_GONE_HOLD], MINE), "before the re-import: once, by the record").toEqual(["GONE (IPO)"]);
 
     // The file re-imported: a fresh row under a fresh id.
     const fresh = holding(ACC_GONE_HOLD, "GONE");
     expect(fresh).not.toBe(T);
-    expect(itrIn(0, MINE), "one sale, stated twice — what the report must now say on both sides").toEqual(["GONE", "GONE (IPO)"]);
+    expect(itrAcross([ACC_GONE_REC, ACC_GONE_HOLD], MINE), "one sale, stated twice — what the report must now say on both sides").toEqual(["GONE", "GONE (IPO)"]);
     // THE assertion (on revert: the record's book → no ipo_record_ghost, All → 'ipo_link' only).
     expect(codesIn(ACC_GONE_REC)).toContain("ipo_record_ghost");
     expect(codesIn(ACC_GONE_HOLD)).toContain("ipo_link");

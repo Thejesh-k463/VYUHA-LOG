@@ -137,6 +137,11 @@ export const QTY = {
 } as const;
 
 export const IPO_NAME = "G2-SEQ-IPO";
+/**
+ * The `tax_identity` BOTH books carry (v4.5.0 wave TP) — one trader, two
+ * broking accounts, so one tax person and one return. See `seedSequenceBook`.
+ */
+export const SEQUENCE_TAX_PERSON = "G2 Sequence Holder";
 /** The net the fixture's closed round trip states, in rupees. */
 const DUP_NET = 490.25;
 
@@ -328,7 +333,20 @@ export async function seedSequenceBook(db: BookDb, ctx: { t: TempDb; m: BookMods
   const { t, m } = ctx;
   const acctA = db.select().from(t.schema.accounts).all()[0]!.id;
   const acctB = acctA + 1;
-  db.insert(t.schema.accounts).values({ id: acctB, name: "G2 sequence B", isDefault: false }).run();
+  // v4.5.0 wave TP — BOTH BOOKS BELONG TO ONE TAX PERSON.
+  //
+  // This fixture is one trader's two broking accounts (the cross-account
+  // duplicate in shape 1 only exists because the SAME fill reached both), so
+  // both rows carry the same `tax_identity`. That is a fact about the fixture,
+  // not a convenience: from v4.5.0 the tax base, the ITR export and the AIS
+  // reconciliation read a tax PERSON (lib/queries/tax-scope.ts), and two
+  // identity-less accounts are two persons — over which the All-accounts view
+  // yields NO tax figure at all, by design (owner ruling T1, invariant 6).
+  // Stating the identity keeps the book ONE person, which is what I2 below
+  // compares in every view. The whitespace/case forms of one identity are the
+  // subject of tests/tax-person.test.ts, not of this sweep.
+  t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(SEQUENCE_TAX_PERSON, acctA);
+  db.insert(t.schema.accounts).values({ id: acctB, name: "G2 sequence B", isDefault: false, taxIdentity: SEQUENCE_TAX_PERSON }).run();
 
   const dupHash = "g2-seq-duplicate-hash";
   const closed = (accountId: number, symbol: string, over: Record<string, unknown> = {}) =>
@@ -1532,6 +1550,15 @@ export async function checkInvariants(db: BookDb, ctx: BookCtx): Promise<Violati
   // ── I2 COUNTED-ONCE ───────────────────────────────────────────────────────
   // Capital, the tax base and the AIS sale side must agree with each other, in
   // EVERY view, about the one economic sale each row states.
+  //
+  // v4.5.0 wave TP — TWO SCOPES, NOT ONE. Capital stays ACCOUNT-scoped
+  // (invariant 8), while the tax base and the AIS reconciliation are now
+  // PERSON-scoped (lib/queries/tax-scope.ts, owner ruling T1). This fixture's
+  // two books are ONE person (`seedSequenceBook`), so the person IS the whole
+  // journal and the identity below is sharper than the old one rather than
+  // looser: the person's realised total must equal the ALL-ACCOUNTS capital
+  // total when read in EVERY view — a tax base that silently narrowed to the
+  // selected book, or widened past the person, parts company here.
   const views = [ctx.ids.acctA, ctx.ids.acctB, 0].filter((id, i, a) => a.indexOf(id) === i);
   const per: Record<number, { capital: number; tax: number; sale: number; purchase: number }> = {};
   for (const view of views) {
@@ -1542,10 +1569,6 @@ export async function checkInvariants(db: BookDb, ctx: BookCtx): Promise<Violati
     const taxTotal = r2(base.cgTrades.reduce((s, t) => s + t.netPnl, 0));
     const ais = await aisTotals(ctx);
     per[view] = { capital: r2(cap.totalRealised), tax: taxTotal, sale: ais.sale, purchase: ais.purchase };
-    // (a) two modules, one realised total.
-    if (per[view].capital !== taxTotal) {
-      add("I2", `account ${view}: the capital summary realises ${per[view].capital}, the tax base ${taxTotal}`);
-    }
     // (b) the ONE economic sale rule, stated where everything is visible. The
     //     link is read off the `ipos` row itself: `IpoComputed` deliberately
     //     carries only the link FACTS the form needs, never the trade id.
@@ -1573,13 +1596,34 @@ export async function checkInvariants(db: BookDb, ctx: BookCtx): Promise<Violati
       }
     }
   }
-  // (c) the aggregate view is the sum of the books — a double count shows up
-  //     HERE and nowhere on screen (the wave-2L counted-once finding).
+  // (a) two modules, one realised total — the PERSON's. Both books are one tax
+  //     person, so whichever view the selector names, the tax base must state
+  //     exactly what the capital summary states for the whole journal.
+  const wholeBook = per[0]?.capital;
+  if (wholeBook != null) {
+    for (const view of views) {
+      if (!per[view]) continue;
+      if (per[view].tax !== wholeBook) {
+        add("I2", `account ${view}: the tax base realises ${per[view].tax}, the one tax person's whole book ${wholeBook}`);
+      }
+    }
+  }
+  // (c) capital is ACCOUNT-scoped, so the aggregate view is the sum of the two
+  //     books — a double count shows up HERE and nowhere on screen (the wave-2L
+  //     counted-once finding). The person-scoped figures (the tax base and both
+  //     AIS sides) are NOT summed: they are one person's, so they must be
+  //     IDENTICAL in every view, which is the stronger statement of the same
+  //     property — a view that saw a sale twice would differ from its siblings.
   if (per[0] && per[ctx.ids.acctA] && per[ctx.ids.acctB]) {
-    for (const key of ["capital", "tax", "sale", "purchase"] as const) {
-      const sum = r2(per[ctx.ids.acctA][key] + per[ctx.ids.acctB][key]);
-      if (r2(per[0][key]) !== sum) {
-        add("I2", `All accounts states ${key} ${per[0][key]}, its two books state ${per[ctx.ids.acctA][key]} + ${per[ctx.ids.acctB][key]} = ${sum}`);
+    const sum = r2(per[ctx.ids.acctA].capital + per[ctx.ids.acctB].capital);
+    if (r2(per[0].capital) !== sum) {
+      add("I2", `All accounts states capital ${per[0].capital}, its two books state ${per[ctx.ids.acctA].capital} + ${per[ctx.ids.acctB].capital} = ${sum}`);
+    }
+    for (const key of ["tax", "sale", "purchase"] as const) {
+      for (const view of [ctx.ids.acctA, ctx.ids.acctB]) {
+        if (r2(per[view][key]) !== r2(per[0][key])) {
+          add("I2", `the tax person's ${key} is ${per[view][key]} in account ${view} but ${per[0][key]} in All accounts — one person, one figure`);
+        }
       }
     }
   }

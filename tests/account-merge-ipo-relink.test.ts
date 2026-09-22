@@ -45,6 +45,16 @@ const ALIAS = "0123456789abcdef0123456789abcdef01234567";
 
 const select = (id: number) => t.db.update(t.schema.settings).set({ selectedAccountId: id }).run();
 
+/**
+ * The account whose TAX PERSON spans the three books each cross-account
+ * scenario is stated over (v4.5.0 wave TP — see the identities seeded in
+ * `beforeAll`). Selecting it is how a tax surface reaches every book of that
+ * scenario; "All accounts" over nineteen unrelated books is no longer a tax
+ * scope at all.
+ */
+const D5_VIEW = 31; // the person holding 31 + 32 + 33
+const D4_VIEW = 36; // the person holding 36 + 37 + 38
+
 /** One closed round trip: 10 shares bought at 100, sold at 150, net NET. */
 function closedTrade(accountId: number, symbol: string, over: Record<string, unknown> = {}): number {
   return t.db
@@ -167,6 +177,24 @@ beforeAll(async () => {
     [39, "D10 purged book"],
   ] as [number, string][]) {
     t.db.insert(t.schema.accounts).values({ id, name }).run();
+  }
+  // v4.5.0 wave TP — WHO OWNS THE BOOKS A SCENARIO SPANS.
+  //
+  // Two scenarios below ask their question across three accounts at once (a
+  // record filed in one book naming a holding in another), and they used to ask
+  // it in the All-accounts view. From v4.5.0 a tax read is scoped to a tax
+  // PERSON, and identity-less accounts are each their OWN person — so the
+  // All-accounts view over this file's nineteen books yields NO figure at all,
+  // by design (owner ruling T1, invariant 6). The three books of each scenario
+  // are one trader's, which is what makes the merge in it meaningful, so they
+  // say so; the scenario then reads THAT PERSON's view (`D5_VIEW` / `D4_VIEW`)
+  // rather than "all accounts", which is the same set of rows and a scope a
+  // user can actually file.
+  for (const [identity, ids] of [
+    ["D5 Third Holder", [31, 32, 33]],
+    ["D4 Taken Holder", [36, 37, 38]],
+  ] as [string, number[]][]) {
+    for (const id of ids) t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(identity, id);
   }
   select(1);
 }, 60_000);
@@ -430,8 +458,8 @@ describe("D5 · a skipped IPO record filed in a THIRD account is removed with it
     // The legacy cross-account shape lib/queries/ipos.ts names in its own
     // header: the record in one book, the holding it names in another.
     strayIpo = exitedIpo(31, "D5-THIRD-LEG", sourceTrade);
-    expect(itrScripsIn(0, SCRIPS), "two copies of the sale, each counted once").toEqual(["D5THIRD", "D5THIRD"]);
-    aisBefore = await aisIn(0);
+    expect(itrScripsIn(D5_VIEW, SCRIPS), "two copies of the sale, each counted once").toEqual(["D5THIRD", "D5THIRD"]);
+    aisBefore = await aisIn(D5_VIEW);
   });
 
   it("the merge removes it with the duplicate, so All accounts counts that sale ONCE", async () => {
@@ -443,12 +471,12 @@ describe("D5 · a skipped IPO record filed in a THIRD account is removed with it
 
     // THE assertion. On HEAD: ["D5THIRD", "D5-THIRD-LEG (IPO)"] — the dropped
     // duplicate's sale re-stated by a record nobody unlinked on purpose.
-    expect(itrScripsIn(0, SCRIPS), "the stray record is not a second statement of the survivor's sale").toEqual(["D5THIRD"]);
-    expect(taxIn(0).ipoNames).not.toContain("D5-THIRD-LEG");
+    expect(itrScripsIn(D5_VIEW, SCRIPS), "the stray record is not a second statement of the survivor's sale").toEqual(["D5THIRD"]);
+    expect(taxIn(D5_VIEW).ipoNames).not.toContain("D5-THIRD-LEG");
     expect(ipoRow(strayIpo), "it is removed with the duplicate it named").toBeUndefined();
     // Both AIS sides fall by exactly the dropped duplicate — on HEAD they did
     // not move at all, because the unlinked record put the same sale back.
-    expect(await aisIn(0)).toEqual({
+    expect(await aisIn(D5_VIEW)).toEqual({
       ...aisBefore,
       [`${FY} purchase`]: (aisBefore[`${FY} purchase`] ?? 0) - 1000,
       [`${FY} sale`]: (aisBefore[`${FY} sale`] ?? 0) - 1500,
@@ -468,8 +496,8 @@ describe("D5 · a skipped IPO record filed in a THIRD account is removed with it
     const back = trash.restoreTrashSnapshot(snapshotId, "D5 probe");
     expect([back.ok, back.restored], back.message).toEqual([true, 1]);
     expect(linkOf(strayIpo), "its own book, its own holding — replayed verbatim").toEqual([31, sourceTrade]);
-    expect(itrScripsIn(0, SCRIPS), "and the book reads exactly as it did before the merge").toEqual(["D5THIRD", "D5THIRD"]);
-    expect(await aisIn(0)).toEqual(aisBefore);
+    expect(itrScripsIn(D5_VIEW, SCRIPS), "and the book reads exactly as it did before the merge").toEqual(["D5THIRD", "D5THIRD"]);
+    expect(await aisIn(D5_VIEW)).toEqual(aisBefore);
   });
 });
 
@@ -580,7 +608,7 @@ describe("D4 · a skipped IPO record whose duplicate CANNOT come back is restore
       }))
       .returning({ id: t.schema.trades.id })
       .get()!.id;
-    expect(itrScripsIn(0, SCRIPS), "two copies of the sale, each counted once").toEqual(["D4TAKEN", "D4TAKEN"]);
+    expect(itrScripsIn(D4_VIEW, SCRIPS), "two copies of the sale, each counted once").toEqual(["D4TAKEN", "D4TAKEN"]);
 
     select(1);
     const res = mod.deleteAccount({ accountId: 38, mode: "merge", targetId: 37, connections: "delete" });
@@ -621,20 +649,26 @@ describe("D4 · a skipped IPO record whose duplicate CANNOT come back is restore
   it("so nothing badges the unrelated trade, and its own sale is stated once", async () => {
     // On HEAD: ["D4OTHER", "D4TAKEN"] — the record's own sale left the ITR
     // export, the capital summary and both AIS sides with the link.
-    expect(itrScripsIn(0, SCRIPS)).toEqual(["D4-TAKEN-LEG (IPO)", "D4OTHER", "D4TAKEN"]);
+    expect(itrScripsIn(D4_VIEW, SCRIPS)).toEqual(["D4-TAKEN-LEG (IPO)", "D4OTHER", "D4TAKEN"]);
     // On HEAD: `getIpoTradeLinks().get(sourceTrade)` returned the stray record's
     // id, so /trades badged D4OTHER as that allotment's holding.
     select(0);
     expect(ipoQueries.getIpoTradeLinks().get(sourceTrade), "no badge on a trade this record never named").toBeUndefined();
-    expect(taxIn(0).ipoNames).toContain("D4-TAKEN-LEG");
+    expect(taxIn(D4_VIEW).ipoNames).toContain("D4-TAKEN-LEG");
     expect(realisedIn(36), "the record's own exit, in its own book").toEqual({
       equityRealised: 0, ipoRealised: 482.6, totalRealised: 482.6,
     });
     expect(linkOf(targetIpo), "and the survivor's own record is untouched").toEqual([37, targetTrade]);
-    const ais = await aisIn(36);
-    // Purchase 2,000 = the record's own allotment (1,000) + the still-held D4HOLD
-    // buy (1,000); sale 1,500 is the record's exit alone, stated once.
-    expect([ais[`${FY} purchase`], ais[`${FY} sale`]], "both AIS sides state the record's own allotment").toEqual([2000, 1500]);
+    const ais = await aisIn(D4_VIEW);
+    // v4.5.0 wave TP — AIS is issued per PAN, so this is the PERSON's statement
+    // over all three of its books, and every line is stated ONCE:
+    //   purchase 4,000 = the record's own allotment 1,000 + the still-held
+    //                    D4HOLD 1,000 + the survivor D4TAKEN 1,000 + D4OTHER 1,000
+    //   sale     4,500 = the record's own exit 1,500 + D4TAKEN 1,500 + D4OTHER 1,500
+    // The record's exit appears once and only once on each side — which is the
+    // property this `it` exists for; before the fix it was stated through the
+    // link as well.
+    expect([ais[`${FY} purchase`], ais[`${FY} sale`]], "both AIS sides state the record's own allotment once").toEqual([4000, 4500]);
   });
 
   it("and Data Quality asks which holding is the record's", () => {

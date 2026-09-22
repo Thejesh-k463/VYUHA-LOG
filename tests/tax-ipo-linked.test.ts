@@ -108,6 +108,33 @@ async function aisOf(accountId: number): Promise<Record<string, number | null>> 
   return Object.fromEntries(recon.fyTotals.map((f) => [`${f.fy} ${f.kind}`, f.journal]));
 }
 
+/**
+ * Every scenario book read TOGETHER (v4.5.0 wave TP, owner ruling T1).
+ *
+ * From v4.5.0 the tax base, the ITR export and the AIS reconciliation are
+ * scoped to a tax PERSON, never to an account and never to "all accounts": a
+ * book stating no `tax_identity` is its OWN person, so the All-accounts view
+ * over these five books yields NO tax figure at all (invariant 6 — a total
+ * spanning two persons is one nobody can file).
+ *
+ * The aggregate case below is therefore stated as ONE PERSON holding all five
+ * books, which is the same set of rows and a scope that can actually be filed.
+ * The identity is set for the read and cleared afterwards, so every
+ * single-account case above keeps reading exactly one book.
+ */
+async function asOnePerson<T>(read: () => T | Promise<T>): Promise<T> {
+  const ids = [LINKED, UNLINKED, OPEN, DANGLING, HELD];
+  const set = (v: string | null) => {
+    for (const id of ids) t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(v, id);
+  };
+  set("Tax IPO Holder");
+  try {
+    return await read();
+  } finally {
+    set(null);
+  }
+}
+
 beforeAll(async () => {
   t = await openTempDb("tax-ipo-linked", { seed: true });
   taxItr = await import("@/lib/queries/tax-itr");
@@ -161,9 +188,9 @@ describe("getTaxBase counts an exited IPO's gain once", () => {
     }
   });
 
-  it("All accounts: the linked gain once from its holding, every other exited IPO once (invariant 8 scope unchanged)", () => {
+  it("one tax person holding all five books: the linked gain once from its holding, every other exited IPO once", async () => {
     const others = [UNLINKED, OPEN, DANGLING].map(ipoNetOf);
-    const all = taxOf(0);
+    const all = await asOnePerson(() => taxOf(LINKED));
     expect(all.ipoNames.sort()).toEqual(["TAXIPO-D", "TAXIPO-O", "TAXIPO-U"]);
     expect(all.itrCount).toBe(4);
     expect(all.itrScrips.filter((s) => s === "TAXIPOL" || s === "TAXIPO-L (IPO)")).toEqual(["TAXIPOL"]);
@@ -188,7 +215,13 @@ describe("POST /api/ais counts a linked holding's purchase and sale once", () =>
     }
   });
 
-  it("All accounts: five purchases and four sales of 10 shares, each once", async () => {
-    expect(await aisOf(0)).toEqual({ [`${FY} purchase`]: 5000, [`${FY} sale`]: 6000 });
+  it("one tax person holding all five books: five purchases and four sales of 10 shares, each once", async () => {
+    expect(await asOnePerson(() => aisOf(LINKED))).toEqual({ [`${FY} purchase`]: 5000, [`${FY} sale`]: 6000 });
+  });
+
+  it("the All-accounts view reconciles nothing rather than merging five tax persons", async () => {
+    // Five books, five identities-in-absentia, five persons: AIS is issued per
+    // PAN, so there is no statement to compare a journal against here.
+    expect(await aisOf(0)).toEqual({});
   });
 });

@@ -245,6 +245,16 @@ export interface QualityInputs {
    * report it got before.
    */
   accountsWithoutPlan?: { id: number; name: string; brokerLabel: string }[];
+  /**
+   * v4.5.0 wave TP — one TAX PERSON holding the same (incurredFy, head)
+   * brought-forward lot in TWO of their accounts (design review item 14). The
+   * tax surfaces now seed the set-off engine from every account of the person,
+   * so two transcriptions of ONE filed loss would be carried forward twice.
+   * It is NEVER de-duplicated automatically: only the user knows whether the
+   * two rows are one filed loss written twice or two genuine vintages.
+   * Optional in the same way as the fields above.
+   */
+  duplicateBfLots?: { person: string; fy: string; head: string; accounts: string[] }[];
 }
 
 export interface QualityReport {
@@ -1555,6 +1565,20 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
       detail: `${a.name} is with ${a.brokerLabel}, which sells more than one brokerage plan, and states none — so new imports, previews and the calculator price it on the free plan. Set it in Settings › Accounts if you are on a paid or opt-in tier. No saved trade is re-priced either way.`,
       count: 1,
       href: "/settings#settings-accounts",
+    });
+  }
+
+  // v4.5.0 wave TP — one person, one vintage, two accounts. A WARNING, never a
+  // fix: the tax pages sum the person's lots, and two transcriptions of one
+  // filed loss would set off twice. Only the user can say which it is.
+  for (const d of i.duplicateBfLots ?? []) {
+    add({
+      code: `bf_lot_dup:${d.person}:${d.fy}:${d.head}`,
+      severity: "warning",
+      title: "Same brought-forward loss on two accounts of one tax person",
+      detail: `${d.fy} ${d.head} is recorded on ${d.accounts.join(" and ")}, which are taxed together as one person — so the tax pages seed BOTH. If that is one filed loss written twice, delete one lot; if they are genuinely two, leave them. Nothing is merged automatically.`,
+      count: 1,
+      href: "/reports/tax",
     });
   }
 

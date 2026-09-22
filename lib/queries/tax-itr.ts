@@ -5,6 +5,7 @@ import { getTaxTrades } from "./trades";
 // beside the IPO reads it is about (wave 2L). It used to be defined here as
 // well, and the two copies drifted into reading the link differently.
 import { getIposComputed, ipoIdsCountedThroughTrades } from "./ipos";
+import { resolveTaxScope } from "./tax-scope";
 import type { TaxTrade } from "@/lib/analytics/tax";
 import { sectionOn } from "@/lib/analytics/statute";
 import {
@@ -33,8 +34,15 @@ import {
  * measured to reorder rows tying on (sell_date, created_at), which would
  * shuffle the export's row order and float-summation order.
  */
-export const getTaxBase = cache(() => {
-  const trades = getTaxTrades();
+export const getTaxBase = cache((personParam?: string | null) => {
+  // v4.5.0 wave TP — TAX PERSON, not account (owner ruling T1). The scope is
+  // resolved ONCE here and threaded into every read this base makes, so the
+  // trades and the IPOs can never come from two different scopes. An empty
+  // accountIds (All accounts with more than one person) yields an EMPTY base:
+  // the page shows a person picker and no figure, never a merged total across
+  // two tax persons (invariant 6).
+  const scope = resolveTaxScope(personParam);
+  const trades = getTaxTrades(scope.accountIds);
   const closedTrades = trades.filter((t) => !t.isOpen);
 
   // Exited IPOs are equity-delivery capital gains but live OUTSIDE the trades
@@ -43,8 +51,8 @@ export const getTaxBase = cache(() => {
   // TAX-IPO-LINK: an exited IPO whose linked holding is one of the closed trades
   // above is realised THROUGH that trade (the exit saved on /ipos closed it) —
   // folding it in too filed one gain twice in taxByFy, set-off and the ITR export.
-  const throughTrade = ipoIdsCountedThroughTrades(new Set(closedTrades.map((t) => t.id)));
-  const exitedIpos = getIposComputed().rows.filter((r) => r.realised && !throughTrade.has(r.id));
+  const throughTrade = ipoIdsCountedThroughTrades(new Set(closedTrades.map((t) => t.id)), scope.accountIds);
+  const exitedIpos = getIposComputed(scope.accountIds).rows.filter((r) => r.realised && !throughTrade.has(r.id));
   const ipoTaxRows: TaxTrade[] = exitedIpos.map((r) => ({
     segment: "eq_delivery",
     instrumentType: "equity",
@@ -80,12 +88,12 @@ export const getTaxBase = cache(() => {
     })),
   ];
 
-  return { trades, closedTrades, exitedIpos, ipoTaxRows, cgTrades };
+  return { trades, closedTrades, exitedIpos, ipoTaxRows, cgTrades, scope };
 });
 
 /** How many rows the ITR export will contain — the page's disabled state. */
-export function countItrRows(): number {
-  const { cgTrades } = getTaxBase();
+export function countItrRows(personParam?: string | null): number {
+  const { cgTrades } = getTaxBase(personParam);
   return cgTrades.reduce((n, t) => (classifyGain(t) ? n + 1 : n), 0);
 }
 
@@ -93,8 +101,8 @@ export function countItrRows(): number {
  * ITR-schedule-shaped per-trade rows (closed equity + F&O + exited IPOs) —
  * built on demand for `/api/tax-itr`, never during a page render.
  */
-export function getItrExportRows() {
-  const { closedTrades, exitedIpos, cgTrades } = getTaxBase();
+export function getItrExportRows(personParam?: string | null) {
+  const { closedTrades, exitedIpos, cgTrades } = getTaxBase(personParam);
   return cgTrades
     .map((t, i) => {
       const g = classifyGain(t);

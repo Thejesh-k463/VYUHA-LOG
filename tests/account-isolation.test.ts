@@ -276,6 +276,97 @@ describe("staged mutations respect the account boundary (D17)", () => {
   });
 });
 
+/**
+ * THE WIDENING, PROVEN RATHER THAN DECLARED (v4.5.0 wave TP, design review
+ * item 16).
+ *
+ * The registry test below is a file-level regex, and `lib/queries/tax-scope.ts`
+ * calls `getSelectedAccountId()` — so that scan passes whether or not the read
+ * leaks. These are behavioural: a person-scoped read returns THIS person's rows
+ * and never another person's, an empty scope returns NO rows rather than all,
+ * and two identity-less books are never pooled into one person.
+ */
+describe("a person-scoped read never returns another person's row", () => {
+  let scope: typeof import("@/lib/queries/tax-scope");
+  const identify = (id: number, value: string | null) =>
+    t.sqlite.prepare("UPDATE accounts SET tax_identity = ? WHERE id = ?").run(value, id);
+  /** Every symbol the person-scoped trade read returns, sorted. */
+  const symbolsFor = (accountIds: readonly number[] | undefined) =>
+    queries.trades.getTrades(accountIds).map((r) => r.symbol).sort();
+  /**
+   * Every symbol STORED in those books, read straight out of SQLite — the
+   * oracle the person-scoped read is held against, so an earlier describe that
+   * adds a row cannot make this one agree with itself.
+   */
+  const symbolsIn = (accountIds: number[]) =>
+    t.db.select().from(t.schema.trades).all()
+      .filter((r) => accountIds.includes(r.accountId))
+      .map((r) => r.symbol)
+      .sort();
+
+  beforeAll(async () => {
+    scope = await import("@/lib/queries/tax-scope");
+  });
+  afterAll(() => {
+    identify(PRIMARY, null);
+    identify(SWING, null);
+    selectAccount(PRIMARY);
+  });
+
+  it("two persons: each view reads its own person's books, and neither sees the other's", () => {
+    identify(PRIMARY, "Isolation One");
+    identify(SWING, "Isolation Two");
+
+    selectAccount(PRIMARY);
+    const one = scope.resolveTaxScope();
+    expect([one.accountIds, one.label]).toEqual([[PRIMARY], "Isolation One"]);
+    expect(symbolsFor(one.accountIds), "this person's own books, whole").toEqual(symbolsIn([PRIMARY]));
+    expect(symbolsFor(one.accountIds), "and the other person's RELIANCE is not here").not.toContain("RELIANCE");
+
+    selectAccount(SWING);
+    const two = scope.resolveTaxScope();
+    expect([two.accountIds, two.label]).toEqual([[SWING], "Isolation Two"]);
+    expect(symbolsFor(two.accountIds), "and this person sees only its own").toEqual(symbolsIn([SWING]));
+    expect(symbolsFor(two.accountIds), "never the first person's rows").not.toContain("TCS");
+  });
+
+  it("the All-accounts view over two persons filters to NO rows — never to every row", () => {
+    identify(PRIMARY, "Isolation One");
+    identify(SWING, "Isolation Two");
+    selectAccount(ALL);
+    const none = scope.resolveTaxScope();
+    expect([none.accountIds, scope.needsPersonChoice(none)], "no figure, a picker").toEqual([[], true]);
+    // THE assertion this whole widening turns on: an EMPTY person list is `1 = 0`
+    // and not "no filter". Read against the same function the tax readers use.
+    expect(symbolsFor(none.accountIds), "an empty scope reads no rows at all").toEqual([]);
+    expect(symbolsFor(undefined), "while the LEGACY account scope still reads every book in this view")
+      .toEqual(symbolsIn([PRIMARY, SWING]));
+  });
+
+  it("one person holding both books reads both — and a whitespace/case variant is the SAME person", () => {
+    identify(PRIMARY, "Isolation One");
+    identify(SWING, "  isolation   ONE ");
+    selectAccount(PRIMARY);
+    const both = scope.resolveTaxScope();
+    expect(both.accountIds, "one identity, typed two ways, is one person").toEqual([PRIMARY, SWING]);
+    expect(symbolsFor(both.accountIds)).toEqual(symbolsIn([PRIMARY, SWING]));
+    // The label is the identity AS TYPED on the lowest-numbered account.
+    expect(both.label).toBe("Isolation One");
+  });
+
+  it("two books stating NO identity are two persons, never one — under-merge, never over-merge", () => {
+    identify(PRIMARY, null);
+    identify(SWING, "   "); // blank is blank, whatever was typed into it
+    selectAccount(PRIMARY);
+    const one = scope.resolveTaxScope();
+    expect(one.accountIds, "an unassigned book stands alone").toEqual([PRIMARY]);
+    expect([one.unassigned, one.label]).toEqual([true, "Primary"]);
+    selectAccount(ALL);
+    expect(scope.resolveTaxScope().candidates?.map((c) => c.accountIds), "two candidates, not one pooled exemption")
+      .toEqual([[PRIMARY], [SWING]]);
+  });
+});
+
 describe("account-scoped table registry", () => {
   /**
    * table → the source files that OWN its account boundary. The old version of
@@ -320,6 +411,34 @@ describe("account-scoped table registry", () => {
     // `account_id`, so it can never move a row between books
     // (tests/trade-identity-db.test.ts diffs every column of every row it
     // touches, and every column of the ones it must not).
+    //
+    // v4.5.0 wave TP — THE ONE DELIBERATE WIDENING OF INVARIANT 8, named here
+    // in prose because `accounts` carries no `account_id` of its own and the
+    // file below would demand of it a resolver rule it deliberately generalises:
+    //   lib/queries/tax-scope.ts  `resolveTaxScope` / `accountScopeWhere`
+    // Invariant 8 says every account-scoped read goes through
+    // `getSelectedAccountId()` and applies `accountId > 0 ? filter : all`. The
+    // TAX surfaces — /reports/tax, /reports/itr, /reports/harvest,
+    // /reports/advance-tax, the ITR export, the tax pack and /api/ais — read on
+    // a PERSON instead: a return is filed by a person, and one person's five
+    // accounts are one return (owner ruling T1). So those reads filter by
+    // `account_id IN (…the person's accounts…)` rather than by the single
+    // selected account. It is a WIDENING OF THE READ ONLY, and only there:
+    //   • it still STARTS at `getSelectedAccountId()` — the selected account
+    //     names the person, so the global selector still drives every tax page;
+    //   • it is NEVER "all accounts": the All-accounts view (0) over a book with
+    //     more than one person yields `accountIds: []` and NO figure at all,
+    //     because a total spanning two tax persons is a number nobody can file
+    //     (invariant 6). The page shows a person picker instead;
+    //   • an EMPTY list filters to NO ROWS (`1 = 0`), never to "all" — that is
+    //     the whole point, and it is pinned behaviourally below;
+    //   • WRITES are untouched: every tax write still resolves ONE account
+    //     through `getWriteAccountId()` (invariant 9 — 0 is a view, never a
+    //     place), and non-tax surfaces stay account-scoped;
+    //   • an account with no `tax_identity` is its OWN person (under-merge,
+    //     never over-merge): two blank accounts are NEVER pooled.
+    // `accountScopeWhere(column)` with NO person list is the legacy rule,
+    // unchanged, which is why every reader below still reads as it always did.
     trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts", "lib/queries/account-delete.ts"],
     import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/account-delete.ts"],
     ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts", "lib/queries/account-delete.ts"],

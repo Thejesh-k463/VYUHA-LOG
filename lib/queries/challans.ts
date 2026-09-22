@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { advanceTaxChallans } from "@/lib/db/schema";
 import type { AdvanceTaxInput } from "@/lib/analytics/advance-tax";
 import { getSelectedAccountId, getWriteAccountId } from "./accounts";
+import { accountScopeWhere } from "./tax-scope";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { isValidFy } from "./bf-losses";
 import { recordAudit } from "@/lib/audit";
@@ -110,10 +111,18 @@ export { todayIstIso };
  * tie so the order is total — two genuine payments on one day are legal).
  * Aggregate view reads every account's. Pass `fy` to scope to one year.
  */
-export function getChallans(fy?: string): ChallanRow[] {
-  const accountId = getSelectedAccountId();
+export function getChallans(
+  fy?: string,
+  /** v4.5.0 TAX PERSON scope (lib/queries/tax-scope.ts): advance tax is paid by
+   *  a PERSON against one PAN, so a challan paid from any of that person's
+   *  accounts counts once against that person's liability. The rows are SUMMED
+   *  across the accounts and each keeps its own `accountId` — the page names the
+   *  source account beside every payment. Omitted = the legacy account scope. */
+  accountIds?: readonly number[],
+): ChallanRow[] {
+  const scope = accountScopeWhere(advanceTaxChallans.accountId, accountIds);
   const conds = [
-    ...(accountId > 0 ? [eq(advanceTaxChallans.accountId, accountId)] : []),
+    ...(scope ? [scope] : []),
     ...(fy != null ? [eq(advanceTaxChallans.fy, fy)] : []),
   ];
   return db
@@ -144,8 +153,8 @@ export interface ChallanFyTotals {
  * ledger holds nothing", which is what the caller must render as "—" rather
  * than as "₹0 paid" (invariant 6).
  */
-export function challanTotalsByFy(fy: string): ChallanFyTotals {
-  const rows = getChallans(fy);
+export function challanTotalsByFy(fy: string, accountIds?: readonly number[]): ChallanFyTotals {
+  const rows = getChallans(fy, accountIds);
   // The rows are ALREADY rupees (moneyPaise converted at the column boundary),
   // so this is a plain sum. The ×100/÷100 is float-drift cleanup to paise
   // precision — NOT a unit conversion: ₹0.1 + ₹0.2 must not reach a receipt
@@ -170,15 +179,26 @@ export function challanTotalsByFy(fy: string): ChallanFyTotals {
  * Returns null in the aggregate view: that view cannot write, so it has
  * nothing to warn about.
  */
-export function findDuplicateChallan(fy: string, paidOn: string, amountPaise: number, excludeId?: number | null): ChallanRow | null {
+export function findDuplicateChallan(
+  fy: string,
+  paidOn: string,
+  amountPaise: number,
+  excludeId?: number | null,
+  /** v4.5.0 tax-person scope: the same payment recorded in a SECOND account of
+   *  the same person is the duplicate this warning exists for (one challan, one
+   *  PAN). Omitted = the legacy same-account question. */
+  accountIds?: readonly number[],
+): ChallanRow | null {
   const accountId = getSelectedAccountId();
-  if (accountId === 0) return null;
+  if (!accountIds && accountId === 0) return null;
+  const scope = accountScopeWhere(advanceTaxChallans.accountId, accountIds);
+  if (!scope) return null;
   const rows = db
     .select()
     .from(advanceTaxChallans)
     .where(
       and(
-        eq(advanceTaxChallans.accountId, accountId),
+        scope,
         eq(advanceTaxChallans.fy, fy),
         eq(advanceTaxChallans.paidOn, paidOn),
         eq(advanceTaxChallans.amount, amountPaise / 100),

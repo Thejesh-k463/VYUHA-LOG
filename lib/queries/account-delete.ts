@@ -26,6 +26,7 @@ import { carryUnfetchedOnMerge } from "@/lib/import/dhan-unfetched";
 import { heldIdentityHashes, readsLong, executionHashOfPiece, saysAutoClosePiece, unCloseFirstNote, type RowLegs } from "@/lib/import/close-open-lots";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
 import { forEachIdChunk, collectIdChunks } from "./delete";
+import { taxPersonKey } from "@/lib/domain/tax-person";
 
 /**
  * Deleting a whole account — the v3.1 headline.
@@ -627,6 +628,27 @@ export function previewAccountDelete(opts: { accountId: number; mode: AccountDel
 
   if (r.target) {
     if (r.target.archived) warnings.push(`“${r.target.name}” is archived — the merged journal will live in an archived account.`);
+    // v4.5.0 wave TP — A MERGE MOVES THE ROWS, SO THEY TAKE THE TARGET'S TAX
+    // PERSON (owner ruling T1). No column is rewritten: `account_id` becomes
+    // the target's, and every tax surface groups on the account's own
+    // `tax_identity` — so the source's trades are taxed as the target's person
+    // from that moment. When the two differ that is a change of who files
+    // these gains, and the dialog says so BEFORE anything is touched.
+    {
+      const src = db.select({ taxIdentity: accounts.taxIdentity, name: accounts.name }).from(accounts).where(eq(accounts.id, opts.accountId)).get();
+      const tgt = db.select({ taxIdentity: accounts.taxIdentity }).from(accounts).where(eq(accounts.id, r.target.id)).get();
+      if (src && tgt) {
+        const srcKey = taxPersonKey({ id: opts.accountId, taxIdentity: src.taxIdentity });
+        const tgtKey = taxPersonKey({ id: r.target.id, taxIdentity: tgt.taxIdentity });
+        if (srcKey !== tgtKey) {
+          const tgtLabel = (tgt.taxIdentity ?? "").trim() || `“${r.target.name}” (no tax person set)`;
+          const srcLabel = (src.taxIdentity ?? "").trim() || `“${src.name}” (no tax person set)`;
+          warnings.push(
+            `Tax person changes: these trades are taxed under ${srcLabel} today and will be taxed under ${tgtLabel} after the merge — the merged rows take “${r.target.name}”'s tax person. Check the tax reports of both people afterwards.`,
+          );
+        }
+      }
+    }
     const identity = identityCollisions(opts.accountId, r.target);
     dedupCollisions = identity.ids.length;
     if (dedupCollisions > 0) {

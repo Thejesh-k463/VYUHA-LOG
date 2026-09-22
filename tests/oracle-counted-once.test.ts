@@ -4,10 +4,11 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import {
-  ORACLE_A1, ORACLE_A2, ORACLE_ALIAS, ORACLE_BUY_DATE, ORACLE_FY, ORACLE_SELL_DATE,
+  ORACLE_A1, ORACLE_A2, ORACLE_A3, ORACLE_ALIAS, ORACLE_BUY_DATE, ORACLE_FY, ORACLE_SELL_DATE,
+  ORACLE_NO_FIGURE, ORACLE_PERSON_1, ORACLE_PERSON_2,
   assertLiveFixture, loadOracleConsumers, oracleParsedFile, oracleReimportTrade,
   oracleIpoPrice, readOracle, resetOracleBook, seedOracleBook, selectOracleAccount,
-  type OracleBook, type OracleSnapshot, type OracleView,
+  type OracleBook, type OraclePersonFigures, type OracleSnapshot, type OracleView,
 } from "./helpers/oracle-book";
 import type { NormalizedTrade } from "@/lib/engine/types";
 
@@ -57,14 +58,24 @@ import type { NormalizedTrade } from "@/lib/engine/types";
  * having: the home is shared, the CALLERS are not, and each caller chooses its
  * own `countedTradeIds` set.
  *
- * ── THE THREE VIEWS ─────────────────────────────────────────────────────────
+ * ── THE FOUR VIEWS, AND THE TWO SCOPES IN EACH ──────────────────────────────
  *
- * Account 1, account 2, and All accounts — selected the way the app selects
- * them (`settings.selected_account_id`, read by `getSelectedAccountId()`,
- * invariant 8). All accounts is NOT the sum of the two: the fixture's legacy
+ * Account 1, account 2, account 3 and All accounts — selected the way the app
+ * selects them (`settings.selected_account_id`, read by `getSelectedAccountId()`,
+ * invariant 8). All accounts is NOT the sum of the books: the fixture's legacy
  * cross-account record is counted in account 1 (its holding is not in that
  * view) and excluded from All accounts (its holding is). A guard that asserted
  * additivity would be demanding the double count back.
+ *
+ * v4.5.0 wave TP (owner ruling T1) splits each view in two. The capital
+ * summary, the /trades KPI and /ipos' own total stay ACCOUNT-scoped; the tax
+ * base, the ITR export, taxByFy and the AIS reconciliation read the TAX PERSON
+ * the selected account belongs to. Accounts 1 and 2 are one person, account 3
+ * is a second, and the All-accounts view — which would have to merge them —
+ * yields NO FIGURE at all and offers a picker instead (invariant 6). So the
+ * counted-once question now has a second half, asserted in
+ * `assertPersonAgreement`: account 3's sale is counted ONCE in its own person's
+ * pack and ZERO times in the other's.
  *
  * ── WHAT IS PINNED, AND HOW IT COULD BE WRONG ───────────────────────────────
  *
@@ -121,6 +132,8 @@ import type { NormalizedTrade } from "@/lib/engine/types";
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const NO_STATE = { ok: false, message: "" };
+/** P1's scope line once account 2 has been merged or purged away. */
+const MERGED_HEADER_P1 = `Tax person: ${ORACLE_PERSON_1} — accounts: Primary`;
 
 let t: TempDb;
 let book: OracleBook;
@@ -131,6 +144,7 @@ let accountDelete: typeof import("@/lib/queries/account-delete");
 let dataFixes: typeof import("@/lib/db/data-fixes");
 let importer: typeof import("@/lib/import/commit");
 let lots: typeof import("@/lib/import/close-open-lots");
+let taxScope: typeof import("@/lib/queries/tax-scope");
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {}, revalidateTag: () => {}, unstable_cache: (fn: unknown) => fn }));
 
@@ -154,6 +168,7 @@ beforeAll(async () => {
   dataFixes = await import("@/lib/db/data-fixes");
   importer = await import("@/lib/import/commit");
   lots = await import("@/lib/import/close-open-lots");
+  taxScope = await import("@/lib/queries/tax-scope");
 }, 120_000);
 
 afterAll(() => t?.cleanup());
@@ -207,20 +222,43 @@ async function saveIpo(id: number, over: Record<string, unknown>) {
   return json;
 }
 
-/** Replace whole fields of one or more views; every other field must not move. */
-function patch(base: OracleSnapshot, over: Partial<Record<keyof OracleSnapshot, Partial<OracleView>>>): OracleSnapshot {
+type ViewPatch = Partial<Omit<OracleView, "person">> & { person?: OraclePersonFigures };
+/**
+ * Replace whole fields of one or more views; every other field must not move.
+ *
+ * `p1` patches the PERSON half of the account-1 AND account-2 views at once
+ * (v4.5.0 wave TP): both views name the same tax person, so a person-scoped
+ * figure that moved in one and not the other is a defect, never an expectation.
+ * It is applied BEFORE the view patches, so a view that becomes EMPTY (its
+ * account merged or purged away) still overrides it.
+ */
+function patch(
+  base: OracleSnapshot,
+  over: Partial<Record<keyof OracleSnapshot, ViewPatch>> & { p1?: Partial<OraclePersonFigures> },
+): OracleSnapshot {
   const next = JSON.parse(JSON.stringify(base)) as OracleSnapshot;
-  for (const [view, fields] of Object.entries(over) as [keyof OracleSnapshot, Partial<OracleView>][]) {
-    Object.assign(next[view], fields);
+  if (over.p1) {
+    Object.assign(next.a1.person, over.p1);
+    Object.assign(next.a2.person, over.p1);
+  }
+  for (const [view, fields] of Object.entries(over) as [keyof OracleSnapshot | "p1", ViewPatch][]) {
+    if (view === "p1") continue;
+    const { person, ...rest } = fields;
+    Object.assign(next[view], rest);
+    if (person) next[view].person = JSON.parse(JSON.stringify(person)) as OraclePersonFigures;
   }
   return next;
 }
-/** The view a book with no rows at all reads as (a purged / merged-away account). */
+/**
+ * The view a book with no rows at all reads as (a purged / merged-away
+ * account). Its PERSON half is NO FIGURE, not zeros dressed as an answer: the
+ * selected account does not exist, so no person is resolved.
+ */
 const EMPTY_VIEW: OracleView = {
   capital: { equityRealised: 0, activeRealised: 0, ipoRealised: 0, totalRealised: 0 },
-  taxNets: [], ipoNames: [], itrScrips: [], itrCount: 0,
-  deliveryConsideration: 0, deliveryCost: 0,
-  fyRealised: {}, ais: {}, kpi: { count: 0, open: 0, net: 0 }, ipoBookNet: 0,
+  kpi: { count: 0, open: 0, net: 0 },
+  ipoBookNet: 0,
+  person: ORACLE_NO_FIGURE,
 };
 
 // ── layer 1: the identities that hold in EVERY state ────────────────────────
@@ -231,26 +269,61 @@ const EMPTY_VIEW: OracleView = {
  * fixture, so they stay true after an operation nobody predicted.
  */
 function assertAgreement(where: string, v: OracleView): void {
-  expect(v.itrScrips.length, `${where}: the ITR export states one row per row it counted`).toBe(v.itrCount);
-  expect(v.taxNets.length, `${where}: every gain the tax base holds is exported`).toBe(v.itrCount);
-  expect(r2(sum(v.taxNets)), `${where}: the tax base (tax-itr.ts) and the capital summary (capital.ts) counted the same set`)
-    .toBe(v.capital.totalRealised);
-  expect(r2(sum(Object.values(v.fyRealised))), `${where}: taxByFy (analytics/tax.ts) counted the same set`)
-    .toBe(v.capital.totalRealised);
+  const p = v.person;
+  expect(p.itrScrips.length, `${where}: the ITR export states one row per row it counted`).toBe(p.itrCount);
+  expect(p.taxNets.length, `${where}: every gain the tax base holds is exported`).toBe(p.itrCount);
+  expect(r2(sum(Object.values(p.fyRealised))), `${where}: taxByFy (analytics/tax.ts) counted what the tax base (tax-itr.ts) holds`)
+    .toBe(r2(sum(p.taxNets)));
   expect(r2(v.capital.equityRealised + v.capital.activeRealised + v.capital.ipoRealised), `${where}: the capital summary's own parts`)
     .toBe(v.capital.totalRealised);
   // THE cross-file one: lib/queries/tax-itr.ts and app/api/ais/route.ts each
   // decide which sales the view counted. They agree only while both apply the
-  // counted-once rule to the same set.
-  expect(v.deliveryConsideration, `${where}: the ITR export and the AIS sale side name the same sales`)
-    .toBe(v.ais[`${ORACLE_FY} sale`] ?? 0);
+  // counted-once rule to the same set — and, since v4.5.0, resolve the same tax
+  // person, which the scope line each of them states is pinned on below.
+  expect(p.deliveryConsideration, `${where}: the ITR export and the AIS sale side name the same sales`)
+    .toBe(p.ais[`${ORACLE_FY} sale`] ?? 0);
+  // The person the AIS route resolved (app/api/ais/route.ts) is the one the tax
+  // base resolved (lib/queries/tax-itr.ts). NO FIGURE is a valid answer — it is
+  // never a zero total.
+  if (p.label === "") {
+    expect(p.header, `${where}: no person resolved, so the page and the export say so`).toBe(ORACLE_NO_FIGURE.header);
+    expect([p.taxNets, p.itrScrips, p.fyRealised, p.ais, p.deliveryConsideration], `${where}: and state NO figure at all`)
+      .toEqual([[], [], {}, {}, 0]);
+  } else {
+    expect(p.header, `${where}: the AIS route and the tax base name the same person`).toContain(`Tax person: ${p.label} — accounts: `);
+  }
+}
+
+/**
+ * The cross-VIEW identities the tax person rule adds (v4.5.0 wave TP). Capital
+ * stays account-scoped and the tax base is person-scoped, so the two meet only
+ * over a matching set of accounts — and where they meet they must agree, in
+ * two different files, exactly as they did before the wave.
+ */
+function assertPersonAgreement(label: string, s: OracleSnapshot): void {
+  // P2 is ONE account, so its view's two scopes coincide: the plain identity.
+  expect(r2(sum(s.a3.person.taxNets)), `${label} · account 3: the tax base and the capital summary counted the same set`)
+    .toBe(s.a3.capital.totalRealised);
+  // P1 is the rest of the journal. Account 3's sale is counted ONCE (above) and
+  // ZERO times here — stated as arithmetic on two READ figures, never on a
+  // number this file computed.
+  expect(r2(sum(s.a1.person.taxNets)), `${label} · P1: the other person's book is counted zero times in this pack`)
+    .toBe(r2(s.all.capital.totalRealised - s.a3.capital.totalRealised));
+  // One person, two views, one pack — while both its accounts exist.
+  if (s.a1.person.label !== "" && s.a2.person.label !== "") {
+    expect(s.a2.person, `${label}: accounts 1 and 2 are one tax person, so both views read one pack`).toEqual(s.a1.person);
+  }
+  // No view ever merges two persons: the All-accounts view yields no figure.
+  expect(s.all.person, `${label}: All accounts over two tax persons is no figure, never a total`).toEqual(ORACLE_NO_FIGURE);
 }
 
 async function readAndCheck(label: string): Promise<OracleSnapshot> {
   const snap = await readOracle(t);
   assertAgreement(`${label} · account 1`, snap.a1);
   assertAgreement(`${label} · account 2`, snap.a2);
+  assertAgreement(`${label} · account 3`, snap.a3);
   assertAgreement(`${label} · All accounts`, snap.all);
+  assertPersonAgreement(label, snap);
   return snap;
 }
 
@@ -282,6 +355,20 @@ describe("the book the oracle is stated over", () => {
     expect([rowOf(ids.a1Staged)!.staged, legs.length, legs.filter((l) => l.kind === "exit").length]).toEqual([true, 3, 1]);
     // And a partly closed holding: 100 bought, 60 sold, still open.
     expect([rowOf(ids.a1Part)!.buyQty, rowOf(ids.a1Part)!.sellQty, rowOf(ids.a1Part)!.isOpen]).toEqual([100, 60, true]);
+
+    // v4.5.0 wave TP — TWO TAX PERSONS, and account 3 is the second one's whole
+    // book. The person arithmetic in `assertPersonAgreement` (P1 == the journal
+    // minus account 3) is only a statement about counting while account 3 owns
+    // no IPO record and no record names a trade of its, so both are pinned here.
+    const accounts = t.db.select().from(t.schema.accounts).all();
+    expect(accounts.map((a) => [a.id, a.taxIdentity]), "one identity on two books, another on the third")
+      .toEqual([[ORACLE_A1, ORACLE_PERSON_1], [ORACLE_A2, ORACLE_PERSON_1], [ORACLE_A3, ORACLE_PERSON_2]]);
+    const a3Rows = rowsIn(ORACLE_A3);
+    expect(a3Rows.map((r) => [r.tradingsymbol, r.isOpen, r.netPnl]), "the second person's whole book")
+      .toEqual([["A3SOLD", false, 990]]);
+    const ipoRows = t.db.select().from(t.schema.ipos).all();
+    expect(ipoRows.some((r) => r.accountId === ORACLE_A3), "account 3 owns no IPO record").toBe(false);
+    expect(ipoRows.some((r) => r.tradeId === ids.a3Sold), "and no record names its sale").toBe(false);
   });
 
   it("the oracle at rest: six consumers, three views, every sale counted exactly once", async () => {
@@ -290,17 +377,30 @@ describe("the book the oracle is stated over", () => {
 
   it("All accounts is NOT the sum of the two books, and that IS the rule working", async () => {
     const s = await readOracle(t);
-    // ORACLE-LEGACY (account 1) names a holding in account 2. Account 1 counts
-    // the record (the holding is not in view), account 2 counts the holding (the
-    // record is not in view) — and All accounts counts the HOLDING and leaves
-    // the record out. One economic sale, stated once in all three.
+    // ORACLE-LEGACY (account 1) names a holding in account 2. Account 1's
+    // CAPITAL summary counts the record (the holding is not in that view), the
+    // All-accounts one counts the holding instead — one economic sale, stated
+    // once either way.
     expect(s.a1.capital.ipoRealised, "account 1 counts the legacy record").toBe(book.ipoNet.legacy);
     expect(s.all.capital.ipoRealised, "All accounts does not").toBe(book.ipoNet.loose);
-    expect(s.all.capital.totalRealised, "so the aggregate is NOT a1 + a2")
+    expect(r2(s.all.capital.totalRealised - s.a3.capital.totalRealised), "so the aggregate is NOT a1 + a2")
       .not.toBe(r2(s.a1.capital.totalRealised + s.a2.capital.totalRealised));
-    // The sale itself is stated once in every one of them: 1,500 of
-    // consideration for A2SOLD, never 3,000.
-    expect(s.all.itrScrips.filter((x) => x === "A2SOLD" || x === "ORACLE-LEGACY (IPO)")).toEqual(["A2SOLD"]);
+    // And the PERSON's pack — the two books read together — states that sale
+    // once: 1,500 of consideration for A2SOLD, never 3,000.
+    expect(s.a1.person.itrScrips.filter((x) => x === "A2SOLD" || x === "ORACLE-LEGACY (IPO)")).toEqual(["A2SOLD"]);
+  });
+
+  it("the All-accounts view offers a person picker instead of a merged total", async () => {
+    selectOracleAccount(t, 0);
+    const scope = taxScope.resolveTaxScope();
+    expect([scope.accountIds, scope.label], "two persons, so no figure at all").toEqual([[], ""]);
+    expect(taxScope.needsPersonChoice(scope), "the page shows a picker").toBe(true);
+    expect(scope.candidates?.map((c) => [c.label, c.accountIds]), "both persons, each with its own accounts")
+      .toEqual([[ORACLE_PERSON_1, [ORACLE_A1, ORACLE_A2]], [ORACLE_PERSON_2, [ORACLE_A3]]]);
+    // …and picking one from the picker reads exactly what that person's own
+    // account view reads (the `?person=` link the four tax pages carry).
+    const picked = taxScope.resolveTaxScope(ORACLE_PERSON_2);
+    expect([picked.accountIds, picked.label]).toEqual([[ORACLE_A3], ORACLE_PERSON_2]);
   });
 });
 
@@ -334,19 +434,17 @@ const OPS: Op[] = [
       return patch(base, {
         a2: {
           capital: { equityRealised: 490.25, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(490.25 + a2Ipo) },
-          taxNets: [490.25, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
-          ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
-          itrScrips: ["A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-          fyRealised: { [ORACLE_FY]: r2(490.25 + a2Ipo) },
           kpi: { count: 1, open: 0, net: 490.25 },
         },
-        all: {
-          capital: { equityRealised: 6142.5, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(6142.5 + a2Ipo) },
+        p1: {
           taxNets: [192, 490.25, 490.25, 4970, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
           ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
           itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
           fyRealised: { [ORACLE_FY]: r2(6142.5 + a2Ipo) },
-          kpi: { count: 9, open: 5, net: 6451.5 },
+        },
+        all: {
+          capital: { equityRealised: 7132.5, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(7132.5 + a2Ipo) },
+          kpi: { count: 10, open: 5, net: 7441.5 },
         },
       });
     },
@@ -411,7 +509,10 @@ const OPS: Op[] = [
       const res = accountDelete.deleteAccount({ accountId: ORACLE_A2, mode: "merge", targetId: ORACLE_A1, connections: "delete", source: "test" });
       expect([res.ok, res.skippedTrades], res.message).toEqual([true, 0]);
       expect(res.message).toBe("Merged “oracle 2” into “Primary” — 2 trades moved.");
-      return patch(base, { a1: base.all, a2: EMPTY_VIEW });
+      // Account 1 now holds both books, so its ACCOUNT view reads what accounts
+      // 1 and 2 read together. The PERSON is unchanged — the merge moved rows
+      // inside one person — and its scope line simply lists one account now.
+      return patch(base, { p1: { header: MERGED_HEADER_P1 }, a1: { ...book.a12 }, a2: EMPTY_VIEW });
     },
   },
   {
@@ -427,7 +528,14 @@ const OPS: Op[] = [
       const back = trash.restoreTrashSnapshot(res.snapshotId!, "oracle");
       expect([back.ok, back.restored], back.message).toEqual([true, 0]);
       expect(back.message, "the account comes back; its trades are already in the target").toContain("was recreated");
-      return patch(base, { a1: base.all, a2: EMPTY_VIEW });
+      // The recreated account carries its own `tax_identity` in the envelope, so
+      // the person is whole again — an empty second book, named in the scope
+      // line, and no third person invented.
+      expect(
+        t.db.select().from(t.schema.accounts).all().map((a) => [a.id, a.taxIdentity]),
+        "the restore brought the account's tax person back with it",
+      ).toEqual([[ORACLE_A1, ORACLE_PERSON_1], [ORACLE_A2, ORACLE_PERSON_1], [ORACLE_A3, ORACLE_PERSON_2]]);
+      return patch(base, { a1: { ...book.a12 }, a2: { ...EMPTY_VIEW, person: base.a1.person } });
     },
   },
   {
@@ -441,7 +549,27 @@ const OPS: Op[] = [
       const res = accountDelete.deleteAccount({ accountId: ORACLE_A2, mode: "purge", connections: "delete", source: "test" });
       expect(res.ok, res.message).toBe(true);
       expect(rowOf(b.ids.a2Sold), "the legacy record's holding is gone").toBeUndefined();
-      return patch(base, { a2: EMPTY_VIEW, all: base.a1 });
+      // The person is account 1 alone now, and the legacy record — whose
+      // holding left the journal — states its own sale once again.
+      return patch(base, {
+        p1: {
+          header: MERGED_HEADER_P1,
+          taxNets: [192, 490.25, 4970, b.ipoNet.legacy].sort((x, y) => x - y),
+          ipoNames: ["ORACLE-LEGACY"],
+          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "ORACLE-LEGACY (IPO)"],
+          itrCount: 4,
+          deliveryConsideration: 29200,
+          deliveryCost: 23000,
+          fyRealised: { [ORACLE_FY]: r2(5652.25 + b.ipoNet.legacy) },
+          ais: { [`${ORACLE_FY} purchase`]: 49000, [`${ORACLE_FY} sale`]: 29200 },
+        },
+        a2: EMPTY_VIEW,
+        all: {
+          capital: { equityRealised: 6642.25, activeRealised: 0, ipoRealised: b.ipoNet.legacy, totalRealised: r2(6642.25 + b.ipoNet.legacy) },
+          kpi: { count: 9, open: 5, net: 6951.25 },
+          ipoBookNet: b.ipoNet.legacy,
+        },
+      });
     },
   },
   {
@@ -509,30 +637,29 @@ const OPS: Op[] = [
       expect(ipoRowOf(b.ids.linkedIpo)!.tradeId, "its holding is not in the journal, so it names nothing").toBeNull();
       expect(back.message, "and the restore says what it could not do").toContain("1 IPO record came back unlinked");
       const a2Ipo = r2(b.ipoNet.linked + b.ipoNet.loose);
-      const openPurchase = (v: OracleView): Partial<OracleView> => ({
-        ais: { ...v.ais, [`${ORACLE_FY} purchase`]: (v.ais[`${ORACLE_FY} purchase`] ?? 0) + 1000 },
+      const openKpi = (v: OracleView): Partial<OracleView> => ({
         kpi: { count: v.kpi.count + 1, open: v.kpi.open + 1, net: v.kpi.net },
       });
       return patch(base, {
-        a1: openPurchase(base.a1),
         // Exactly the state the /trades delete of that holding leaves (above):
-        // the sale is stated by the record, once.
-        a2: {
-          capital: { equityRealised: 490.25, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(490.25 + a2Ipo) },
-          taxNets: [490.25, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
-          ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
-          itrScrips: ["A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-          fyRealised: { [ORACLE_FY]: r2(490.25 + a2Ipo) },
-          kpi: { count: 1, open: 0, net: 490.25 },
-        },
-        all: {
-          ...openPurchase(base.all),
-          capital: { equityRealised: 6142.5, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(6142.5 + a2Ipo) },
+        // the sale is stated by the record, once — plus the open purchase that
+        // took the freed id, which the person's AIS purchase side counts.
+        p1: {
           taxNets: [192, 490.25, 490.25, 4970, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
           ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
           itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
           fyRealised: { [ORACLE_FY]: r2(6142.5 + a2Ipo) },
-          kpi: { count: 10, open: 6, net: 6451.5 },
+          ais: { ...base.a1.person.ais, [`${ORACLE_FY} purchase`]: (base.a1.person.ais[`${ORACLE_FY} purchase`] ?? 0) + 1000 },
+        },
+        a1: openKpi(base.a1),
+        a2: {
+          capital: { equityRealised: 490.25, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(490.25 + a2Ipo) },
+          kpi: { count: 1, open: 0, net: 490.25 },
+        },
+        all: {
+          capital: { equityRealised: 7132.5, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(7132.5 + a2Ipo) },
+          // 11 rows: the holding could not come back, and A1TAKEN took its id.
+          kpi: { count: 11, open: 6, net: 7441.5 },
         },
       });
     },
@@ -568,17 +695,9 @@ const OPS: Op[] = [
       return patch(base, {
         a2: {
           capital: { equityRealised: r2(980.5 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(980.5 + n + b.ipoNet.loose) },
-          taxNets: [490.25, 490.25, n, b.ipoNet.loose].sort((x, y) => x - y),
-          itrScrips: ["A2IPOH", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-          itrCount: 4,
-          deliveryConsideration: 5900,
-          deliveryCost: 4000,
-          fyRealised: { [ORACLE_FY]: r2(980.5 + n + b.ipoNet.loose) },
-          ais: { [`${ORACLE_FY} purchase`]: 4000, [`${ORACLE_FY} sale`]: 5900 },
           kpi: { count: 3, open: 0, net: r2(980.5 + n) },
         },
-        all: {
-          capital: { equityRealised: r2(6632.75 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(6632.75 + n + b.ipoNet.loose) },
+        p1: {
           taxNets: [192, 490.25, 490.25, 490.25, 4970, n, b.ipoNet.loose].sort((x, y) => x - y),
           itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
           itrCount: 7,
@@ -586,9 +705,12 @@ const OPS: Op[] = [
           deliveryCost: 26000,
           fyRealised: { [ORACLE_FY]: r2(6632.75 + n + b.ipoNet.loose) },
           ais: { [`${ORACLE_FY} purchase`]: 52000, [`${ORACLE_FY} sale`]: 33600 },
+        },
+        all: {
+          capital: { equityRealised: r2(7622.75 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7622.75 + n + b.ipoNet.loose) },
           // The KPI strip sums EVERY row, so the five open ones (115 + 194) are
           // in this figure and the duplicate adds itself to the baseline's.
-          kpi: { count: 11, open: 5, net: r2(6941.75 + n) },
+          kpi: { count: 12, open: 5, net: r2(7931.75 + n) },
         },
       });
     },
@@ -606,17 +728,13 @@ const OPS: Op[] = [
       expect(results.find((r) => r.name === "ipo-account-rehome-v1"), "the re-home ran and moved one row")
         .toMatchObject({ applied: true, rekeyed: 1 });
       expect(ipoRowOf(b.ids.legacyIpo)!.accountId, "filed where its holding is").toBe(ORACLE_A2);
+      // v4.5.0 wave TP — the re-home moves a record BETWEEN TWO ACCOUNTS OF ONE
+      // PERSON, so the person's pack does not move at all: it already counted
+      // that sale through the holding, in whichever of its books the record sat.
+      // Only the two ACCOUNT-scoped readings change.
       return patch(base, {
         a1: {
           capital: { equityRealised: 5652.25, activeRealised: 0, ipoRealised: 0, totalRealised: 5652.25 },
-          taxNets: [192, 490.25, 4970],
-          ipoNames: [],
-          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2"],
-          itrCount: 3,
-          deliveryConsideration: 27700,
-          deliveryCost: 22000,
-          fyRealised: { [ORACLE_FY]: 5652.25 },
-          ais: { [`${ORACLE_FY} purchase`]: 48000, [`${ORACLE_FY} sale`]: 27700 },
           ipoBookNet: 0,
         },
         a2: { ipoBookNet: r2(b.ipoNet.linked + b.ipoNet.loose + b.ipoNet.legacy) },
@@ -646,20 +764,18 @@ const OPS: Op[] = [
       return patch(base, {
         a2: {
           capital: { equityRealised: 1080.5, activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(1080.5 + b.ipoNet.loose) },
-          taxNets: [490.25, 590.25, b.ipoNet.loose].sort((x, y) => x - y),
-          deliveryConsideration: 4500,
-          fyRealised: { [ORACLE_FY]: r2(1080.5 + b.ipoNet.loose) },
-          ais: { [`${ORACLE_FY} purchase`]: 3000, [`${ORACLE_FY} sale`]: 4500 },
           kpi: { count: 2, open: 0, net: 1080.5 },
           ipoBookNet: r2(priced.netPnl + b.ipoNet.loose),
         },
-        all: {
-          capital: { equityRealised: 6732.75, activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(6732.75 + b.ipoNet.loose) },
+        p1: {
           taxNets: [192, 490.25, 490.25, 590.25, 4970, b.ipoNet.loose].sort((x, y) => x - y),
           deliveryConsideration: 32200,
           fyRealised: { [ORACLE_FY]: r2(6732.75 + b.ipoNet.loose) },
           ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 32200 },
-          kpi: { count: 10, open: 5, net: 7041.75 }, // 6941.75 + the extra ₹100 on the sale
+        },
+        all: {
+          capital: { equityRealised: 7722.75, activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7722.75 + b.ipoNet.loose) },
+          kpi: { count: 11, open: 5, net: 8031.75 }, // 7931.75 + the extra ₹100 on the sale
           ipoBookNet: r2(priced.netPnl + b.ipoNet.loose + b.ipoNet.legacy),
         },
       });
@@ -724,11 +840,14 @@ const OPS: Op[] = [
       // The book gains one OPEN purchase of 1,000 and nothing else: no realised
       // figure moves, the KPI strip counts every row so it gains one open row
       // with a stated net of 0, and the AIS purchase side counts every purchase.
-      const openPurchase = (v: OracleView): Partial<OracleView> => ({
-        ais: { ...v.ais, [`${ORACLE_FY} purchase`]: (v.ais[`${ORACLE_FY} purchase`] ?? 0) + 1000 },
+      const openKpi = (v: OracleView): Partial<OracleView> => ({
         kpi: { count: v.kpi.count + 1, open: v.kpi.open + 1, net: v.kpi.net },
       });
-      return patch(base, { a2: openPurchase(base.a2), all: openPurchase(base.all) });
+      return patch(base, {
+        p1: { ais: { ...base.a1.person.ais, [`${ORACLE_FY} purchase`]: (base.a1.person.ais[`${ORACLE_FY} purchase`] ?? 0) + 1000 } },
+        a2: openKpi(base.a2),
+        all: openKpi(base.all),
+      });
     },
   },
   {
@@ -749,17 +868,9 @@ const OPS: Op[] = [
       return patch(base, {
         a1: {
           capital: { equityRealised: r2(5652.25 + n), activeRealised: 0, ipoRealised: b.ipoNet.legacy, totalRealised: r2(5652.25 + n + b.ipoNet.legacy) },
-          taxNets: [192, 490.25, 4970, n, b.ipoNet.legacy].sort((x, y) => x - y),
-          itrScrips: ["A1JOIN", "A1PART", "A1SOLD1", "A1SOLD2", "ORACLE-LEGACY (IPO)"],
-          itrCount: 5,
-          deliveryConsideration: 30520,
-          deliveryCost: 24000,
-          fyRealised: { [ORACLE_FY]: r2(5652.25 + n + b.ipoNet.legacy) },
-          ais: { [`${ORACLE_FY} purchase`]: 49000, [`${ORACLE_FY} sale`]: 30520 },
           kpi: { count: 8, open: 4, net: r2(5961.25 - 115 + n) },
         },
-        all: {
-          capital: { equityRealised: r2(6632.75 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(6632.75 + n + b.ipoNet.loose) },
+        p1: {
           taxNets: [192, 490.25, 490.25, 490.25, 4970, n, b.ipoNet.loose].sort((x, y) => x - y),
           itrScrips: ["A1JOIN", "A1PART", "A1SOLD1", "A1SOLD2", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
           itrCount: 7,
@@ -767,7 +878,10 @@ const OPS: Op[] = [
           deliveryCost: 26000,
           fyRealised: { [ORACLE_FY]: r2(6632.75 + n + b.ipoNet.loose) },
           ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 33420 },
-          kpi: { count: 10, open: 4, net: r2(6941.75 - 115 + n) },
+        },
+        all: {
+          capital: { equityRealised: r2(7622.75 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7622.75 + n + b.ipoNet.loose) },
+          kpi: { count: 11, open: 4, net: r2(7931.75 - 115 + n) },
         },
       });
     },
@@ -795,16 +909,18 @@ const OPS: Op[] = [
       expect([closed.added, closed.autoClose?.closedWhole], "the lot became the closed row").toEqual([0, 1]);
 
       const afterFirstClose = await readOracle(t);
-      expect(afterFirstClose.a1.itrCount, "the new round trip is counted").toBe(base.a1.itrCount + 1);
-      expect(afterFirstClose.all.itrCount).toBe(base.all.itrCount + 1);
+      expect(afterFirstClose.a1.person.itrCount, "the new round trip is counted").toBe(base.a1.person.itrCount + 1);
+      expect(afterFirstClose.a2.person.itrCount, "once, in the person's pack — in either of its views")
+        .toBe(base.a2.person.itrCount + 1);
+      expect(afterFirstClose.a3.person.itrCount, "and not at all in the other person's").toBe(base.a3.person.itrCount);
 
       const row = rowsIn(ORACLE_A1).find((r) => r.tradingsymbol === "A1AUTOC")!;
       const hash = lots.executionHashOfPiece(row);
       const un = importer.unCloseExecution(ORACLE_A1, row.broker, hash);
       expect(un.ok, un.message).toBe(true);
       const open = await readOracle(t);
-      expect([open.a1.itrCount, open.all.itrCount], "an un-closed position realises nothing")
-        .toEqual([base.a1.itrCount, base.all.itrCount]);
+      expect([open.a1.person.itrCount, open.a2.person.itrCount], "an un-closed position realises nothing")
+        .toEqual([base.a1.person.itrCount, base.a2.person.itrCount]);
 
       // Close it again through the import door: the reinstated sale carries the
       // execution's own identity, so it is removed first and the file re-read.

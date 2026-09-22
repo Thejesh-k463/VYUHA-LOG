@@ -12,10 +12,24 @@ import { lotsOf, lotSourceLabel } from "@/lib/analytics/per-lot";
 import { getIndexLotMap } from "./instruments";
 import { getSelectedAccountId } from "./accounts";
 
-export const getTrades = cache((): Trade[] => {
+/**
+ * The whole book in the current scope.
+ *
+ * `accountIds` is the v4.5.0 TAX PERSON scope (`lib/queries/tax-scope.ts`):
+ * omitted = the legacy account scope (invariant 8), an array = this person's
+ * accounts, an EMPTY array = no rows. Only the tax surfaces pass it.
+ */
+export const getTrades = cache((accountIds?: readonly number[]): Trade[] => {
   const accountId = getSelectedAccountId();
   const q = db.select().from(trades);
-  return (accountId > 0 ? q.where(eq(trades.accountId, accountId)) : q)
+  const where = accountIds
+    ? accountIds.length > 0
+      ? inArray(trades.accountId, [...accountIds])
+      : sql`1 = 0`
+    : accountId > 0
+      ? eq(trades.accountId, accountId)
+      : undefined;
+  return (where ? q.where(where) : q)
     .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all();
 });
 
@@ -46,10 +60,19 @@ function pickCols<K extends keyof Trade & keyof typeof trades>(
 
 function scopedBookRows<K extends keyof Trade & keyof typeof trades>(
   keys: readonly K[],
+  /** v4.5.0 tax-person scope; see `getTrades` above. */
+  accountIds?: readonly number[],
 ): Pick<Trade, K>[] {
   const accountId = getSelectedAccountId();
   const q = db.select(pickCols(keys)).from(trades);
-  return (accountId > 0 ? q.where(eq(trades.accountId, accountId)) : q)
+  const where = accountIds
+    ? accountIds.length > 0
+      ? inArray(trades.accountId, [...accountIds])
+      : sql`1 = 0`
+    : accountId > 0
+      ? eq(trades.accountId, accountId)
+      : undefined;
+  return (where ? q.where(where) : q)
     .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id))
     .all() as Pick<Trade, K>[];
 }
@@ -516,7 +539,8 @@ export type TaxPageTrade = Pick<Trade, (typeof TAX_FIELDS)[number]>;
  * JS filters, so rows, order and every accumulated rupee are identical by
  * construction.
  */
-export const getTaxTrades = cache((): TaxPageTrade[] => scopedBookRows(TAX_FIELDS));
+export const getTaxTrades = cache((accountIds?: readonly number[]): TaxPageTrade[] =>
+  scopedBookRows(TAX_FIELDS, accountIds));
 
 const HARVEST_FIELDS = [
   "id", "symbol", "segment", "isOpen",
@@ -545,7 +569,8 @@ export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;
  * therefore the rendered candidate order — and both float sums are identical
  * by construction.
  */
-export const getHarvestTrades = cache((): HarvestTrade[] => scopedBookRows(HARVEST_FIELDS));
+export const getHarvestTrades = cache((accountIds?: readonly number[]): HarvestTrade[] =>
+  scopedBookRows(HARVEST_FIELDS, accountIds));
 
 /**
  * tradeId → number of chart screenshots attached.
