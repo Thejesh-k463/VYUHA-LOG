@@ -8649,3 +8649,14 @@ died on "Permission denied" before `npm` ran; use the absolute scratchpad path. 
 30 minutes while two of three jobs went green — silence is not "still running"; a background Bash `until … = completed` loop on `--json status` was the reliable wait.
 `gh release view` has no `isLatest` field — read `gh release list` for the Latest marker. `/fleet-tune` (13.3 days DUE at the session's start) was NOT run: it needs its own
 session, and one hook proposal in `~/.claude/coord/learnings/HOOK-PROPOSALS.md` awaits the operator.
+
+## 2026-09-23 — the owner publishes releases by hand (v4.6.0 onward)
+
+Owner ruling after the v4.5.0 tag session pressed Publish itself (`gh release edit v4.5.0 --draft=false --latest`) and a stuck CI watcher
+left the session apparently "running" for 2 h 23 min after the work was done: **"From next upgrade I will publish the release manually."**
+From v4.6.0 the session STOPS after `npm run release:verify <tag> -- --deep` prints "Safe to publish" and hands over the draft URL, the
+deep-verify line, the client ZIP hash and the WDSI form; the owner flips the draft to Latest. The post-publish proofs (`gh release list`,
+`latest.json` platforms, the landing page, the revocations prerelease flag) move to the session after the owner reports "published".
+Rejected: keeping the publish in-session behind an AskUserQuestion — the owner wants the click itself, not a prompt for it.
+The watcher that hung: `gh run list --commit <sha> --workflow CI` never matched (a plain `gh run list --limit 3` found the run at once);
+the CI run on `86bcd06` was 35763585856 SUCCESS 6/6 the whole time — a release-session wait reads the plain list.
