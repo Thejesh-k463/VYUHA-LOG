@@ -197,10 +197,13 @@ describe("source guard — one today", () => {
     expect(scan(/\btodayIso\b/)).toEqual([]);
   }, 20_000);
 
+  // Measured 401 ms / 406 ms alone (2026-09-22, vitest --reporter=verbose, this file alone) and timed out at
+  // vitest's 5 s default under full-suite load with 8.6 GB free (NOT the memory-pressure signature) — the same
+  // whole-tree walk as the two cases above, so the same raised timeout, not a loosened scan.
   it("no inline IST copy: toLocaleDateString(en-CA, Asia/Kolkata) lives only in the helper", () => {
     const hits = scan(/toLocaleDateString\(\s*"en-CA"/).filter((l) => !l.startsWith("lib/domain/trading-day.ts:"));
     expect(hits).toEqual([]);
-  });
+  }, 20_000);
 
   it("the charge-pricing path and every file this wave migrated read no UTC today", () => {
     // `new Date().toISOString().slice(0, 10)` IS "today, in UTC". These files
@@ -272,7 +275,7 @@ describe("source guard — one today", () => {
     const hits = scan(UTC_TODAY);
     const inMigrated = hits.filter((l) => MIGRATED.includes(l.split(":")[0]));
     expect(inMigrated).toEqual([]);
-  });
+  }, 20_000);
 
   it("the remaining UTC-today sites are a FROZEN inventory — it can shrink, never grow", () => {
     // NOT an allow-list of non-"today" uses: every row is a UTC "today" that

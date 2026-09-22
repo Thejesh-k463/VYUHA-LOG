@@ -8537,3 +8537,25 @@ its 42 rows and ₹75,132.75 net, as every wave pins). `sttSplit`'s deductible /
 N realisations for one ladder, not 1 — arguably right, not ruled on; noted in the release copy.
 
 **Gate (uncommitted tree, `vyuha-verifier`, second run):** `npm run verify` EXIT 0 — **470 files / 10,830 passed / 40 skipped**, lint 7 warnings (all pre-existing; STATE's "3" was stale), `next build` passed, Duration 105 s. The first run was red on ONE doc guard (`readme-claims`: README said 468 test files, the tree has 470 — fixed in the DOC). The 5 extra skips against the 35 baseline are `tests/revocation-roundtrip.test.ts` skipping because `ae39cf1` moved the signing key out of the repo and the test still reads the repo path — fix-list A12, not this wave. Two builders (product, then tests) + the verifier; 36 new tests in two files; 17 oracle pins re-stated with their arithmetic; three mutants killed (tranche-price basis, dropped rounding remainder, open-only split).
+
+## 2026-09-22 — v4.5.0 wave 3c: the ETF × tax seam pinned (`tests/seams-v45-etf-tax.test.ts`), no seam defect
+
+Waves 3a (the bundled ETF list, `etf-class.ts`, the STT overlay inside `ratesForTrade`) and 3b (the CG band table, `assetClassFor`,
+`realised-rows.ts`) were built by different builders; the value crossing the seam is the instrument identity `{segment, isin, symbol}`
+→ the STT rate a trade is BILLED at AND the capital-gains HEAD its sale takes. Seven cases run both real halves together over ONE
+temp DB: GOLDBEES by symbol only (STT 0 AND an other-unit head), NIFTYBEES by ISIN (the `etf_equity` seller-side rate AND 111A /
+112A by calendar month), LIQUIDBEES acquired 2023-05-02 (s.50AA deemed-ST whatever the holding), an unlisted `INF` ISIN (billed at
+the equity-SHARE rate, head BLANK, the `etf_class` Data Quality issue from the real `assessDataQuality`), a Hybrid underlying
+(STT 0 AND undetermined), and a staged NIFTYBEES ladder priced through `priceLegs` whose realised fill row resolves equity-oriented
+PER FILL. **No expected rate is hard-coded**: each is `round(<the charge_config row's own sttPct> × value)` read back through
+`findRates` / `loadRatesMap`, with the contrast against the equity-share row asserted, so the file cannot agree with itself.
+**Red on revert, twice:** reverse-applying 3a's overlay hunk in `lib/engine/rates.ts` reddens 6 of 7 (the staged ladder shows the
+₹620-vs-₹2 defect the 3a fix closed); a `return "share"` mutant at the top of `assetClassFor` reddens 6 (a narrower INF-only mutant
+left the symbol-resolved GOLDBEES case green — the reason the file resolves one instrument by symbol and one by ISIN).
+Crossings enumerated WITHOUT a case, all recorded elsewhere: the three `symbol`-but-no-`isin` call sites (fix-list A9); the IPO
+and sizing-lab paths passing no instrument (correct — an allotment is a share); the AIS purchase side of a staged ETF ladder
+(3b-ii decision 7); harvest's `sttSplit` counts per realisation. **Gate:** `npm run verify` EXIT 0 — **471 files / 10,837 passed / 40 skipped**, lint 7 pre-existing,
+build ok. README's test-file count 470 → 471. The first gate run was red on ONE `Test timed out in 5000ms` in
+`tests/today-clock.test.ts` (a whole-tree source scan) with **8.6 GB free** — NOT FAIL-J's memory signature; measured 401 ms /
+406 ms alone, the same walk as its two siblings that already carry 20 s, so both cases were raised to 20 s WITH the measurement
+in a comment (the rule: a raised timeout needs a measured local time). That makes six raised scan cases in that file.
