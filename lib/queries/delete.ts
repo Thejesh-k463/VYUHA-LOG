@@ -1,11 +1,13 @@
 import "server-only";
-import { inArray, eq } from "drizzle-orm";
+import { inArray, eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades, tradeLegs, tradeAttachments, importBatches, ipos, ledgerEntries, brokerReference } from "@/lib/db/schema";
 import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
 import { resolveDeleteScope, type DeletePreview } from "@/lib/domain/delete-scope";
 import { getSelectedAccountId } from "./accounts";
+// Pure identity readers (no DB, no cycle back into lib/import/commit.ts).
+import { closedByHash, executionHashOfPiece, isAutoClosePiece, unCloseFirstNote } from "@/lib/import/close-open-lots";
 
 /**
  * Executing a delete. The DECISION of what to delete lives in the pure
@@ -125,6 +127,56 @@ export function deleteTradesByIds(
 
   if (allowedIds.length === 0) {
     return { ok: false, deleted: 0, legs: 0, attachments: 0, orphanedFiles: [], snapshotId: null, message: "Those trades are not in the account you are viewing." };
+  }
+
+  // W3 (design review revision 9 + ruling A3) — a PIECE of an import's
+  // auto-close is never deleted on its own, and neither is the import batch
+  // that created one.
+  //
+  // A close turns one execution and the lot it consumed into a set of rows that
+  // only make sense together: delete the slice and the reduced lot still says
+  // it was closed, while the sale's realised P&L is simply gone; delete the lot
+  // and the slice's cost basis names a position the book no longer holds. The
+  // batch delete lands here too (`deleteImportBatch` cascades through this
+  // function), which is R75: the SELL batch's slice carries money the BUY batch
+  // opened, so "delete this import" would remove another batch's position.
+  //
+  // The refusal names the execution and offers the door that CAN undo it
+  // (`unCloseExecution`). Nothing is written — not even the snapshot, which is
+  // written below this point. `closeStaleLot`'s own delete (R26) never reaches
+  // this: the row it removes is an ordinary recorded sale, not a close's piece.
+  // An ACCOUNT purge does not come through here at all (lib/queries/account-delete.ts
+  // owns its own SQL, and its row set is closed because `matchKey` includes the
+  // account), which is why this refusal cannot strand a deleted account.
+  // A COMPLETE family is not a broken close: deleting every piece of one
+  // execution together (an account purge, or the user selecting all of them)
+  // leaves nothing behind to disagree, and the recovery snapshot restores the
+  // set whole. Only a PARTIAL delete is refused.
+  const selected = new Set(allowedIds);
+  for (const piece of allowed.filter((r) => isAutoClosePiece(r))) {
+    // The EXECUTION's hash, not the row's: a lot consumed whole keeps its own
+    // and holds the execution's as an alias, and reading the column there
+    // looked for the wrong family and left a leftover row stranded.
+    const execHash = executionHashOfPiece(piece);
+    const left = db
+      .select()
+      .from(trades)
+      .where(and(eq(trades.accountId, piece.accountId), eq(trades.broker, piece.broker)))
+      .all()
+      .find(
+        (r) =>
+          !selected.has(r.id) &&
+          (r.dedupHash === execHash ||
+            closedByHash(r.importNotes) === execHash ||
+            (r.importNotes ?? "").includes(`dedup-alias:${execHash}`)),
+      );
+    if (!left) continue;
+    return {
+      ok: false, deleted: 0, legs: 0, attachments: 0, orphanedFiles: [], snapshotId: null,
+      message:
+        `${piece.tradingsymbol} is part of a position an import closed automatically, and trade #${left.id} (${left.tradingsymbol}) is the rest of that close — deleting one without the other would leave a close describing a trade that is no longer there. ` +
+        unCloseFirstNote(piece.tradingsymbol, execHash),
+    };
   }
 
   const attachRows = collectIdChunks(allowedIds, (chunk) => db.select().from(tradeAttachments).where(inArray(tradeAttachments.tradeId, chunk)).all());

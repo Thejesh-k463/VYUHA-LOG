@@ -879,6 +879,29 @@ export const OPS: BookOp[] = [
       );
     },
   },
+  {
+    name: "unCloseImport",
+    needs: "an import auto-close in account A — i.e. `autoCloseImport` ran before this op",
+    drives: "lib/import/commit.ts unCloseExecution (POST /api/trades/un-close) — v4.5.0 W3",
+    run: async (_db, ctx) => {
+      // The inverse of `autoCloseImport`, and the pair the harness exists to
+      // sweep: the close merged one purchase and one sale into ONE row, and the
+      // un-close states those same two legs as two rows. Flat either way, so the
+      // op declares no quantity delta — and if it ever stopped being flat (a
+      // slice deleted without its lot, a sale reinstated twice) I3 says so.
+      // The execution is read through the product's own rule, never off
+      // `dedup_hash`: a lot consumed WHOLE keeps its own identity and holds the
+      // execution's as an alias.
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, "unCloseImport", "skipped", "account A is gone");
+      const piece = allTrades(ctx).find((r) => r.accountId === acc && ctx.m.lots.isAutoClosePiece(r));
+      if (!piece) return record(ctx, "unCloseImport", "skipped", "nothing in account A was closed by an import");
+      selectAccount(ctx, acc);
+      const res = ctx.m.commit.unCloseExecution(acc, piece.broker, ctx.m.lots.executionHashOfPiece(piece));
+      if (!res.ok) return record(ctx, "unCloseImport", "refused", res.message);
+      record(ctx, "unCloseImport", "applied", `${piece.tradingsymbol}: ${res.message}`);
+    },
+  },
 ];
 
 /**

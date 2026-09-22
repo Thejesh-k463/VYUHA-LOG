@@ -65,7 +65,14 @@ import {
   withLotCloseNote,
   withAutoClosedLotNote,
   withClosedByNote,
+  withExecBillNote,
   withScaledRemainderNote,
+  // W3 — lifecycle: un-close, the delete refusals, the merge refusal.
+  closedByHash,
+  execBillFromNotes,
+  withoutAutoCloseNotes,
+  PARTIAL_CLOSE_NOTE,
+  DEDUP_ALIAS_PREFIX,
   autoCloseSentences,
   emptyAutoCloseCounters,
   type AutoCloseCounters,
@@ -466,7 +473,7 @@ function openLotOf(r: typeof tradesTable.$inferSelect, hasLegs: boolean): OpenLo
 
 interface ExecutionClosePlan {
   /** One piece per lot this execution consumed, with its merged bill. */
-  pieces: { c: LotClose; parts: StaleChargeParts; total: number; entryTime: string | null }[];
+  pieces: { c: LotClose; parts: StaleChargeParts; total: number; entryTime: string | null; execShare: { parts: StaleChargeParts; total: number } }[];
   /** What is left of each touched lot, with the bill it KEEPS (R6). */
   remainders: { lotId: number; qty: number; value: number; charges: number; parts: StaleChargeParts | null }[];
   /** What is left of the execution after the closes (0 = consumed whole). */
@@ -563,7 +570,9 @@ function planExecutionCloses(
     bill.total = lt.keep;
     const parts = {} as StaleChargeParts;
     for (const k of STALE_CHARGE_PARTS) parts[k] = r2m(lp.slice[k] + ep.slice[k]);
-    pieces.push({ c, parts, total: r2m(lt.slice + et.slice), entryTime: row.entryTime });
+    // `execShare` is the EXECUTION's half of this piece's bill, kept because the
+    // merge of the two halves is not invertible from the ten columns (W3).
+    pieces.push({ c, parts, total: r2m(lt.slice + et.slice), entryTime: row.entryTime, execShare: { parts: ep.slice, total: et.slice } });
   }
 
   const untouchedQty = plan.untouched[0]?.qty ?? 0;
@@ -1181,6 +1190,9 @@ export function previewParsedFile(
   const counters = emptyAutoCloseCounters();
   const previewLotRows = new Map<number, typeof tradesTable.$inferSelect>();
   const previewLots: OpenLot[] = [];
+  // W2a-F1, the preview's half: what this file already counted for a row it
+  // would open, taken back when the same file closes it.
+  const previewCounted = new Map<number, { gross: number; charges: number; net: number }>();
   if (autoClose) {
     const laddered = tradeIdsWithLegs(db, existingRows.filter((r) => r.isOpen).map((r) => r.id));
     for (const r of existingRows) {
@@ -1222,6 +1234,13 @@ export function previewParsedFile(
           // A negative id is a lot THIS file opened (the virtual rows below).
           if (piece.c.lotId < 0) counters.closedAgainstThisFilesLot++;
           else counters.closedAgainstStoredLot++;
+          const already = previewCounted.get(piece.c.lotId);
+          if (already) {
+            rowGross = r2m(rowGross - already.gross);
+            rowCharges = r2m(rowCharges - already.charges);
+            rowNet = r2m(rowNet - already.net);
+            previewCounted.delete(piece.c.lotId);
+          }
           void pi;
         }
         if (plan.untouchedQty > 0) {
@@ -1278,6 +1297,7 @@ export function previewParsedFile(
         if (vlot) {
           previewLotRows.set(vid, vrow);
           previewLots.push(vlot);
+          previewCounted.set(vid, { gross: rowGross, charges: rowCharges, net: rowNet });
         }
       }
     }
@@ -1954,6 +1974,12 @@ export function commitParsedFile(
     const lotRows = new Map<number, typeof tradesTable.$inferSelect>();
     const lots: OpenLot[] = [];
     const openedHere = new Set<number>();
+    // W2a-F1 — the SUMMARY reports what the BOOK moved, each leg charged once.
+    // A buy and a sell in ONE file were counted twice: the buy as an open row
+    // (net = -its own bill) and again inside the merged close that consumed it
+    // (Rs 51.96 shown against Rs 39.58 in the book). What this file already
+    // counted for a lot it opened is taken back when that lot is closed.
+    const countedNet = new Map<number, number>();
     if (autoClose) {
       const openRows = tx
         .select()
@@ -1999,18 +2025,24 @@ export function commitParsedFile(
       for (const [pi, piece] of pieces.entries()) {
         const { c } = piece;
         const row = lotRows.get(c.lotId)!;
+        const execBill = { ...piece.execShare.parts, total: piece.execShare.total };
         const closed = closedTradeOf(t, c, piece.entryTime, piece.parts, piece.total);
         const cb = buildRow(closed, rates, overrides, defaults, planAccount);
         const holdsHash = holder.kind !== "remainder" && holder.at === pi;
         netDelta = r2m(netDelta + cb.netPnl);
+        // W2a-F1: this lot's own bill was counted when THIS file opened it.
+        if (countedNet.has(c.lotId)) {
+          netDelta = r2m(netDelta - countedNet.get(c.lotId)!);
+          countedNet.delete(c.lotId);
+        }
 
         if (c.fullyConsumed) {
           // The LOT ROW becomes the closed row: no slice, its own hash kept,
           // the execution's hash held as an alias when it holds it.
           const kept = keptRisk(row, row.bucket, row.segment, defaults.capRows);
           const notes = holdsHash
-            ? withLotCloseNote(row.importNotes, b.dedup)
-            : withClosedByNote(withAutoClosedLotNote(row.importNotes), b.dedup);
+            ? withExecBillNote(withLotCloseNote(row.importNotes, b.dedup), execBill)
+            : withExecBillNote(withClosedByNote(withAutoClosedLotNote(row.importNotes), b.dedup), execBill);
           const patch = {
             buyQty: closed.buyQty,
             avgBuyPrice: closed.avgBuyPrice,
@@ -2059,7 +2091,10 @@ export function commitParsedFile(
           const bill = { total: rem.charges, parts: rem.parts ?? partsOf(row as unknown as StaleChargeParts) };
           const long = c.side === "long";
           const before = { buyQty: row.buyQty, sellQty: row.sellQty, buyValue: row.buyValue, sellValue: row.sellValue, chargesTotal: row.chargesTotal, netPnl: row.netPnl, importNotes: row.importNotes };
-          const lotNotes = withAutoClosedLotNote(row.importNotes);
+          // W3: the reduced lot names the execution that took part of it —
+          // `closed-by:` is not an identity, and without it un-close could not
+          // find the lot at all (it holds no alias, by the one-holder rule).
+          const lotNotes = withClosedByNote(withAutoClosedLotNote(row.importNotes), b.dedup);
           const lotPatch = {
             ...(long
               ? { buyQty: rem.qty, buyValue: rem.value }
@@ -2095,8 +2130,8 @@ export function commitParsedFile(
 
           const sliceHash = holdsHash ? b.dedup : executionIdentity({ ...closed, segment: cb.classification.segment, exchange: cb.classification.exchange }).hash;
           const sliceNotes = holdsHash
-            ? withLotCloseNote(null, b.dedup)
-            : withClosedByNote(AUTO_CLOSE_NOTE, b.dedup);
+            ? withExecBillNote(withLotCloseNote(null, b.dedup), execBill)
+            : withExecBillNote(withClosedByNote(AUTO_CLOSE_NOTE, b.dedup), execBill);
           const ins = tx
             .insert(tradesTable)
             .values({
@@ -2185,7 +2220,11 @@ export function commitParsedFile(
         remainder: {
           t: scaled,
           hash: scaledHash,
-          note: (n) => (holder.kind === "remainder" ? withScaledRemainderNote(n, scaledHash) : withClosedByNote(n, b.dedup)),
+          note: (n) =>
+            withExecBillNote(
+              holder.kind === "remainder" ? withScaledRemainderNote(n, scaledHash) : withClosedByNote(n, b.dedup),
+              { ...execRest, total: execRestTotal },
+            ),
         },
         netPnl: netDelta,
         added: inserted,
@@ -2408,6 +2447,7 @@ export function commitParsedFile(
             lotRows.set(fresh.id, fresh);
             lots.push(lot);
             openedHere.add(fresh.id);
+            countedNet.set(fresh.id, b.netPnl);
           }
         }
       }
@@ -3032,6 +3072,293 @@ class StaleCloseAbort extends Error {}
  * would put S back and leave that snapshot behind — an orphan whose restore
  * skips the row, because its id is taken. Nothing is lost either way.
  */
+export type UnCloseCode = "NOT_FOUND" | "OTHER_ACCOUNT" | "SHAPE" | "STAGED" | "JOURNAL";
+
+/**
+ * W3 (design review revision 10) — UNDO one import auto-close, exactly.
+ *
+ * The applier turns one execution and the lots it consumed into a new set of
+ * rows; this turns them back. It is the door every refusal in W3 points at: a
+ * delete or a merge that would break a close is refused and the user is sent
+ * here, rather than being allowed to leave half a close behind.
+ *
+ * THE INVERSE, PER SHAPE (the three the applier can produce):
+ *
+ *  • PARTIAL — a reduced lot (open, `closed-by:H`) plus a slice (closed). The
+ *    lot gets back the slice's OPEN leg (quantity and value) and the slice's
+ *    bill MINUS the execution's half of it (`exec-bill:`), which is
+ *    `splitByRemainder`'s inverse: keep + slice = the total that was split. The
+ *    slice row goes.
+ *  • WHOLE — the lot row itself was converted (closed, holding `dedup-alias:H`).
+ *    Its closing leg and the execution's half of its bill are subtracted and it
+ *    reads open again; no slice exists to remove.
+ *  • REMAINDER — what an execution had left over (open, holds H, frozen by
+ *    `PARTIAL_CLOSE_NOTE`). It is folded into the reinstated execution row and
+ *    removed, so the execution comes back as ONE row, the way the file stated
+ *    it.
+ *
+ * Then the execution is reinstated as one ORDINARY row: its original hash, the
+ * bill it stated (the sum of the halves recorded on the pieces), its own dates
+ * and its own single side. One audit row per row touched, all in ONE
+ * transaction — a half-undone close is worse than either state.
+ *
+ * Money is rupees here (invariant 1). The write lands on the rows' own account
+ * and is refused from another book (invariant 8); account 0 is a view and can
+ * never be a subject (invariant 9).
+ */
+export function unCloseExecution(
+  accountId: number,
+  broker: string,
+  execHash: string,
+): { ok: boolean; message: string; code?: UnCloseCode } {
+  const hash = (execHash ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(hash)) return { ok: false, code: "NOT_FOUND", message: "That is not a trade identity. Nothing was changed." };
+  if (!(accountId > 0)) return { ok: false, code: "OTHER_ACCOUNT", message: "Choose the account this position is in first. Nothing was changed." };
+  const view = getSelectedAccountId();
+  if (view > 0 && view !== accountId) {
+    return { ok: false, code: "OTHER_ACCOUNT", message: "Those rows belong to a different account from the one you are viewing. Nothing was changed." };
+  }
+
+  return db.transaction((tx): { ok: boolean; message: string; code?: UnCloseCode } => {
+    const book = tx
+      .select()
+      .from(tradesTable)
+      .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, broker)))
+      .all();
+    const touched = book.filter(
+      (r) => r.dedupHash === hash || closedByHash(r.importNotes) === hash || (r.importNotes ?? "").includes(`${DEDUP_ALIAS_PREFIX}${hash}`),
+    );
+    if (touched.length === 0) {
+      return { ok: false, code: "NOT_FOUND", message: "Nothing in this account was closed by that execution. Nothing was changed." };
+    }
+    const notes = (r: typeof tradesTable.$inferSelect) => r.importNotes ?? "";
+    const converted = touched.find((r) => !r.isOpen && r.dedupHash !== hash && notes(r).includes(`${DEDUP_ALIAS_PREFIX}${hash}`));
+    const slices = touched.filter((r) => !r.isOpen && r !== converted && notes(r).includes(AUTO_CLOSE_NOTE));
+    // What the execution had LEFT OVER, in both shapes the applier writes it:
+    // as the holder of its own scaled hash (`PARTIAL_CLOSE_NOTE`, when no lot
+    // was consumed whole), and as a plain leftover carrying only the thread back
+    // (`closed-by:`, when a lot WAS consumed whole and took the hash). Reading
+    // the sentence alone left that second row in the book, so a sale of 100 that
+    // closed a lot of 60 came back as 60 plus a stray 40 — not as the one row
+    // the file stated.
+    const remainder = touched.find(
+      (r) => r.isOpen && !notes(r).includes(AUTO_CLOSE_NOTE) && (notes(r).includes(PARTIAL_CLOSE_NOTE) || closedByHash(r.importNotes) === hash),
+    );
+    const reduced = touched.filter((r) => r.isOpen && r !== remainder && notes(r).includes(AUTO_CLOSE_NOTE));
+    if (!converted && slices.length === 0) {
+      // Nothing CLOSED answers to that execution — the commonest reason being
+      // that it has already been un-closed and the row standing under the hash
+      // is the reinstated execution itself. Undoing twice is not a broken shape;
+      // it is nothing left to undo, and the second press says so (idempotence).
+      return { ok: false, code: "NOT_FOUND", message: "Nothing in this account was closed by that execution. Nothing was changed." };
+    }
+    // A ladder is never rebuilt from here (invariant 4/5), and a piece the user
+    // has written on is never deleted by a machine.
+    const laddered = tradeIdsWithLegs(tx as unknown as TxLike, touched.map((r) => r.id));
+    for (const r of touched) {
+      if (r.staged || laddered.has(r.id)) {
+        return { ok: false, code: "STAGED", message: `${r.tradingsymbol} is a staged position built from more than one fill; its exit is booked on its own ladder in Trades. Nothing was changed.` };
+      }
+    }
+    for (const r of [...slices, ...(remainder ? [remainder] : [])]) {
+      const journal = saleJournalFields(r, { attachments: tx.select({ id: tradeAttachments.id }).from(tradeAttachments).where(eq(tradeAttachments.tradeId, r.id)).all().length });
+      if (journal.length > 0) {
+        return { ok: false, code: "JOURNAL", message: `Nothing was changed. ${staleJournalNote(journal, "long")}` };
+      }
+    }
+
+    const billOf = (r: typeof tradesTable.$inferSelect) => partsOf(r as unknown as StaleChargeParts);
+    const zero = () => Object.fromEntries(STALE_CHARGE_PARTS.map((k) => [k, 0])) as StaleChargeParts;
+    const add = (a: StaleChargeParts, b: StaleChargeParts, sign = 1) => {
+      const out = {} as StaleChargeParts;
+      for (const k of STALE_CHARGE_PARTS) out[k] = r2m((a[k] ?? 0) + sign * (b[k] ?? 0));
+      return out;
+    };
+    const sum = (p: StaleChargeParts) => r2m(STALE_CHARGE_PARTS.reduce((s, k) => s + (p[k] ?? 0), 0));
+
+    // What the execution stated: the halves recorded on every piece it made.
+    let execParts = zero();
+    let execTotal = 0;
+    let execQty = 0;
+    let execValue = 0;
+    let execPrice = 0;
+    let execDate: string | null = null;
+    let execSide: "buy" | "sell" = "sell";
+    const pieces = [...(converted ? [converted] : []), ...slices];
+    for (const p of pieces) {
+      const bill = execBillFromNotes(p.importNotes);
+      if (!bill) {
+        return { ok: false, code: "SHAPE", message: `${p.tradingsymbol} does not record what the closing execution itself was charged, so it cannot be undone without inventing that figure. Nothing was changed.` };
+      }
+      execParts = add(execParts, bill as unknown as StaleChargeParts);
+      execTotal = r2m(execTotal + bill.total);
+      // The piece's CLOSING leg is the execution's; the other leg is the lot's.
+      // A closed piece states its direction through its dates: the exit is the
+      // later leg (the ONE definition, `readsLong` in close-open-lots).
+      const long = p.buyDate != null && p.sellDate != null ? p.buyDate <= p.sellDate : p.buyQty > 0;
+      const qty = long ? p.sellQty : p.buyQty;
+      execSide = long ? "sell" : "buy";
+      execPrice = long ? p.avgSellPrice : p.avgBuyPrice;
+      execDate = long ? p.sellDate : p.buyDate;
+      execQty = r2m(execQty + qty);
+      execValue = r2m(execValue + (long ? p.sellValue : p.buyValue));
+    }
+    if (remainder) {
+      const rb = execBillFromNotes(remainder.importNotes);
+      const rbParts = rb ? (rb as unknown as StaleChargeParts) : billOf(remainder);
+      execParts = add(execParts, rbParts);
+      execTotal = r2m(execTotal + (rb ? rb.total : remainder.chargesTotal));
+      const sells = remainder.sellQty > 0;
+      execQty = r2m(execQty + (sells ? remainder.sellQty : remainder.buyQty));
+      execValue = r2m(execValue + (sells ? remainder.sellValue : remainder.buyValue));
+      execPrice = sells ? remainder.avgSellPrice : remainder.avgBuyPrice;
+      execDate = sells ? remainder.sellDate : remainder.buyDate;
+      execSide = sells ? "sell" : "buy";
+    }
+
+    const model = pieces[0]!;
+    const audits: { id: number; action: "update" | "delete" | "create"; summary: string; before?: Record<string, unknown>; after?: Record<string, unknown> }[] = [];
+
+    // 1 — every reduced lot gets its quantity and its own half of the bill back.
+    for (const slice of slices) {
+      const bill = execBillFromNotes(slice.importNotes)!;
+      const long = slice.buyDate != null && slice.sellDate != null ? slice.buyDate <= slice.sellDate : slice.buyQty > 0;
+      const openQty = long ? slice.buyQty : slice.sellQty;
+      const openValue = long ? slice.buyValue : slice.sellValue;
+      const openPrice = long ? slice.avgBuyPrice : slice.avgSellPrice;
+      const openDate = long ? slice.buyDate : slice.sellDate;
+      const lot = reduced.find(
+        (r) =>
+          r.tradingsymbol.trim().toUpperCase() === slice.tradingsymbol.trim().toUpperCase() &&
+          r.segment === slice.segment &&
+          r.exchange === slice.exchange &&
+          (long ? r.avgBuyPrice === openPrice && r.buyDate === openDate : r.avgSellPrice === openPrice && r.sellDate === openDate),
+      );
+      if (!lot) {
+        return { ok: false, code: "SHAPE", message: `The position ${slice.tradingsymbol} was closed against is no longer in this account, so the close cannot be undone. Nothing was changed.` };
+      }
+      const lotParts = add(billOf(lot), add(billOf(slice), bill as unknown as StaleChargeParts, -1));
+      const lotTotal = sum(lotParts);
+      const before = { buyQty: lot.buyQty, sellQty: lot.sellQty, chargesTotal: lot.chargesTotal, netPnl: lot.netPnl, importNotes: lot.importNotes };
+      const patch = {
+        ...(long
+          ? { buyQty: r2m(lot.buyQty + openQty), buyValue: r2m(lot.buyValue + openValue) }
+          : { sellQty: r2m(lot.sellQty + openQty), sellValue: r2m(lot.sellValue + openValue) }),
+        chargesTotal: lotTotal,
+        grossPnl: 0,
+        netPnl: r2m(0 - lotTotal),
+        isOpen: true,
+        ...lotParts,
+        importNotes: withoutAutoCloseNotes(lot.importNotes),
+        updatedAt: sql`(datetime('now'))`,
+      };
+      tx.update(tradesTable).set(patch).where(eq(tradesTable.id, lot.id)).run();
+      Object.assign(lot, patch, { updatedAt: lot.updatedAt });
+      audits.push({ id: lot.id, action: "update", summary: `${lot.symbol} un-closed — ${openQty} put back on the position`, before, after: { buyQty: lot.buyQty, sellQty: lot.sellQty, chargesTotal: lotTotal, netPnl: patch.netPnl, importNotes: patch.importNotes } });
+      tx.delete(tradesTable).where(eq(tradesTable.id, slice.id)).run();
+      audits.push({ id: slice.id, action: "delete", summary: `${slice.symbol} — the closed row this un-close replaced with its two originals`, before: slice as unknown as Record<string, unknown> });
+    }
+
+    // 2 — a lot consumed WHOLE reads open again; there is no slice to remove.
+    if (converted) {
+      const bill = execBillFromNotes(converted.importNotes)!;
+      const long = converted.buyDate != null && converted.sellDate != null ? converted.buyDate <= converted.sellDate : converted.buyQty > 0;
+      const lotParts = add(billOf(converted), bill as unknown as StaleChargeParts, -1);
+      const lotTotal = sum(lotParts);
+      const before = { isOpen: false, buyQty: converted.buyQty, sellQty: converted.sellQty, chargesTotal: converted.chargesTotal, netPnl: converted.netPnl, importNotes: converted.importNotes };
+      const patch = {
+        ...(long
+          ? { sellQty: 0, sellValue: 0, avgSellPrice: 0, sellDate: null }
+          : { buyQty: 0, buyValue: 0, avgBuyPrice: 0, buyDate: null }),
+        isOpen: true,
+        grossPnl: 0,
+        unrealisedPnl: 0,
+        realisedPct: null,
+        chargesTotal: lotTotal,
+        netPnl: r2m(0 - lotTotal),
+        // The R of the row it becomes, by the ONE rule every writer uses
+        // (`capR(netPnl, riskAmount)`): an open lot carries a number, and
+        // blanking it left the re-opened position reading "—" where it had read
+        // an R before the import ever closed it.
+        rMultiple: capR(r2m(0 - lotTotal), converted.riskAmount),
+        ...lotParts,
+        importNotes: withoutAutoCloseNotes(converted.importNotes),
+        updatedAt: sql`(datetime('now'))`,
+      };
+      tx.update(tradesTable).set(patch).where(eq(tradesTable.id, converted.id)).run();
+      audits.push({ id: converted.id, action: "update", summary: `${converted.symbol} un-closed — the position reads open again`, before, after: { isOpen: true, buyQty: long ? converted.buyQty : 0, sellQty: long ? 0 : converted.sellQty, chargesTotal: lotTotal, netPnl: patch.netPnl, importNotes: patch.importNotes } });
+    }
+
+    // 3 — the execution comes back as ONE ordinary row, its own hash and bill.
+    if (remainder) {
+      tx.delete(tradesTable).where(eq(tradesTable.id, remainder.id)).run();
+      audits.push({ id: remainder.id, action: "delete", summary: `${remainder.symbol} — what was left of the execution, folded back into it`, before: remainder as unknown as Record<string, unknown> });
+    }
+    const sells = execSide === "sell";
+    const restored = tx
+      .insert(tradesTable)
+      .values({
+        accountId,
+        broker,
+        bucket: model.bucket,
+        segment: model.segment,
+        instrumentType: model.instrumentType,
+        exchange: model.exchange,
+        symbol: model.symbol,
+        tradingsymbol: model.tradingsymbol,
+        isin: model.isin,
+        expiry: model.expiry,
+        strike: model.strike,
+        optionType: model.optionType,
+        buyQty: sells ? 0 : execQty,
+        avgBuyPrice: sells ? 0 : execPrice,
+        buyValue: sells ? 0 : execValue,
+        sellQty: sells ? execQty : 0,
+        avgSellPrice: sells ? execPrice : 0,
+        sellValue: sells ? execValue : 0,
+        buyDate: sells ? null : execDate,
+        sellDate: sells ? execDate : null,
+        grossPnl: 0,
+        chargesTotal: execTotal,
+        netPnl: r2m(0 - execTotal),
+        unrealisedPnl: 0,
+        isOpen: true,
+        buyOrderCount: sells ? 0 : 1,
+        sellOrderCount: sells ? 1 : 0,
+        riskAmount: model.riskAmount,
+        riskSource: model.riskSource,
+        // R by the one rule every writer uses — a row that states a risk states
+        // its R (I7, tests/harness-book-sequences.test.ts).
+        rMultiple: capR(r2m(0 - execTotal), model.riskAmount),
+        ...execParts,
+        sourceFile: remainder?.sourceFile ?? model.sourceFile,
+        importBatchId: remainder?.importBatchId ?? model.importBatchId,
+        dedupHash: hash,
+        staged: false,
+        // A sale with no purchase beside it is exactly what it was before the
+        // close: its basis is the book's question, not this function's.
+        acquisition: sells ? "unknown" : null,
+        importNotes: remainder ? withoutAutoCloseNotes(remainder.importNotes) : null,
+      })
+      .returning({ id: tradesTable.id })
+      .get();
+    audits.push({
+      id: restored!.id,
+      action: "create",
+      summary: `${model.symbol} — the closing execution reinstated as its own row (${execQty} @ ${execPrice}), charges ${execTotal}`,
+      after: { qty: execQty, price: execPrice, chargesTotal: execTotal, dedupHash: hash },
+    });
+
+    for (const a of audits) {
+      recordAudit({ entity: "trade", entityId: a.id, action: a.action, summary: a.summary, before: a.before, after: a.after, source: "ui" });
+    }
+    return {
+      ok: true,
+      message: `Un-closed. ${model.tradingsymbol}: the position is open again and the ${sells ? "sale" : "purchase"} of ${execQty} is back as its own row.`,
+    };
+  });
+}
+
 export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string | null): StaleCloseResult {
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const raw = typeof exitDateIn === "string" ? exitDateIn.trim() : "";

@@ -8231,3 +8231,42 @@ bill (counted once as an open row and again inside the merged close) — ₹51.9
 agree, the stored book is right. Decision: the summary reports **what the book moved** (each leg charged once); fixed in W3 with a
 pin. Also pinned, not a defect: `openLotOf` does not exclude `eq_mtf` (design seq 12) — a closed MTF row leaves the accrual's
 reach and a reduced one accrues on the remaining stated principal.
+
+## 2026-09-22 — v4.5.0 wave W3: un-close, the delete and merge refusals, Trash restore per shape, the summary double-count
+
+**Un-close exists now** (design-review revision 10 said it did not): `unCloseExecution(accountId, broker, execHash)` in
+`lib/import/commit.ts`, `POST /api/trades/un-close` (`{tradeId}` or `{accountId, broker, execHash}`; a route handler, never a
+server action). **Revision 10 understated the problem:** two bills merged into ten charge columns are NOT invertible from the
+columns (two unknowns, one equation), so every auto-close piece now records the execution's own half as `exec-bill:[…]` and a
+reduced lot also carries `closed-by:<hash>` (non-identity — without it un-close cannot find the lot, which holds no alias by the
+one-holder rule). Un-close restores the lot BYTE-EQUAL on every column to its pre-close snapshot (all three shapes; only
+`updatedAt` moves), deletes the slice or folds the remainder, and reinstates the execution as ONE ordinary row with its original
+hash and stated bill — one transaction, one audit row per touched row (update / delete / create, symmetric snapshots). A piece
+closed by a build before `exec-bill:` existed is refused by name rather than guessed (nothing shipped with auto-close ON, so no
+real book has one).
+
+**Refusals (owner A3, revisions 9 and 11).** `deleteTradesByIds` refuses a delete that would leave a piece of a close in the book,
+naming the execution and offering "Un-close first"; the import-batch cascade routes through it (R75); deleting the COMPLETE family
+is allowed and Trash-restores whole (the first cut refused any piece and reddened `trash-restore-alias`). Merge refuses at the
+existing `account-delete.ts` door when a colliding row carries `AUTO_CLOSE_NOTE` and the legs differ (else the reduced lot was
+dropped as a duplicate and the book overstated by 40). Account purge is not refused: its row set is closed by `matchKey`.
+Trash restore needs no code change: no two rows ever hold one hash, so `trash.ts`'s "recorded in the position it closed" skip can
+no longer swallow a piece.
+
+**Six defects the lifecycle tests found in the product half, each fixed with a red-on-revert row:** (D1) the route, delete and
+merge read the LOT's hash on a wholly-consumed row, so un-close refused the commonest shape — a pure `executionHashOfPiece()`
+(thread → held alias, alias only under `AUTO_CLOSE_NOTE`) at all three sites; (D2) the remainder shape came back as the lot plus a
+stray leftover; (D3) a second un-close answered SHAPE, now NOT_FOUND; (D4) a re-opened lot blanked its R; (D5) the reinstated
+execution stated no R (harness invariant I7); (D6) an alias of unknown provenance read as an execution. **W2a-F1 fixed:** the
+import summary reports what the book moved — a lot this file opened has its already-counted figures taken back when the same file
+closes it (877.41 on preview, commit and the book; was ₹51.96 vs ₹39.58).
+
+**Measured.** `tests/auto-close-lifecycle.test.ts` (30, one temp DB); `unCloseImport` op in `book-ops` (harness 400 → 436);
+`oracle-counted-once` + "close, un-close, close again" (every consumer counts the sale once in every view); 18/18 red-on-revert.
+Gate: 458 files / 10,600 passed / 35 skipped. The first gate run was red on ONE test: the merge refusal keyed on ANY held alias and refused the v4.3 alias collisions the merge has always resolved (`account-merge-ipo-relink`); narrowed to `saysAutoClosePiece` (an auto-close NOTE, never an alias of unknown provenance) and pinned red in BOTH directions.
+
+**Recorded, not built.** The "Un-close" row button (the trades row projection carries no `importNotes`; W2b adds it beside the
+result card). A forced failure mid-un-close rolls back but PROPAGATES (a 500 through the route) rather than returning a refusal —
+an operator decision. The macOS Playwright CI job has been red on three attempts across two shas, every time a dev-server
+`ERR_CONNECTION_REFUSED` mid-run on a different spec, Ubuntu green on the same sha and the specs green locally — FAIL-B; the
+release gate re-runs it, never re-tags.

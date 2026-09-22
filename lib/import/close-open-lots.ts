@@ -287,6 +287,129 @@ export function withClosedByNote(importNotes: string | null, execHash: string): 
   return parts.join(" | ");
 }
 
+/**
+ * THIS PIECE's share of the closing execution's own stated bill (W3).
+ *
+ * A closed row's charges are the LOT's share plus the EXECUTION's share (R3),
+ * merged into ten columns — and the merge is not invertible from the columns
+ * alone: two unknowns, one equation. Un-close needs both halves exactly (it
+ * gives the lot its share back and reinstates the execution with the bill the
+ * file stated for it), and a re-derivation from quantities would be a rounded
+ * guess about money that really moved. So the execution's half is recorded
+ * beside the row, in the one free-text column that survives backup, restore and
+ * every data fix.
+ *
+ * Eleven numbers in the column order of `STALE_CHARGE_PARTS` plus the total:
+ * `exec-bill:[brokerage,sttCtt,exchangeTxn,sebi,stampDuty,ipft,gst,dpCharges,mtfInterest,pledgeCharges,total]`.
+ */
+export const EXEC_BILL_PREFIX = "exec-bill:";
+
+/** The eleven numbers, in order. Kept here so both writers use one shape. */
+export const EXEC_BILL_HEADS = [
+  "brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty",
+  "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges",
+] as const;
+
+export type ExecBill = Record<(typeof EXEC_BILL_HEADS)[number], number> & { total: number };
+
+/** Append `exec-bill:[…]` once. Replaces nothing: a row has one closing bill. */
+export function withExecBillNote(importNotes: string | null, bill: ExecBill): string {
+  const parts = (importNotes ?? "").split("|").map((s) => s.trim()).filter(Boolean);
+  if (parts.some((p) => p.startsWith(EXEC_BILL_PREFIX))) return parts.join(" | ");
+  const nums = [...EXEC_BILL_HEADS.map((k) => bill[k] ?? 0), bill.total];
+  parts.push(`${EXEC_BILL_PREFIX}[${nums.map((n) => Math.round(n * 100) / 100).join(",")}]`);
+  return parts.join(" | ");
+}
+
+/** The execution's half of this row's bill, or null when the row states none. */
+export function execBillFromNotes(importNotes: string | null): ExecBill | null {
+  for (const seg of (importNotes ?? "").split("|")) {
+    const s = seg.trim();
+    if (!s.startsWith(EXEC_BILL_PREFIX)) continue;
+    const body = s.slice(EXEC_BILL_PREFIX.length).trim();
+    if (!/^\[[-0-9.,\s]*\]$/.test(body)) return null;
+    const nums = body.slice(1, -1).split(",").map((x) => Number(x.trim()));
+    if (nums.length !== EXEC_BILL_HEADS.length + 1 || nums.some((n) => !Number.isFinite(n))) return null;
+    const bill = { total: nums[nums.length - 1]! } as ExecBill;
+    EXEC_BILL_HEADS.forEach((k, i) => { bill[k] = nums[i]!; });
+    return bill;
+  }
+  return null;
+}
+
+/** Strip every W2a/W3 machine segment, leaving the row's own prose. */
+export function withoutAutoCloseNotes(importNotes: string | null): string | null {
+  const parts = (importNotes ?? "")
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => s !== AUTO_CLOSE_NOTE && s !== PARTIAL_CLOSE_NOTE)
+    .filter((s) => !s.startsWith(CLOSED_BY_PREFIX) && !s.startsWith(EXEC_BILL_PREFIX) && !s.startsWith(DEDUP_ALIAS_PREFIX));
+  return parts.length ? parts.join(" | ") : null;
+}
+
+/**
+ * Is this row a PIECE of an import's auto-close — a reduced lot, a lot it
+ * converted, a slice, or what an execution had left over?
+ *
+ * Read by the delete refusals (W3): a row-level delete of one piece would leave
+ * the others describing a close that no longer exists, so it is refused by name
+ * and the user is offered un-close. A lot the USER joined from Data Quality
+ * (R26, `STALE_CLOSE_NOTE`) is NOT a piece — that join has its own door.
+ */
+export function isAutoClosePiece(row: { dedupHash: string; importNotes: string | null }): boolean {
+  return isAutoCloseMerged(row) || closedByHash(row.importNotes) != null;
+}
+
+/**
+ * The same question, asked of the row's OWN WORDS only (revision 11).
+ *
+ * `isAutoClosePiece` inherits `isAutoCloseMerged`'s safe fallback — an alias of
+ * UNKNOWN provenance is read as merged, which is the right answer for a delete
+ * (refuse and ask) and the wrong one for a MERGE, where every v4.3 alias
+ * collision the merge has always resolved (`dedup-alias:` from a Data Quality
+ * join, R26) would be refused instead of dropped as the duplicate it is. So the
+ * merge asks only for rows that SAY an import closed them: the sentence, the
+ * leftover's sentence, or the `closed-by:` thread. Nothing infers it.
+ */
+export function saysAutoClosePiece(row: { importNotes: string | null }): boolean {
+  const notes = row.importNotes ?? "";
+  return notes.includes(AUTO_CLOSE_NOTE) || notes.includes(PARTIAL_CLOSE_NOTE) || closedByHash(notes) != null;
+}
+
+/**
+ * The EXECUTION a piece belongs to — the hash every W3 door names or undoes.
+ *
+ * It is NOT `dedup_hash`. A lot consumed WHOLE is converted in place and keeps
+ * its OWN identity, holding the execution's as a `dedup-alias:` (the one-holder
+ * rule, revision 9); reading the column there hands the caller the LOT's hash,
+ * and `unCloseExecution` then refuses the commonest shape there is, while the
+ * delete refusal looks for the wrong family and lets a leftover row be stranded.
+ * The order is the order the pieces state it: the `closed-by:` thread first
+ * (a reduced lot, a leftover), then the held alias (a converted lot, a slice
+ * that restates its own hash), then the row's own hash.
+ */
+export function executionHashOfPiece(row: { dedupHash: string; importNotes: string | null }): string {
+  const thread = closedByHash(row.importNotes);
+  if (thread) return thread;
+  // Only a row that SAYS an import closed it may be read through its alias. An
+  // alias of unknown provenance — a Data Quality join whose sentence a later
+  // editor save dropped — belongs to that join's own door (R26), and reading it
+  // here would have the delete refuse a pair `tests/trash-restore-alias.test.ts`
+  // pins as deletable.
+  if (!(row.importNotes ?? "").includes(AUTO_CLOSE_NOTE)) return row.dedupHash;
+  const alias = lotIdentityHashes(row).find((h) => h !== row.dedupHash);
+  return alias ?? row.dedupHash;
+}
+
+/**
+ * The sentence every W3 refusal ends with, so all four doors say one thing
+ * (ruling A3: refuse with the reason AND offer "un-close first").
+ */
+export function unCloseFirstNote(symbol: string, execHash: string): string {
+  return `Un-close it first (Trades → the row's menu → "Un-close"), then try again. The closing execution is ${symbol} · ${execHash.slice(0, 12)}.`;
+}
+
 /** The execution hash a row was closed by, or null. Never an identity. */
 export function closedByHash(importNotes: string | null): string | null {
   for (const seg of (importNotes ?? "").split("|")) {

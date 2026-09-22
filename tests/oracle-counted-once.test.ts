@@ -9,6 +9,7 @@ import {
   oracleIpoPrice, readOracle, resetOracleBook, seedOracleBook, selectOracleAccount,
   type OracleBook, type OracleSnapshot, type OracleView,
 } from "./helpers/oracle-book";
+import type { NormalizedTrade } from "@/lib/engine/types";
 
 /**
  * THE CROSS-CONSUMER COUNTED-ONCE ORACLE (v4.3.0 wave 3, guard G1).
@@ -129,6 +130,7 @@ let ipoRoute: typeof import("@/app/api/ipos/route");
 let accountDelete: typeof import("@/lib/queries/account-delete");
 let dataFixes: typeof import("@/lib/db/data-fixes");
 let importer: typeof import("@/lib/import/commit");
+let lots: typeof import("@/lib/import/close-open-lots");
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {}, revalidateTag: () => {}, unstable_cache: (fn: unknown) => fn }));
 
@@ -151,6 +153,7 @@ beforeAll(async () => {
   accountDelete = await import("@/lib/queries/account-delete");
   dataFixes = await import("@/lib/db/data-fixes");
   importer = await import("@/lib/import/commit");
+  lots = await import("@/lib/import/close-open-lots");
 }, 120_000);
 
 afterAll(() => t?.cleanup());
@@ -164,6 +167,7 @@ beforeEach(async () => {
 // ── the driving helpers, all real code paths ────────────────────────────────
 
 const rowOf = (id: number) => t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get();
+const rowsIn = (accountId: number) => t.db.select().from(t.schema.trades).where(eq(t.schema.trades.accountId, accountId)).all();
 const ipoRowOf = (id: number) => t.db.select().from(t.schema.ipos).where(eq(t.schema.ipos.id, id)).get();
 
 /** The /trades bulk delete, through the real server action. */
@@ -766,6 +770,49 @@ const OPS: Op[] = [
           kpi: { count: 10, open: 4, net: r2(6941.75 - 115 + n) },
         },
       });
+    },
+  },
+  {
+    // v4.5.0 W3 — an import auto-close, UN-CLOSED, and closed again.
+    //
+    // The sequence the lifecycle work adds: three writes, and the sale must be
+    // stated exactly once at the end of them, in every consumer and every view.
+    // The expectation is not predicted here — it is MEASURED after the first
+    // close and re-asserted after the round trip, which is the property under
+    // test (the state is reachable twice and reads the same both times). The
+    // `it` before the round trip proves the measurement is not the baseline, so
+    // the comparison cannot pass by the import having done nothing.
+    name: "an import auto-close, then un-close, then close again",
+    run: async (_b, base) => {
+      selectOracleAccount(t, ORACLE_A1);
+      const file = (over: Partial<NormalizedTrade>, name: string) =>
+        importer.commitParsedFile(
+          oracleParsedFile([{ ...oracleReimportTrade(), tradingsymbol: "A1AUTOC", buyQty: 0, avgBuyPrice: 0, buyValue: 0, buyDate: null, sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null, grossPnl: 0, ...over } as NormalizedTrade]),
+          name, null, ORACLE_A1, { autoClose: true },
+        );
+      expect(file({ buyQty: 20, avgBuyPrice: 100, buyValue: 2000, buyDate: ORACLE_BUY_DATE }, "w3-buy").added).toBe(1);
+      const closed = file({ sellQty: 20, avgSellPrice: 150, sellValue: 3000, sellDate: ORACLE_SELL_DATE }, "w3-sell");
+      expect([closed.added, closed.autoClose?.closedWhole], "the lot became the closed row").toEqual([0, 1]);
+
+      const afterFirstClose = await readOracle(t);
+      expect(afterFirstClose.a1.itrCount, "the new round trip is counted").toBe(base.a1.itrCount + 1);
+      expect(afterFirstClose.all.itrCount).toBe(base.all.itrCount + 1);
+
+      const row = rowsIn(ORACLE_A1).find((r) => r.tradingsymbol === "A1AUTOC")!;
+      const hash = lots.executionHashOfPiece(row);
+      const un = importer.unCloseExecution(ORACLE_A1, row.broker, hash);
+      expect(un.ok, un.message).toBe(true);
+      const open = await readOracle(t);
+      expect([open.a1.itrCount, open.all.itrCount], "an un-closed position realises nothing")
+        .toEqual([base.a1.itrCount, base.all.itrCount]);
+
+      // Close it again through the import door: the reinstated sale carries the
+      // execution's own identity, so it is removed first and the file re-read.
+      const sale = rowsIn(ORACLE_A1).find((r) => r.dedupHash === hash)!;
+      await deleteTrades([sale.id]);
+      const again = file({ sellQty: 20, avgSellPrice: 150, sellValue: 3000, sellDate: ORACLE_SELL_DATE }, "w3-sell-again");
+      expect(again.autoClose?.closedWhole, "the lot was whole again, so it closed whole again").toBe(1);
+      return afterFirstClose;
     },
   },
 ];

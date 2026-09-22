@@ -235,7 +235,13 @@ describe("4 · a partly consumed lot: one holder, one sentence, no alias", () =>
   it("the lot keeps its OWN identity and gains no alias — one hash, one holder", () => {
     const [lot, slice] = rowsOf(ACC);
     expect(lot.dedupHash, "a lot's identity is frozen at birth").toBe(lotBefore.dedupHash);
-    expect(lot.importNotes).toBe(AUTO_CLOSE_NOTE);
+    // W3 RE-PIN: the sentence, plus the non-identity `closed-by:` segment that
+    // names the execution. Without it a reduced lot is reachable from nothing —
+    // it holds no alias by the one-holder rule — and `unCloseExecution` could
+    // not find the lot to give the quantity back to. It is still NOT an
+    // identity: `lotIdentityHashes` below is unchanged.
+    expect(lot.importNotes).toContain(AUTO_CLOSE_NOTE);
+    expect(lot.importNotes).toContain("closed-by:");
     expect(lot.importNotes, "two holders lost 40 shares of P&L on a Trash restore").not.toContain(DEDUP_ALIAS_PREFIX);
     expect(lotIdentityHashes(lot)).toEqual([lotBefore.dedupHash]);
     // The slice is the one row that holds the execution's hash — as its OWN
@@ -484,10 +490,10 @@ describe("10-11 · R2 — the preview's Net P&L is the commit's, to the paisa", 
     expect(p.autoClose).toEqual(res.autoClose);
 
     // What the BOOK holds: one closed row carrying both legs' bills, once.
-    // (The file-level summary above is a DIFFERENT figure here — it counts the
-    // buy row's own bill and then again inside the merged close. W2a finding
-    // F1, reported: it is consistent preview-to-commit, which is what R2 asks,
-    // but it over-states a same-file B+S import's charges by the buy's bill.)
+    // (W2a finding F1 — the file-level summary used to be a DIFFERENT figure
+    // here, counting the buy row's own bill and then again inside the merged
+    // close. W3 fixed both halves; the summary now equals Σ over the stored
+    // rows, which tests/auto-close-lifecycle.test.ts §10 pins.)
     const ref = 821;
     newAccount(ref, "r2-virtual-ref");
     commit.commitParsedFile(file, "both.csv", null, ref);

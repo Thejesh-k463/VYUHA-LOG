@@ -23,7 +23,7 @@ import {
 } from "@/lib/db/schema";
 import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { carryUnfetchedOnMerge } from "@/lib/import/dhan-unfetched";
-import { heldIdentityHashes, readsLong, type RowLegs } from "@/lib/import/close-open-lots";
+import { heldIdentityHashes, readsLong, executionHashOfPiece, saysAutoClosePiece, unCloseFirstNote, type RowLegs } from "@/lib/import/close-open-lots";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
 import { forEachIdChunk, collectIdChunks } from "./delete";
 
@@ -320,9 +320,20 @@ const twoLegged = (x: RowLegs) => x.buyQty > 0 && x.sellQty > 0;
  * the source does. "The whole row twice over" is false there, so the pair is
  * named the same way and the merge refuses instead of dropping a leg.
  */
-type IdentityClash = { source: IdentityRow; target: IdentityRow; heldByTarget: boolean; sameIdentity?: boolean };
+type IdentityClash = { source: IdentityRow; target: IdentityRow; heldByTarget: boolean; sameIdentity?: boolean; autoClose?: boolean };
 
 function identityClash(pair: IdentityClash, targetName: string): string {
+  // W3 (revision 11): the pieces of an import auto-close only mean anything
+  // together, so the merge names the execution and points at un-close.
+  if (pair.autoClose) {
+    const piece = saysAutoClosePiece(pair.source) ? pair.source : pair.target;
+    // The EXECUTION, not the row: a lot consumed whole holds it as an alias.
+    const execHash = executionHashOfPiece(piece);
+    return (
+      `Trade #${pair.source.id} (${pair.source.tradingsymbol}) is part of a position an import closed automatically, and “${targetName}” holds a row of the same identity — merging would move one piece of that close and leave the rest behind, overstating the position and its cost basis. ` +
+      unCloseFirstNote(piece.tradingsymbol, execHash)
+    );
+  }
   if (pair.sameIdentity) {
     const what = rowKind(pair.target);
     return (
@@ -429,6 +440,29 @@ function identityCollisions(
       // source row is refused whenever its partner carries FEWER legs. A
       // two-legged partner still drops (that one IS the whole row twice over),
       // a one-legged source still drops, and a 0-qty row still drops.
+      // W3 (design review revision 11) — a MERGE never silently drops a piece
+      // of an import's auto-close.
+      //
+      // Sequence: the source holds a reduced lot (60 open) plus the slice that
+      // closed the other 40; the target holds the same buy at 100, still open.
+      // The one-legged source lot reads as a duplicate of the target's, is
+      // dropped, and the slice moves — so the merged book shows 100 open PLUS a
+      // closed 40: the position and the cost basis both overstated by 40. The
+      // rows only mean anything together, so the merge is refused through this
+      // same door and the user is told to un-close first (ruling A3).
+      // `matchKey` includes the account, so an account PURGE is unaffected: its
+      // row set is closed and every piece goes together.
+      // It asks `saysAutoClosePiece`, NOT `isAutoClosePiece`: the latter reads an
+      // alias of unknown provenance as merged (the safe answer for a delete), and
+      // that refused every v4.3 alias collision this merge has always resolved —
+      // a Data Quality join's `dedup-alias:` is not an auto-close piece.
+      if ((saysAutoClosePiece(s) || saysAutoClosePiece(partner)) && !(twoLegged(s) && twoLegged(partner))) {
+        return {
+          ids: [],
+          partnerOf: new Map(),
+          refusal: { source: s, target: partner, heldByTarget: true, sameIdentity: !!sameHash, autoClose: true },
+        };
+      }
       if (twoLegged(s) && (!sameHash || !twoLegged(partner))) {
         return {
           ids: [],
