@@ -335,6 +335,40 @@ export interface QualityReport {
 /** Where both cross-account issues send the user: the section that can fix them. */
 export const DUPLICATES_HREF = "/data-quality#duplicates";
 
+/** Where an account's plan is set — the one destination both A3's line and the
+ *  `broker_plan:<id>` issue above point at. */
+export const ACCOUNT_PLAN_HREF = "/settings#settings-accounts";
+
+/**
+ * A3 (v4.5.0 fix list) — THE ONE LINE an estimate states when the account it
+ * prices for has stated no brokerage plan.
+ *
+ * PURE (invariant 2): the DB half — which accounts these are — is
+ * `getAccountsWithoutPlan()` in lib/queries/data-quality.ts, THE SAME predicate
+ * Data Quality's `broker_plan:<id>` issue is built from. One source, never a
+ * second list.
+ *
+ * It names the PLAN, never a price. "₹20 an order" is a claim about money and
+ * an Upstox delivery order is min(₹20, 2.5%), so the flat figure would be wrong
+ * for every small order — invariant 6's rule against a fabricated number applies
+ * to a hint line as much as to a KPI. `freePlanLabel` is printed only when the
+ * rate table actually states one.
+ *
+ * Null for an empty list, so a caller renders nothing at all.
+ */
+export function planPricingNotice(
+  accounts: readonly { brokerLabel: string; freePlanLabel: string | null }[],
+): string | null {
+  if (accounts.length === 0) return null;
+  const distinct = [...new Set(accounts.map((a) => `${a.brokerLabel}|${a.freePlanLabel ?? ""}`))];
+  if (distinct.length === 1) {
+    const a = accounts[0]!;
+    const plan = a.freePlanLabel ? `${a.brokerLabel} ${a.freePlanLabel}` : `${a.brokerLabel}'s free plan`;
+    return `Priced on ${plan} — ${accounts.length === 1 ? "this account states" : "these accounts state"} no brokerage plan. Set it in Settings › Accounts.`;
+  }
+  return `Priced on the free plan — ${accounts.length} accounts state no brokerage plan. Set each one in Settings › Accounts.`;
+}
+
 /** "A", "A and B", "A, B and C" — account names read as a sentence. */
 function nameList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
@@ -1663,7 +1697,7 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
       title: `${a.brokerLabel} account with no plan stated`,
       detail: `${a.name} is with ${a.brokerLabel}, which sells more than one brokerage plan, and states none — so new imports, previews and the calculator price it on the free plan. Set it in Settings › Accounts if you are on a paid or opt-in tier. No saved trade is re-priced either way.`,
       count: 1,
-      href: "/settings#settings-accounts",
+      href: ACCOUNT_PLAN_HREF,
     });
   }
 

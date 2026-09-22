@@ -76,6 +76,10 @@ import {
   DEDUP_ALIAS_PREFIX,
   autoCloseSentences,
   emptyAutoCloseCounters,
+  // A4 (v4.5.0) — "these charges are the broker's own", written on import and
+  // read by the re-tag.
+  STATED_BILL_NOTE,
+  hasStatedBillNote,
   type AutoCloseCounters,
   type LotClose,
   type OpenLot,
@@ -294,14 +298,15 @@ function applyScopedIdentity(
   }
 }
 
-// ───────────────────── W2a — the auto-close applier (DORMANT) ───────────────
+// ─────────────────── W2a — the auto-close applier (LIVE since W2b) ──────────
 //
-// v4.5.0 W2a rebuilds the applier wave 1 switched off, and rebuilds it BEHIND
-// an option: `commitParsedFile`/`previewParsedFile` take `{ autoClose }` and it
-// defaults to FALSE, so every caller on this tree (the import route, the broker
-// route, the auto-pull job) behaves exactly as v4.4.0 did. W2b turns it on,
-// after W3 has built un-close and the delete/merge refusals — a close nobody
-// can undo is not a feature.
+// v4.5.0 W2a rebuilt the applier wave 1 switched off, BEHIND an option:
+// `commitParsedFile`/`previewParsedFile` take `{ autoClose }`, which still
+// defaults to FALSE at that boundary — an omitted flag must never close a lot
+// by accident. W2b turned it ON in the product, after W3 had built un-close and
+// the delete/merge refusals (a close nobody can undo is not a feature), so the
+// import route, the broker route and the auto-pull job now all pass the flag
+// explicitly; see `ImportWriteOptions` below for each caller's value.
 //
 // THE ONE-HOLDER RULE (design review revision 9). One execution hash may be
 // held by exactly ONE row. Wave 1 put it on the slice AND on the lot as a held
@@ -1971,9 +1976,14 @@ export function commitParsedFile(
     };
 
     // ── W2a: the auto-close applier. OFF unless the caller asks for it ──────
-    // `options.autoClose` defaults to FALSE, so every production caller on this
-    // tree (app/api/import/route.ts, app/api/import/broker/route.ts,
-    // lib/jobs/auto-pull.ts) writes exactly what v4.4.0 wrote. W2b flips it.
+    // `options.autoClose` defaults to FALSE at this API boundary, and since W2b
+    // every production caller on this tree passes it EXPLICITLY:
+    // app/api/import/route.ts and app/api/import/broker/route.ts send
+    // `autoClose: !keepSellsSeparate` (ON unless the user ticks "keep sells as
+    // separate rows"), and lib/jobs/auto-pull.ts always passes true. The
+    // `scripts/state-drift-check.mjs` check `autoclose-comment-vs-callers`
+    // re-derives that from the call sites, so this sentence cannot go stale
+    // again the way it did between W2a and W2b.
     const autoClose = options.autoClose === true;
     const counters = emptyAutoCloseCounters();
     const lotRows = new Map<number, typeof tradesTable.$inferSelect>();
@@ -2291,6 +2301,11 @@ export function commitParsedFile(
         ...(mtfInterestDerived
           ? ["MTF interest not stated by the file — any interest shown is estimated from your configured rates"]
           : []),
+        // A4 (v4.5.0 fix list) — the other half of the same honesty rule: when
+        // the FILE stated the bill, `buildRow` kept it verbatim, and the row is
+        // marked so that a later re-tag re-prices only an ESTIMATE. A machine
+        // segment, like `exec-bill:` (lib/import/close-open-lots.ts).
+        ...(t.reportedCharges?.total != null ? [STATED_BILL_NOTE] : []),
       ];
 
       // R43: today's earlier snapshot of this position is REPLACED in place —
@@ -4154,7 +4169,56 @@ export function applyOverride(
     },
     r,
   );
-  const netPnl = Math.round((t.grossPnl - charges.total) * 100) / 100;
+  /**
+   * A4 (DECIDED, v4.5.0 fix list) — A BROKER-STATED BILL SURVIVES A RE-TAG.
+   *
+   * A stated bill is the broker's bill whatever the row is re-classified as:
+   * the money left the account in that amount, and `buildRow` already refuses
+   * to overwrite it on import ("the engine cannot be more accurate about a
+   * charge than the charge itself"). This writer did overwrite it — a re-tag
+   * replaced a contract note's own figure with `charge_config`'s estimate, and
+   * since wave U it did so at the ACCOUNT'S PLAN, so the same row moved again
+   * whenever a plan was set. Only an ESTIMATE is re-priced.
+   *
+   * Every head is kept, not just the total: the ten columns must sum to what is
+   * stored (the breakdown is read on screen), and half a stated bill is neither
+   * the broker's figure nor ours. `mtfFundedAmount` is kept for the same reason
+   * — it is the principal the stated interest was charged on.
+   *
+   * The marker is written on import by `STATED_BILL_NOTE`; a row that carries
+   * none (a manual trade, a file that stated nothing) re-prices exactly as before.
+   */
+  const statedBill = hasStatedBillNote(t.importNotes);
+  const bill = statedBill
+    ? {
+        chargesTotal: t.chargesTotal,
+        brokerage: t.brokerage,
+        sttCtt: t.sttCtt,
+        exchangeTxn: t.exchangeTxn,
+        sebi: t.sebi,
+        stampDuty: t.stampDuty,
+        ipft: t.ipft,
+        gst: t.gst,
+        dpCharges: t.dpCharges,
+        mtfInterest: t.mtfInterest,
+        mtfFundedAmount: t.mtfFundedAmount,
+        pledgeCharges: t.pledgeCharges,
+      }
+    : {
+        chargesTotal: charges.total,
+        brokerage: charges.brokerage,
+        sttCtt: charges.sttCtt,
+        exchangeTxn: charges.exchangeTxn,
+        sebi: charges.sebi,
+        stampDuty: charges.stampDuty,
+        ipft: charges.ipft,
+        gst: charges.gst,
+        dpCharges: charges.dpCharges,
+        mtfInterest: charges.mtfInterest,
+        mtfFundedAmount: fundedAmount,
+        pledgeCharges: charges.pledgeCharges,
+      };
+  const netPnl = Math.round((t.grossPnl - bill.chargesTotal) * 100) / 100;
   // D1 (v4.4.0): a 'cap' row re-resolves for its NEW segment — it used to keep
   // the old segment's denominator; a typed risk stays the user's.
   const kept = keptRisk(t, bucket, segment, defaults.capRows);
@@ -4165,23 +4229,23 @@ export function applyOverride(
       bucket,
       exchange,
       setupTag: ov.setupTag ?? t.setupTag ?? null,
-      chargesTotal: charges.total,
+      chargesTotal: bill.chargesTotal,
       netPnl,
       ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
       rMultiple: kept.followsCap
         ? capR(netPnl, kept.riskAmount)
         : t.riskAmount && t.riskAmount > 0 ? Math.round((netPnl / t.riskAmount) * 100) / 100 : t.rMultiple,
-      brokerage: charges.brokerage,
-      sttCtt: charges.sttCtt,
-      exchangeTxn: charges.exchangeTxn,
-      sebi: charges.sebi,
-      stampDuty: charges.stampDuty,
-      ipft: charges.ipft,
-      gst: charges.gst,
-      dpCharges: charges.dpCharges,
-      mtfInterest: charges.mtfInterest,
-      mtfFundedAmount: fundedAmount,
-      pledgeCharges: charges.pledgeCharges,
+      brokerage: bill.brokerage,
+      sttCtt: bill.sttCtt,
+      exchangeTxn: bill.exchangeTxn,
+      sebi: bill.sebi,
+      stampDuty: bill.stampDuty,
+      ipft: bill.ipft,
+      gst: bill.gst,
+      dpCharges: bill.dpCharges,
+      mtfInterest: bill.mtfInterest,
+      mtfFundedAmount: bill.mtfFundedAmount,
+      pledgeCharges: bill.pledgeCharges,
     })
     .where(eq(tradesTable.id, tradeId))
     .run();
@@ -4190,7 +4254,12 @@ export function applyOverride(
     entity: "trade",
     entityId: tradeId,
     action: "override",
-    summary: `${t.symbol} reclassified → ${segment}`,
+    summary:
+      `${t.symbol} reclassified → ${segment}` +
+      // Said out loud in the trail: the classification moved and the money did
+      // not, which is otherwise indistinguishable from a re-price that happened
+      // to land on the same figure.
+      (statedBill ? " · charges left as the broker stated them" : ""),
     before: { segment: t.segment, bucket: t.bucket, exchange: t.exchange },
     after: { segment, bucket, exchange },
   });

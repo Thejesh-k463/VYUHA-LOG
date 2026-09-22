@@ -11,6 +11,7 @@ import { hasPlanR } from "@/lib/analytics/win-loss";
 import { lotsOf, lotSourceLabel } from "@/lib/analytics/per-lot";
 import { getIndexLotMap } from "./instruments";
 import { getSelectedAccountId } from "./accounts";
+import { accountScopeWhere } from "./tax-scope";
 
 /**
  * The whole book in the current scope.
@@ -20,15 +21,11 @@ import { getSelectedAccountId } from "./accounts";
  * accounts, an EMPTY array = no rows. Only the tax surfaces pass it.
  */
 export const getTrades = cache((accountIds?: readonly number[]): Trade[] => {
-  const accountId = getSelectedAccountId();
   const q = db.select().from(trades);
-  const where = accountIds
-    ? accountIds.length > 0
-      ? inArray(trades.accountId, [...accountIds])
-      : sql`1 = 0`
-    : accountId > 0
-      ? eq(trades.accountId, accountId)
-      : undefined;
+  // THE ONE rule, never a second copy of it: `accountScopeWhere` IS invariant
+  // 8's `accountId > 0 ? filter : all` plus the tax-person widening, and an
+  // inlined copy is how the two drift (v4.5.0 fix list A8).
+  const where = accountScopeWhere(trades.accountId, accountIds);
   return (where ? q.where(where) : q)
     .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all();
 });
@@ -63,15 +60,10 @@ function scopedBookRows<K extends keyof Trade & keyof typeof trades>(
   /** v4.5.0 tax-person scope; see `getTrades` above. */
   accountIds?: readonly number[],
 ): Pick<Trade, K>[] {
-  const accountId = getSelectedAccountId();
   const q = db.select(pickCols(keys)).from(trades);
-  const where = accountIds
-    ? accountIds.length > 0
-      ? inArray(trades.accountId, [...accountIds])
-      : sql`1 = 0`
-    : accountId > 0
-      ? eq(trades.accountId, accountId)
-      : undefined;
+  // Same one rule as `getTrades` above (A8) — these projections keep its exact
+  // scope, so they must read it from the same function, not a copy.
+  const where = accountScopeWhere(trades.accountId, accountIds);
   return (where ? q.where(where) : q)
     .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id))
     .all() as Pick<Trade, K>[];
@@ -275,6 +267,10 @@ const TRACKER_FIELDS = [
   "buyDate", "sellDate", "netPnl", "grossPnl", "rMultiple", "isOpen", "staged",
   "slPlanned", "trailingSl", "targetPlanned", "riskAmount",
   "mtfInterest", "mtfFundedAmount", "impliedVol", "buyValue",
+  // A9 (v4.5.0 fix list) — /equity prices a breakeven through `ratesForTrade`,
+  // whose ETF overlay keys on the ISIN FIRST and only then on the symbol. One
+  // column, so the row's own identity answers it rather than a ticker lookup.
+  "isin",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type TrackerTrade = Pick<Trade, (typeof TRACKER_FIELDS)[number]>;

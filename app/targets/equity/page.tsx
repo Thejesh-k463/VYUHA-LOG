@@ -61,6 +61,11 @@ export default function TargetEquityPage() {
 
   // MTF summary
   const rates = loadRatesMap();
+  // A9 (v4.5.0 fix list) — the ISIN of the row each position was derived from
+  // (`deriveOpenPositions` keeps the trade's own id). `ratesForTrade` resolves
+  // the ETF class by ISIN first and the ticker only as a fallback, so the
+  // book's own identity is what prices these rows.
+  const isinById = new Map(trades.map((t) => [t.id, t.isin]));
   const mtfPos = positions.filter((p) => p.isMtf);
   // D8 (wave 2O, mtf#2 ≡ seams#0): the FUNDED total and the count of rows that
   // state none come from the one exported helper the /equity KPI face and its
@@ -89,7 +94,7 @@ export default function TargetEquityPage() {
       // `planForView`); a position row carries no account id of its own.
       r = ratesForTrade(
         rates,
-        { broker: p.broker as Broker, segment: "eq_mtf", exchange: p.exchange as Exchange, symbol: p.symbol },
+        { broker: p.broker as Broker, segment: "eq_mtf", exchange: p.exchange as Exchange, isin: isinById.get(p.id) ?? null, symbol: p.symbol },
         today,
         planForView(p.broker, today, rates),
       );

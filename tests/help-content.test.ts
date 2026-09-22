@@ -1053,3 +1053,36 @@ describe("the /strategies entry describes the Signal book tab", () => {
     expect(entry().refusals?.join(" ") ?? "").toMatch(/generates no signal: Vyuha has no scanner, no zone engine, no OI feed and no alerts/);
   });
 });
+
+/**
+ * B6 (v4.5.0 fix list) — THE /reports/tax ENTRY STATES ITS SCOPE.
+ *
+ * The page was account-scoped when the copy was written. Wave TP (v4.5.0) made
+ * it per TAX PERSON — every account carrying that person's `tax_identity`,
+ * whichever one is selected (AGENTS.md invariant 8's one deliberate widening,
+ * `lib/queries/tax-scope.ts`) — and the help still said "for my book". A return
+ * is filed by a person, so on a two-person book "my book" names neither the set
+ * the page sums nor the set it asks about: the reader who believes it under-
+ * reports one person's gains and over-reports the other's.
+ */
+describe("the /reports/tax entry states the tax-person scope (B6)", () => {
+  const entry = () => HELP_ENTRIES.find((e) => e.href === "/reports/tax")!;
+
+  it("the one-line answer is about a PERSON, not about a book", () => {
+    // THE assertion (HEAD: "STCG, LTCG, set-off and carry-forward for my book.").
+    expect(entry().answers).toContain("one tax person");
+    expect(entry().answers).not.toContain("my book");
+  });
+
+  it("the body says which accounts are summed, and that the page ASKS when the book holds two people", () => {
+    const text = entry().body.join(" ");
+    expect(text, "the scope is not stated").toMatch(/scope is ONE tax person/);
+    expect(text, "which accounts is not stated").toMatch(/every account carrying that person's tax identity/);
+    expect(text, "…nor that the selected account does not narrow it").toMatch(/whichever one is selected/);
+    expect(text, "the All-accounts case is not stated").toMatch(/asks which person before it states a figure/);
+    // The rest of the entry is unchanged — the scope sentence was ADDED, the
+    // description of what the page computes was not rewritten.
+    expect(text).toMatch(/23-Jul-2024 cutover/);
+    expect(text).toMatch(/31-Jan-2018 grandfathering/);
+  });
+});

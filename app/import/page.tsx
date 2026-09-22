@@ -7,6 +7,7 @@ import { getImportBatches, getImportBatchShapes } from "@/lib/queries/trades";
 import { getAccounts, getSelectedAccountId, isAggregateView } from "@/lib/queries/accounts";
 import { ImportBatchesTable } from "@/components/import/import-batches-table";
 import { tradesInBatch, previewImportBatchDelete } from "@/lib/queries/delete";
+import { getPlanPricingNotice } from "@/lib/queries/data-quality";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,11 @@ export default function ImportPage() {
         description="Auto-detect broker & format, preview, then commit. Re-imports are de-duplicated."
       />
       <div className="space-y-6 p-6">
-        <ImportClient writeAccounts={writeAccounts} selectedAccount={selectedAccount ? { id: selectedAccount.id, name: selectedAccount.name } : null} />
+        <ImportClient
+          writeAccounts={writeAccounts}
+          selectedAccount={selectedAccount ? { id: selectedAccount.id, name: selectedAccount.name } : null}
+          planNotice={getPlanPricingNotice()}
+        />
 
         <BrokerConnect writeAccounts={writeAccounts} />
 

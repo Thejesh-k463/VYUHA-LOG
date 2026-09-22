@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatPaise } from "@/lib/money";
 import { num } from "@/lib/format";
 import { BROKER_LABELS, type Broker, type Segment } from "@/lib/domain/constants";
+import { parseFormNumber } from "@/lib/domain/signal";
 import type { ChargeRates } from "@/lib/engine/types";
 import {
   chargesAdjustedRisk,
@@ -88,9 +89,12 @@ const SOURCE_LABEL: Record<LabSchedule["source"], string> = {
   "default-schedule": "default schedule",
 };
 
+// B1 (v4.5.0 fix list) — THE form-number rule (`parseFormNumber`,
+// lib/domain/signal.ts), not a hand-rolled comma strip: "14,48" and "1e5" used
+// to read as numbers nobody typed. The refusal is unchanged — anything
+// unreadable keeps the caller's fallback.
 function numberField(v: string, fallback: number): number {
-  const n = Number(v.replace(/,/g, "").trim());
-  return Number.isFinite(n) ? n : fallback;
+  return parseFormNumber(v) ?? fallback;
 }
 
 // ---------------------------------------------------------------------------

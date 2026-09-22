@@ -168,7 +168,7 @@ export interface CgHeadInput {
  * target month's length: 31-Jan + 1 month is 28-Feb (29-Feb in a leap year),
  * and 29-Feb + 12 months is 28-Feb.
  */
-function addMonthsIso(iso: string, n: number): string {
+export function addMonthsIso(iso: string, n: number): string {
   const y = Number(iso.slice(0, 4));
   const m = Number(iso.slice(5, 7));
   const d = Number(iso.slice(8, 10));

@@ -165,8 +165,17 @@ async function readJson<T>(res: Response): Promise<T & { error?: string }> {
 export function ImportClient({
   writeAccounts = [],
   selectedAccount = null,
+  planNotice = null,
 }: {
   writeAccounts?: WriteAccountOption[];
+  /**
+   * A3 (v4.5.0 fix list) — the one line stating WHICH PLAN the charges below
+   * were estimated on, when the account(s) in view state none. Resolved on the
+   * server by `getPlanPricingNotice()` from the SAME predicate Data Quality's
+   * `broker_plan:<id>` issue uses, so the two can never describe different
+   * accounts. Null (the usual case) renders nothing.
+   */
+  planNotice?: string | null;
   /**
    * The account the sidebar selector resolves to — null on All accounts. The
    * remove panel needs a NAMED account even when no picker renders (a
@@ -607,6 +616,16 @@ export function ImportClient({
               </p>
               {openingSellNote(p.shape.openingSells) && (
                 <p className="text-xs text-muted-foreground">{openingSellNote(p.shape.openingSells)}</p>
+              )}
+
+              {/* A3 — WHICH PLAN the Charges column below was estimated on, when
+                  the account states none. Derived server-side from the SAME
+                  predicate as Data Quality's `broker_plan:<id>` issue, so the two
+                  screens can never describe different accounts. */}
+              {planNotice && (
+                <p data-testid="preview-plan-notice" className="text-xs text-muted-foreground">
+                  {planNotice}
+                </p>
               )}
 
               {/* A1 — the per-import escape hatch, on the preview where the

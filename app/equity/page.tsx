@@ -38,6 +38,12 @@ export default function EquityTrackerPage() {
   const equityCapital = getBucketCapital().equityCapital;
 
   const rates = loadRatesMap();
+  // A9 (v4.5.0 fix list) — the ISIN of the row each open position was derived
+  // from (`deriveOpenPositions` keeps the trade's own id). `ratesForTrade`
+  // resolves the ETF class by ISIN FIRST and only falls back to the ticker, so
+  // a breakeven priced with a symbol alone can read a renamed or ambiguous
+  // ticker's class; the book's own identity answers it exactly.
+  const isinById = new Map(trades.map((t) => [t.id, t.isin]));
   // No margin map: nothing estimates a funded amount any more (D7), so the
   // per-broker own-margin % is read only by the /risk margin check.
   const positions = deriveOpenPositions(trades, mtm, today)
@@ -61,7 +67,7 @@ export default function EquityTrackerPage() {
         // agrees on — "default" when they do not (invariant 6).
         const r = ratesForTrade(
           rates,
-          { broker: p.broker as Broker, segment: "eq_mtf", exchange: p.exchange as Exchange, symbol: p.symbol },
+          { broker: p.broker as Broker, segment: "eq_mtf", exchange: p.exchange as Exchange, isin: isinById.get(p.id) ?? null, symbol: p.symbol },
           todayIstIso(),
           planForView(p.broker, todayIstIso(), rates),
         );

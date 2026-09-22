@@ -74,11 +74,21 @@ const FALLBACK_SOURCES = new Set(["broker-rule", "margin-config", "default"]);
 
 export function TradeCalculator({
   rates,
+  accountPlans = {},
+  planNotice = null,
   mtfMarginByBroker = {},
   marginRates = {},
   indexLots = {},
 }: {
   rates: Record<string, ChargeRates>;
+  /** A1 (v4.5.0): broker → the plan the account(s) in view are priced on,
+   *  resolved server-side by `planForView` (lib/queries/broker-plan). "default"
+   *  for a broker the view holds no account with. */
+  accountPlans?: Record<string, string>;
+  /** A3 (v4.5.0): the one line stating which plan an estimate is priced on when
+   *  the account(s) in view state none — `getPlanPricingNotice()`, built from the
+   *  same predicate as Data Quality's own issue. Null renders nothing. */
+  planNotice?: string | null;
   mtfMarginByBroker?: Record<string, number>;
   /** "broker|segment" → margin %, from margin_config (see lib/risk/margin.ts). */
   marginRates?: Record<string, number>;
@@ -88,9 +98,17 @@ export function TradeCalculator({
 }) {
   const [mode, setMode] = useState<"equity" | "fno">("equity");
   const [broker, setBroker] = useState("dhan");
-  // Most accounts are on no plan at all, so "default" — the free tier — is
-  // where the calculator starts, whatever paid tiers a broker also sells.
-  const [plan, setPlan] = useState("default");
+  /**
+   * A1 (v4.5.0 fix list) — NULL means "the user has not picked a plan here",
+   * and the plan then DERIVES from the account's own (`accountPlans[broker]`,
+   * below). It used to start at the literal "default", so a Plus account's
+   * pre-trade estimate was priced on Basic — ₹10 an order out, on the one
+   * screen whose whole job is the exact number.
+   *
+   * Derived, never synced in an effect (AGENTS.md): switching broker changes
+   * the default with no state update, and a plan the user picked survives.
+   */
+  const [plan, setPlan] = useState<string | null>(null);
   const brokerMtfPct = mtfMarginByBroker[broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
   const [product, setProduct] = useState("eq_delivery");
   const [instrument, setInstrument] = useState("index_option");
@@ -169,7 +187,10 @@ export function TradeCalculator({
       v: 1,
       mode: m,
       broker: broker as CalcSnapshot["broker"],
-      plan,
+      // A1: only a plan the USER picked is persisted. Storing the derived
+      // default would freeze today's account plan into the snapshot, so a plan
+      // set in Settings later would never reach this screen.
+      plan: plan ?? undefined,
       equity: mode === "equity" ? collectEquity() : (prev?.equity ?? {}),
       fno: mode === "fno" ? collectFno() : (prev?.fno ?? {}),
     };
@@ -211,7 +232,7 @@ export function TradeCalculator({
         v: 1,
         mode,
         broker: broker as CalcSnapshot["broker"],
-        plan,
+        plan: plan ?? undefined, // A1 — see switchMode above
         equity: mode === "equity" ? collectEquity() : (prev?.equity ?? {}),
         fno: mode === "fno" ? collectFno() : (prev?.fno ?? {}),
       };
@@ -263,7 +284,15 @@ export function TradeCalculator({
     }
     return [...seen.entries()].sort((a) => (a[0] === "default" ? -1 : 1));
   }, [rates, broker]);
-  const effPlan = brokerPlans.some(([p]) => p === plan) ? plan : "default";
+  /** A1: the account's own plan for this broker — the DEFAULT the picker opens
+   *  on, and what an unpicked calculator prices with. */
+  const accountPlan = accountPlans[broker] ?? "default";
+  const chosenPlan = plan ?? accountPlan;
+  const effPlan = brokerPlans.some(([p]) => p === chosenPlan)
+    ? chosenPlan
+    : brokerPlans.some(([p]) => p === accountPlan)
+      ? accountPlan
+      : "default";
   /** Monthly fee of one of this broker's plans, for the picker's label. */
   const subscriptionOf = (p: string) =>
     rates[`${broker}|${p}|eq_delivery|NSE`]?.subscriptionMonthly ?? 0;
@@ -431,6 +460,16 @@ export function TradeCalculator({
                 ))}
               </select>
             </Field>
+          )}
+
+          {/* A3 — the plan this estimate is priced on, when the account states
+              none. Shown only while the picker is untouched: once the user picks
+              a plan here, the figure is priced on their answer, not on a default
+              worth explaining. */}
+          {planNotice && plan === null && (
+            <p data-testid="calc-plan-notice" className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+              {planNotice}
+            </p>
           )}
 
           <div className="grid grid-cols-2 gap-2">

@@ -53,10 +53,14 @@ const ALLOWED = new Set([
 ]);
 
 describe("the column has exactly one reader", () => {
+  // Measured 423 ms under full-suite load, alone (2026-09-22, vitest
+  // --reporter=verbose): a whole-tree source scan (lib/ app/ components/)
+  // competing with every other worker; the timeout is raised, not the scan
+  // loosened.
   it("no file outside the named set mentions signalJson / signal_json", () => {
     const strays = sourceFiles().filter((f) => !ALLOWED.has(f) && /signalJson|signal_json/.test(read(f)));
     expect(strays, `a second reader of the signal column: ${strays.join(", ")}`).toEqual([]);
-  });
+  }, 20_000);
 
   it("only lib/domain/signal.ts parses the envelope — nothing else JSON.parses the column", () => {
     for (const f of ALLOWED) {

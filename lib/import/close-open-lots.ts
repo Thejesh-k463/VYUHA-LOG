@@ -321,6 +321,34 @@ export function withExecBillNote(importNotes: string | null, bill: ExecBill): st
   return parts.join(" | ");
 }
 
+/**
+ * A4 (v4.5.0 fix list) — THE ROW'S CHARGES ARE THE BROKER'S OWN FIGURE.
+ *
+ * Written by the import path for any row whose file stated a charges TOTAL
+ * (`buildRow` keeps a reported bill verbatim: "the engine cannot be more
+ * accurate about a charge than the charge itself"). It is provenance, not
+ * money — the amounts stay in their own columns — and it is a MACHINE segment
+ * of `import_notes`, the same channel `exec-bill:` and `closed-by:` use.
+ *
+ * Its one reader is `applyOverride` (the re-tag), which re-prices ONLY an
+ * ESTIMATE: a broker's stated bill is the broker's bill whatever the trade is
+ * re-classified as, and overwriting it with `charge_config`'s figure made the
+ * journal disagree with the contract note.
+ */
+export const STATED_BILL_NOTE = "stated-bill";
+
+/** Append `stated-bill` once; a row states one bill. */
+export function withStatedBillNote(importNotes: string | null): string {
+  const parts = (importNotes ?? "").split("|").map((s) => s.trim()).filter(Boolean);
+  if (!parts.includes(STATED_BILL_NOTE)) parts.push(STATED_BILL_NOTE);
+  return parts.join(" | ");
+}
+
+/** Does this row carry the broker's own stated bill? */
+export function hasStatedBillNote(importNotes: string | null | undefined): boolean {
+  return (importNotes ?? "").split("|").some((s) => s.trim() === STATED_BILL_NOTE);
+}
+
 /** The execution's half of this row's bill, or null when the row states none. */
 export function execBillFromNotes(importNotes: string | null): ExecBill | null {
   for (const seg of (importNotes ?? "").split("|")) {

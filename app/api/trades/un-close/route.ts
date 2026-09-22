@@ -64,7 +64,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, code: "NOT_FOUND", message: "Name the row to un-close. Nothing was changed." }, { status: 400 });
   }
 
-  const res = unCloseExecution(accountId, broker, execHash);
+  /**
+   * A7 (DECIDED, v4.5.0 fix list) — A MID-UN-CLOSE FAILURE ANSWERS, IT DOES NOT
+   * THROW.
+   *
+   * `unCloseExecution` does its work in ONE transaction, so a failure part way
+   * through rolls the book back (proven by the W3 tests): nothing is half
+   * un-closed. But the throw propagated, and Next answered the client `fetch`
+   * with a 500 HTML page — the dialog then showed its generic "request failed"
+   * and the user had no idea whether the journal had moved. Every other refusal
+   * on this route is `{ok:false, code, message}`; this one now is too, at 409
+   * ("your book is unchanged" is a statement about a conflict, not a crash),
+   * and the sentence says so explicitly.
+   */
+  let res: ReturnType<typeof unCloseExecution>;
+  try {
+    res = unCloseExecution(accountId, broker, execHash);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "FAILED",
+        message: `Un-close could not be completed, so nothing was changed — your book is exactly as it was. (${detail})`,
+      },
+      { status: 409 },
+    );
+  }
   if (res.ok) {
     for (const p of ["/trades", "/data-quality", "/equity", "/risk", "/active", "/"]) revalidatePath(p);
   }

@@ -243,7 +243,7 @@ export default function StrategiesPage() {
   const charts: Record<string, React.ReactNode> = {};
   for (const g of groups) {
     charts[g.key] = (
-      <LazyMount minHeight={240}>
+      <LazyMount key={g.key} minHeight={240}>
         <PayoffChart data={g.payoff} breakevens={g.breakevens} spot={spotMap.get(g.symbol.toUpperCase()) ?? null} />
       </LazyMount>
     );

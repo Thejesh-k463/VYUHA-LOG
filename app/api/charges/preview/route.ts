@@ -325,9 +325,18 @@ export async function POST(req: Request) {
     }
   }
 
+  // A9 (v4.5.0 fix list) — the ETF overlay inside `ratesForTrade` keys on the
+  // ISIN FIRST and only then on the ticker, and the SAVE prices a stored row
+  // with `t.isin` (`updateManualTrade` / `closePosition`). Passing the symbol
+  // alone here could read a different class from the one the save stores — the
+  // divergence `tests/preview-equals-save-matrix.test.ts` exists to catch. A
+  // NEW trade states no ISIN (the Add form has no such field, so
+  // `commitManualTrade` receives null) and prices on the symbol, as its save does.
+  const previewIsin = edited ? ((edited.row.isin as string | null | undefined) ?? null) : null;
+
   let breakdown;
   try {
-    const r = ratesForTrade(rates, { broker: v.broker, segment: cls.segment, exchange: cls.exchange, symbol: v.tradingsymbol }, previewOn, plan);
+    const r = ratesForTrade(rates, { broker: v.broker, segment: cls.segment, exchange: cls.exchange, isin: previewIsin, symbol: v.tradingsymbol }, previewOn, plan);
     // Mirror commitManualTrade's MTF defaulting exactly, so the preview never
     // understates what actually gets saved: ownCapitalUsed (what YOU put in) is
     // the primary input, funded = buyValue − ownCapitalUsed; no explicit entry →

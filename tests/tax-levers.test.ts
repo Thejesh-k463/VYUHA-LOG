@@ -10,6 +10,9 @@ import {
   type LeverTrade,
   type OpenLot,
 } from "@/lib/analytics/tax-levers";
+// A11 (v4.5.0 fix list): the OTHER side of the 12-month line — the rule a
+// realised sale is classified by. The countdown must agree with it to the day.
+import { heldMoreThanMonths } from "@/lib/analytics/cg-heads";
 
 const t = (over: Partial<LeverTrade> = {}): LeverTrade => ({
   segment: "eq_delivery",
@@ -63,9 +66,76 @@ describe("ltcgRunway — a fact about dates, not a suggestion to hold", () => {
     ];
     const r = ltcgRunway(lots, "2026-12-27");
     expect(r.rows[0].daysHeld).toBe(360);
-    expect(r.rows[0].daysToLongTerm).toBe(5);
+    /**
+     * A11 (v4.5.0 fix list) — 6, NOT 5: THE LINE IS A CALENDAR DATE.
+     *
+     * The Act says "months", and the General Clauses Act 1897 s.3(35) makes
+     * that a calendar month reckoned from a date — which is what
+     * `heldMoreThanMonths` (lib/analytics/cg-heads.ts) classifies a realised
+     * sale by. This countdown used `365 − daysHeld` and so disagreed with the
+     * head rule by up to two days at the boundary: the screen said "long-term
+     * tomorrow" for a lot the ITR export would still file as short.
+     *
+     * THE ARITHMETIC. Bought 2026-01-01, so the last day a sale is still SHORT
+     * is 2026-01-01 + 12 months = 2027-01-01 (a transfer must fall AFTER it);
+     * the first LONG-term day is therefore 2027-01-02. From 2026-12-27 that is
+     * 6 days away — 28, 29, 30, 31, 01, 02. The old 365-day rule answered
+     * 365 − 360 = 5, i.e. 2027-01-01, a day on which the sale is still short.
+     */
+    expect(r.rows[0].daysToLongTerm).toBe(6);
     expect(r.rows[0].alreadyLongTerm).toBe(false);
     expect(r.crossingSoon).toBe(1);
+  });
+
+  it("A11 · 29 FEBRUARY: the countdown clamps to 28 Feb exactly as the head rule clamps it", () => {
+    /**
+     * A lot bought on a leap day has no anniversary, and `addMonthsIso` clamps
+     * it to 2025-02-28 — so that is the last SHORT day and 2025-03-01 is the
+     * first LONG one. 365 days from 2024-02-29 is 2025-02-28, which the old
+     * rule then counted as already long-term: one day early, on the one date
+     * in the calendar where the two rules are guaranteed to disagree.
+     */
+    const lot = (buyDate: string): OpenLot => ({ id: 1, symbol: "LEAP", segment: "eq_delivery", buyDate, unrealised: 1 });
+
+    // From 2025-02-20: 2025-03-01 is 9 days away (21…28 is 8, then 01).
+    const before = ltcgRunway([lot("2024-02-29")], "2025-02-20");
+    expect(before.rows[0].daysToLongTerm).toBe(9);
+    expect(before.rows[0].alreadyLongTerm).toBe(false);
+
+    // On the last short day itself: one day left, and still not long-term.
+    const onTheLine = ltcgRunway([lot("2024-02-29")], "2025-02-28");
+    expect(onTheLine.rows[0].daysToLongTerm).toBe(1);
+    expect(onTheLine.rows[0].alreadyLongTerm).toBe(false);
+    // …and the head rule agrees, from the other side: a sale ON 2025-02-28 is
+    // short, a sale on 2025-03-01 is long. Two modules, one boundary.
+    expect(heldMoreThanMonths("2024-02-29", "2025-02-28", 12)).toBe(false);
+    expect(heldMoreThanMonths("2024-02-29", "2025-03-01", 12)).toBe(true);
+
+    // The day after: long-term, and the countdown is spent.
+    const after = ltcgRunway([lot("2024-02-29")], "2025-03-01");
+    expect(after.rows[0].alreadyLongTerm).toBe(true);
+    expect(after.rows[0].daysToLongTerm).toBe(0);
+  });
+
+  it("A11 · the countdown and the head rule agree on EVERY buy date of a year, never by ±1 day", () => {
+    // The class, not the case: for each date, the day `daysToLongTerm` points
+    // at must be the FIRST day `heldMoreThanMonths` calls long-term, and the
+    // day before it must still be short.
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const TODAY = "2026-06-15";
+    for (let i = 0; i < 366; i++) {
+      const buy = iso(new Date(Date.UTC(2025, 5, 15) + i * 86400000));
+      const [row] = ltcgRunway([{ id: 1, symbol: "X", segment: "eq_delivery", buyDate: buy, unrealised: 1 }], TODAY).rows;
+      if (row.alreadyLongTerm) {
+        expect(heldMoreThanMonths(buy, TODAY, 12), `${buy} claims already long-term`).toBe(true);
+        expect(row.daysToLongTerm, `${buy}`).toBe(0);
+        continue;
+      }
+      const crosses = iso(new Date(Date.parse(`${TODAY}T00:00:00Z`) + row.daysToLongTerm * 86400000));
+      const dayBefore = iso(new Date(Date.parse(`${crosses}T00:00:00Z`) - 86400000));
+      expect(heldMoreThanMonths(buy, crosses, 12), `${buy} → ${crosses} must be LONG`).toBe(true);
+      expect(heldMoreThanMonths(buy, dayBefore, 12), `${buy} → ${dayBefore} must still be SHORT`).toBe(false);
+    }
   });
 
   it("clamps to zero once already long-term", () => {

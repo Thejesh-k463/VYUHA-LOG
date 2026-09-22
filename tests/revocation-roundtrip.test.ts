@@ -5,6 +5,7 @@ import path from "node:path";
 import { sign, createPrivateKey } from "node:crypto";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { canonicalListBytes, type RevocationList } from "@/lib/revocation-format";
+import { defaultPemPath } from "../scripts/lib/license-mint.mjs";
 
 /**
  * The revocation list end to end, against a real database and real files:
@@ -32,7 +33,13 @@ const KEY_ID = "A1B2-C3D4-E5";
  */
 const privPem: string | null = (() => {
   try {
-    return fs.readFileSync("license-private.pem", "utf8");
+    // A12 (v4.5.0 fix list) — the pem is resolved by the MINT SCRIPT'S OWN RULE
+    // (`VYUHA_LICENSE_PEM`, else the repo root), not by a hard-coded repo path:
+    // `ae39cf1` moved the real key to T:\Thejesh\vyuha-secrets\ behind that env
+    // var, and these five cases had been skipping on the owner's machine ever
+    // since — a signature test that cannot find the key is indistinguishable
+    // from CI, where skipping is correct.
+    return fs.readFileSync(defaultPemPath(), "utf8");
   } catch {
     return null;
   }

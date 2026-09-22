@@ -211,6 +211,9 @@ describe("V3 — a stored MTF funded amount of 0 is kept (all own capital), a nu
    * passed it untouched — and one of them was a silent wrong number on /equity.
    * It now walks lib/, app/ and components/ with NOTHING allow-listed.
    * Measured locally 2026-09-15: 120 ms for the whole walk (639 files).
+   * Measured 345 ms under full-suite load, alone (2026-09-22, vitest
+   * --reporter=verbose): a whole-tree source scan competing with every other
+   * worker; the timeout is raised, not the scan loosened.
    */
   it("every reader in lib/, app/ and components/ uses the same null-vs-0 rule (no `> 0` or truthiness guard left)", () => {
     const src = (p: string) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
@@ -250,7 +253,7 @@ describe("V3 — a stored MTF funded amount of 0 is kept (all own capital), a nu
     const dialog = src("components/trades/edit-trade-dialog.tsx").replace(/^\s*(?:\/\/|\*|\/\*).*$/gm, "");
     expect(/trade\.mtfFundedAmount == null \? null :/.test(dialog), "the editor preview's null-vs-0 read").toBe(true);
     expect(/defaultMtfFundedAmount/.test(dialog), "no estimate is left in the editor").toBe(false);
-  });
+  }, 20_000);
 });
 
 /**

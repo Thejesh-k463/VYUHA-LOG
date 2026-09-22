@@ -428,8 +428,15 @@ export const HELP_ENTRIES: HelpEntry[] = [
   {
     href: "/reports/tax",
     title: "Tax Summary",
-    answers: "STCG, LTCG, set-off and carry-forward for my book.",
-    body: ["Dual-regime rates around the 23-Jul-2024 cutover, 31-Jan-2018 grandfathering with per-share FMV entry, full sections 70–74 set-off and carry-forward, and dividend TDS by company and FY."],
+    answers: "STCG, LTCG, set-off and carry-forward for one tax person.",
+    body: [
+      // B6 (v4.5.0) — the page is per TAX PERSON, not per account: a return is
+      // filed by a person, and one person's accounts are one return (wave TP,
+      // lib/queries/tax-scope.ts). The old "for my book" described the
+      // account-scoped screen it stopped being.
+      "The scope is ONE tax person — every account carrying that person's tax identity, whichever one is selected; in the All-accounts view with more than one person in the book, the page asks which person before it states a figure.",
+      "Dual-regime rates around the 23-Jul-2024 cutover, 31-Jan-2018 grandfathering with per-share FMV entry, full sections 70–74 set-off and carry-forward, and dividend TDS by company and FY.",
+    ],
     keywords: ["stcg", "ltcg", "set-off", "carry forward", "grandfathering", "fmv"],
   },
   {

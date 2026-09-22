@@ -293,6 +293,11 @@ describe("egress guard — the zero-telemetry claim is enforced, not asserted", 
     expect(stripComments(src), "the shelf route must name no absolute URL").not.toMatch(/https?:\/\//i);
   });
 
+  // Measured 370 ms under full-suite load, alone (2026-09-22, vitest
+  // --reporter=verbose): a whole-tree source scan (lib/ app/ components/ +
+  // src-tauri/src) competing with every other worker; the timeout is raised,
+  // not the scan loosened. Timed out at the 5 s default under a loaded gate
+  // run (this case named specifically, 2026-09-22).
   it("every allowlist entry is still earned — no stale hosts linger", () => {
     // Both directions, the metric-help style: an entry nothing references any
     // more is an egress permission nobody is using, which is how scope creeps.
@@ -304,7 +309,7 @@ describe("egress guard — the zero-telemetry claim is enforced, not asserted", 
       .join("\n");
     const stale = Object.keys(ALLOWED_HOSTS).filter((h) => !allSrc.includes(h));
     expect(stale, `allowlisted hosts no source references: ${stale.join(", ")}`).toEqual([]);
-  });
+  }, 20_000);
 });
 
 describe("the guard itself catches what it claims to (fixture self-test)", () => {

@@ -35,10 +35,13 @@
 
 import { DELIVERY_SEGMENTS, FNO_SEGMENTS, SPECULATIVE_SEGMENT } from "./turnover";
 import { section, type SectionKey } from "./statute";
+import { addMonthsIso } from "./cg-heads";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const DAY_MS = 86400000;
-const LONG_TERM_DAYS = 365;
+/** A11 — CALENDAR months, never 365 days: the same 12 the head rule applies
+ *  (`heldMoreThanMonths` / `addMonthsIso`, lib/analytics/cg-heads.ts). */
+const LONG_TERM_MONTHS = 12;
 
 // ---------------------------------------------------------------------------
 // (B) — the facts a journal cannot know. Stated, never guessed.
@@ -173,14 +176,31 @@ export function ltcgRunway(lots: OpenLot[], today: string, soonDays = 30): LtcgR
       continue;
     }
     const daysHeld = Math.floor((now - new Date(l.buyDate + "T00:00:00").getTime()) / DAY_MS);
-    const daysToLongTerm = Math.max(0, LONG_TERM_DAYS - daysHeld);
+    /**
+     * A11 (v4.5.0 fix list) — THE 12-MONTH LINE IS A CALENDAR DATE, NOT 365 DAYS.
+     *
+     * The Act says "months" and the General Clauses Act 1897 s.3(35) makes that
+     * a calendar month reckoned from a date — which is what `heldMoreThanMonths`
+     * (lib/analytics/cg-heads.ts, wave 3b-i) classifies a realised sale by. This
+     * forward-looking countdown still used 365 days, so it disagreed with the
+     * head rule by up to two days at the boundary: the screen said "long-term
+     * tomorrow" for a lot the export would still class short. `lastShortDay` is
+     * the last date a sale is SHORT-term (a transfer must fall AFTER it), so the
+     * first long-term day is the day after, and 29-Feb + 12 months clamps to
+     * 28-Feb exactly as the classifier clamps it.
+     */
+    const lastShortDay = addMonthsIso(l.buyDate, LONG_TERM_MONTHS);
+    const daysToLongTerm = Math.max(
+      0,
+      Math.floor((new Date(lastShortDay + "T00:00:00").getTime() - now) / DAY_MS) + 1,
+    );
     rows.push({
       id: l.id,
       symbol: l.symbol,
       buyDate: l.buyDate,
       daysHeld,
       daysToLongTerm,
-      alreadyLongTerm: daysHeld >= LONG_TERM_DAYS,
+      alreadyLongTerm: today > lastShortDay,
       unrealised: r2(l.unrealised),
     });
   }

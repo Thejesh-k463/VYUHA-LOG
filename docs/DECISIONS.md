@@ -8559,3 +8559,53 @@ build ok. README's test-file count 470 → 471. The first gate run was red on ON
 `tests/today-clock.test.ts` (a whole-tree source scan) with **8.6 GB free** — NOT FAIL-J's memory signature; measured 401 ms /
 406 ms alone, the same walk as its two siblings that already carry 20 s, so both cases were raised to 20 s WITH the measurement
 in a comment (the rule: a raised timeout needs a measured local time). That makes six raised scan cases in that file.
+
+## 2026-09-22 — v4.5.0 the fix-list wave: the "recorded, not built" items (A1–A12, B1–B7) and what each decided
+
+The list is `21-V450-BUILD/fix-list-wave.md`; every item small, in-repo, reversible. One product builder (hit the 150-turn cap once,
+resumed from its own ledger), one test builder, one e2e builder (disjoint: `e2e/**`), the verifier for the gate. Decisions taken
+here under the decision policy (the owner may overrule):
+
+1. **A4 — a broker-STATED bill survives a re-tag, via a `stated-bill` marker in `import_notes`.** The premise of the recorded
+   decision was that a stated-charges flag existed; it did not (no `charges_source` column, nothing in `tests/helpers/field-rules.ts`).
+   Rather than a migration, the marker uses the EXISTING machine-note channel (`exec-bill:`, `closed-by:` convention):
+   `lib/import/close-open-lots.ts` names it, `lib/import/commit.ts` appends it exactly when `reportedCharges.total != null` (the
+   same condition under which `buildRow` keeps the file's bill verbatim), and `applyOverride` keeps all ELEVEN stored values (ten
+   heads + total, plus `mtfFundedAmount` so a stated MTF interest keeps the principal it was charged on) when the marker is present,
+   re-pricing only an estimate. **Limitation, stated:** only imports made from this version carry the marker; a pre-4.5.0 stated row
+   re-prices on a re-tag exactly as it always did. Rejected: a `charges_source` column — it needs a backfill that cannot know
+   which old rows were stated, so it would have been the same limitation behind a migration. The merge refusal keys on the
+   auto-close note ONLY (W3), so the new marker cannot trip it; the four guards stayed green.
+2. **A3 — the "priced on the default plan" line carries NO rupee figure.** The list said "(₹20/order)"; Upstox delivery is
+   min(₹20, 2.5 %), so a flat figure is a false money claim (invariant 6). The line and the Data Quality issue read ONE predicate
+   (`getAccountsWithoutPlan`, pure copy in `lib/analytics/data-quality.ts`) so they cannot disagree.
+3. **A1 — the calculator's plan is DERIVED, not synced.** Plan state is `null` = "unpicked" and the effective plan is derived from
+   the server-resolved `planForView` per broker at render time; only an explicit pick (or a saved snapshot) is persisted. No
+   `useEffect` setState — the AGENTS.md rule that broke the Trades filter.
+4. **A11 — `daysToLongTerm` on open lots counts to `addMonthsIso(buyDate, 12)` + 1**, agreeing with `heldMoreThanMonths` at the
+   boundary (a 29-Feb lot counts to 28-Feb + 1); `LONG_TERM_DAYS = 365` deleted. Rejected: leaving a forward-looking 365 that
+   disagreed with the head rule by up to two days at the line it was counting down to.
+5. **A12 — the revocation test AND `scripts/revocation-publish.mjs` resolve the pem by the mint script's rule** (`VYUHA_LICENSE_PEM`,
+   then the repo path). The publish script had the same hard-coded path; it is why the newly-running case failed first. With the
+   key present the five cases run (10 passed); without it they still skip.
+6. **B3 owed nothing** — `API_GUIDE_POINTER` has been on all four API cards since `25dac06`; the STATE line claiming otherwise was
+   stale prose. **B7** added two executable checks; `autoclose-comment-vs-callers` FAILED on first run on a genuinely stale
+   `commit.ts` comment — the DOC was fixed, never the check. **A8** two inlined scope predicates → `accountScopeWhere`. **A9**
+   `TRACKER_FIELDS` gains `isin`; three call sites pass it. **B1** three hand-rolled comma strips → `parseFormNumber`. **B6** the
+   `/reports/tax` help names the tax-person scope. **A7** a mid-un-close failure → 409 `{ok:false, code:"FAILED"}`. **A2** the
+   "current" badge follows `planForView`.
+7. **B2 — of the three React warnings, ONE was live.** A new `e2e/zz-console-audit.spec.ts` (sorts last, so it sees the seeded
+   book; listeners attached before the first navigation; walks /live, /trades, /strategies, / and /reports/tax; prints every
+   console message; asserts none of B2's three patterns, with Radix's `aria-hidden` mismatch excluded by a commented regex)
+   captured exactly one message across all five pages: `Each child in a list should have a unique "key" prop … Check the render
+   method of CardContent. It was passed a child from StrategiesPage.` — the chart element built in a `for` loop at
+   `app/strategies/page.tsx:245` and handed down unkeyed. One `key={g.key}` on the `LazyMount`; the audit re-ran with
+   **0 messages**. The duplicate key `5` on /live and the pre-mount state update on /trades did NOT reproduce on the seeded
+   e2e book — recorded as not reproducible rather than "fixed"; the audit spec now runs last in every e2e pass, so a return
+   is a red, not a log line nobody reads. The four Radix hydration mismatches did not appear either (no dialog opened).
+8. **V7's two-tax-person browser proof exists:** `e2e/z-tax-person.spec.ts` — one person → the header line + figures; the CSV
+   export's first line is the scope header; a second tax person created through `/api/accounts` + "All accounts" → the person
+   picker, no `Per financial year` card and **zero `₹` in `<main>`** (invariant 6); `?person=` shows that person and persists
+   nothing (invariant 9). Seeding undone in `afterAll` (shared DB).
+
+**Gate (`vyuha-verifier`):** `npm run verify` EXIT 0 — **473 files / 10,894 passed / 40 skipped**, lint 7 pre-existing, `next build` passed. **The release-gate Playwright pass (STATE V7) on this tree: 120 / 120 in 35 specs (7.6 min, zero dev-server restarts)** — `z-auto-close` green, `z-tax-person` green (the two-person picker + no figure), `zz-console-audit` green (0 messages). Test builder: 51 new cases in `tests/fixlist-v45-{pure,db}.test.ts` + re-pins in `tax-levers` (5 → 6, arithmetic in the comment), `help-content`, `state-drift` (each new check PLANTED red on a temp copy — a check that cannot fire is a finding); every item red-on-revert by a reverse-applied patch; A4's marker is NOT in `tests/helpers/field-rules.ts` (that registry holds nullable-money read shapes; the marker has one reader, pinned as "exactly one module names `stated-bill`" instead); A1's "explicit pick wins" half is pinned at source only (client-side after hydration). README's test-file count 471 → 473, e2e 33 → 35 specs / 115 → 120 flows (all measured). The first gate run was red on two DOC guards only: README's e2e spec count, and `tests/remove-broker-ui.test.ts` grepping a one-line `<ImportClient …>` literal that A3's third prop made multi-line — the regex is now whitespace-tolerant (the wiring is the pin, not the whitespace). The second run was red on two more 5 s timeouts in `tests/today-clock.test.ts` (whole-tree scans, 503 / 486 ms alone, 10 GB free — NOT memory pressure; the file runs ~37 s inside the suite vs 3.7 s alone because every worker walks the tree at once): all SIX scan cases in that file now carry the 20 s timeout with their measured times. The third run moved the red to `tests/egress-guard.test.ts:296` — the same class in a different file. **FAIL-J refined:** a 5 s timeout that MOVES between files with free memory ABOVE ~4 GB is the whole-tree source-scan class (each scan ~0.5 s alone, 3–6 s when every worker walks the tree at once; the suite's `Duration` climbs with the tree, 105 → 131 s this session), not memory pressure — and raising one file per gate run is the wrong loop. The class fix, done once: a full `vitest run --reporter=json`, every case over 2.5 s under load without a raised timeout gets 20 s WITH both measured times in its comment (the "raise only with a measurement" rule kept, applied to the class).

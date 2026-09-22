@@ -52,6 +52,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { REVOKED_IDS } from "./license-revoked.mjs";
+import { defaultPemPath } from "./lib/license-mint.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -106,7 +107,13 @@ const canonical = JSON.stringify({
   })),
 });
 
-const privPem = readFileSync(path.join(root, "license-private.pem"), "utf8");
+// A12 (v4.5.0 fix list) — the SIGNING KEY is resolved by the mint script's own
+// rule (`VYUHA_LICENSE_PEM`, else the repo root). `ae39cf1` moved the real key
+// out of the repo, behind that env var, and this hard-coded repo path left the
+// publisher unrunnable on the owner's machine — and with it the round-trip test
+// that runs the real script rather than a re-implementation of it.
+const pemPath = defaultPemPath();
+const privPem = readFileSync(pemPath, "utf8");
 const signature = sign(null, Buffer.from(canonical, "utf8"), createPrivateKey(privPem)).toString("base64url");
 
 writeFileSync(outPath, JSON.stringify({ list, signature }, null, 2) + "\n");
@@ -115,7 +122,7 @@ console.log(outPath);
 console.error(`\n  entries    : ${ids.length}${ids.length ? ` (${ids.join(", ")})` : " — an EMPTY list is valid and clears nothing; it simply revokes no one"}`);
 console.error(`  issued     : ${list.issuedAt}`);
 console.error(`  locks on   : ${graceDays > 0 ? `${effectiveFrom} (${graceDays}-day grace — users see a warning until then)` : "immediately on receipt (no grace)"}`);
-console.error(`  signed with: license-private.pem — verified in-app by the same key that verifies licences`);
+console.error(`  signed with: ${pemPath} — verified in-app by the same key that verifies licences`);
 console.error(`\n  Publish it to the permanent "revocations" release, asset name exactly "revocations.json":`);
 console.error(`    gh release upload revocations "${outPath}" --clobber`);
 console.error(`  (First time only, and --prerelease is REQUIRED or this becomes releases/latest and breaks the updater:`);

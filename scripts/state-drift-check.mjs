@@ -427,6 +427,69 @@ if (closeOut) {
   else cmp("readme-version", m[1], pkg.version, `README ${m[1]}`, `package.json ${pkg.version}`, `README.md:${lineAt(readme, m.index)}`);
 }
 
+// ── C. AGENTS invariant 3's rate KEY vs charge_config's own unique index ────
+// AGENTS prose on one side, `lib/db/schema.ts`'s `charge_config_uq` on the
+// other. The key gained `plan` in v4.5.0 wave U and the invariant was edited by
+// hand; the next column to join it will be added to the index, not to the prose.
+{
+  const schemaRel = "lib/db/schema.ts";
+  const schema = doc(schemaRel);
+  const idx = schema ? /uniqueIndex\("charge_config_uq"\)\.on\(([^)]*)\)/.exec(schema) : null;
+  // The prose wraps: "exchange," ends one line and "effective-dated" starts the next.
+  const keyRe = /\(((?:\w+ × )+\w+),\s+effective-dated/;
+  const claim = agents ? keyRe.exec(agents) : null;
+  if (!idx) skip("rate-key-vs-schema", `${schemaRel} has no parsable \`charge_config_uq\` index`, schemaRel);
+  else if (!claim) skip("rate-key-vs-schema", "AGENTS invariant 3 states no `(a × b × …, effective-dated` key", "AGENTS.md");
+  else {
+    // The index carries the effective-dating column too; the prose says
+    // "effective-dated" in words, so it is compared as the flag it is.
+    const cols = idx[1].split(",").map((s) => s.trim().replace(/^t\./, "")).filter(Boolean);
+    const dated = cols.includes("effectiveFrom");
+    const actual = `${cols.filter((c) => c !== "effectiveFrom").join(" × ")}${dated ? ", effective-dated" : ""}`;
+    const claimed = `${claim[1]}, effective-dated`;
+    cmp(
+      "rate-key-vs-schema",
+      claimed,
+      actual,
+      `AGENTS invariant 3: ${claimed}`,
+      `${schemaRel} charge_config_uq: ${actual}`,
+      `${findLine("AGENTS.md", agents, keyRe)} vs ${schemaRel}:${lineAt(schema, idx.index)}`,
+    );
+  }
+}
+
+// ── D. commit.ts's autoClose claim vs the import routes' own call sites ─────
+// A COMMENT on one side, the CALLERS on the other. W2a landed the applier
+// dormant ("every production caller … writes exactly what v4.4.0 wrote") and
+// W2b turned it on — both import routes now pass `autoClose: !keepSellsSeparate`,
+// i.e. ON unless the user ticks the box, while the comment still said otherwise.
+{
+  const commitRel = "lib/import/commit.ts";
+  const commit = doc(commitRel);
+  // EVERY such claim is checked, not just the first: the file carries two, and
+  // it was the SECOND that went stale when W2b flipped the default on.
+  const claims = commit
+    ? [...commit.matchAll(/every production caller[\s\S]{0,400}?(writes exactly what v4\.4\.0 wrote|passes it EXPLICITLY)/g)]
+    : [];
+  const routes = ["app/api/import/route.ts", "app/api/import/broker/route.ts"];
+  const sites = routes.flatMap((rel) => {
+    const src = doc(rel);
+    if (!src) return [];
+    return [...src.matchAll(/autoClose:\s*([^,}\n]+)/g)].map((m) => ({ rel, value: m[1].trim() }));
+  });
+  if (claims.length === 0) skip("autoclose-comment-vs-callers", `${commitRel} makes no claim about what every production caller passes`, commitRel);
+  else if (sites.length === 0) skip("autoclose-comment-vs-callers", "no `autoClose:` at any app/api/import*/route.ts call site", routes.join(", "));
+  else {
+    const actual = sites.every((s) => s.value === "false") ? "off at every caller" : "explicit at every caller";
+    const said = (m) => (m[1] === "writes exactly what v4.4.0 wrote" ? "off at every caller" : "explicit at every caller");
+    const bad = claims.find((m) => said(m) !== actual);
+    const where = `${commitRel}:${lineAt(commit, (bad ?? claims[0]).index)} vs ${routes.join(" + ")}`;
+    const actualLabel = sites.map((s) => `${path.basename(path.dirname(s.rel))}/route.ts ${s.value}`).join(", ");
+    if (bad) fail("autoclose-comment-vs-callers", `${commitRel}: "${bad[1]}"`, actualLabel, where);
+    else pass("autoclose-comment-vs-callers", `${claims.length} claim(s): ${actual}`, actualLabel, where);
+  }
+}
+
 // ── output ──────────────────────────────────────────────────────────────────
 for (const r of results) {
   if (r.status === "SKIP") console.log(`SKIP ${r.name}: ${t(r.actual, 110)} (${r.where})`);

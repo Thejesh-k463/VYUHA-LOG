@@ -52,7 +52,8 @@ describe("remove-broker panel wiring", () => {
     // The page resolves the selector's account and hands it down — 0 is null.
     expect(pageSrc).toMatch(/getSelectedAccountId\(\)/);
     expect(pageSrc).toMatch(/selectedId > 0 \? \(getAccounts\(\)\.find\(\(a\) => a\.id === selectedId\) \?\? null\) : null/);
-    expect(pageSrc).toMatch(/<ImportClient writeAccounts=\{writeAccounts\} selectedAccount=/);
+    // The element went multi-line in v4.5.0 (a third prop, `planNotice`); the wiring is what is pinned, not the whitespace.
+    expect(pageSrc).toMatch(/<ImportClient\s+writeAccounts=\{writeAccounts\}\s+selectedAccount=/);
   });
 
   it("carries the test ids the e2e spec drives", () => {

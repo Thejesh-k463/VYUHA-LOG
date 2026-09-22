@@ -672,6 +672,9 @@ describe("account-scoped table registry", () => {
     return out;
   };
 
+  // Measured 283 ms under full-suite load, alone (2026-09-22, vitest
+  // --reporter=verbose): a whole-tree source scan (lib/ app/) competing with
+  // every other worker; the timeout is raised, not the scan loosened.
   it("every reader of broker_connections is declared as its owner", async () => {
     const fs = await import("node:fs");
     const readers = ["lib", "app"]
@@ -713,7 +716,7 @@ describe("account-scoped table registry", () => {
         `${rel} reads broker_connections but is not declared as an owner — an undeclared reader is never scanned for invariant 8`,
       ).toContain(rel);
     }
-  });
+  }, 20_000);
 
   it("every broker_connections reader resolves the account AND applies the aggregate rule", async () => {
     const fs = await import("node:fs");

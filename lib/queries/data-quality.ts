@@ -7,6 +7,7 @@ import { accounts as accountsTable, bfLossLots, instruments, ipos, mtmPrices, tr
 import { trashedTradeIds } from "@/lib/trash";
 import {
   assessDataQuality,
+  planPricingNotice,
   saleJournalFields,
   staleFillsNote,
   staleJournalNote,
@@ -21,6 +22,68 @@ import { brokerPlanOptions } from "./broker-plan";
 import { getTrades } from "./trades";
 import { collectIdChunks } from "./delete";
 import { taxPersonKey } from "@/lib/domain/tax-person";
+import { BROKER_LABELS } from "@/lib/domain/constants";
+
+/**
+ * THE ONE PREDICATE FOR "this account is priced on a plan it never stated"
+ * (wave U; exported in v4.5.0 fix list A3).
+ *
+ * An ACTIVE account whose broker sells MORE THAN ONE pricing plan and which
+ * states none. The set of multi-plan brokers is DERIVED from `charge_config`
+ * (`brokerPlanOptions`), so no broker is ever named here — the day a second
+ * broker gets a tier, its accounts join the set with no code change.
+ *
+ * Read by Data Quality's `broker_plan:<id>` issue AND by the import preview's
+ * pricing line, which is the point: two lists would drift, and the user would
+ * be told on one screen that a plan is missing while another priced happily.
+ */
+export interface AccountWithoutPlan {
+  id: number;
+  name: string;
+  /** The stored broker key, normalised — what `brokerPlanOptions` is keyed by. */
+  broker: string;
+  /** The broker as the account states it, for prose (Data Quality's wording). */
+  brokerLabel: string;
+}
+
+export function getAccountsWithoutPlan(): AccountWithoutPlan[] {
+  const planOptions = brokerPlanOptions();
+  return db
+    .select({ id: accountsTable.id, name: accountsTable.name, broker: accountsTable.broker, brokerPlan: accountsTable.brokerPlan, archived: accountsTable.archived })
+    .from(accountsTable)
+    .all()
+    .filter((a) => !a.archived && !a.brokerPlan && (planOptions[(a.broker ?? "").trim().toLowerCase()]?.length ?? 0) > 1)
+    .map((a) => ({ id: a.id, name: a.name, broker: (a.broker ?? "").trim().toLowerCase(), brokerLabel: (a.broker ?? "").trim() }));
+}
+
+/**
+ * A3 (v4.5.0 fix list) — THE ONE LINE an estimate-showing screen states when
+ * the account it is pricing for has no plan: the import preview's charges
+ * column and the calculator both show a figure that is right for the free tier
+ * and wrong for a paid one, and only the user knows which they are on.
+ *
+ * Account-scoped the ordinary way (invariant 8): the selected account in a
+ * single-account view, every account in the All-accounts view — the same rows
+ * Data Quality would list, filtered to what is on screen. Null when there is
+ * nothing to say, so a caller renders nothing rather than an empty box.
+ */
+export function getPlanPricingNotice(): string | null {
+  const selected = getSelectedAccountId();
+  const rows = getAccountsWithoutPlan().filter((a) => selected <= 0 || a.id === selected);
+  if (rows.length === 0) return null;
+  const options = brokerPlanOptions();
+  return planPricingNotice(
+    rows.map((a) => {
+      const free = options[a.broker]?.find((o) => o.plan === "default") ?? null;
+      return {
+        brokerLabel: BROKER_LABELS[a.broker as keyof typeof BROKER_LABELS] ?? a.brokerLabel,
+        // `brokerPlanOptions` fills a missing label with its own placeholder;
+        // only a label the RATE TABLE actually states is worth printing.
+        freePlanLabel: free && free.label !== "Standard (free)" ? free.label : null,
+      };
+    }),
+  );
+}
 
 /** A stale pair as the screen shows it: `blocked` is why it gets no button. */
 export interface StaleOpenView extends StaleOpenPair {
@@ -189,16 +252,10 @@ export function getDataQualityReport(now = new Date()) {
   const knownSymbols = new Set(db.select({ symbol: instruments.symbol }).from(instruments).all().map((x) => x.symbol.toUpperCase()));
   const ipoLinkedTradeIds = new Set(db.select({ tradeId: ipos.tradeId }).from(ipos).all().map((x) => x.tradeId).filter((x): x is number => x != null));
   const missingAttachmentFiles = db.select().from(tradeAttachments).all().filter((a) => !fs.existsSync(path.join(attachmentsDir, path.basename(a.storedName)))).length;
-  // Wave U — accounts on a multi-plan broker that state no plan. The set of
-  // multi-plan brokers is DERIVED from charge_config (`brokerPlanOptions`), so
-  // this line never names a broker.
-  const planOptions = brokerPlanOptions();
-  const accountsWithoutPlan = db
-    .select({ id: accountsTable.id, name: accountsTable.name, broker: accountsTable.broker, brokerPlan: accountsTable.brokerPlan, archived: accountsTable.archived })
-    .from(accountsTable)
-    .all()
-    .filter((a) => !a.archived && !a.brokerPlan && (planOptions[(a.broker ?? "").trim().toLowerCase()]?.length ?? 0) > 1)
-    .map((a) => ({ id: a.id, name: a.name, brokerLabel: (a.broker ?? "").trim() }));
+  // Wave U — accounts on a multi-plan broker that state no plan (A3: ONE
+  // predicate, exported, so the import preview's pricing line and this issue
+  // can never describe different sets of accounts).
+  const accountsWithoutPlan = getAccountsWithoutPlan();
   // v4.5.0 wave TP — the same (incurredFy, head) lot held by TWO accounts of
   // ONE tax person. Read across every account on purpose: the question is
   // about a PERSON, not about the selected book, and the tax pages seed the

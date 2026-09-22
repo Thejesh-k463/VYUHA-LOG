@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { evaluateLimits, type ProspectiveOrder } from "@/lib/risk/limits";
 import { resolveRules, getPortfolioState, bucketForSegment } from "@/lib/queries/limits";
+import { parseFormNumber } from "@/lib/domain/signal";
 
 export const runtime = "nodejs";
 
@@ -14,15 +15,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "Bad request" }, { status: 400 });
   }
 
-  const num = (v: unknown): number => {
-    const n = Number(String(v ?? "").toString().replace(/,/g, "").trim());
-    return Number.isFinite(n) ? n : 0;
-  };
+  // B1 (v4.5.0 fix list) — THE form-number rule, in one place (`parseFormNumber`,
+  // lib/domain/signal.ts, added in v4.4.0 for every trade-form number). These two
+  // stripped commas by hand, so "14,48" and "1e5" read as numbers the user never
+  // typed. The refusal semantics are unchanged: an unreadable value is still 0
+  // here and null in `optNum`, and a blank is still null.
+  const num = (v: unknown): number => parseFormNumber(String(v ?? "")) ?? 0;
   const optNum = (v: unknown): number | null => {
     const s = String(v ?? "").trim();
     if (s === "") return null;
-    const n = Number(s.replace(/,/g, ""));
-    return Number.isFinite(n) ? n : null;
+    return parseFormNumber(s);
   };
 
   const segment = String(body.segment ?? "").trim();

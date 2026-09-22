@@ -9,6 +9,8 @@
 // consts: a guard can pin a string it can import, and copy that is only a text
 // node in a .tsx can be reworded without any test noticing.
 
+import { parseFormNumber } from "./signal";
+
 /** localStorage key for wizard progress (kebab-case, `vyuha-` prefixed). */
 export const ONBOARDING_STEP_KEY = "vyuha-onboarding-step";
 
@@ -119,8 +121,12 @@ export type CapitalEntry =
 export function readCapitalEntry(raw: string): CapitalEntry {
   const t = raw.trim();
   if (t === "") return { kind: "blank", value: null };
-  const n = Number(t.replace(/,/g, ""));
-  if (!Number.isFinite(n) || n < 0) return { kind: "unreadable", value: null, raw: t };
+  // B1 (v4.5.0 fix list) — THE form-number rule (`parseFormNumber`), not a hand
+  // comma strip: "14,48" read as 1448 and "1e5" as 100000, neither of which the
+  // user typed. The three kinds are unchanged — blank, amount, unreadable — and
+  // a negative is still unreadable.
+  const n = parseFormNumber(t);
+  if (n == null || n < 0) return { kind: "unreadable", value: null, raw: t };
   return { kind: "amount", value: n };
 }
 

@@ -6,6 +6,9 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { getMarginRates, getMtfMarginByBroker } from "@/lib/queries/margin";
 import { getIndexLotSizes } from "@/lib/queries/instruments";
+import { planForView } from "@/lib/queries/broker-plan";
+import { getPlanPricingNotice } from "@/lib/queries/data-quality";
+import { BROKERS } from "@/lib/domain/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +19,23 @@ export default function CalculatorPage() {
   // responsible for epoch resolution, which is exactly the logic that belongs in
   // one place (lib/engine/rates.ts).
   const today = todayIstIso();
+  const ratesMap = loadRatesMap();
   const rates = Object.fromEntries(
-    [...loadRatesMap()].flatMap(([k, epochs]) => {
+    [...ratesMap].flatMap(([k, epochs]) => {
       const live = epochs.find(
         (e) => (e.effectiveFrom ?? "1970-01-01") <= today && (e.effectiveTo == null || today < e.effectiveTo),
       );
       return live ? [[k, live] as const] : [];
     }),
   );
+  // A1 (v4.5.0 fix list) — THE PLAN EACH BROKER IS PRICED ON FOR THE ACCOUNT(S)
+  // IN VIEW, resolved here, on the server, by the one rule (`planForView`, the
+  // same call /sizing-lab makes). The calculator is a client component and must
+  // not reach for a query, so the resolved answer crosses the boundary as a
+  // plain object: broker → plan. A broker the view holds no account with
+  // resolves to "default", and so does an All-accounts view whose accounts
+  // disagree on that broker (invariant 6).
+  const accountPlans = Object.fromEntries(BROKERS.map((b) => [b, planForView(b, today, ratesMap)]));
   const mtfMarginByBroker = getMtfMarginByBroker();
   // Every DB read stays here — the calculator is a client component and must
   // not reach for a query. A plain object crosses the boundary; the component
@@ -48,7 +60,7 @@ export default function CalculatorPage() {
           </Link>
           .
         </p>
-        <TradeCalculator rates={rates} mtfMarginByBroker={mtfMarginByBroker} marginRates={marginRates} indexLots={indexLots} />
+        <TradeCalculator rates={rates} accountPlans={accountPlans} planNotice={getPlanPricingNotice()} mtfMarginByBroker={mtfMarginByBroker} marginRates={marginRates} indexLots={indexLots} />
       </div>
     </>
   );

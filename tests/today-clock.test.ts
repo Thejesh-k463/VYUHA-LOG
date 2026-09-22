@@ -277,6 +277,7 @@ describe("source guard — one today", () => {
     expect(inMigrated).toEqual([]);
   }, 20_000);
 
+  // Measured 503 ms alone (2026-09-22, vitest --reporter=verbose); timed out at 5 s under full-suite load with 10 GB free — the same whole-tree walk as the four cases above, same raised timeout.
   it("the remaining UTC-today sites are a FROZEN inventory — it can shrink, never grow", () => {
     // NOT an allow-list of non-"today" uses: every row is a UTC "today" that
     // is still waiting for its owner. The Wave 3 sweep (2026-09-04) migrated
@@ -311,8 +312,9 @@ describe("source guard — one today", () => {
     }
     // A migrated file must be removed from the inventory, so it stays honest.
     for (const f of Object.keys(FROZEN)) expect(actual[f], `${f}: migrated — delete its inventory row`).toBeDefined();
-  });
+  }, 20_000);
 
+  // Measured 486 ms alone (2026-09-22, vitest --reporter=verbose); timed out at 5 s under full-suite load with 10 GB free — the same whole-tree walk, same raised timeout.
   it("non-today toISOString().slice(0, 10) uses are date arithmetic on an already-shifted or computed Date", () => {
     // `x.toISOString().slice(0, 10)` where x is NOT `new Date()` formats a
     // computed date (week starts, FY ends, an IST-shifted `ist`); those are
@@ -322,5 +324,5 @@ describe("source guard — one today", () => {
     const hits = scan(/const (today|now|asOf) = new Date\(\);/);
     const suspicious = hits.filter((l) => UTC_DATE_TAIL.test(l));
     expect(suspicious).toEqual([]);
-  });
+  }, 20_000);
 });

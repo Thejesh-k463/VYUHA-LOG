@@ -227,10 +227,13 @@ describe("the rule has ONE home", () => {
     return out;
   }
 
+  // Measured 250 ms under full-suite load, alone (2026-09-22, vitest
+  // --reporter=verbose): a whole-tree source scan (lib/ app/) competing with
+  // every other worker; the timeout is raised, not the scan loosened.
   it("exactly one definition of ipoIdsCountedThroughTrades exists in lib/ and app/, and it lives beside getIpoRealisedNet", () => {
     const defs = [...sources("lib"), ...sources("app")].filter((p) =>
       /function\s+ipoIdsCountedThroughTrades\b/.test(fs.readFileSync(p, "utf8")),
     );
     expect(defs.map((p) => p.split(path.sep).join("/"))).toEqual(["lib/queries/ipos.ts"]);
-  });
+  }, 20_000);
 });

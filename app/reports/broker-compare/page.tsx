@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { getTrades } from "@/lib/queries/trades";
 import { loadRatesMap } from "@/lib/engine/rates-db";
+import { planForView } from "@/lib/queries/broker-plan";
 import { compareBrokers, type CompareTrade } from "@/lib/analytics/broker-compare";
 import { BROKERS, BROKER_LABELS } from "@/lib/domain/constants";
 import { inr } from "@/lib/format";
@@ -89,6 +90,14 @@ export default function BrokerComparePage() {
   for (const t of trades) counts.set(t.broker, (counts.get(t.broker) ?? 0) + 1);
   const currentBroker = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
+  // A2 (v4.5.0 fix list) — "current" is the broker AND THE PLAN the book is
+  // actually priced on, resolved by the one rule (`planForView`, which reads
+  // the account(s) in view). It used to match `plan === "default"`, so a Plus
+  // account read "current" on the Basic row and compared its own bill with a
+  // rate card it is not on. A broker the view holds no account with resolves to
+  // "default", which is what it is priced at anyway.
+  const currentPlan = currentBroker ? planForView(currentBroker, today, ratesMap) : "default";
+
   const report = compareBrokers(compareTrades, ratesMap, [...BROKERS], currentBroker);
   const label = (b: string) => BROKER_LABELS[b as keyof typeof BROKER_LABELS] ?? b;
 
@@ -172,7 +181,7 @@ export default function BrokerComparePage() {
                                 </Badge>
                               )}
                               {isCheapest ? <Badge variant="profit">cheapest</Badge> : null}
-                              {b.broker === currentBroker && b.plan === "default" ? <Badge variant="secondary">current</Badge> : null}
+                              {b.broker === currentBroker && b.plan === currentPlan ? <Badge variant="secondary">current</Badge> : null}
                               {b.missing > 0 ? <Badge variant="warning">{b.missing} unpriced</Badge> : null}
                             </span>
                           </ReportTd>
