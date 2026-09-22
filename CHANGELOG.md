@@ -34,6 +34,13 @@ accounts it is reading.*
   on.
 - **One database upgrade (0074)**, applied on first launch — take a backup
   first, as always.
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  The v4.5.0 installer runs the v4.4.0 uninstaller once before it installs, and
+  that one is the guarded one: ticking its "Delete the application data" box
+  erases the whole data folder, but not before your journal and licence key
+  have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel
+  leaves everything as it is.
+- No dependency changes.
 
 Not in this release: no macOS build; the installer is still unsigned (Windows
 SmartScreen warns once); no network host is added.
