@@ -24,6 +24,17 @@ DECISIONS being no older than STATE. Each check reads its two sides from DIFFERE
 prints SKIP with a reason rather than PASS when it cannot derive a fact. **When it goes red, fix the
 DOC — never the check** (a self-agreeing README guard is how "9745 tests" outlived ~1,000 tests).
 
+**The prose half is NOT optional either (owner, 2026-09-23: "every session, at the end or whenever best suited").**
+The executable check cannot read a sentence, so every session that changes a doc ALSO runs ONE bounded
+`doc-auditor` pass (a cheap model, ≤ 40 tool calls, findings only — it edits nothing) over the files the
+session touched plus the four live docs (STATE §0–§3, AGENTS.md, CLAUDE.md, README.md's top) and the
+release copy when a version changed. Hunt list: a superseded version called current; a feature described
+as dormant/off that is on (auto-close); a rate key without `plan`; tax described per account; a stale
+count in prose; a skill telling a session to do what the owner reserved. A CONFIRMED finding is fixed
+in the doc THAT session and, where a command can re-derive it, becomes a new check in
+`scripts/state-drift-check.mjs`. Record "prose pass: N files / M findings / K tool calls" in the
+close-out DECISIONS entry — a session that cannot cite that line did not run it.
+
 
 # Invariants — breaking these reintroduces bugs that were expensive to find
 

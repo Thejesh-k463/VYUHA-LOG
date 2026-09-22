@@ -8660,3 +8660,6 @@ deep-verify line, the client ZIP hash and the WDSI form; the owner flips the dra
 Rejected: keeping the publish in-session behind an AskUserQuestion — the owner wants the click itself, not a prompt for it.
 The watcher that hung: `gh run list --commit <sha> --workflow CI` never matched (a plain `gh run list --limit 3` found the run at once);
 the CI run on `86bcd06` was 35763585856 SUCCESS 6/6 the whole time — a release-session wait reads the plain list.
+**Prose pass (the owner asked whether it happened — it had not, the executable half alone had run): `doc-auditor` on Sonnet over 8 files, 0 findings, 12 tool calls,
+~89k subagent tokens; one GAP (the release skill did not yet state the owner-publishes stop) — fixed in the skill and the prose pass made mandatory in AGENTS.md
+"End-of-session drift check" with a cite-or-it-did-not-happen rule (this line is the cite).**

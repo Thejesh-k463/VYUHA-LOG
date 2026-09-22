@@ -127,6 +127,16 @@ machines test, and the one v2.98.0 failed while every key id looked fine. It
 costs ~220 MB of downloads and a couple of minutes; a broken update costs a
 release.
 
+**STOP HERE from v4.6.0 onward — the OWNER publishes (ruled 2026-09-23).** Once `--deep`
+prints "Safe to publish", the session does NOT run `gh release edit <tag> --draft=false --latest`.
+It hands over, in its final message: the draft URL, the deep-verify line, the client ZIP's installer
+SHA-256 and the WDSI form (§9). The owner flips the draft to Latest; the post-publish proofs
+(`gh release list --limit 2` shows the tag as Latest; `latest.json` serves the version for six
+platforms; `revocations` still `isPrerelease=true`; the live landing page carries the new version)
+run in the session AFTER the owner reports "published". Wait for a CI run with a plain
+`gh run list --limit 3`, never `--commit <sha> --workflow CI` (it matched nothing for 2 h 23 min on
+2026-09-22 while the run sat green).
+
 If `--deep` fails while the key ids pass, the signing key is fine and the
 **artefact and its signature disagree** — something re-wrote or re-uploaded an
 asset after signing. Delete the draft and re-run the workflow; never re-upload
