@@ -57,7 +57,8 @@ import {
   isLotIdentityFrozen,
   STALE_CLOSE_NOTE,
   withStaleCloseNote,
-  // W2a — the applier (dormant behind `options.autoClose`, default false).
+  // W2a — the applier, behind `options.autoClose` (false at this API boundary;
+  // every production caller passes it explicitly — W2b turned it ON).
   planLotCloses,
   matchKey,
   AUTO_CLOSE_NOTE,
@@ -1012,12 +1013,16 @@ export function supersededFromWarnings(warnings: readonly string[] | undefined):
 /**
  * What a preview or a commit may be asked to do beyond writing the file's rows.
  *
- * `autoClose` (W2a) defaults to FALSE and every caller on this tree leaves it
- * so: the applier is built, unit-tested and dormant. W2b turns it on — with a
- * per-import "Keep sells as separate rows" toggle (ruling A1) — AFTER W3 has
- * built un-close and the delete/merge refusals, because a close the user cannot
- * undo is not a feature. A pull passes whatever it is given (revision 13); it
- * has no toggle of its own this wave.
+ * `autoClose` (W2a) defaults to FALSE **at this API boundary only** — an
+ * omitted flag must never close a lot by accident. It is ON in the product
+ * since W2b: every production caller passes it EXPLICITLY, derived from the
+ * per-import "Keep sells as separate rows" toggle (ruling A1,
+ * `KEEP_SELLS_SEPARATE_LABEL` in `lib/domain/import-shape.ts`) —
+ * `app/api/import/route.ts` and `app/api/import/broker/route.ts` send
+ * `autoClose: !keepSellsSeparate`, and the auto-pull job
+ * (`lib/jobs/auto-pull.ts`) always passes `true`, having no toggle of its own
+ * (revision 13). W2b landed only AFTER W3 built un-close and the delete/merge
+ * refusals, because a close the user cannot undo is not a feature.
  */
 export interface ImportWriteOptions {
   /** R43: a broker pull's snapshot identity — see `SupersedeSnapshot`. */

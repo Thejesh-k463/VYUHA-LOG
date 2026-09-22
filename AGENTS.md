@@ -39,7 +39,8 @@ DOC — never the check** (a self-agreeing README guard is how "9745 tests" outl
    `charge_config` so the engine can be fed real rates (invariant 3). It is named `-db.ts` for
    exactly that reason; the pure half is `lib/engine/rates.ts`. Do not add a second exception
    without renaming it the same way.
-3. **The charges engine reads rates ONLY from `charge_config`** (broker × segment × exchange).
+3. **The charges engine reads rates ONLY from `charge_config`** (broker × plan × segment × exchange,
+   effective-dated — the key gained `plan` in v4.5.0 wave U, `chargeConfig.plan` in `lib/db/schema.ts`).
    Never hard-code a statutory rate in logic. STT/CTT and stamp duty round to the rupee.
 4. **Staged positions: weighted-average pricing, FIFO quantity consumption, R frozen at the first
    entry.** All three are independent and deliberate — see the header of `lib/domain/staged.ts`.
@@ -56,6 +57,11 @@ DOC — never the check** (a self-agreeing README guard is how "9745 tests" outl
    `accountId > 0 ? filter : all`. A query that forgets it merges two books into one tax pack or
    expectancy figure, and *nothing on screen looks broken*. `tests/account-isolation.test.ts` reads
    the `account_id` columns out of SQLite and fails on any table that gains one without a scoped read.
+   **The one deliberate widening is `lib/queries/tax-scope.ts`** (v4.5.0 wave TP) — the TAX surfaces
+   read every account of ONE tax person (`accounts.tax_identity`), starting from
+   `getSelectedAccountId()`; it is registered and behaviourally pinned in
+   `tests/account-isolation.test.ts`. So the illustration above cuts both ways: "merges two books
+   into one tax pack" is the INTENDED behaviour for one person and a defect across two.
 9. **0 is a view, not a place.** The aggregate "All accounts" selection can never receive a write.
    `getWriteAccountId()` resolves it and validates any explicit id against the accounts table.
 10. **Restore leaves the journal intact on any failure.** Attachments are staged before the DB
@@ -215,7 +221,7 @@ j/k geometry under the sticky thead, free-wire gating, Lab hand-off `side`); any
 
 Four tests exist because the v4.3.0 fix waves kept re-introducing the same two classes — a value written under one rule
 and read under another, and a stateful sequence nobody enumerated. They run in the seam pass of every wave and gate any
-change under `lib/queries/{ipos,capital,tax-itr,delete,account-delete}.ts`, `lib/trash.ts`, `lib/import/commit.ts`,
+change under `lib/queries/{ipos,capital,tax-itr,tax-scope,delete,account-delete}.ts`, `lib/trash.ts`, `lib/import/commit.ts`,
 `lib/jobs/mtf-accrual.ts`, `lib/analytics/positions.ts` and `app/api/ipos/route.ts`:
 
 - `tests/oracle-counted-once.test.ts` — over one seeded book (`tests/helpers/oracle-book.ts`), every realised sale is
@@ -322,6 +328,21 @@ Rules the code enforces and tests assert: marginPct is always the TRADER'S OWN c
 approved-but-unfunded rows carry 100% (full cash in practice), never an invented funding number;
 the resolution chain is upload → bundled list → rule → margin-config → 25% default; Sahi is
 declared "no-mtf", not omitted.
+
+
+# Bundled NSE ETF list
+
+`lib/data/etf-list.json` is a SNAPSHOT of NSE's own published ETF list (`eq_etfseclist.csv`, 350 ETFs: ISIN → symbol,
+the RAW `ETF Underlying` value, and a `kind` of `equity-oriented` or `other`), built by
+`node scripts/build-etf-list.mjs --src <dir>` from a folder the owner downloads — never hand-edited, no network in the
+app. Refresh is MANUAL, once per MINOR release (owner ruling T4, 2026-09-22), like the index map. Rules the code enforces
+and `tests/etf-class.test.ts` asserts: classification comes from the `ETF Underlying` column ONLY (EQUITY → equity-oriented;
+COMMODITY / DEBT / GLOBAL INDICES / Hybrid → other) and **any other value fails the build**; `asOf` is the file's HTTP
+`Last-Modified` (NSE states no as-of date), `capturedAt` the build date, with a `provenance` block (URL, sha256, rows) —
+`/instruments` shows `asOf` AND the sha256; an EMPTY or absent snapshot returns null and never throws (`lib/engine/etf-class.ts`).
+It feeds STT/CTT ONLY, through `etf_equity` / `etf_other` rows of `charge_config` read inside `ratesForTrade` (invariant 3;
+`tests/etf-stt.test.ts`), and the capital-gains asset class (`lib/analytics/cg-heads.ts`). The tax HEAD of an `INF` ISIN the
+list does not carry, or of a Hybrid underlying, is UNDETERMINED (blank) with a Data Quality warning — never guessed.
 
 
 # Desktop build and release

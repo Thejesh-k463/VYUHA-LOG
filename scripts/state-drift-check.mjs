@@ -236,6 +236,49 @@ const plannedPaths = [];
   else fail("doc-guard-tests", `${guards.length} named`, `missing: ${guardMissing.join(", ")}`, "AGENTS.md Verify/Testing/Invariant guards");
 }
 
+// ── A. README's ITR item codes vs the code's own (form, AY) table ───────────
+// README prose on one side, `lib/analytics/itr-cg-codes.ts`'s TABLE on the
+// other. README carried "A3 … B4" — the pre-wave-3b-i codes — for a release
+// whose whole point was that A3 is an ITR-3 row and 112A is AY-keyed.
+{
+  const codesRel = "lib/analytics/itr-cg-codes.ts";
+  const codes = doc(codesRel);
+  const row = codes ? /"ITR-2\|2025-26":\s*\{\s*stcg111A:\s*"([A-Z]\d)",\s*ltcg112A:\s*"([A-Z]\d)"/.exec(codes) : null;
+  const rStcg = readme ? /A([23]) for STCG u\/s 111A/.exec(readme) : null;
+  const rLtcg = readme ? /B([34]) for LTCG u\/s 112A/.exec(readme) : null;
+  if (!row) skip("itr-codes-vs-readme", `${codesRel} has no parsable \`"ITR-2|2025-26"\` row`, codesRel);
+  else if (!rStcg || !rLtcg) skip("itr-codes-vs-readme", "README states no `A? for STCG u/s 111A` / `B? for LTCG u/s 112A` pair", "README.md");
+  else
+    cmp(
+      "itr-codes-vs-readme",
+      `A${rStcg[1]}/B${rLtcg[1]}`,
+      `${row[1]}/${row[2]}`,
+      `README A${rStcg[1]} 111A + B${rLtcg[1]} 112A`,
+      `${codesRel} ITR-2|2025-26 ${row[1]}/${row[2]}`,
+      `README.md:${lineAt(readme, rStcg.index)} vs ${codesRel}:${lineAt(codes, row.index)}`,
+    );
+}
+
+// ── B. STATE §0's claims ABOUT README, counted in README's own bytes ────────
+// "README says "9745 tests" in 6 places" stayed in §0 after README was fixed.
+{
+  const m = /README says "(\d[\d,]*)([^"]*)" in (\d+) places/.exec(state0);
+  if (!m) skip("state-claims-about-readme", "STATE §0 makes no `README says \"N …\" in K places` claim", "VYUHA-STATE.md §0");
+  else if (!readme) skip("state-claims-about-readme", "README.md unreadable", "README.md");
+  else {
+    const needle = m[1];
+    const hits = readme.split(needle).length - 1;
+    cmp(
+      "state-claims-about-readme",
+      num(m[3]),
+      hits,
+      `STATE §0: "${needle}" in ${m[3]} places`,
+      `${hits} occurrences in README.md`,
+      s0cite(/README says "(\d[\d,]*)([^"]*)" in (\d+) places/),
+    );
+  }
+}
+
 // ── f. counts vs disk (close-out) ───────────────────────────────────────────
 if (closeOut) {
   // readme-claims.test.ts's glob logic, reused verbatim in spirit: RECURSIVE

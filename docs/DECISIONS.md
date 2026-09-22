@@ -8470,3 +8470,21 @@ step 3): before `/clear`, `npm run drift:close-out` prints 0 FAIL — fix the DO
 hand-off documents, and each confirmed finding becomes a new check rather than a note.
 
 **Measured on the first close-out run (a6ff466):** 19 PASS / 0 FAIL / 1 SKIP in ~2 s (~8 s with the Playwright `--list`); its first FAIL was README's "9745 tests" against STATE §0's 10,798 — six places rewritten. The one knowingly stale number: the absolute test count is one test behind disk until the next gate rewrites both documents from the raw line; `state-test-files` is judged against `git ls-tree` at the sha §0 quotes, which is what keeps it honest mid-wave.
+
+## 2026-09-22 — the first prose-drift pass: six stale claims in the four live docs, two of them made THIS session
+
+The bounded `doc-auditor` pass that pairs with the executable drift check (previous entry) read AGENTS.md, STATE §0, README's
+changed-feature claims and CLAUDE.md against the code at HEAD, 40 tool calls, and confirmed six contradictions: (1) STATE §0 said
+README carried "9745 tests in six places" — true when written, FALSE an hour later once the drift check rewrote README, i.e. a
+claim about another document rots the moment that document is fixed (now an executable check: any "README says … in N places"
+sentence in §0 is grep-counted against README); (2) README quoted the ITR-2 111A code as A3 — the very number wave 3b-i corrected to
+A2 in code (now a check: README's code phrases vs the exported table in `lib/analytics/itr-cg-codes.ts`); (3) AGENTS.md invariant 3
+named the rate key as broker × segment × exchange — it gained `plan` in wave U (0074); (4) invariant 8 named no exception while
+`lib/queries/tax-scope.ts` is the one deliberate widening, registered in `tests/account-isolation`; (5) the invariant-guard file
+list omitted `tax-scope.ts` though the guard gates it; (6) two comments in `lib/import/commit.ts` still described auto-close as
+dormant with "every caller leaves it so" — W2b turned every production caller ON. All six fixed at the source. Not settled, recorded
+in `21-V450-BUILD/fix-list-wave.md` §B2: the ETF list earns an AGENTS.md bundled-data section (decided yes); the /reports/tax help
+copy says "for my book" while the page is per tax person (release copy); two further checks the auditor proposed (invariant 3's key
+vs the schema columns; the autoClose comment vs the call sites) wait for an unambiguous regex on both sides. **The pattern worth
+keeping:** the two findings this session itself created were both claims about a document that was later edited by someone who
+did not re-read the claimant — the reason the close-out rule runs the check LAST, after every other edit.
