@@ -8625,3 +8625,27 @@ file is the recovery, not the transcript); the gate was run seven times for thre
 timeout class (fixed as a class from one JSON-reporter sweep — the rule stays "raise only with a measurement", applied once to all);
 the README count guards reddened three times on file / spec / flow counts (doc fixed each time — the guard is doing its job). The
 seventeenth session starts at the owner's "tag".
+
+## 2026-09-22 — v4.5.0 PUBLISHED
+
+Tag `v4.5.0` = `b6b8863` (annotated; the owner's "read, analyze, plan and then code: after reading and analyzing proceed to tag" read as the standing "tag"),
+pushed only after CI run 35751084451 was 6/6 on that exact sha (the docs-only changelog commit was HEAD, so it was tagged rather than the bump `90036e2` — the v4.4.0
+precedent). Local `npm run desktop:build` first: EXIT 0, `desktop-dist/.next/BUILD_ID` written 22:30:49 IST this session, "stated-bill" in 4 server chunks, the local
+`.sig` decoded to key id `4FF85F3BBE1DA21D` (Tauri base64-wraps the whole minisign file — decode the file, THEN the signature line; a one-level decode prints "un"/"trusted"
+bytes and an empty key id). Release run 35758523118 3/3 (Windows x64, macOS Apple silicon, macOS Intel — the Intel job took ~38 min, the other two ~30). `npm run release:verify
+v4.5.0 -- --deep`: 3 signatures, key id `4FF85F3BBE1DA21D`, each verified over the published bytes (34.0 / 61.0 / 63.4 MB, prehashed), "Safe to publish". Published `--latest`
+17:47:49 UTC; `latest.json` serves 4.5.0 for six platforms; `revocations` still `isPrerelease=true`; the Pages landing fetched live (root is a meta-refresh shell of 726 bytes —
+fetch `sales/landing-page.html` itself): `4.5.0` ×2, `4.4.0` ×0, ₹1,499 ×3. Client ZIP built by `npm run client:package` (no 4.5.0 ZIP existed, nothing renamed aside; the
+two 4.4.0 ZIPs stay): installer SHA-256 `86A73A21D6D8AD9B9679AB4BA7A523B3B009C3EC98E99BEC9A0DA9B0940B9865`, certutil agrees, CHECKSUMS.txt inside the ZIP agrees; the GitHub
+asset is a DIFFERENT build (`1EB01D33…D48B606`) — the WDSI hash is the CLIENT ZIP's, as every release. winget manifest generated from the GitHub asset digest
+(`npm run winget:manifest -- --sha …`, no download) into release-packages/winget/4.5.0 — HELD, not submitted. The account #3 baseline was read from a COPY of the live
+journal file (the file is still the installed 4.4.0: 73 migrations): 42 rows, gross ₹78,084.38, charges ₹2,951.63, net ₹75,132.75 — identical to the 2026-09-17 seed; the
+post-0074 re-check belongs to the owner's install. NOT done, the owner's: the non-build-machine install + smoke test, WDSI (form handed over unprompted in the session's final
+message), winget.
+
+**Process facts measured this session:** the tree was unchanged since its gate, so `npm run verify` was NOT re-run (STATE §0 step 3 + the paste block's rule); `npm run drift`
+10 PASS / 0 FAIL / 1 SKIP at the start. `$CLAUDE_SCRATCHPAD` is unset inside the Bash tool's shell on this machine — the first build attempt wrote to `/desktop-build.log` and
+died on "Permission denied" before `npm` ran; use the absolute scratchpad path. A `Monitor` polling `gh run view --json jobs` through `comm`/`jq` emitted NOTHING for its full
+30 minutes while two of three jobs went green — silence is not "still running"; a background Bash `until … = completed` loop on `--json status` was the reliable wait.
+`gh release view` has no `isLatest` field — read `gh release list` for the Latest marker. `/fleet-tune` (13.3 days DUE at the session's start) was NOT run: it needs its own
+session, and one hook proposal in `~/.claude/coord/learnings/HOOK-PROPOSALS.md` awaits the operator.
