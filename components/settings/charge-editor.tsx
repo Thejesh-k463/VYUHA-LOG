@@ -29,6 +29,26 @@ const FIELDS: { key: keyof ChargeConfigRow; label: string }[] = [
 ];
 
 /**
+ * The two ETF STT rows (v4.5.0 wave 3a) are RATE ROWS, not segments a trade can
+ * carry, so they are deliberately not in `SEGMENT_LABELS` (design review item
+ * 18 — the seed's COMBOS, the preview-equals-save matrix and broker-compare all
+ * enumerate what a TRADE carries). They must still be EDITABLE here: they are
+ * `charge_config` rows like any other, an operator's edit governs (invariant 3),
+ * and without a label they rendered as "undefined · NSE · current". The labels
+ * are spelled here rather than imported from `lib/engine/etf-class.ts` so this
+ * client bundle does not pull the bundled ETF list in with them.
+ */
+const RATE_ONLY_LABELS: Record<string, string> = {
+  etf_equity: "ETF · equity-oriented (STT only)",
+  etf_other: "ETF · gold/debt/global (STT only)",
+};
+
+/** A rate row's segment as the picker names it; never a bare `undefined`. */
+function segmentLabel(segment: string): string {
+  return SEGMENT_LABELS[segment as Segment] ?? RATE_ONLY_LABELS[segment] ?? segment;
+}
+
+/**
  * A rate row's window, rendered so two epochs of one key never look alike.
  * "Current" for the open-ended one, an explicit range for a closed one.
  */
@@ -118,7 +138,7 @@ export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
                   <option key={r.id} value={r.id}>
                     {BROKER_LABELS[r.broker as Broker]}
                     {r.plan && r.plan !== "default" ? ` (${r.planLabel ?? r.plan})` : ""} ·{" "}
-                    {SEGMENT_LABELS[r.segment as Segment]} · {r.exchange} · {periodLabel(r)}
+                    {segmentLabel(r.segment)} · {r.exchange} · {periodLabel(r)}
                   </option>
                 ))}
             </Select>

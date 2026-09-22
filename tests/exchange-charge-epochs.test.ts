@@ -120,6 +120,39 @@ const CLASSES: Class[] = [
     ipft: [0, 0, 0, 0, 0, 0, 0, 0],
     perCrore: [0, 0, 500, 500, 3750, 4950, 3250, 3250],
   },
+  /**
+   * v4.5.0 wave 3a (ruling R90): the ETF STT RATE ROWS. They are not segments a
+   * trade carries — `ratesForTrade` reads sttPct/sttSide off them and nothing
+   * else — so every exchange/IPFT figure below is 0 BY CONSTRUCTION, and that is
+   * the point of pinning them here: a future edit that starts putting a real
+   * exchange charge on an etf_* row would silently double-charge, because the
+   * trade's own product row already carries it.
+   *
+   * `etf_equity` is delivery-like: it inherits the equity-delivery schedule
+   * (1970 and 2012-07-01) and gains 2013-06-01, the Finance Act 2013 insertion
+   * of Sl. 2A in s.98. `etf_other` appears in NO row of the s.98 table, so it is
+   * one flat 1970 row at 0.
+   *
+   * 10 broker-plans × 2 exchanges = 20 keys each.
+   */
+  {
+    name: "ETF STT rate rows, equity-oriented (delivery-like, + the 2013 s.98 row 2A)",
+    match: (r) => String(r.segment) === "etf_equity",
+    keys: 20,
+    froms: ["1970-01-01", "2012-07-01", "2013-06-01"],
+    txn: [0, 0, 0],
+    ipft: [0, 0, 0],
+    perCrore: [0, 0, 0],
+  },
+  {
+    name: "ETF STT rate rows, non-equity-oriented (one flat row, no STT at all)",
+    match: (r) => String(r.segment) === "etf_other",
+    keys: 20,
+    froms: ["1970-01-01"],
+    txn: [0],
+    ipft: [0],
+    perCrore: [0],
+  },
   {
     name: "MCX commodity futures (unchanged, no history)",
     match: (r) => r.exchange === "MCX" && r.segment === "commodity_future",
@@ -145,6 +178,12 @@ function sttOn(segment: string, on: string): number {
   // FATAX20990 rows 1 & 2: "0.125 per cent" till 30.06.2012 (start unverified), "0.1 per cent" from 01.07.2012
   if (segment === "eq_delivery" || segment === "eq_mtf") return on < "2012-07-01" ? 0.00125 : 0.001;
   if (segment === "eq_intraday") return 0.00025;
+  // Wave 3a. The ETF rate rows, typed from the statute, not read from the seed:
+  // an equity-oriented unit was charged the equity-share delivery schedule until
+  // Finance Act 2013 inserted s.98 Sl. 2A (0.001%, seller, delivery-based) on
+  // 2013-06-01; a non-equity-oriented unit is in no row of the table at all.
+  if (segment === "etf_equity") return on < "2012-07-01" ? 0.00125 : on < "2013-06-01" ? 0.001 : 0.00001;
+  if (segment === "etf_other") return 0;
   if (segment === "future") {
     // FATAX23500 (0.017% till 31.05.2013; start unverified), 23500, 56235, 63809, 73524
     if (on < "2013-06-01") return 0.00017;
@@ -176,7 +215,7 @@ const perCrore = (r: SeedRow) => Math.round((r.exchangeTxnPct + r.ipftPct) * 1e7
 const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 describe("the seed's exchange-charge epochs", () => {
-  it("the classes partition all 130 keys and 620 rows", () => {
+  it("the classes partition all 170 keys and 700 rows", () => {
     expect(CLASSES.reduce((a, c) => a + keysOf(c).length, 0)).toBe(byKey.size);
     // Re-pinned 2026-09-22 (v4.5.0 wave U): 117 → 130 keys, 558 → 620 rows. Upstox Plus is the
     // second PAID PLAN in the seed (Kotak Neo's was the first), and `emit` gives a plan the same
@@ -185,9 +224,14 @@ describe("the seed's exchange-charge epochs", () => {
     // Every new key lands in an existing class (the first assertion above), and each class's own
     // `keys` count gained precisely the Upstox combos it covers: NSE cash delivery+MTF and NSE
     // options and BSE cash delivery+MTF +2 each, the other seven +1. Measured, not copied.
-    expect(byKey.size).toBe(130);
-    // Re-pinned for QS-EQ2012: 522 before, 558 after (+36 = 36 delivery/MTF keys × the 2012-07-01 epoch). Measured.
-    expect(seed).toHaveLength(620);
+    // Re-pinned 2026-09-22 (v4.5.0 wave 3a, ruling R90): 130 → 170 keys, 620 → 700 rows. The seed
+    // gained the two ETF STT RATE ROWS under every broker-plan and both exchanges:
+    //   10 broker-plans (8 brokers + kotakneo|pro + upstox|plus) × 2 exchanges × 2 rate segments
+    //   = 40 keys; × (etf_equity 3 epochs + etf_other 1 epoch) = 80 rows.
+    // The CLASSES table gains both as classes rather than excluding them (they must be partitioned
+    // like everything else, or a wrong exchange charge on an etf_* row would go unpinned).
+    expect(byKey.size).toBe(170);
+    expect(seed).toHaveLength(700);
   });
 
   it.each(CLASSES)("$name: windows, transaction charge, IPFT and the per-crore total on every key", (c) => {

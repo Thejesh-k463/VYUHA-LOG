@@ -1,5 +1,6 @@
 import { DEDUP_ALIAS_PREFIX, STALE_CLOSE_NOTE, lotIdentityHashes } from "@/lib/import/close-open-lots";
 import { normalizeDate } from "@/lib/domain/trading-day";
+import { etfClass } from "@/lib/engine/etf-class";
 
 export type QualitySeverity = "critical" | "warning" | "info";
 
@@ -69,11 +70,54 @@ export interface QualityTrade {
   /** M2 (wave 2G) — read only to tell a lot the Data Quality join closed (`closedByStaleJoin`). */
   importNotes?: string | null;
   /**
+   * v4.5.0 wave 3a — read only by `etfClassUndetermined`. Optional, so a caller
+   * that hands in the fields above gets exactly the report it got before.
+   */
+  isin?: string | null;
+  /**
    * H3 (wave 2H) — read only by `staleJoinExempts`: a joined lot is exempt for
    * a sale whose hash is NOT one of its identity hashes. A row without it is
    * never shown to be another record, so the joined lot then counts.
    */
   dedupHash?: string;
+}
+
+/** The segments an ETF unit can be traded in — the only ones whose class matters. */
+const ETF_CLASS_SEGMENTS = new Set(["eq_delivery", "eq_mtf", "eq_intraday"]);
+
+/**
+ * Rows whose ETF CLASS the bundled NSE list does not settle (v4.5.0 wave 3a).
+ *
+ * Two shapes, both from the wave-3 design (T1, dossier §F.2 and ruling Q4(a)),
+ * and both invariant 6 — an unknown class is named, never guessed:
+ *
+ *  1. an INF-prefixed ISIN (a FUND unit, not a company share) that is NOT on
+ *     the list — the seven BSE-only Sensex/BSE-100 ETFs, SIF units, segregated
+ *     portfolios. Its STT stays the equity-share rate, which is a statement
+ *     about what the broker levied, not about what the unit is;
+ *  2. a unit whose published underlying is `Hybrid` — NSE states one today
+ *     (HYBRIDETF), and whether it is equity-oriented is a portfolio fact the
+ *     list does not carry.
+ *
+ * A row with no ISIN whose symbol is not on the list is NOT flagged: it is an
+ * ordinary share as far as anything here can tell, and flagging every equity
+ * trade would drown the card.
+ */
+export function etfClassUndetermined(trades: readonly QualityTrade[]): QualityTrade[] {
+  return trades.filter((t) => {
+    if (!ETF_CLASS_SEGMENTS.has(t.segment)) return false;
+    const cls = etfClass({ isin: t.isin, symbol: t.symbol });
+    if (cls) return cls.underlying.trim().toUpperCase() === "HYBRID";
+    return String(t.isin ?? "").trim().toUpperCase().startsWith("INF");
+  });
+}
+
+/** The distinct symbols an issue is about, as the card prints them. */
+export function etfClassSymbols(rows: readonly QualityTrade[], limit = 6): string {
+  const names = [...new Set(rows.map((t) => t.symbol.toUpperCase()))].sort();
+  return names.length <= limit
+    ? names.join(", ")
+    : `${names.slice(0, limit).join(", ")} and ${names.length - limit} more`;
 }
 
 /**
@@ -1471,6 +1515,19 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
       capGroup: "mtf_funding",
     },
     mtfClosed.map((t) => t.id),
+  );
+
+  const undetermined = etfClassUndetermined(i.trades);
+  add(
+    {
+      code: "etf_class",
+      severity: "warning",
+      title: "ETF class undetermined",
+      detail: `The bundled NSE ETF list does not settle what these units are, so their STT is charged at the equity-share rate and their tax head is left blank rather than guessed: ${etfClassSymbols(undetermined)}. The list is a snapshot of NSE's own published file and carries neither BSE-only ETFs nor hybrid funds.`,
+      count: undetermined.length,
+      href: "/trades",
+    },
+    undetermined.map((t) => t.id),
   );
 
   const options = i.trades.filter((t) => t.instrumentType === "option" && (!t.expiry || t.strike == null || !t.optionType));

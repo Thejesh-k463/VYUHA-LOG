@@ -1,6 +1,7 @@
 import { buildChargeConfigSeed } from "@/lib/db/seed-data";
 import { BROKERS, type Broker, type Exchange, type Segment } from "@/lib/domain/constants";
 import { mtfRateFor } from "./charges";
+import { etfClass, etfRateSegment } from "./etf-class";
 import type { ChargeRates } from "./types";
 
 /**
@@ -515,14 +516,30 @@ export function mtfInterestOver(
  * wave 3a, the ETF overlay) is applied in ONE place rather than at twelve call
  * sites — eleven of which would eventually miss it.
  *
- * ── SEAM FOR WAVE 3a: THE ETF STT OVERLAY ─────────────────────────────────
- * An ETF is taxed at a different STT rate from an ordinary share while sharing
- * the same segment, so wave 3a overlays `sttPct` on the row returned below —
- * gated on `t.segment` being one of `eq_delivery | eq_intraday | eq_mtf`
- * BEFORE any symbol/ISIN lookup, and returning a COPY (the map is never
- * mutated), exactly as `statutoryRatesFor` does. `t.isin` and `t.symbol` are
- * accepted here for that lookup and are deliberately unused today. Do NOT put
- * the overlay in a call site: the other eleven would miss it.
+ * ── THE ETF STT OVERLAY (v4.5.0 wave 3a, ruling R90) ──────────────────────
+ * An ETF unit carries a different STT from an ordinary share while sharing the
+ * same segment, so the STT columns — and ONLY those — are taken from the
+ * `etf_equity` / `etf_other` row of `charge_config` (invariant 3: the rates are
+ * still config, never a literal here). Everything else — brokerage, DP, stamp,
+ * exchange, SEBI, IPFT, the GST base, MTF interest — stays the trade's own
+ * product row. The lookup is gated on the segment FIRST, so an F&O or commodity
+ * trade never touches the ETF list, and it returns a COPY, exactly as
+ * `statutoryRatesFor` does. Do NOT put the overlay in a call site: the other
+ * eleven would miss it.
+ *
+ * It never throws. An ETF with no `etf_*` row for its broker/plan/exchange, an
+ * empty or absent bundled list, an instrument the list does not carry (an
+ * unlisted INF ISIN — Data Quality names it) all fall back SILENTLY to the
+ * product row, i.e. to the equity-share rate the app charged before this
+ * existed. A refusal here would abort a whole import over a classification.
+ *
+ * INTRADAY, the one asymmetry: the s.98 "settled otherwise than by actual
+ * delivery" row names an equity share AND an equity-oriented fund unit at one
+ * rate, so an equity-oriented ETF sold intraday is already priced correctly by
+ * its product row; the 0.001% row 2A is delivery-based only. A NON-equity ETF
+ * appears in no row of the table at all, so `etf_other` (STT 0) applies to
+ * intraday too. Hence: `etf_other` overlays all three segments, `etf_equity`
+ * overlays the two delivery-settled ones.
  */
 export function ratesForTrade(
   map: RatesMap,
@@ -530,15 +547,28 @@ export function ratesForTrade(
     broker: Broker;
     segment: Segment;
     exchange: Exchange;
-    /** For the wave 3a ETF lookup. Unused today. */
+    /** The ETF lookup's first key — the list is keyed by ISIN. */
     isin?: string | null;
-    /** For the wave 3a ETF lookup. Unused today. */
+    /** The ETF lookup's fallback key, for a file that states only a ticker. */
     symbol?: string | null;
   },
   onDate: string,
   plan = "default",
 ): ChargeRates {
-  return findRates(map, t.broker, t.segment, t.exchange, onDate, plan);
+  const base = findRates(map, t.broker, t.segment, t.exchange, onDate, plan);
+  if (t.segment !== "eq_delivery" && t.segment !== "eq_mtf" && t.segment !== "eq_intraday") return base;
+  const cls = etfClass({ isin: t.isin, symbol: t.symbol });
+  if (!cls) return base;
+  if (t.segment === "eq_intraday" && cls.kind === "equity-oriented") return base;
+  const key = etfRateSegment(cls.kind) as unknown as Segment;
+  let etf: ChargeRates | null = null;
+  try {
+    etf = findRates(map, t.broker, key, t.exchange, onDate, plan);
+  } catch {
+    etf = null; // no etf_* row on file for this key/date — the product row stands
+  }
+  if (!etf) return base;
+  return { ...base, sttPct: etf.sttPct, sttSide: etf.sttSide };
 }
 
 export function findRates(

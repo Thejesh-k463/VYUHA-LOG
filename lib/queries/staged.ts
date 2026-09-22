@@ -220,6 +220,15 @@ export function priceLegs(
     segment: Segment;
     exchange: Exchange;
     direction: Direction;
+    /**
+     * v4.5.0 wave 3a — the instrument, so `ratesForTrade` can apply the ETF STT
+     * overlay (ruling R90). A ladder is priced through the SAME entry point as a
+     * flat trade; without these two keys a staged NIFTYBEES ladder billed the
+     * equity-share delivery STT on every leg. Optional: omitted, the overlay
+     * cannot fire and pricing is exactly what it was.
+     */
+    isin?: string | null;
+    symbol?: string | null;
     mtfFundedAmount?: number | null;
     asOf?: string;
     /** D1 — the stored MTF figures of a closed null-funded ladder, kept through this rebuild. */
@@ -245,7 +254,7 @@ export function priceLegs(
     if (hit) return hit;
     const r = ratesForTrade(
       ratesMap,
-      { broker: ctx.broker, segment: ctx.segment, exchange: ctx.exchange },
+      { broker: ctx.broker, segment: ctx.segment, exchange: ctx.exchange, isin: ctx.isin, symbol: ctx.symbol },
       pricingDay,
       plan,
     );
@@ -517,6 +526,9 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction, asOf?
       segment: t.segment as Segment,
       exchange: t.exchange as Exchange,
       direction: dir,
+      // Wave 3a — the ETF STT overlay's two keys, from the parent row.
+      isin: t.isin,
+      symbol: t.symbol,
       mtfFundedAmount: t.mtfFundedAmount,
       mtfCarry,
       // Wave U — the plan of the account this ladder belongs to, per leg date.

@@ -1,4 +1,5 @@
 import type { Broker, Exchange, Segment } from "../domain/constants";
+import type { EtfRateSegment } from "../engine/etf-class";
 
 /**
  * The canonical rate table: every broker's card, as one row per EPOCH of each
@@ -157,6 +158,51 @@ const STT_DELIVERY: SttLevy[] = [
   { from: EPOCH_START, pct: 0.00125, side: "both" }, // FATAX20990 "0.125 per cent" till 30.06.2012; start unverified, extended back
   { from: STT_EPOCH_2012, pct: 0.001, side: "both" }, // FATAX20990 "0.1 per cent" from 01.07.2012; FATAX73524 rows 1 & 2, No Change
 ];
+
+/**
+ * THE ETF STT ROWS (v4.5.0 wave 3a; ruling R90, 06-ANSWERS "v4.3.0 wave-3
+ * ruling", 2026-09-15, verbatim: "ETF units are charged equity-share delivery
+ * STT (0.1% both sides); the statute charges 0.001% on the sale of
+ * equity-oriented fund units (since 2013-06-01) and nothing on
+ * gold/silver/debt/liquid/international ETFs").
+ *
+ * `etf_equity` and `etf_other` are RATE ROWS, not segments a trade can carry —
+ * an ETF trade is still `eq_delivery` / `eq_intraday` / `eq_mtf`. They are read
+ * for STT/CTT ONLY (`ratesForTrade`'s overlay in lib/engine/rates.ts);
+ * brokerage, DP, stamp, exchange, SEBI, IPFT, the GST base and MTF interest all
+ * come from the trade's OWN product row, so every other column here is 0 and is
+ * never read. Keeping the rates in `charge_config` rather than in the overlay is
+ * invariant 3: an operator edit still governs, and no rate is a literal in logic.
+ *
+ * SOURCES for the two numbers:
+ *   0.001% SELLER, from 1 Jun 2013 — Finance Act 2013 inserting Sl. No. 2A in
+ *   s.98 of the Finance (No. 2) Act 2004: "Sale of a unit of an equity oriented
+ *   fund, where— (a) the transaction of such sale is entered into in a
+ *   recognised stock exchange; and (b) the contract for the sale of such unit is
+ *   settled by the actual delivery or transfer of such unit … 0.001 per cent …
+ *   Seller" (LIVE-DESK-RESEARCH/_data/stt-primary-sources-2026-09-11/bill2013.pdf,
+ *   the Bill as introduced; the enacted consolidated text could not be retrieved
+ *   — recorded as corroboration-only in W3-TAX-DOSSIER §F.3, and the ruling
+ *   states the same rate and date).
+ *   NIL on a non-equity-oriented unit — it appears in NO row of the s.98 table
+ *   at all (`incometaxindia-STT-s98-table-consolidated-capture-2026-09-15.html`),
+ *   which is why `etf_other` carries 0 with side "none" rather than a rate.
+ *
+ * BEFORE 1 Jun 2013 an equity-oriented unit keeps the EQUITY-SHARE delivery
+ * schedule (0.125% both sides to 30 Jun 2012, 0.1% from 1 Jul 2012). Row 2A was
+ * an INSERTION, and no separate pre-2013 unit entry is in the research folder —
+ * so under the C-8 ruling (before the earliest verified boundary the earliest
+ * verified schedule applies, and the gap is recorded) the pre-2013 windows are
+ * exactly what the app already charged. R90 corrects the rate from 2013-06-01
+ * on; nothing earlier moves.
+ */
+/** Finance Act 2013: Sl. 2A, sale of an equity-oriented fund unit, delivery-based. */
+const STT_EPOCH_ETF_2013 = "2013-06-01";
+const STT_ETF_EQUITY: SttLevy[] = [
+  ...STT_DELIVERY,
+  { from: STT_EPOCH_ETF_2013, pct: 0.00001, side: "sell" },
+];
+const STT_ETF_OTHER: SttLevy[] = [{ from: EPOCH_START, pct: 0, side: "none" }];
 
 /** A segment's STT schedule, oldest first. F&O and equity delivery carry history. */
 function sttScheduleFor(segment: Segment): SttLevy[] {
@@ -786,9 +832,77 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
     }
   };
 
+  /**
+   * The two ETF STT rows for one (broker, plan) — one per exchange an ETF
+   * trades on, epoch-split exactly like a product row.
+   *
+   * They are emitted under EVERY plan, not only "default": `findRates` keys on
+   * the plan, and a missing `upstox|plus|etf_equity|NSE` row would send a Plus
+   * account's ETF sale back to the equity-share rate — silently, since the
+   * overlay falls back rather than throwing. Nothing on these rows is
+   * plan-dependent; STT is statute.
+   *
+   * `segment` is CAST: `etf_equity`/`etf_other` are rate-row keys and must stay
+   * out of the `Segment` union that trades store (design review item 18) — the
+   * seed's own COMBOS, the preview-equals-save matrix and broker-compare all
+   * enumerate the segments a TRADE can carry. See lib/engine/etf-class.ts.
+   */
+  const rateKey = (s: EtfRateSegment) => s as unknown as Segment;
+  const emitEtf = (broker: Broker, plan: PaidPlan | null) => {
+    const schedules: [EtfRateSegment, SttLevy[]][] = [
+      ["etf_equity", STT_ETF_EQUITY],
+      ["etf_other", STT_ETF_OTHER],
+    ];
+    for (const [segment, sched] of schedules) {
+      for (const exchange of ["NSE", "BSE"] as Exchange[]) {
+        for (let i = sched.length - 1; i >= 0; i--) {
+          const levy = sched[i];
+          rows.push({
+            broker,
+            plan: plan?.plan ?? "default",
+            planLabel: plan?.label ?? null,
+            subscriptionMonthly: plan?.monthly ?? 0,
+            segment: rateKey(segment),
+            exchange,
+            // Every non-STT column is 0 and is NEVER read: the overlay takes
+            // sttPct/sttSide only, and everything else comes from the trade's
+            // own product row (wave3-tax-designs.md, "Rates only from
+            // charge_config").
+            brokerageFlat: null,
+            brokeragePct: 0,
+            brokerageCap: null,
+            brokerageFloor: 0,
+            sttPct: levy.pct,
+            sttSide: levy.side,
+            exchangeTxnPct: 0,
+            sebiPct: 0,
+            stampPct: 0,
+            ipftPct: 0,
+            gstPct: 0,
+            dpCharge: 0,
+            dpPct: 0,
+            dpGstApplicable: false,
+            dpMinValue: 0,
+            mtfInterestAnnual: 0,
+            mtfRateUnknown: false,
+            mtfTiers: null,
+            pledgeCharge: 0,
+            unpledgeCharge: 0,
+            effectiveFrom: levy.from,
+            effectiveTo: i === sched.length - 1 ? null : sched[i + 1].from,
+          });
+        }
+      }
+    }
+  };
+
   for (const broker of BROKER_LIST) {
     emit(broker, null);
-    for (const plan of PAID_PLANS[broker] ?? []) emit(broker, plan);
+    emitEtf(broker, null);
+    for (const plan of PAID_PLANS[broker] ?? []) {
+      emit(broker, plan);
+      emitEtf(broker, plan);
+    }
   }
   return rows;
 }

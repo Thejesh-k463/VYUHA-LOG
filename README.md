@@ -968,7 +968,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       9745 unit + integration tests across 461 files (+ tests/load: 16 load cases, run separately)
+tests/       9745 unit + integration tests across 465 files (+ tests/load: 16 load cases, run separately)
 e2e/         115 Playwright flows through the real app, in 33 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck

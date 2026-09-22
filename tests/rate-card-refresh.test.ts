@@ -30,7 +30,7 @@ import { refreshRateCards } from "../scripts/rate-card-refresh.mjs";
  *
  * Since C-7 and C-8 (v4.3.0) a key is split at the UNION of its STT and
  * exchange-charge boundaries (R1 added the 2013, 2016 and 2023 F&O STT ones,
- * QS-EQ2012 the 2012 equity delivery STT one): 620 rows where bbdc4ec had 230. The owner's real
+ * QS-EQ2012 the 2012 equity delivery STT one): 700 rows where bbdc4ec had 270. The owner's real
  * DB still holds the 4.2.0 two-epoch F&O card, so the planted states below first
  * rebuild bbdc4ec's card from the template (plantPreC8), then collapse it; the
  * refresh must bring every state to the template with no change to
@@ -118,7 +118,8 @@ const PRE_C8 = {
  * three STT epochs (1970, 2024-10-01, 2026-04-01) and every other key its one
  * 1970 row, at bbdc4ec's flat exchange charges and 1970 F&O STT, each row re-closed at the next
  * surviving epoch (the newest left open). Checked once, row for row, against the
- * rows bbdc4ec's own buildChargeConfigSeed() emits. Returns the row count (230).
+ * rows bbdc4ec's own buildChargeConfigSeed() emits. Returns the row count (270 since wave 3a:
+ * each of the 40 ETF rate keys keeps its 1970 row, its later epochs are deleted like any other).
  */
 function plantPreC8(db: Database.Database): number {
   db.prepare(
@@ -155,7 +156,7 @@ function plantPreC8(db: Database.Database): number {
  * (NULL = open), then the 2024-10-01 epoch is deleted. Returns the number of 1970 rows rewritten.
  */
 function collapse(db: Database.Database, sttFrom: string, to: string | null): number {
-  expect(plantPreC8(db)).toBe(230);
+  expect(plantPreC8(db)).toBe(270);
   const same = `n.broker = t.broker AND n.plan = t.plan AND n.segment = t.segment
                 AND n.exchange = t.exchange AND n.effective_from = '${sttFrom}'`;
   const changed = db
@@ -290,7 +291,7 @@ const SCENARIOS: Scenario[] = [
 
       // THE DESKTOP FIRST-LAUNCH SIGNATURE on a 4.2.0 card. Re-pinned for QS-EQ2012 (measured):
       // 360 / 135 / 0 before, 396 / 135 / 0 after (+36 delivery/MTF 2012-07-01 epochs added).
-      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 480, refreshed: 180, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
 
@@ -323,7 +324,7 @@ const SCENARIOS: Scenario[] = [
       expect(was).toMatchObject([{ effective_to: STT_EPOCH_2026 }]);
 
       // Re-pinned for QS-EQ2012 (measured): 360 / 135 / 0 before, 396 / 135 / 0 after.
-      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 480, refreshed: 180, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
       // The FY25 rate the 1970 row carried now lives on the 2024 epoch, closed at NSE's 2026-03-01 change.
@@ -337,11 +338,14 @@ const SCENARIOS: Scenario[] = [
     title: "bbdc4ec's own state (C-7's three F&O epochs, pre-C-8 exchange charges): the C-8 epochs are added and every changed rate refreshed",
     run: (refresh) => {
       const u = userCopy();
-      expect(plantPreC8(u)).toBe(230);
+      expect(plantPreC8(u)).toBe(270);
       expect(overlaps(u)).toBe(0);
 
       // Re-pinned for QS-EQ2012 (measured): 315 / 171 / 0 before, 351 / 171 / 0 after.
-      expect(refresh(u)).toEqual({ added: 390, refreshed: 190, removed: 0 });
+      // Wave 3a (measured): 390 / 190 -> 430 / 220. +40 added = 700 - 270 planted; +30 refreshed =
+      // all 20 etf_equity 1970 rows (their effective_to must close at 2012-07-01) plus the 10 NSE
+      // etf_other rows, whose ipft is planted at bbdc4ec's NSE figure; BSE etf_other already matches.
+      expect(refresh(u)).toEqual({ added: 430, refreshed: 220, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
     },
@@ -354,9 +358,10 @@ const SCENARIOS: Scenario[] = [
       expect(plantOwnerState(u)).toBe(50);
       u.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2026}'`).run();
       // Re-pinned for QS-EQ2012 (measured): 405 before, 441 after (+36 delivery/MTF 2012-07-01 epochs).
-      expect(count(u)).toBe(count(tpl) - 490);
+      // Wave 3a (measured): 490 -> 530 (the template grew by 80 rows and this state plants 40 of them).
+      expect(count(u)).toBe(count(tpl) - 530);
 
-      expect(refresh(u)).toEqual({ added: 490, refreshed: 110, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 530, refreshed: 140, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
     },
@@ -368,7 +373,7 @@ const SCENARIOS: Scenario[] = [
       const u = userCopy();
       plantOwnerState(u);
       // Re-pinned for QS-EQ2012 (measured): 360 / 135 / 0 before, 396 / 135 / 0 after.
-      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
+      expect(refresh(u)).toEqual({ added: 480, refreshed: 180, removed: 0 });
       expect(refresh(u)).toEqual({ added: 0, refreshed: 0, removed: 0 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
     },
@@ -558,7 +563,7 @@ const SCENARIOS: Scenario[] = [
     run: (refresh) => {
       const u = userCopy();
       // Re-pinned for QS-EQ2012 (measured): 405 before, 441 after.
-      expect(u.prepare(`DELETE FROM charge_config WHERE effective_from > '1970-01-01'`).run().changes).toBe(490);
+      expect(u.prepare(`DELETE FROM charge_config WHERE effective_from > '1970-01-01'`).run().changes).toBe(530);
       u.exec(
         "DROP INDEX charge_config_uq; CREATE UNIQUE INDEX charge_config_uq ON charge_config (broker, plan, segment, exchange)",
       );
@@ -608,14 +613,14 @@ const SCENARIOS: Scenario[] = [
       const before = ids();
 
       // Re-pinned for QS-EQ2012 (measured): 360 / 135 / 0 before, 396 / 135 / 0 after.
-      expect(refresh(u)).toEqual({ added: 440, refreshed: 150, removed: 0 });
-      // Every row that was there keeps its id; the 440 added epochs are the only new ones.
+      expect(refresh(u)).toEqual({ added: 480, refreshed: 180, removed: 0 });
+      // Every row that was there keeps its id; the 480 added epochs are the only new ones.
       type IdRow = { broker: string; plan: string; segment: string; exchange: string; effective_from: string };
       const k = (r: IdRow) => `${r.broker}|${r.plan}|${r.segment}|${r.exchange}|${r.effective_from}`;
       const had = new Set((before as IdRow[]).map(k));
       const after = ids() as IdRow[];
       expect(after.filter((r) => had.has(k(r)))).toEqual(before);
-      expect(after.filter((r) => !had.has(k(r)))).toHaveLength(440);
+      expect(after.filter((r) => !had.has(k(r)))).toHaveLength(480);
       expect(snapshot(u)).toEqual(snapshot(tpl));
     },
   },
@@ -624,7 +629,7 @@ const SCENARIOS: Scenario[] = [
 const real = bind(refreshRateCards);
 
 describe("the fixture is not vacuous", () => {
-  it("the template holds 130 keys split at the union of their STT and exchange-charge boundaries (620 rows), and the user index is 5 columns", () => {
+  it("the template holds 170 keys split at the union of their STT and exchange-charge boundaries (700 rows), and the user index is 5 columns", () => {
     const shapes = tpl
       .prepare(
         `SELECT epochs, count(*) AS keys FROM (SELECT group_concat(effective_from, ' ') AS epochs FROM
@@ -633,7 +638,10 @@ describe("the fixture is not vacuous", () => {
       )
       .all();
     expect(shapes).toEqual([
-      { epochs: "1970-01-01", keys: 20 }, // MCX: nothing moved
+      // Wave 3a: 20 MCX keys + the 20 etf_other keys, which are in no row of the s.98 table at all.
+      { epochs: "1970-01-01", keys: 40 },
+      // Wave 3a: etf_equity is delivery-like (1970, 2012-07-01) plus s.98 Sl. 2A from 2013-06-01.
+      { epochs: "1970-01-01 2012-07-01 2013-06-01", keys: 20 },
       // QS-EQ2012 split the 27 BSE and 27 NSE cash keys: 18 delivery/MTF each gain 2012-07-01, 9 intraday do not.
       { epochs: "1970-01-01 2012-07-01 2022-12-01", keys: 20 }, // BSE delivery + MTF
       { epochs: "1970-01-01 2012-07-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01", keys: 20 }, // NSE delivery + MTF
@@ -644,8 +652,8 @@ describe("the fixture is not vacuous", () => {
       { epochs: "1970-01-01 2022-12-01", keys: 10 }, // BSE intraday
       { epochs: "1970-01-01 2023-04-01 2024-04-01 2024-10-01 2026-03-01", keys: 10 }, // NSE intraday
     ]);
-    // Re-pinned for QS-EQ2012 (measured): 522 before, 558 after.
-    expect(count(tpl)).toBe(620);
+    // Re-pinned for QS-EQ2012 (measured): 522 before, 558 after. Wave 3a (v4.5.0, ruling R90, measured) added the two ETF STT RATE ROWS: 10 broker-plans x 2 exchanges x 2 rate segments = 40 keys, x (etf_equity 3 epochs + etf_other 1) = 80 rows, so the template is 170 keys / 700 rows.
+    expect(count(tpl)).toBe(700);
     const idx = (tpl.prepare("PRAGMA index_info(charge_config_uq)").all() as { name: string }[]).map((c) => c.name);
     expect(idx).toEqual(["broker", "plan", "segment", "exchange", "effective_from"]);
   });

@@ -125,7 +125,13 @@ describe("2 · every (segment, exchange) Upstox trades resolves under `plus`", (
   it("Plus covers exactly the combos Basic covers, and findRates answers on every one", () => {
     const basicCombos = combosOf("upstox", "default");
     expect(combosOf("upstox", "plus")).toEqual(basicCombos);
-    expect(basicCombos.length).toBe(13);
+    // Re-pinned 2026-09-22 (v4.5.0 wave 3a, ruling R90): 13 → 17. The seed emits the two ETF STT
+    // RATE ROWS under EVERY plan, not only "default" — `findRates` keys on the plan, so a missing
+    // `upstox|plus|etf_equity|NSE` row would send a Plus account's ETF sale back to the
+    // equity-share rate SILENTLY (the overlay falls back rather than throwing). So Plus gains the
+    // same 4 combos Basic does (etf_equity/etf_other × NSE/BSE) and the two sets still match
+    // exactly — which is the property this case is actually for.
+    expect(basicCombos.length).toBe(17);
     for (const c of basicCombos) {
       const [segment, exchange] = c.split("|") as [Segment, Exchange];
       // Would THROW if the plan were missing an epoch covering the date — the

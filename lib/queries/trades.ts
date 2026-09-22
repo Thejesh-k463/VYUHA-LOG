@@ -525,6 +525,10 @@ const TAX_FIELDS = [
   "buyQty", "avgBuyPrice", "buyValue", "sellValue",
   "buyDate", "sellDate", "grossPnl", "chargesTotal", "netPnl",
   "fmv31Jan2018", "isOpen",
+  // v4.5.0 wave 3a — the ETF class (lib/engine/etf-class.ts) is keyed on the
+  // ISIN first, the symbol only as a fallback. COLUMNS ONLY, no new WHERE, so
+  // `scopedBookRows` keeps invariant 8 and row order is unchanged.
+  "isin",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type TaxPageTrade = Pick<Trade, (typeof TAX_FIELDS)[number]>;
@@ -556,6 +560,9 @@ const HARVEST_FIELDS = [
   // needs the actual cost, the consideration and the 31-Jan-2018 FMV so
   // /reports/harvest matches /reports/tax on pre-2018 lots. Columns only.
   "fmv31Jan2018", "buyValue", "sellValue",
+  // v4.5.0 wave 3a — same as TAX_FIELDS: the ETF class is keyed on the ISIN.
+  // Columns only, no new WHERE.
+  "isin",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;

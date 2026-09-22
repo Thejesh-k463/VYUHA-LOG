@@ -6,6 +6,7 @@ import { ResultsDateEditor } from "@/components/instruments/results-date-editor"
 import { getInstruments } from "@/lib/queries/instruments";
 import { getPriceHistoryMeta } from "@/lib/queries/price-history";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
+import { ETF_LIST_AS_OF, ETF_LIST_COUNT, ETF_LIST_SHA256 } from "@/lib/engine/etf-class";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,22 @@ export default function InstrumentsPage() {
           </CardHeader>
           <CardContent>
             <InstrumentManager rows={rows} nseMapAsOf={(nseIndexMap as { asOf: string }).asOf} />
+            {/*
+              Owner ruling T4 (2026-09-22): the bundled ETF list is refreshed
+              MANUALLY, on the owner's machine, once per MINOR release — so the
+              app must say how old it is AND which file it was built from (the
+              still-open half of Q52, now discharged for this snapshot). Both
+              come off the JSON itself, never a literal here.
+            */}
+            <p className="mt-3 text-[0.6875rem] leading-relaxed text-muted-foreground">
+              Bundled <b>NSE ETF list</b>: {ETF_LIST_COUNT.toLocaleString("en-IN")} ETFs, snapshot as of{" "}
+              <b>{ETF_LIST_AS_OF || "—"}</b>. It decides whether a unit is equity-oriented (STT on the sale only) or a
+              gold / silver / debt / global ETF (no STT) — nothing else about a trade. Refreshed manually, once per
+              minor release.{" "}
+              {ETF_LIST_SHA256 ? (
+                <>sha256 <span className="break-all font-mono">{ETF_LIST_SHA256}</span></>
+              ) : null}
+            </p>
           </CardContent>
         </Card>
 

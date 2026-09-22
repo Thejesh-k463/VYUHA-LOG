@@ -752,8 +752,14 @@ describe("S3 · the C-7/C-8 card, delivered by the desktop refresh, is what comm
   // Re-pinned 2026-09-22 (v4.5.0 wave U, measured): the seed gained the `upstox|plus` plan
   // (13 keys / 62 rows, one per combo Upstox already had), so the first launch reads
   // 440 / 150 / 0 where it read 396 / 135 / 0; the second launch is still 0 / 0 / 0.
-  it("the real sidecar refresh moves that card onto the template: 440 added, 150 refreshed, 0 removed, then 0 / 0 / 0", () => {
-    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 440, refreshed: 150, removed: 0 });
+  // Re-pinned 2026-09-22 (v4.5.0 wave 3a, ruling R90, measured): the seed gained the two ETF STT
+  // RATE ROWS — 10 broker-plans × 2 exchanges × 2 rate segments = 40 keys, × (etf_equity 3 epochs
+  // + etf_other 1) = 80 rows (620 → 700). The owner's planted 4.2.0 card carries each ETF key's
+  // 1970 row only, so the launch reads 480 / 180 / 0 where it read 440 / 150 / 0: +40 added (the
+  // 40 later ETF epochs) and +30 refreshed (all 20 etf_equity 1970 rows, which must close at
+  // 2012-07-01, plus the 10 NSE etf_other rows whose planted IPFT moves).
+  it("the real sidecar refresh moves that card onto the template: 480 added, 180 refreshed, 0 removed, then 0 / 0 / 0", () => {
+    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 480, refreshed: 180, removed: 0 });
     expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 0, refreshed: 0, removed: 0 });
   });
 

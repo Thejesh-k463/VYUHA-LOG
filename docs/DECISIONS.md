@@ -8350,3 +8350,46 @@ stored column. **Recorded, not built:** `lib/queries/trades.ts` inlines the scop
 `accountScopeWhere` — same behaviour, two places to drift; one-line edit for the fix-list wave. Nothing browser-verified: the picker,
 the datalist and the export note line are typed and lint-clean but unrendered — the release gate's Playwright pass must open
 /reports/tax with two persons seeded.
+
+## 2026-09-22 — v4.5.0 wave 3a: the bundled NSE ETF list, an ETF's class, and STT read from `etf_*` rate rows
+
+**The snapshot.** `lib/data/etf-list.json` — built by `scripts/build-etf-list.mjs --src <dir>` from NSE's own
+`eq_etfseclist.csv` (sha256 `f246cdf0…a45d420`, 350 rows, every ISIN `INF…`), never hand-edited, no network in the app; refreshed
+MANUALLY on the owner's machine once per MINOR (owner T4, the `nse-index-map.json` rule). `asOf` = the HTTP `Last-Modified`
+(2026-09-07 — NSE states no as-of date), `capturedAt` = the build date, a `provenance` block with URL and sha256; `/instruments`
+now shows the ETF `asOf` AND its sha256 beside the index map's (the sha256 half of Q52 discharged for this snapshot). Classification
+from the `ETF Underlying` column ONLY: EQUITY (260) → `equity-oriented`; COMMODITY 45 / DEBT 38 / GLOBAL INDICES 6 / Hybrid 1 →
+`other`; ANY other value FAILS THE BUILD (proven: a planted "CRYPTO" row exits 1). `bySymbol` exists because 156 of the 350 ISINs
+are unknown to `isin-symbols.json` and a tradebook may state only a symbol. `lib/engine/etf-class.ts` is pure: ISIN → exact
+symbol → null; an empty or absent snapshot returns null and never throws.
+
+**Rates only from `charge_config` (invariant 3).** 80 new rows — `etf_equity` and `etf_other` per broker-plan × exchange (10 × 2),
+STT/CTT ONLY; every other column 0 and never read; the `Segment` union that trades store is unchanged (design-review revision 18:
+the matrix sweep, `emit()` and broker-compare enumerate segments from the rate card). The overlay sits INSIDE `ratesForTrade`
+(the seam wave U left): gated on eq_delivery / eq_mtf / eq_intraday BEFORE any lookup; `etfClass` null → the product row; the
+`etf_*` lookup throwing → the product row, never out; otherwise ONLY `sttPct` + `sttSide` come from the etf row, the trade's plan
+honoured exactly as the base row. **Numbers, with their sources:** `etf_equity` STT **0.001 % seller-side from 2013-06-01** —
+Finance Act 2013 inserting row 2A in s.98 FA(No.2) 2004, `_data/stt-primary-sources-2026-09-11/bill2013.pdf`, = ruling R90
+(06-ANSWERS "v4.3.0 wave-3 ruling"), cross-checked against the 3c design's "NIFTYBEES STT ₹1"; before 2013-06-01 the equity
+delivery schedule (row 2A was an insertion; ruling C-8: nothing earlier moves); `etf_other` STT 0, side none (a non-EOF unit is in
+no row of the s.98 table). **The build brief's parenthetical "= the equity-share rate today" was WRONG and the builder followed
+the ruling** — recorded so nobody "corrects" the seed back to 0.1 % both sides, which is the very defect R90 names.
+**Decided in the wave, against the brief's "all three segments":** an equity-oriented ETF traded INTRADAY keeps the equity-share
+intraday row (0.025 %) — s.98's non-delivery row names "an equity share or a unit of an equity-oriented fund" at ONE rate, while
+row 2A is delivery-settled only; `etf_other` overlays intraday too. HYBRID and unlisted INF ISINs keep the equity-share RATE (T1:
+the rate ruling is unchanged; the blank tax HEAD is 3b's).
+
+**Data Quality** — `etf_class`, warning, "ETF class undetermined", for an `INF…` ISIN not on the list (the 7 BSE-only Sensex ETFs,
+SIF and segregated-portfolio units) and for the one Hybrid underlying, on the three equity segments only; a no-ISIN unknown symbol
+is not flagged. `TAX_FIELDS` / `HARVEST_FIELDS` gain `isin` — columns only, no new WHERE (invariant 8 intact).
+
+**A writer that bypassed the overlay:** `lib/queries/staged.ts` `priceLegs` passed no instrument, so a STAGED ETF ladder priced at
+the equity-share STT — one line (`isin`, `symbol` from the position) fixed in the test pass and pinned. `lib/queries/ipos.ts` passes
+none either but an IPO allotment is a share; the sizing lab has no instrument at all — both correct as they are. **Recorded for
+the fix-list wave (strictness, not a live miss — a symbol resolves every one of the 350):** `app/api/charges/preview/route.ts`,
+`app/equity/page.tsx` and `app/targets/equity/page.tsx` pass `symbol` but no `isin`; add `isin`. A measured surprise in the
+tests: a staged NIFTYBEES ladder billed ₹20 + ₹22 of STT where the identical flat trade bills ₹0 + ₹0, and GOLDBEES ₹42 where it
+owes nothing — the size of the defect the one-line fix closed. Seed-shape pins:
+keys 130 → 170, rows 620 → 700, planted-state 230 → 270 / 490 → 530, refresh counts +40 / +30 — each derived from the 80 rows.
+Account #3's 42 option rows are on no equity segment: `etfClassUndetermined` returns [] and `index_option` rates are identical with
+and without the etf rows.
