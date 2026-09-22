@@ -8270,3 +8270,36 @@ result card). A forced failure mid-un-close rolls back but PROPAGATES (a 500 thr
 an operator decision. The macOS Playwright CI job has been red on three attempts across two shas, every time a dev-server
 `ERR_CONNECTION_REFUSED` mid-run on a different spec, Ubuntu green on the same sha and the specs green locally — FAIL-B; the
 release gate re-runs it, never re-tags.
+
+## 2026-09-22 — v4.5.0 wave W2b: auto-close ON at every production caller; the toggle, the result card, Un-close; the macOS e2e "flake" was the dev server's heap watchdog
+
+**ON at the callers, never at the library default** (owner A1, design-review revision 13). `app/api/import/route.ts` and the manual
+pull in `app/api/import/broker/route.ts` read `keepSellsSeparate` (default false) → `autoClose: !keepSellsSeparate`; the auto-pull
+job (`lib/jobs/auto-pull.ts`) always passes `autoClose: true` and has no toggle. `ImportWriteOptions.autoClose` stays optional and
+OFF when absent, so every W2a/W3 test that omits it keeps meaning OFF, and `tests/auto-close-off.test.ts` now pins that every
+production caller passes it EXPLICITLY. The preview's "Keep sells as separate rows (do not close positions I already hold)"
+checkbox re-requests the preview and persists nothing; the copy has one writer (`KEEP_SELLS_SEPARATE_LABEL`). The result card's
+headline reads "Closed N positions you already held · M duplicates skipped" when `added` is 0 and `closedWhole` > 0 — `added`
+excludes a whole consumption, and "Imported 0 trades" would have been the wrong sentence. `/trades` rows carry a SERVER-derived
+`closedBy` (via `saysAutoClosePiece` + `executionHashOfPiece` — never `isAutoClosePiece`, so an R26 Data Quality join is not offered
+an un-close it would refuse; `importNotes` never reaches the wire) and an "Un-close" row action (`POST /api/trades/un-close` +
+`router.refresh()`). Help copy for /import and /trades updated.
+
+**Two old seam files re-pinned, no assertion weakened:** `seams-v43-fixA` S3 (7 cases) and `seams-v43-fixB` B3/B4 (4) seed "the lot
+and its sale land as two rows, a stale pair" — a premise that existed only because auto-close was OFF; the seeding pull now sends
+`keepSellsSeparate: true` and every R26 assertion stands. Each premise was checked first (4 Sep lot / 8 Sep sale; two-day Dhan
+pull) — none touches the same-day / null-date rule.
+
+**Measured.** `tests/auto-close-on.test.ts` (11, six red-on-revert rows incl. the four `closedBy` shapes through `getTradesPage`);
+`e2e/z-auto-close.spec.ts` (5 flows: the preview sentence, the toggle both ways under `expect.poll`, the card headline, the
+Un-close button and the book after). Gate: 459 files / 10,613 passed / 35 skipped; Playwright **115 / 115 in 33 specs**.
+
+**The macOS Playwright CI job — five red attempts across three shas since W1 — was NOT a runner flake and NOT a product defect.**
+Every log carries `⚠ Server is approaching the used memory threshold, restarting...` — Next's dev-server watchdog
+(`next/dist/server/lib/start-server.js`: `used_heap > 0.8 × heap_size_limit`, checked after every request) restarting the
+process mid-spec, which is what each single `ECONNREFUSED` / half-rendered page was. It reproduced LOCALLY at spec 107 of 115.
+Ruled out by measurement: a product leak — 60 auto-close previews of 200 trades held a flat 57 → 58 MB heap (a temp-DB probe,
+deleted). The growth is turbopack's dev compile cache, which scales with source size; v4.5.0 added ~1,100 lines to
+`lib/import/commit.ts`, a route and components, and that crossed the threshold on the 7 GB macOS runner where Ubuntu had headroom.
+`--max-old-space-size=4096` changed nothing (it IS Node's 64-bit default); **6144 MiB on the Playwright webServer** → 115 / 115,
+zero restarts. Recorded so the next "flaky macOS job" is read from its log, not re-run five times.

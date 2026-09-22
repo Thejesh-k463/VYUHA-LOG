@@ -15,7 +15,7 @@ import { ColumnMapper } from "./column-mapper";
 import type { ColumnMapping } from "@/lib/import/generic-map";
 import type { Broker } from "@/lib/domain/constants";
 import Link from "next/link";
-import { BROKER_TRUTH_HREF, enrichAppliedNote, importShapeSentence, openingSellNote, openingSellReviewNote, referenceStoredNote, relabelledNote, storeButtonLabel, type ImportShape } from "@/lib/domain/import-shape";
+import { BROKER_TRUTH_HREF, KEEP_SELLS_SEPARATE_LABEL, enrichAppliedNote, importShapeSentence, openingSellNote, openingSellReviewNote, referenceStoredNote, relabelledNote, storeButtonLabel, type ImportShape } from "@/lib/domain/import-shape";
 import { RemoveBrokerPanel } from "./remove-broker-panel";
 
 /** Where the opening-sell caution sends the reader: the trades whose cost basis is unknown. */
@@ -47,6 +47,45 @@ export function splitShapeSentence(shape: ImportShape): { headline: string; revi
  */
 export function commitResultNotes(result: { warnings?: readonly string[] | null } | null | undefined): string[] {
   return (result?.warnings ?? []).filter((w): w is string => typeof w === "string" && w.trim() !== "");
+}
+
+/** What the import did to the book's open positions (W2a `AutoCloseCounters`). */
+export interface CommitAutoClose {
+  closedWhole: number;
+  reduced: number;
+  openedNew: number;
+  closedAgainstStoredLot: number;
+  closedAgainstThisFilesLot: number;
+  refusedNoDate: number;
+}
+
+/** The toggle's label. One writer — `lib/domain/import-shape.ts` — because the
+ *  manual broker pull shows the same box and must say the same words. */
+export const KEEP_SELLS_LABEL = KEEP_SELLS_SEPARATE_LABEL;
+
+/**
+ * W2b — the result card's HEADLINE.
+ *
+ * `added` counts rows the commit INSERTED, and a lot an incoming sale consumed
+ * whole is CONVERTED in place — no row is added for it. So an import that
+ * closed a position and opened nothing has `added === 0`, and the old headline
+ * read "Imported 0 trades · 0 duplicates skipped" about a book that had just
+ * moved. When that happens the headline says what happened instead; the
+ * counters' own sentences (`autoCloseSentences`, already in `warnings`) carry
+ * the detail underneath, so this states the closes and nothing else.
+ */
+export function importedHeadline(result: {
+  added: number;
+  skipped: number;
+  autoClose?: CommitAutoClose | null;
+}): string {
+  const closed = result.autoClose?.closedWhole ?? 0;
+  const dup = `${result.skipped} duplicate${result.skipped === 1 ? "" : "s"} skipped.`;
+  if (result.added === 0 && closed > 0) {
+    return `Closed ${closed} position${closed === 1 ? "" : "s"} you already held · ${dup}`;
+  }
+  const imported = `Imported ${result.added} trade${result.added === 1 ? "" : "s"}`;
+  return closed > 0 ? `${imported} · closed ${closed} position${closed === 1 ? "" : "s"} · ${dup}` : `${imported} · ${dup}`;
 }
 
 interface PreviewRow {
@@ -103,6 +142,8 @@ interface PreviewResp {
     supersededByBook?: boolean;
     reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
     crossSource?: { collisions: { symbol: string; kind: string; detail: string }[]; symbols: string[]; risky: boolean; message: string | null };
+    /** Present whenever auto-close ran (W2b: every preview but a "keep separate" one). */
+    autoClose?: CommitAutoClose;
   };
 }
 
@@ -147,7 +188,16 @@ export function ImportClient({
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [committed, setCommitted] = useState<{ added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number; warnings?: string[] } | null>(null);
+  const [committed, setCommitted] = useState<{ added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number; warnings?: string[]; autoClose?: CommitAutoClose } | null>(null);
+  /**
+   * A1 — auto-close is ON by default; this is the per-import escape hatch.
+   *
+   * Per-import means exactly that: nothing is persisted (no `vyuha-` key), so
+   * every file starts from the default again. It is passed EXPLICITLY into
+   * each request rather than read back out of state in an effect — the state
+   * and the request must never disagree (AGENTS.md: derive, never sync).
+   */
+  const [keepSellsSeparate, setKeepSellsSeparate] = useState(false);
   const [tab, setTab] = useState<"transactions" | "pnl">("transactions");
   /** Per-symbol product corrections for a P&L file. Empty = use the guesses. */
   const [productOverrides, setProductOverrides] = useState<Record<string, ProductHint>>({});
@@ -160,13 +210,18 @@ export function ImportClient({
    */
   const [mapping, setMapping] = useState<{ broker: Broker; mapping: ColumnMapping } | null>(null);
 
-  async function doPreview(f: File, withMapping?: { broker: Broker; mapping: ColumnMapping } | null) {
+  async function doPreview(
+    f: File,
+    withMapping?: { broker: Broker; mapping: ColumnMapping } | null,
+    keep: boolean = keepSellsSeparate,
+  ) {
     setBusy(true); setError(null); setPreview(null); setCommitted(null); setProductOverrides({});
     try {
       const fd = new FormData();
       fd.append("file", f);
       fd.append("mode", "preview");
       if (accountId > 0) fd.append("accountId", String(accountId));
+      if (keep) fd.append("keepSellsSeparate", "true");
       if (withMapping) fd.append("mapping", JSON.stringify(withMapping));
       const res = await fetch("/api/import", { method: "POST", body: fd });
       const json = await readJson<PreviewResp>(res);
@@ -187,6 +242,9 @@ export function ImportClient({
       fd.append("file", file);
       fd.append("mode", "commit");
       if (accountId > 0) fd.append("accountId", String(accountId));
+      // The commit must be given the SAME answer the preview was shown with,
+      // or the card would describe a book the user never saw.
+      if (keepSellsSeparate) fd.append("keepSellsSeparate", "true");
       if (preview) fd.append("sourceId", preview.detected.sourceId);
       if (mapping) fd.append("mapping", JSON.stringify(mapping));
       // Only a P&L file needs these — a tradebook states the product itself.
@@ -194,7 +252,7 @@ export function ImportClient({
         fd.append("productOverrides", JSON.stringify(productOverrides));
       }
       const res = await fetch("/api/import", { method: "POST", body: fd });
-      const json = await readJson<{ result: { added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number; warnings?: string[] } }>(res);
+      const json = await readJson<{ result: { added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number; warnings?: string[]; autoClose?: CommitAutoClose } }>(res);
       if (!res.ok) { setError(json.error ?? "Commit failed"); return; }
       setCommitted(json.result);
       setPreview(null);
@@ -240,6 +298,7 @@ export function ImportClient({
       if (mapping) fd.append("mapping", JSON.stringify(mapping));
       fd.append("productOverrides", JSON.stringify(next));
       if (accountId > 0) fd.append("accountId", String(accountId));
+      if (keepSellsSeparate) fd.append("keepSellsSeparate", "true");
       const res = await fetch("/api/import", { method: "POST", body: fd });
       const json = await readJson<PreviewResp>(res);
       if (!res.ok) { setError(json.error ?? "Failed to re-price"); return; }
@@ -442,8 +501,7 @@ export function ImportClient({
             <div className="space-y-1.5">
               <span className="flex items-center gap-2 text-profit">
                 <CheckCircle2 className="size-4" />
-                Imported {committed.added} trade{committed.added === 1 ? "" : "s"} ·{" "}
-                {committed.skipped} duplicate{committed.skipped === 1 ? "" : "s"} skipped.
+                <span data-testid="commit-headline">{importedHeadline(committed)}</span>
               </span>
               {/* The file's own arithmetic, so a tradebook's execution count is
                   never replaced by a smaller number with no explanation. */}
@@ -550,6 +608,30 @@ export function ImportClient({
               {openingSellNote(p.shape.openingSells) && (
                 <p className="text-xs text-muted-foreground">{openingSellNote(p.shape.openingSells)}</p>
               )}
+
+              {/* A1 — the per-import escape hatch, on the preview where the
+                  consequence is visible: ticking it re-reads the same file with
+                  auto-close off, so the sentences, the counts and the net above
+                  all restate themselves before anything is written. Nothing is
+                  remembered between files. */}
+              <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  data-testid="keep-sells-separate"
+                  className="mt-0.5 size-3.5 accent-primary"
+                  checked={keepSellsSeparate}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setKeepSellsSeparate(next);
+                    // Passed explicitly: the request must carry the value the
+                    // user just chose, not whatever state has settled on.
+                    if (file) doPreview(file, mapping, next);
+                  }}
+                />
+                <span>{KEEP_SELLS_LABEL}</span>
+              </label>
+
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <Stat label="Positions" value={String(p.summary.total)} />
                 <Stat label="New" value={String(p.summary.newCount)} cls="text-primary" />

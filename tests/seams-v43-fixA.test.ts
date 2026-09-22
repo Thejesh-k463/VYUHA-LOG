@@ -236,11 +236,19 @@ function stubDhan(history: DhanFill[], positions: unknown[] = []): string[] {
   return paths;
 }
 
-const pull = (accountId: number) =>
+/**
+ * A manual pull through the real route.
+ *
+ * RE-PINNED, v4.5.0 W2b: the route now flips auto-close ON unless the request
+ * carries `keepSellsSeparate: true` (owner ruling A1), so a caller that wants
+ * v4.2.0's two-row outcome must SAY so. `extra` is how S3 seeds its stale pair
+ * explicitly, instead of relying on a default that has moved.
+ */
+const pull = (accountId: number, extra: Record<string, unknown> = {}) =>
   brokerRoute.POST(
     new Request("http://localhost/api/import/broker", {
       method: "POST",
-      body: JSON.stringify({ action: "pull", broker: "dhan", accountId, mode: "commit" }),
+      body: JSON.stringify({ action: "pull", broker: "dhan", accountId, mode: "commit", ...extra }),
       headers: { "Content-Type": "application/json" },
     }),
   );
@@ -398,9 +406,14 @@ describe("S2 · the card's N, put into the help's collar formula, is the card's 
 
 /**
  * One Dhan client, three books. Each book gets the SAME real pull: yesterday's
- * BUY from the history walk and today's SELL from /v2/positions, which v4.2.0
- * (and 4.3.0, auto-close off) stores as a stale OPEN lot beside a sell-only
- * row. Data Quality joins them (R26) and records the sale's hash as an alias on
+ * BUY from the history walk and today's SELL from /v2/positions, stored as a
+ * stale OPEN lot beside a sell-only row — the premise every case below rests
+ * on. RE-PINNED, v4.5.0 W2b: that used to be what a pull did by default; since
+ * owner ruling A1 the pull closes such a sale against the lot unless the user
+ * ticks "Keep sells as separate rows", so the seeding pull now asks for it
+ * EXPLICITLY (`keepSellsSeparate: true`). Nothing else in S3 changes — the R26
+ * join, the alias-aware dedup, the R27 stamp and the two cards are untouched.
+ * Data Quality joins them (R26) and records the sale's hash as an alias on
  * the lot. The re-served sale must then be a DUPLICATE to the pull (DQ's
  * alias-aware set). PULL must treat that nothing-new read as a successful
  * read and stamp it (R27). And the UI cards must read the merged lot as
@@ -414,11 +427,13 @@ describe("S3 · a stale-closed lot meets the next Dhan pull and the Data Quality
   const BUY: DhanFill = { id: "L-BUY", side: "BUY", qty: 10, price: 100, at: "2026-09-07 10:00:00" };
   const SALE = sellOnlyPosition(10, 120);
 
-  it.each([BOOK_A, BOOK_B, BOOK_C])("pull 1 into book %i: the lot and its sale land as two rows, a stale pair", async (book) => {
+  it.each([BOOK_A, BOOK_B, BOOK_C])("pull 1 into book %i: with sells kept separate, the lot and its sale land as two rows, a stale pair", async (book) => {
     freezeAt(PULL_1);
     addDhan(book, STAMP_0);
     stubDhan([BUY], [SALE]);
-    const res = await pull(book);
+    // W2b: the stale pair is now a CHOICE, so it is stated. Every assertion
+    // below is v4.3.0's, unchanged.
+    const res = await pull(book, { keepSellsSeparate: true });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { result: { added: number } }).result.added).toBe(2);
     expect(storedRows(book).map((r) => [r.buyQty, r.sellQty, r.isOpen, r.buyDate, r.sellDate])).toEqual([

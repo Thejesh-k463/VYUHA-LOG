@@ -8,7 +8,7 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
 [![Tests](https://img.shields.io/badge/tests-9745%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-110%20flows-2ea44f)](e2e)
+[![E2E](https://img.shields.io/badge/e2e-115%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
 [![Where](https://img.shields.io/badge/where-desktop%20or%20web-black)](#-your-data-your-choice-of-home)
@@ -613,7 +613,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
 | **9745** | **49** | **0** |
-| tests, 110 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
+| tests, 115 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -968,8 +968,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       9745 unit + integration tests across 458 files (+ tests/load: 16 load cases, run separately)
-e2e/         110 Playwright flows through the real app, in 32 specs
+tests/       9745 unit + integration tests across 459 files (+ tests/load: 16 load cases, run separately)
+e2e/         115 Playwright flows through the real app, in 33 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -1006,7 +1006,7 @@ lines.
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
 | `npm test` | Vitest unit + integration suite (9745 tests) |
-| `npm run test:e2e` | Playwright e2e — 110 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm run test:e2e` | Playwright e2e — 115 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |

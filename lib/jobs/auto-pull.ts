@@ -259,7 +259,11 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
   const fileName = `${conn.broker}-api-${today}`;
   // R43 / QS-AO: every broker this sweep pulls states today's book, so a later
   // pull the same day replaces the earlier snapshot of a changed position.
-  const snapshotOpts = { supersedeSnapshot: { fileName } };
+  // W2b (owner ruling A1, design review revision 13) — the JOB has no toggle:
+  // it runs with auto-close ON, always, and every close it makes is named in
+  // the commit's own warnings and audited. Stated at the caller so the library
+  // default stays OFF.
+  const snapshotOpts = { supersedeSnapshot: { fileName }, autoClose: true };
   try {
     const pre = previewParsedFile(parsed, null, conn.accountId, fileName, snapshotOpts);
     const cls = classifyPreview(pre);
@@ -298,14 +302,19 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
     keepUnfetchedAndStamp([], owner, stamp, readWindow);
     // "+N trades" is what the commit ADDED — the manual pull's "N added" — not
     // the preview's non-duplicate rows, which also count a row the pull repeats
-    // and the commit then skips (F-L1-7). Auto-close is switched off for 4.3.0
-    // (06-ANSWERS, v4.3.0 release-level-audit rulings, row 1), so a SELL of a
-    // held lot lands as its own row, exactly as in v4.2.0, and reads "+1 trade"
-    // either way. R43: a row that replaced today's earlier snapshot is said as
-    // what the commit said, and is not counted as a trade added.
+    // and the commit then skips (F-L1-7). R43: a row that replaced today's
+    // earlier snapshot is said as what the commit said, and is not counted as a
+    // trade added.
+    //
+    // W2b: auto-close is ON here, and `added` EXCLUDES a lot consumed whole —
+    // that lot is CONVERTED in place, no row is added. A pull that closed one
+    // position and opened nothing would otherwise print "+0 trades" about a
+    // book that really moved, so the closes are said in their own clause.
     const updated = supersededFromWarnings(res.warnings);
+    const closed = res.autoClose?.closedWhole ?? 0;
     const what = [
-      res.added > 0 || updated === 0 ? `+${res.added} trade${res.added === 1 ? "" : "s"}` : null,
+      res.added > 0 || (updated === 0 && closed === 0) ? `+${res.added} trade${res.added === 1 ? "" : "s"}` : null,
+      closed > 0 ? `${closed} position${closed === 1 ? "" : "s"} closed` : null,
       updated > 0 ? supersededPhrase(updated) : null,
     ]
       .filter(Boolean)

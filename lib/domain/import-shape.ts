@@ -225,3 +225,17 @@ export function referenceVsBookNote(positions: number, bookHeld: boolean): strin
     ? `${n(positions)} ${plural(positions, "position", "positions")} from the Realised P&L ${plural(positions, "was", "were")} not imported — your Dhan transaction report is the book; the file's figures were stored for Broker Truth.`
     : "Imported as trades because no Dhan transaction report is in this account; import the transaction report to make it the book — these rows will then be superseded";
 }
+
+/**
+ * W2b (owner ruling A1) — the per-import auto-close escape hatch's label.
+ *
+ * Auto-close is ON by default: a sale of a position the account already holds
+ * closes it (FIFO, oldest first). Ticking this box asks THIS import to write
+ * the sale as its own row instead, exactly as v4.2.0 did. It lives here, with
+ * the rest of the import copy, because two flows show it — the file preview
+ * (`components/import/import-client.tsx`) and the manual broker pull
+ * (`components/import/broker-connect.tsx`) — and one wording is the point.
+ * Nothing persists it: the answer is per import.
+ */
+export const KEEP_SELLS_SEPARATE_LABEL =
+  "Keep sells as separate rows (do not close positions I already hold)";

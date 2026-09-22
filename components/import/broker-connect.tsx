@@ -33,6 +33,8 @@ import { writeStored } from "@/components/layout/use-stored-value";
 // Pure domain, browser-safe (invariant 2): the ONE +5:30 definition and the
 // trading-day walk-back, so the gap line cannot invent a second calendar.
 import { previousTradingDay, todayIstIso } from "@/lib/domain/trading-day";
+// The toggle's wording, shared with the file preview — one writer for the copy.
+import { KEEP_SELLS_SEPARATE_LABEL } from "@/lib/domain/import-shape";
 import {
   Dialog,
   DialogContent,
@@ -98,6 +100,8 @@ interface PullResult {
   /** The COMMIT's own sentences (lib/import/commit.ts) — e.g. contract-note
    *  days it could not place. C-5: these used to go unread. */
   warnings?: string[];
+  /** W2b — what the pull did to the book's open positions (`AutoCloseCounters`). */
+  autoClose?: { closedWhole?: number };
 }
 
 /** One kept "not fetched" span, as GET projects it (C-6). `fact` and `remedy`
@@ -162,16 +166,25 @@ export interface PullResponseLite {
  *
  * Commit: the counts, then the commit's OWN sentences (`result.warnings`),
  * which the card used to drop, then the pull's warnings. Preview: the row
- * count, then the warnings — v4.2.0's line, character for character (auto-close
- * is switched off for 4.3.0, so there is no close plan to state).
+ * count, then the warnings — which since W2b include the close plan's own
+ * sentences, the very ones the commit will repeat (`autoCloseSentences`).
+ *
+ * W2b: `added` counts rows INSERTED, and a lot consumed whole is converted in
+ * place, so a pull that only closed positions adds nothing. The closes are
+ * stated in the same breath rather than leaving "0 added" to describe a book
+ * that moved.
  */
 export function pullResultMessage(mode: "preview" | "commit", data: PullResponseLite): string {
   const warn = data.warnings ?? [];
   if (mode === "commit") {
     const r = data.result ?? {};
-    return [`Committed — ${r.added ?? 0} added, ${r.skipped ?? 0} duplicates skipped.`, ...(r.warnings ?? []), ...warn]
-      .join(" ")
-      .trim();
+    const closed = r.autoClose?.closedWhole ?? 0;
+    // ONE sentence, with the closes spliced into it — two branches would be two
+    // copies of the same wording, which is what tests/broker-connect-copy.test.ts
+    // refuses (the card's copy is written once).
+    const closes = closed > 0 ? `${closed} position${closed === 1 ? "" : "s"} closed, ` : "";
+    const head = `Committed — ${r.added ?? 0} added, ${closes}${r.skipped ?? 0} duplicates skipped.`;
+    return [head, ...(r.warnings ?? []), ...warn].join(" ").trim();
   }
   const rows = data.preview?.rows?.length ?? data.preview?.summary?.total ?? 0;
   return [`Preview: ${rows} normalized trade${rows === 1 ? "" : "s"}.`, ...warn].join(" ").trim();
@@ -756,6 +769,13 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   const [openalgoAvailable, setOpenalgoAvailable] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /**
+   * W2b / A1 — the same per-pull escape hatch the file preview shows, default
+   * unchecked (auto-close ON, design review revision 13). It is state only,
+   * persisted nowhere, and read at the moment a pull is posted — a preview pull
+   * and the commit that follows it therefore carry the same answer.
+   */
+  const [keepSellsSeparate, setKeepSellsSeparate] = useState(false);
   /** A 409'd commit awaiting the user's decision in the collision dialog —
    *  or, with nothingNew, the "already in your journal" notice. */
   const [collisionPrompt, setCollisionPrompt] = useState<{
@@ -976,6 +996,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         broker: brokerId,
         mode,
         ...(accountId ? { accountId } : {}),
+        ...(keepSellsSeparate ? { keepSellsSeparate: true } : {}),
         ...(force ? { force: true } : {}),
         ...(withRequestToken ? { requestToken: withRequestToken } : {}),
       },
@@ -1152,6 +1173,22 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           file alone carries nothing usable — and they are sent nowhere except{" "}
           {active === "openalgo" ? "your own OpenAlgo instance" : "the broker itself"}.
         </p>
+
+        {/* A1 — one box for every pull this panel makes (the per-account rows
+            below and the single-connection buttons further down alike): a pull
+            closes positions this account already holds unless it is ticked.
+            Nothing is remembered between pulls. */}
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            data-testid="pull-keep-sells-separate"
+            className="mt-0.5 size-3.5 accent-primary"
+            checked={keepSellsSeparate}
+            disabled={busy != null}
+            onChange={(e) => setKeepSellsSeparate(e.target.checked)}
+          />
+          <span>{KEEP_SELLS_SEPARATE_LABEL}</span>
+        </label>
 
         {active === "openalgo" && openAlgoConns.length > 0 && (
           <div className="space-y-2">

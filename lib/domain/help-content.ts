@@ -210,8 +210,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "Add, open, close, edit, journal, stage and delete trades. One dropdown covers status and outcome together, and every option carries a live count so the numbers always add up.",
       "Select rows with the checkboxes for bulk delete — the confirmation shows exactly what will go, and past ten trades you type the count. Deleting a trade takes its notes, tags and chart attachments with it.",
       "An open position with no current price appears under Open but in neither 'in gain' nor 'in loss' — a missing price is never read as breakeven.",
+      "A row an import closed against a position you already held carries an Un-close button. It reopens the position exactly as it was and writes the closing execution back as its own row, with the bill the broker stated for it — nothing is re-estimated. Deleting or merging such a row is refused until it is un-closed, so a half-undone close can never exist.",
     ],
-    keywords: ["journal", "add trade", "delete", "bulk", "select", "filter", "unmarked"],
+    keywords: ["journal", "add trade", "delete", "bulk", "select", "filter", "unmarked", "un-close", "auto-close"],
   },
   {
     href: "/lenses",
@@ -284,6 +285,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "Six brokers auto-detected (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money), de-duplicated, with a charge reconciliation panel before anything commits. Tradebooks and P&L exports are treated as different kinds because they are — a P&L file states neither product nor time, so the product question is asked once, before commit.",
       "If a file's rows look like trades already recorded from a different file kind, the preview says so before you commit — the two kinds state different facts, so the duplicate check cannot match them silently.",
+      "A sale of a position this account already holds CLOSES it — oldest lot first — instead of landing as a second, opposite row beside it. The preview says what it would close before anything is written, the result says what it did, and a per-import checkbox, \"Keep sells as separate rows\", turns it off for that one import or pull. A sale that states no date closes nothing: both rows stay open and Data Quality asks you for the date. Anything closed this way can be undone from the row's Un-close button on Trades.",
       "Imported files are listed below with the trades each still owns; deleting one asks whether the trades go too.",
       "Live API pulls for Zerodha, Dhan, Angel One and Upstox are built in. A fifth path — OpenAlgo — appears here only after you switch it on in Settings → Integrations: it is separate open-source software you run yourself, and through it Groww, Upstox, Paytm Money and Kotak also get a same-day pull. It reads today's executed trades only, and sizes are repaired and counted when the API reports zero, so check a repaired row against your contract note before committing.",
     ],

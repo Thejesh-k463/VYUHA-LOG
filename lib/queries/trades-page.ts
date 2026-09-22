@@ -7,6 +7,10 @@ import type { Trade } from "@/lib/db/schema";
 import type { TradeView, ViewCounts } from "@/lib/analytics/trade-status";
 import { TRADES_PAGE_SIZE, type TradeFilters as TradesPageFilters } from "@/lib/domain/trades-filter";
 import { getSelectedAccountId } from "./accounts";
+// Pure readers of a row's own notes (no DB, no React): they answer WHICH
+// execution an auto-close piece belongs to, which is what the "Un-close" row
+// action names. W2b.
+import { executionHashOfPiece, saysAutoClosePiece } from "@/lib/import/close-open-lots";
 
 /**
  * /trades, ONE PAGE AT A TIME (v3.9).
@@ -168,10 +172,37 @@ function allConditions(f: TradesPageFilters): SQL | undefined {
   return cond.length ? and(...cond) : undefined;
 }
 
+/**
+ * The wire columns, plus the TWO the `closedBy` derivation needs.
+ *
+ * W2b: the row action "Un-close" may only be offered on a PIECE of an import's
+ * automatic close, and which execution it belongs to is a fact about the row's
+ * `import_notes` and `dedup_hash` (`executionHashOfPiece`, pure). Both are
+ * dropped from the wire shape on purpose (slim-trade.ts), so they are selected
+ * here, read once per row in the same pass, and thrown away — no per-row query,
+ * and the notes never cross the RSC payload.
+ */
 function pickSlim() {
-  const out = {} as Pick<typeof trades, (typeof SLIM_TRADE_FIELDS)[number]>;
+  const out = {} as Pick<typeof trades, (typeof SLIM_TRADE_FIELDS)[number]> & {
+    dedupHash: typeof trades.dedupHash;
+    importNotes: typeof trades.importNotes;
+  };
   for (const k of SLIM_TRADE_FIELDS) out[k] = trades[k] as never;
+  out.dedupHash = trades.dedupHash;
+  out.importNotes = trades.importNotes;
   return out;
+}
+
+/** Project one selected row to the wire shape, deriving `closedBy`. */
+function toWireRow(r: SlimTrade & { dedupHash: string; importNotes: string | null }): SlimTrade {
+  const { dedupHash, importNotes, ...slim } = r;
+  // `saysAutoClosePiece` asks the row's OWN WORDS — an alias of unknown
+  // provenance (a Data Quality join, R26) is NOT an auto-close piece and must
+  // not be offered an un-close it would refuse.
+  const closedBy = saysAutoClosePiece({ importNotes })
+    ? executionHashOfPiece({ dedupHash, importNotes })
+    : null;
+  return { ...(slim as SlimTrade), closedBy };
 }
 
 /**
@@ -219,7 +250,8 @@ export function getTradesPage(
     // lib/queries/trades.ts, and as migration 0063's index.
     .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id))
     .limit(limit + 1)
-    .all() as SlimTrade[];
+    .all()
+    .map((r) => toWireRow(r as SlimTrade & { dedupHash: string; importNotes: string | null }));
 
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;

@@ -52,7 +52,8 @@ import {
   LOADED_COUNT_PREFIX, RELOADED_TO_FIRST_PAGE, SEARCH_DEBOUNCE_MS, WHOLE_BOOK_CAPTION,
   acceptsPage, appendPage, loadedScopeCaption, rowCountLabel,
 } from "@/lib/domain/trades-paging";
-import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, Paperclip, Lock } from "lucide-react";
+import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, Paperclip, Lock, Undo2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -445,6 +446,43 @@ export function TradesClient({
     importBatchId: t.importBatchId, createdAt: t.createdAt, staged: t.staged,
   }), []);
 
+  /**
+   * W3/W2b — UNDO an import's automatic close, from the row it closed.
+   *
+   * A route handler + `fetch` + `router.refresh()`, NEVER a server action: a
+   * server action refreshes this route and remounts the sibling client
+   * components, silently resetting the table's own state (AGENTS.md). Every
+   * rule lives server-side in `unCloseExecution`; a refusal comes back as
+   * `{ ok:false, message }` and is SHOWN — the four W3 doors all end with
+   * "un-close it first", so the user must be able to read why one of them
+   * would not.
+   */
+  const router = useRouter();
+  const [unCloseMsg, setUnCloseMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [unClosing, setUnClosing] = React.useState<number | null>(null);
+  const unClose = React.useCallback(async (id: number) => {
+    setUnClosing(id);
+    setUnCloseMsg(null);
+    try {
+      const res = await fetch("/api/trades/un-close", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tradeId: id }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+      if (!data?.ok) {
+        setUnCloseMsg({ ok: false, text: data?.message ?? "Un-close failed. Nothing was changed." });
+        return;
+      }
+      setUnCloseMsg({ ok: true, text: data.message ?? "Un-closed." });
+      router.refresh();
+    } catch (e) {
+      setUnCloseMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setUnClosing(null);
+    }
+  }, [router]);
+
   const deletePreview = React.useMemo(() => {
     if (visibleSelected.size === 0) return null;
     return resolveDeleteScope(data.map(toDeletable), { kind: "ids", ids: [...visibleSelected] });
@@ -707,6 +745,25 @@ export function TradesClient({
               <Pencil className="size-3.5" />
             </Button>
           </Tip>
+          {/* Offered ONLY on a piece of an import's automatic close — the
+              server derived `closedBy` from the row's own notes, so a row the
+              user closed by hand (or a Data Quality join, which has its own
+              door) never shows a button that would be refused. */}
+          {row.original.closedBy && (
+            <Tip label="Un-close — reopen the position this closed and write the closing execution back as its own row">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7 text-muted-foreground hover:text-warning"
+                aria-label="Un-close"
+                data-testid="un-close"
+                disabled={unClosing === row.original.id}
+                onClick={() => unClose(row.original.id)}
+              >
+                <Undo2 className="size-3.5" />
+              </Button>
+            </Tip>
+          )}
           <form action={deleteTrade}>
             <input type="hidden" name="tradeId" value={row.original.id} />
             <Tip label="Delete">
@@ -720,7 +777,7 @@ export function TradesClient({
         );
       },
     },
-  ], [today, data, visibleSelected, attachmentCounts]);
+  ], [today, data, visibleSelected, attachmentCounts, unClose, unClosing]);
 
   // Reorder the ARRAY, never TanStack's `columnOrder`: DataTable reads the raw
   // prop positionally for its width budget and sticky offsets, and those would
@@ -746,6 +803,17 @@ export function TradesClient({
 
   return (
     <div className="space-y-4">
+      {/* The un-close answer, success or refusal, in the server's OWN words —
+          a refusal names what it met and what to do, and swallowing it would
+          leave a button that looks broken. */}
+      {unCloseMsg && (
+        <Card
+          data-testid="un-close-message"
+          className={`p-3 text-sm ${unCloseMsg.ok ? "border-profit/40 text-profit" : "border-loss/40 text-loss"}`}
+        >
+          {unCloseMsg.text}
+        </Card>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Input placeholder="Search symbol / setup…" value={searchInput} onChange={(e) => { setSearchInput(e.target.value); syncUrl({ symbol: e.target.value }); }} className="h-8 w-56" />
         <Select value={broker} onChange={(e) => setBroker(e.target.value)} className="h-8 w-32">

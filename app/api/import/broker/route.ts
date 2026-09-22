@@ -1063,7 +1063,12 @@ export async function POST(req: Request) {
       // snapshot of a changed position instead of adding a second row.
       const snapshotPull = broker === "dhan" || broker === "angelone" || broker === "upstox";
       const snapshotOpts = snapshotPull ? { supersedeSnapshot: { fileName } } : {};
-      const pre = previewParsedFile(parsed, null, accountId, fileName, snapshotOpts);
+      // W2b (owner ruling A1, design review revision 13) — a MANUAL pull shows
+      // the same per-import toggle as a file import, default unchecked, so
+      // auto-close is ON unless the user asks for separate rows on this pull.
+      // The flip is here at the caller; the library default stays OFF.
+      const writeOpts = { ...snapshotOpts, autoClose: body.keepSellsSeparate !== true };
+      const pre = previewParsedFile(parsed, null, accountId, fileName, writeOpts);
       const warnings = [...parsed.warnings];
       if (pre.crossSource?.message) warnings.push(pre.crossSource.message);
       if (pre.crossBroker) warnings.push(pre.crossBroker);
@@ -1130,7 +1135,7 @@ export async function POST(req: Request) {
         } catch (e) {
           return unsavedNotice(e);
         }
-        const result = commitParsedFile(parsed, fileName, null, accountId, snapshotOpts);
+        const result = commitParsedFile(parsed, fileName, null, accountId, writeOpts);
         // R42: the stamp is the instant taken before /v2/positions was read.
         // P11: with it, in one transaction, the clear of every page-cap span
         // this pull's untruncated walk read in full (`conn` is this account's

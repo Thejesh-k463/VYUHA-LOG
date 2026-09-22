@@ -11,6 +11,13 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * v4.3.0 — AUTO-CLOSE SWITCHED OFF (owner ruling 2026-09-11, 06-ANSWERS
  * "v4.3.0 release-level-audit rulings", row 1).
  *
+ * v4.5.0 W2b: auto-close is ON again for every PRODUCTION caller (owner ruling
+ * A1) — but the flip lives at those callers, not in the library, whose
+ * `autoClose` option still defaults to FALSE. Every case below calls
+ * `commitParsedFile`/`previewParsedFile` with NO options, so every one of them
+ * still describes v4.2.0's outcome, and together they are the pin that the
+ * default has not moved. (iv) states that in code.
+ *
  * Wave 1's FIFO auto-close (R5) does not ship in 4.3.0. `lib/import/commit.ts`
  * is restored to v4.2.0 (`git diff v4.2.0 -- lib/import/commit.ts` shows only
  * R26: the alias-aware dedup sets — (v) below — and `closeStaleLot`, the Data
@@ -295,21 +302,46 @@ describe("(iii) broker-pull shapes landing in a held book", () => {
   });
 });
 
-describe("(iv) the switch-off is the v4.2.0 file (plus R26), not a flag", () => {
-  it("the applier exists but is DORMANT: `autoClose` defaults to false and no caller asks for it", () => {
-    // RE-PINNED, v4.5.0 W2a. Until now this asserted that commit.ts named none
-    // of the applier's pieces — the 4.3.0 switch-off was "the v4.2.0 file". W2a
-    // rebuilds the applier (design review revisions 9/12/13) and ships it
-    // behind `ImportWriteOptions.autoClose`, DEFAULT FALSE; W2b turns it on
-    // after W3 has built un-close and the delete/merge refusals. So the pin is
-    // now on the thing that keeps this whole file's behaviour true: the OFF
-    // default, and the fact that nothing in production passes the option.
+describe("(iv) the LIBRARY default is OFF; W2b turns it on at the CALLERS", () => {
+  it("`autoClose` is optional and read as an option, so every case above (which passes none) still means OFF", () => {
+    // RE-PINNED, v4.5.0 W2b. W2a shipped the applier behind
+    // `ImportWriteOptions.autoClose`, DEFAULT FALSE, with no production caller.
+    // W2b turns it ON — at the CALLERS, never at the default (owner ruling A1,
+    // design review revision 13), which is what keeps every case in this file
+    // meaningful: they all call `commitParsedFile`/`previewParsedFile` with no
+    // options at all, so they still describe the v4.2.0 outcome and would go
+    // red the moment somebody moved the flip into the library.
     const src = fs.readFileSync(path.join(ROOT, "lib/import/commit.ts"), "utf8");
     expect(src, "the applier must read the option, never a constant").toContain("options.autoClose === true");
     expect(src, "`autoClose` must be optional on the write options").toMatch(/autoClose\?: boolean/);
-    for (const caller of ["app/api/import/route.ts", "app/api/import/broker/route.ts", "lib/jobs/auto-pull.ts"]) {
-      const text = fs.readFileSync(path.join(ROOT, caller), "utf8");
-      expect(text, `${caller} must not ask for auto-close until W2b`).not.toContain("autoClose");
+    // The "default ON" shapes, spelled out so a later edit to the library
+    // cannot quietly adopt one: an absent option must read as OFF.
+    expect(src, "the library default must stay FALSE").not.toContain("options.autoClose !== false");
+    expect(src, "the library default must stay FALSE").not.toContain("options.autoClose ?? true");
+  });
+
+  it("every production caller states `autoClose` EXPLICITLY: the two manual doors invert their toggle, the job passes true", () => {
+    // The file import and the manual pull read ONE request field,
+    // `keepSellsSeparate` (default absent = false), and invert it — so the
+    // default is auto-close ON and the toggle is the only thing that turns it
+    // off, per import. The auto-pull JOB has no toggle at all.
+    const file = fs.readFileSync(path.join(ROOT, "app/api/import/route.ts"), "utf8");
+    expect(file).toContain("autoClose: !keepSellsSeparate");
+    const pull = fs.readFileSync(path.join(ROOT, "app/api/import/broker/route.ts"), "utf8");
+    expect(pull).toContain("autoClose: body.keepSellsSeparate !== true");
+    const job = fs.readFileSync(path.join(ROOT, "lib/jobs/auto-pull.ts"), "utf8");
+    expect(job, "the job runs with auto-close ON, always").toMatch(/autoClose:\s*true/);
+
+    // And each caller passes the option it built to BOTH doors — a preview
+    // that plans a close and a commit that does not (or the reverse) is the
+    // one shape the preview/commit pair may never take.
+    for (const [name, text, opts] of [
+      ["app/api/import/route.ts", file, "writeOptions"],
+      ["app/api/import/broker/route.ts", pull, "writeOpts"],
+      ["lib/jobs/auto-pull.ts", job, "snapshotOpts"],
+    ] as const) {
+      expect(text, `${name}: preview must carry the options`).toMatch(new RegExp(`previewParsedFile\\([^)]*${opts}`));
+      expect(text, `${name}: commit must carry the SAME options`).toMatch(new RegExp(`commitParsedFile\\([^)]*${opts}`));
     }
   });
 });

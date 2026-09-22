@@ -35,6 +35,15 @@ export async function POST(req: Request) {
   const rawAccountId = form.get("accountId");
   const accountId = rawAccountId ? Number(rawAccountId) : null;
 
+  // W2b (owner ruling A1) — auto-close is ON by default, and the import
+  // preview carries ONE per-import escape hatch: "Keep sells as separate rows".
+  // The flip lives at the CALLER, never in the library default, so every test
+  // that omits `ImportWriteOptions` keeps meaning OFF. Nothing is persisted:
+  // the field is absent on a first preview (= unchecked = auto-close ON) and
+  // the commit repeats whatever the preview was shown with.
+  const keepSellsSeparate = String(form.get("keepSellsSeparate") ?? "") === "true";
+  const writeOptions = { autoClose: !keepSellsSeparate };
+
   // Bulk product corrections for a P&L file, keyed by tradingsymbol. Sent by
   // the P&L tab once the user has confirmed what these trades actually were.
   let productOverrides: Record<string, ProductHint> | null = null;
@@ -159,7 +168,7 @@ export async function POST(req: Request) {
 
   if (mode === "commit") {
     try {
-      const result = commitParsedFile(parsed, file.name, productOverrides, accountId);
+      const result = commitParsedFile(parsed, file.name, productOverrides, accountId, writeOptions);
       revalidatePath("/trades");
       revalidatePath("/");
       return NextResponse.json({
@@ -182,7 +191,7 @@ export async function POST(req: Request) {
   // preview
   let preview;
   try {
-    preview = previewParsedFile(parsed, productOverrides, accountId, file.name);
+    preview = previewParsedFile(parsed, productOverrides, accountId, file.name, writeOptions);
   } catch (e) {
     if (e instanceof AccountRequiredError) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: 400 });

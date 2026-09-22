@@ -99,7 +99,20 @@ export const SLIM_TRADE_FIELDS = [
   "sellOrderCount",
 ] as const satisfies readonly (keyof Trade)[];
 
-export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]>;
+export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]> & {
+  /**
+   * W2b — the EXECUTION this row is a piece of, when an import's automatic
+   * close made it one; null otherwise. DERIVED, never a column: it is
+   * `executionHashOfPiece` read off `dedup_hash` + `import_notes`, both of
+   * which stay off the wire (this is one short string instead of the whole
+   * notes column). It is the only thing that may show the "Un-close" row
+   * action — a row with no `closedBy` was never closed by an import.
+   *
+   * Optional because only the /trades page derives it (`lib/queries/trades-page.ts`);
+   * every other projection through `toSlimTrade` leaves it null.
+   */
+  closedBy?: string | null;
+};
 
 /** Project a row carrying at least the slim fields down to the wire shape
  *  (never mutates its input). Accepts any superset of `SlimTrade` — the full
@@ -107,5 +120,8 @@ export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]>;
 export function toSlimTrade(t: SlimTrade): SlimTrade {
   const out = {} as Record<string, unknown>;
   for (const k of SLIM_TRADE_FIELDS) out[k] = t[k];
+  // Derived, so it is not in the field list; carried through when the caller
+  // has already derived it, and stated as null rather than absent when not.
+  out.closedBy = t.closedBy ?? null;
   return out as SlimTrade;
 }

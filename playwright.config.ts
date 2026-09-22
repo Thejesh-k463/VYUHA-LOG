@@ -20,6 +20,19 @@ export default defineConfig({
     url: "http://localhost:3100",
     reuseExistingServer: false,
     timeout: 180_000,
-    env: { VYUHA_DB_PATH: E2E_DB },
+    // The dev server serves ~110 specs across 9 minutes and compiles every route on
+    // demand; its heap grows for the whole run. Under Node's default ceiling Next's
+    // own watchdog ("Server is approaching the used memory threshold, restarting")
+    // restarted it mid-spec on the 7 GB macOS runner from 2026-09-21 (five red
+    // attempts across three shas, each ONE spec dead on ECONNREFUSED or a
+    // half-rendered page, Ubuntu green on the same shas). The watchdog trips at 80 %
+    // of heap_size_limit (next/dist/server/lib/start-server.js); 4096 is Node's own
+    // 64-bit default and changed nothing (measured 2026-09-22: it still tripped at
+    // spec 107 locally). The product does not leak — 60 auto-close previews of 200
+    // trades held a flat 57 → 58 MB heap; the growth is turbopack's dev compile
+    // cache, which scales with source size, and v4.5.0 added ~1,100 lines to
+    // lib/import/commit.ts plus a route and components. 6144 MiB is a margin under
+    // the 7 GB runner, not a fix for anything in the product.
+    env: { VYUHA_DB_PATH: E2E_DB, NODE_OPTIONS: "--max-old-space-size=6144" },
   },
 });

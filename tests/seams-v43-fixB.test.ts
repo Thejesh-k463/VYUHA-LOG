@@ -276,7 +276,17 @@ const postBroker = (body: Record<string, unknown>) =>
     }),
   );
 
-const pull = (broker: string, accountId: number) => postBroker({ action: "pull", broker, accountId, mode: "commit" });
+/**
+ * A manual pull through the real route.
+ *
+ * RE-PINNED, v4.5.0 W2b: the route now flips auto-close ON unless the request
+ * carries `keepSellsSeparate: true` (owner ruling A1), so a case that needs a
+ * sale to land BESIDE the lot it could have closed — a STALE PAIR, which is the
+ * whole subject of B3 and B4 (the R26 one-click join) — must say so. `extra` is
+ * how those seeding pulls state it.
+ */
+const pull = (broker: string, accountId: number, extra: Record<string, unknown> = {}) =>
+  postBroker({ action: "pull", broker, accountId, mode: "commit", ...extra });
 
 const storedRows = (accountId: number) =>
   t.db.select().from(t.schema.trades).where(eq(t.schema.trades.accountId, accountId)).all().sort((a, b) => a.id - b.id);
@@ -478,7 +488,10 @@ describe("B3 · an Angel One / Upstox sale out of a held lot is a dated stale pa
     expect((await pull("angelone", ANGEL)).status).toBe(200);
     freezeAt("2026-09-08T09:30:00.000Z");
     stubAngel([angelFill("SELL", 100, 1550, "11:00:00")]);
-    expect((await pull("angelone", ANGEL)).status).toBe(200);
+    // W2b: the STALE PAIR this case is about is now a choice — auto-close would
+    // otherwise close the 4 Sep lot with the 8 Sep sale and leave Data Quality
+    // nothing to join. Every assertion below is v4.3.0's, unchanged.
+    expect((await pull("angelone", ANGEL, { keepSellsSeparate: true })).status).toBe(200);
     expect.soft(storedRows(ANGEL).map((r) => [r.buyQty, r.sellQty, r.sellDate, r.acquisition])).toEqual([
       [100, 0, null, null],
       [0, 100, "2026-09-08", "unknown"],
@@ -647,7 +660,10 @@ describe("B4 · a lot joined from Data Quality meets the next same-day pull and 
       freezeAt(PULL_1);
       addDhan(book, "2026-09-04T05:00:00.000Z");
       stubDhan([BUY], [position(0, 0, 10, 120)]);
-      expect((await pull("dhan", book)).status).toBe(200);
+      // W2b: same re-pin as B3a — the 7 Sep lot and today's sell-only position
+      // must land as the stale PAIR the join is then asked to close, so the
+      // seeding pull asks for separate rows. Nothing else in B4 changes.
+      expect((await pull("dhan", book, { keepSellsSeparate: true })).status).toBe(200);
     }
     freezeAt(PULL_2);
     selectAccount(0);
