@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
+import { getRealisedRows } from "@/lib/queries/realised-rows";
 import { needsPersonChoice, resolveTaxScope, taxScopeHeader } from "@/lib/queries/tax-scope";
 import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { getSettings } from "@/lib/queries/settings";
@@ -79,10 +80,17 @@ export default async function ItrPackPage({
   // `getTrades(scope.accountIds)` and not `getTaxTrades`: the schedule builder
   // reads `sttCtt`, which the tax projection does not carry.
   const rawTrades = getTrades(scope.accountIds);
-  // v4.5.0 — the asset class is resolved ONCE, here, and threaded into all
-  // three builders below. Every one of them used to re-derive the head from the
+  // v4.5.0 wave 3b-ii (P1) — all three builders below are REALISED consumers
+  // (each skips `isOpen` itself), so they read the realised book rather than
+  // the raw projection: one row per fill for a STAGED ladder, the parent row
+  // for everything else. A partly-sold ladder's booked fills used to appear in
+  // no financial year at all, and then whole in the year it closed.
+  // lib/analytics/realised-rows.ts owns that rule.
+  const realised = getRealisedRows(rawTrades);
+  // The asset class is resolved ONCE, here, and threaded into all three
+  // builders below. Every one of them used to re-derive the head from the
   // segment, so a gold ETF was a 112A gain on three different tables.
-  const trades = rawTrades.map((t) => ({
+  const trades = realised.map((t) => ({
     ...t,
     assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
   }));

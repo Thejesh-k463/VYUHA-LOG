@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { getTaxTrades } from "./trades";
+import { getRealisedRows } from "./realised-rows";
 // TAX-IPO-LINK is CAP-IPO-LINK: ONE implementation of the counted-once rule,
 // beside the IPO reads it is about (wave 2L). It used to be defined here as
 // well, and the two copies drifted into reading the link differently.
@@ -43,6 +44,19 @@ export const getTaxBase = cache((personParam?: string | null) => {
   // two tax persons (invariant 6).
   const scope = resolveTaxScope(personParam);
   const trades = getTaxTrades(scope.accountIds);
+  // v4.5.0 wave 3b-ii (P1) — THE realised book. `!t.isOpen` was the rule here
+  // until this wave, and it put a partly-sold STAGED ladder's booked fills in
+  // no financial year at all, then filed the whole aggregate in the year the
+  // ladder finally closed. `getRealisedRows` emits one row per (fill × FIFO
+  // tranche) for EVERY staged ladder, open or closed, and the parent row
+  // unchanged for everything else; see lib/analytics/realised-rows.ts for the
+  // rule and the per-fill apportionment. `taxRows` and `cgTrades` below are
+  // BOTH built from it, so the scaffold table and the set-off engine can never
+  // read two different books.
+  const realisedTrades = getRealisedRows(trades);
+  // The FMV (grandfathering) editor on /reports/tax lists one row per TRADE —
+  // it writes `fmv_31_jan_2018` onto a trade id — so it keeps the per-trade
+  // set. It is not a money figure and is not summed anywhere.
   const closedTrades = trades.filter((t) => !t.isOpen);
 
   // Exited IPOs are equity-delivery capital gains but live OUTSIDE the trades
@@ -51,7 +65,7 @@ export const getTaxBase = cache((personParam?: string | null) => {
   // TAX-IPO-LINK: an exited IPO whose linked holding is one of the closed trades
   // above is realised THROUGH that trade (the exit saved on /ipos closed it) —
   // folding it in too filed one gain twice in taxByFy, set-off and the ITR export.
-  const throughTrade = ipoIdsCountedThroughTrades(new Set(closedTrades.map((t) => t.id)), scope.accountIds);
+  const throughTrade = ipoIdsCountedThroughTrades(new Set(realisedTrades.map((t) => t.id)), scope.accountIds);
   const exitedIpos = getIposComputed(scope.accountIds).rows.filter((r) => r.realised && !throughTrade.has(r.id));
   const ipoTaxRows: TaxTrade[] = exitedIpos.map((r) => ({
     segment: "eq_delivery",
@@ -72,7 +86,7 @@ export const getTaxBase = cache((personParam?: string | null) => {
   // IND-1 + IND-2 inputs. Grandfathering uses the per-trade FMV (per-share ×
   // qty → same total units as buyValue/sellValue).
   const cgTrades: CapitalGainsTrade[] = [
-    ...closedTrades.map((t) => ({
+    ...realisedTrades.map((t) => ({
       segment: t.segment,
       // v4.5.0 — THE one place a stored row becomes a classified capital-gains
       // trade. `assetClass` is required and resolved here from the ISIN first
@@ -101,12 +115,12 @@ export const getTaxBase = cache((personParam?: string | null) => {
   ];
 
   /**
-   * The closed trades re-shaped for the pure per-FY modules, carrying the
+   * The REALISED rows re-shaped for the pure per-FY modules, carrying the
    * resolved `assetClass` and the three non-deductible charge lines. Pages read
    * THIS, never `closedTrades` directly, so one row cannot be classified two
    * ways on two screens.
    */
-  const taxRows: TaxTrade[] = closedTrades.map((t) => ({
+  const taxRows: TaxTrade[] = realisedTrades.map((t) => ({
     segment: t.segment,
     assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
     instrumentType: t.instrumentType,
@@ -123,7 +137,7 @@ export const getTaxBase = cache((personParam?: string | null) => {
     isOpen: false,
   }));
 
-  return { trades, closedTrades, exitedIpos, ipoTaxRows, cgTrades, taxRows, scope };
+  return { trades, closedTrades, realisedTrades, exitedIpos, ipoTaxRows, cgTrades, taxRows, scope };
 });
 
 /** How many rows the ITR export will contain — the page's disabled state. */
@@ -165,14 +179,17 @@ function headLabel(g: NonNullable<ReturnType<typeof classifyGain>>, sellDate: st
  * built on demand for `/api/tax-itr`, never during a page render.
  */
 export function getItrExportRows(personParam?: string | null) {
-  const { closedTrades, exitedIpos, cgTrades } = getTaxBase(personParam);
+  const { realisedTrades, exitedIpos, cgTrades } = getTaxBase(personParam);
   return cgTrades
     .map((t, i) => {
       const g = classifyGain(t);
       if (!g) return null;
-      const isIpo = i >= closedTrades.length;
+      // The first `realisedTrades.length` entries of cgTrades ARE the realised
+      // rows, in that order, and the rest are the exited IPOs — the two arrays
+      // are concatenated in that order above, so the index maps straight across.
+      const isIpo = i >= realisedTrades.length;
       return {
-        scrip: isIpo ? `${exitedIpos[i - closedTrades.length].name} (IPO)` : closedTrades[i].symbol,
+        scrip: isIpo ? `${exitedIpos[i - realisedTrades.length].name} (IPO)` : realisedTrades[i].symbol,
         acquired: t.buyDate ?? "",
         sold: t.sellDate ?? "",
         cost: t.buyValue,

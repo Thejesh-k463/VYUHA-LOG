@@ -182,6 +182,9 @@ export function itrPackByFy(
 ): ItrFyPack[] {
   const map = new Map<string, { spec: HeadSummary; fno: HeadSummary; cg: CapitalGainsSummary }>();
   for (const t of trades) {
+    // A guard over ALREADY-SHAPED rows, not the definition of "realised":
+    // WHICH rows reach here is decided in lib/analytics/realised-rows.ts (a
+    // staged ladder arrives as one row per fill, each already `isOpen: false`).
     if (t.isOpen) continue;
     const fy = fyOf(t.sellDate ?? t.buyDate, fyStartMonth, fallbackFy);
     const b = map.get(fy) ?? {

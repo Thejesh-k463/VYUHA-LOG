@@ -54,6 +54,9 @@ import type { ParsedFile } from "@/lib/import/types";
  *   A1MTFN    open eq_mtf 100 @100, mtf_funded_amount NULL      (states nothing)
  *   A1STG     open, staged, 2 entry legs + 1 exit leg; parent holds the
  *                     aggregate (invariant 5) 100 @20 -> 40 @25  net 194.00
+ *                     From v4.5.0 wave 3b-ii the BOOKED FILL is realised in the
+ *                     FY of its own exit date: one row, 196.67 (see the fixture
+ *                     for the arithmetic). The parent row stays open.
  *   A1JOIN    closed  100 @200 -> 100 @250  gross 5000  charges 30.00  net 4970.00
  *                     carrying `dedup-alias:<hash>` — the Data Quality join's
  *                     shape; the SALE that hash names sits in Trash (deleted
@@ -485,6 +488,26 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
   const a1MtfNull = mtfRow("A1MTFN", null); // states nothing
   // A staged parent: the parent row holds the aggregate (invariant 5), the legs
   // are additive detail, and one of them is an exit.
+  //
+  // v4.5.0 wave 3b-ii (P1) — THE PARTLY-SOLD STAGED LADDER, and why its
+  // realised figure is 196.67 and NOT the parent's stored 194.00.
+  //
+  // The exit fill sells 40 of the 100 held, and FIFO consumes them out of entry
+  // leg 1 (60 available), so the split emits ONE row:
+  //
+  //   gross            40 × (25 − 20)                        = 200.00
+  //   exit-leg charges the fill's own, whole (it is one fill) =  −2.00
+  //   entry charges    leg 1's 2.00 × 40/60 — the quantity
+  //                    this fill actually consumed            =  −1.3333
+  //   net                                                     = 196.6667 -> 196.67
+  //
+  // The parent's stored 194.00 deducts ALL SIX rupees of charges — both entry
+  // legs' 2.00 + 2.00 and the exit's 2.00 — against a sale of only 40 of the
+  // 100 shares. The missing ₹2.67 (leg 1's remaining 0.6667 + leg 2's whole
+  // 2.00) is not lost: it realises with the OTHER 60 shares when they are sold.
+  // The ladder is OPEN, so the split settles each column to its own exact sum
+  // rather than to the parent's aggregate (lib/analytics/realised-rows.ts) —
+  // the closed-ladder reconciliation is pinned in tests/realised-rows.test.ts.
   const a1Staged = insertTrade(t, {
     accountId: ORACLE_A1, broker: "zerodha", segment: "eq_delivery", symbol: "A1STG", tradingsymbol: "A1STG",
     buyQty: 100, avgBuyPrice: 20, buyValue: 2000, buyDate: ORACLE_BUY_DATE,
@@ -567,15 +590,17 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
 /**
  * The oracle, stated from the fixture's own numbers.
  *
- * account 1, trades   490.25 + 192.00 + 4970.00                = 5652.25 realised
- *                     (A1OPEN, A1PART, A1MTFZ, A1MTFN, A1STG are OPEN)
+ * account 1, trades   490.25 + 192.00 + 4970.00 + 196.67       = 5848.92 realised
+ *                     (A1OPEN, A1PART, A1MTFZ, A1MTFN are OPEN and realise
+ *                     nothing; A1STG's PARENT is open too, but its booked exit
+ *                     fill is a realised row of its own - v4.5.0 wave 3b-ii)
  * account 1, IPOs     ORACLE-LEGACY only: its holding (A2SOLD) is in account 2,
  *                     so this view did not count it -> the record counts itself.
  *                     The linked and loose records are in account 2, invisible here.
  * account 2, trades   490.25 + 490.25                           =  980.50 realised
  * account 2, IPOs     ORACLE-LOOSE only: the linked record's holding (A2IPOH)
  *                     WAS counted just above; ORACLE-LEGACY is filed in account 1.
- * All accounts        5652.25 + 980.50 = 6632.75 of trades, and of the three
+ * All accounts        5848.92 + 980.50 = 6829.42 of trades, and of the three
  *                     records only ORACLE-LOOSE counts — the other two name a
  *                     holding this view counted. NOTE All ≠ a1 + a2 on the IPO
  *                     line, and that is the rule working: ORACLE-LEGACY's sale
@@ -589,9 +614,10 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
  *   P1  48000 + 2000 + 1000                                      -> 51000
  *   P2  account 3's own purchase 10 × 100                        ->  1000
  * AIS sale (CLOSED delivery/MTF rows by sell-date FY):
- *   a1  1500 + 1200 + 25000 = 27700, + ORACLE-LEGACY 10 × 150    -> 29200
+ *   a1  1500 + 1200 + 25000 = 27700, + A1STG's fill 40 × 25 = 1000,
+ *       + ORACLE-LEGACY 10 × 150                                 -> 30200
  *   a2  1500 + 1500 =  3000, + ORACLE-LOOSE 20 × 70 = 1400       ->  4400
- *   P1  27700 + 3000 + 1400                                      -> 32100
+ *   P1  27700 + 1000 + 3000 + 1400                               -> 33100
  *   P2  account 3's own sale 10 × 200                            ->  2000
  *
  * (The a1 / a2 AIS lines are what those BOOKS hold; from v4.5.0 the route reads
@@ -617,7 +643,12 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
  * All-accounts view reads NOTHING: two persons, no filable total.
  */
 const PERSON_TOTALS = (ipoNet: { linked: number; loose: number; legacy: number }) => {
-  const A1_TRADES = r2(490.25 + 192 + 4970); // 5652.25
+  // v4.5.0 wave 3b-ii (P1) — A1STG's booked fill (196.67) joins the three
+  // closed round trips. It used to be in NO realised figure at all: the parent
+  // is `isOpen`, so every realised consumer skipped it, and the sale would have
+  // landed whole in whatever FY the ladder finally closed in. See the A1STG
+  // fixture above for why 196.67 and not the parent's stored 194.00.
+  const A1_TRADES = r2(490.25 + 192 + 4970 + 196.67); // 5848.92
   const A2_TRADES = r2(490.25 + 490.25); //      980.50
   return { A1_TRADES, A2_TRADES, P1_TRADES: r2(A1_TRADES + A2_TRADES), ipoNet };
 };
@@ -634,14 +665,21 @@ function personOne(ipoNet: { linked: number; loose: number; legacy: number }): O
   return {
     label: ORACLE_PERSON_1,
     header: ORACLE_HEADER_P1,
-    taxNets: [490.25, 192, 4970, 490.25, 490.25, ipoNet.loose].sort((a, b) => a - b),
+    // A1STG's fill is one more counted gain (196.67), one more exported scrip
+    // and one more delivery sale: consideration 40 × 25 = 1000 on top of
+    // 32100, cost 40 × 20 = 800 (the fill's basis is the moving average in
+    // force at the exit, invariant 4) on top of 25000.
+    taxNets: [490.25, 192, 4970, 196.67, 490.25, 490.25, ipoNet.loose].sort((a, b) => a - b),
     ipoNames: ["ORACLE-LOOSE"],
-    itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-    itrCount: 6,
-    deliveryConsideration: 32100,
-    deliveryCost: 25000,
+    itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A1STG", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+    itrCount: 7,
+    deliveryConsideration: 33100,
+    deliveryCost: 25800,
     fyRealised: { [ORACLE_FY]: r2(P1_TRADES + ipoNet.loose) },
-    ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 32100 },
+    // The purchase side is unchanged BY DESIGN (app/api/ais/route.ts): it is
+    // the parent's whole buyValue at the parent's buyDate, open rows included,
+    // so A1STG's 2000 was already in the 51000. Only the SALE side moved.
+    ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 33100 },
   };
 }
 
@@ -688,7 +726,7 @@ function a12Accounts(ipoNet: { linked: number; loose: number; legacy: number }):
 function expectedFor(ipoNet: { linked: number; loose: number; legacy: number }): OracleSnapshot {
   const { A1_TRADES, A2_TRADES, P1_TRADES } = PERSON_TOTALS(ipoNet);
   const A3_TRADES = 990;
-  const ALL_TRADES = r2(P1_TRADES + A3_TRADES); // 7622.75
+  const ALL_TRADES = r2(P1_TRADES + A3_TRADES); // 7819.42
 
   return {
     a1: {

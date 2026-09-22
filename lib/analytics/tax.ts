@@ -92,6 +92,9 @@ export function taxByFy(
 ): FySummary[] {
   const map = new Map<string, FySummary>();
   for (const t of trades) {
+    // A guard over ALREADY-SHAPED rows, not the definition of "realised":
+    // WHICH rows reach here is decided in lib/analytics/realised-rows.ts (a
+    // staged ladder arrives as one row per fill, each already `isOpen: false`).
     if (t.isOpen) continue;
     const fy = fyOf(t.sellDate, fyStartMonth, fallbackFy);
     const s = map.get(fy) ?? {

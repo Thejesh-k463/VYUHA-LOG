@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getHarvestTrades } from "@/lib/queries/trades";
+import { getRealisedRows } from "@/lib/queries/realised-rows";
 import { needsPersonChoice, resolveTaxScope } from "@/lib/queries/tax-scope";
 import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { getMtmMap } from "@/lib/queries/mtm";
@@ -56,6 +57,13 @@ export default async function HarvestPage({
   // rendered row order is identical; only never-read columns stopped being
   // fetched and mapped (this was the whole-book getTrades() call).
   const trades = getHarvestTrades(scope.accountIds);
+  // v4.5.0 wave 3b-ii (P1) — the REALISED half of this page (the FY capital-
+  // gains window and the tax levers) reads the realised book: one row per fill
+  // for a STAGED ladder, the parent row for every other closed trade. The
+  // OPEN-LOT half below deliberately keeps reading `trades`, because an open
+  // lot IS the parent row's still-open quantity (`buyQty - sellQty`).
+  // lib/analytics/realised-rows.ts owns the realised rule.
+  const realised = getRealisedRows(trades);
   const mtm = getMtmMap();
   const settings = getSettings();
   const fyStartMonth = settings?.fyStartMonth ?? 4;
@@ -91,7 +99,7 @@ export default async function HarvestPage({
   // EXCLUDED from both figures above and stated separately — folding it into
   // either one would make the harvesting arithmetic confidently wrong.
   let realisedUndetermined = 0;
-  for (const t of trades) {
+  for (const t of realised) {
     if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
     const g = classifyGain({
       segment: t.segment,
@@ -117,7 +125,7 @@ export default async function HarvestPage({
   // ── Tax levers (v3.3.0) ────────────────────────────────────────────────
   // Everything here is (A): computable exactly from executed trades. Nothing
   // recommends a transaction. See lib/analytics/tax-levers.ts.
-  const fyClosed = trades.filter((t) => !t.isOpen && t.sellDate != null && t.sellDate >= fyStart);
+  const fyClosed = realised.filter((t) => !t.isOpen && t.sellDate != null && t.sellDate >= fyStart);
 
   const stt = sttSplit(
     fyClosed.map((t) => ({

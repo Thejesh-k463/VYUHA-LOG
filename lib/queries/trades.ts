@@ -533,6 +533,10 @@ const TAX_FIELDS = [
   // capital gain and are therefore added back in the CG buckets only: STT
   // (proviso to S.48) and the two financing lines (dossier §G2). Columns only.
   "sttCtt", "mtfInterest", "pledgeCharges",
+  // v4.5.0 wave 3b-ii (P1) — `lib/queries/realised-rows.ts` splits a STAGED
+  // ladder into one realised row per fill, so the tax base needs to know which
+  // rows have a ladder behind them. COLUMNS ONLY, no new WHERE.
+  "staged",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type TaxPageTrade = Pick<Trade, (typeof TAX_FIELDS)[number]>;
@@ -571,6 +575,11 @@ const HARVEST_FIELDS = [
   // capital gain, so /reports/harvest and /reports/advance-tax agree with
   // /reports/tax on the realised figure. Columns only.
   "mtfInterest", "pledgeCharges",
+  // v4.5.0 wave 3b-ii (P1) — same reason as TAX_FIELDS: the realised sets on
+  // /reports/harvest and /reports/advance-tax go through
+  // `lib/queries/realised-rows.ts`, which splits a STAGED ladder per fill.
+  // COLUMNS ONLY, no new WHERE (the open-lot side still reads the parent row).
+  "staged",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;

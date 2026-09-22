@@ -8,6 +8,7 @@ import { getSettings } from "./settings";
 import { getIpoRealisedNet } from "./ipos";
 import { getSelectedAccount, getSelectedAccountId } from "./accounts";
 import { getTrades } from "./trades";
+import { getRealisedRows } from "./realised-rows";
 import { getBucketCapital } from "./bucket-capital";
 import { signOf } from "@/lib/format";
 
@@ -32,7 +33,15 @@ export interface CapitalSummary {
 }
 
 export function getCapitalSummary(): CapitalSummary {
-  const closed = getTrades().filter((t)=>!t.isOpen);
+  // v4.5.0 wave 3b-ii (P1). `!t.isOpen` was the rule here, and it put a partly
+  // sold STAGED ladder's booked fills in no realised figure at all — while the
+  // tax base counted them, so the two consumers disagreed about one sale
+  // (tests/oracle-counted-once.test.ts's counted-once rule is EVERY consumer).
+  // `getRealisedRows` emits one row per (fill × FIFO tranche) for a staged
+  // ladder and the parent row unchanged for everything else, with the money
+  // apportioned by quantity; see lib/analytics/realised-rows.ts. Scope is
+  // unchanged: it reads only the ids `getTrades()` already returned.
+  const closed = getRealisedRows(getTrades());
   const account = getSelectedAccount();
   const cap = getBucketCapital();
   const equityClosed = closed.filter((t) => t.bucket === "equity");

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdvanceTaxCalc } from "@/components/reports/advance-tax-calc";
 import { ChallanEditor, type ChallanEditorRow } from "@/components/reports/challan-editor";
 import { getHarvestTrades } from "@/lib/queries/trades";
+import { getRealisedRows } from "@/lib/queries/realised-rows";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { classifyGain, MTF_NOT_DEDUCTED_NOTE } from "@/lib/analytics/capital-gains";
 import { assetClassFor, heldMoreThanMonths, holdingMonthsFor } from "@/lib/analytics/cg-heads";
@@ -66,10 +67,16 @@ export default async function AdvanceTaxPage({
   // sellDate, netPnl) PLUS the lot fields — one book read instead of the
   // whole-table getTrades() this page used before.
   const trades = getHarvestTrades(scope.accountIds);
+  // v4.5.0 wave 3b-ii (P1) — the realised book, kept byte-identical to
+  // /reports/harvest so the two pages cannot disagree: one row per fill for a
+  // STAGED ladder, the parent row for every other closed trade. The open-lot
+  // construction below still reads `trades` (an open lot is the parent row's
+  // still-open quantity). lib/analytics/realised-rows.ts owns the rule.
+  const realised = getRealisedRows(trades);
 
   // Realised net P&L booked this FY (closed, dated trades) — all segments,
   // because the calculator estimates TOTAL tax, not capital gains alone.
-  const realisedFy = trades
+  const realisedFy = realised
     .filter((t) => !t.isOpen && t.sellDate && t.sellDate >= fyStart)
     .reduce((s, t) => s + t.netPnl, 0);
 
@@ -96,7 +103,7 @@ export default async function AdvanceTaxPage({
   let realisedLtcg = 0;
   /** Realised this FY with NO determinable head — excluded from both, stated. */
   let realisedUndetermined = 0;
-  for (const t of trades) {
+  for (const t of realised) {
     if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
     const g = classifyGain({
       segment: t.segment,

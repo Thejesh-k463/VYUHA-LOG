@@ -8488,3 +8488,52 @@ copy says "for my book" while the page is per tax person (release copy); two fur
 vs the schema columns; the autoClose comment vs the call sites) wait for an unambiguous regex on both sides. **The pattern worth
 keeping:** the two findings this session itself created were both claims about a document that was later edited by someone who
 did not re-read the claimant — the reason the close-out rule runs the check LAST, after every other edit.
+
+## 2026-09-22 — v4.5.0 wave 3b-ii (P1): a partly-sold staged ladder's fills are realised in their own year, per consumed tranche
+
+**The defect (T4 P1, design-review item 17):** a staged position with a realised exit fill is still `isOpen`, and eight consumers
+filtered `!t.isOpen`, so the fill sat in NO tax year until the ladder closed — and then the parent's aggregate landed whole in
+the LATER financial year. `tests/helpers/oracle-book.ts` row A1STG (100 bought over two entry legs, 40 sold) was exactly this case
+and every consumer agreed with every other only because they all omitted it.
+
+**Decisions taken under the decision policy (the owner may overrule):**
+
+1. **One row per (fill × consumed FIFO tranche), not one per fill.** The tranche supplies the DATE (holding period), the fill's
+   moving-average `avgCostAtExit` supplies the BASIS (invariant 4: weighted-average pricing, FIFO quantity). Rejected: one row per
+   fill carrying the parent's first-entry date — a fill that consumes two tranches bought on either side of the 12-month line
+   would have taken ONE head for both. `tests/realised-rows.test.ts` pins that Σ buyValue = qty × avgCostAtExit and NOT Σ take ×
+   tranche price.
+2. **The whole-trade add-backs (`sttCtt`, `mtfInterest`, `pledgeCharges`) are apportioned by take ÷ totalEntryQty.** Exact for a
+   closed ladder (Σ = the parent column to the paisa; the rounding remainder rides the last row), a consumed SHARE for an open one
+   with the rest realised by the later fills. Rejected: take ÷ totalExitQty, which hands an open ladder's entire STT (including the
+   buy-side STT of the still-open tranches) to the fills already realised. No per-leg STT column exists, so any finer split would
+   be an invented rate (invariants 3 and 6). A null column stays null on every row (readers-follow-writers).
+3. **Entry-leg charges realise with the quantity they belong to** (leg charges × take ÷ leg qty), so A1STG's fill nets 196.67,
+   not the parent's 194: 200 − 2 (exit) − 2 × 40/60 (entry leg 1); the remaining ₹2.67 realises with the last 60 shares. A closed
+   ladder therefore reconciles to its stored aggregate on all eight fields (`reconcileStagedSplit`; invariant 5 survives the split).
+   On an OPEN ladder the rows net MORE than the parent by exactly the unsold tranches' charges (the parent's aggregate deducts
+   them already), gross and sellValue are equal, and the buyValue remainder equals `position.invested` — pinned, not assumed.
+4. **A closed ladder is ALSO per-fill now.** Its rows carry the tranche dates and the fill dates, so a ladder whose fills straddle
+   31 March moves part of its gain into the earlier year — release-noted as "the financial-year shift".
+5. **The rule lives in ONE pure module**, `lib/analytics/realised-rows.ts` (`realisedRows`: staged + ladder → fills, open or
+   closed; flat closed → the parent row; flat open → nothing; a staged flag with no legs → the flat rule), wrapped once for the
+   server in `lib/queries/realised-rows.ts` over the batched `getStagedViews` (ids come from an already-scoped read, so invariant
+   8 holds by construction). Six query-layer sites route through it; the two pure-module `isOpen` skips in `tax.ts` / `itr.ts`
+   STAY as defensive guards with a comment pointing here — they act on rows already shaped, and removing them would let a caller
+   feed an open flat row straight into a tax year.
+6. **`lib/queries/capital.ts` routes through the same helper.** The product builder found it and refused the edit (a four-guard
+   file outside its set); the orchestrator ruled it IN scope — "counted once in EVERY consumer" is the oracle's own statement,
+   and the capital summary disagreeing with the tax base by exactly one fill was `assertPersonAgreement` firing 16 times. One
+   builder made both edits.
+7. **The AIS PURCHASE side is unchanged** (parent `buyValue` on the parent `buyDate`); a ladder built across two FYs still states
+   all its purchases in the first. Recorded as a follow-up in the route's comment: it moves a figure for every open staged
+   position and is not a free rider on a wave about the SALE side.
+8. **The FMV / grandfathering editor on `/reports/tax` still lists one row per TRADE id** (`closedTrades` kept in `getTaxBase`
+   for that one consumer); folding fills in would hand the editor duplicate ids.
+
+**Measured:** oracle person view at rest: ITR rows 6 → 7 (A1STG), Σ tax nets 7016.36 → 7213.03, AIS sale 2025-26 32100 → 33100,
+ITR cost 25000 → 25800, a1 capital equity 5652.25 → 5848.92 — a2 / a3 / every KPI / ipoBookNet unchanged (account #3 stays at
+its 42 rows and ₹75,132.75 net, as every wave pins). `sttSplit`'s deductible / forfeited COUNTS on `/reports/harvest` now count
+N realisations for one ladder, not 1 — arguably right, not ruled on; noted in the release copy.
+
+**Gate (uncommitted tree, `vyuha-verifier`, second run):** `npm run verify` EXIT 0 — **470 files / 10,830 passed / 40 skipped**, lint 7 warnings (all pre-existing; STATE's "3" was stale), `next build` passed, Duration 105 s. The first run was red on ONE doc guard (`readme-claims`: README said 468 test files, the tree has 470 — fixed in the DOC). The 5 extra skips against the 35 baseline are `tests/revocation-roundtrip.test.ts` skipping because `ae39cf1` moved the signing key out of the repo and the test still reads the repo path — fix-list A12, not this wave. Two builders (product, then tests) + the verifier; 36 new tests in two files; 17 oracle pins re-stated with their arithmetic; three mutants killed (tranche-price basis, dropped rounding remainder, open-only split).

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTrades } from "@/lib/queries/trades";
+import { getRealisedRows } from "@/lib/queries/realised-rows";
 // The counted-once rule has ONE home, beside the IPO reads it is about (wave 2L).
 import { getIposComputed, ipoIdsCountedThroughTrades } from "@/lib/queries/ipos";
 import { isPriceableExitDate } from "@/lib/analytics/ipo";
@@ -77,10 +78,34 @@ export async function POST(req: Request) {
   // holding's purchase was counted above, its exit when the holding's sale was.
   const purchaseCounted = new Set<number>();
   const saleCounted = new Set<number>();
-  for (const t of getTrades(scope.accountIds)) {
-    if (!DELIVERY.has(t.segment)) continue;
+  // v4.5.0 wave 3b-ii (P1) — the SALE side counts REALISED rows, not closed
+  // parents: a partly-sold STAGED ladder books its fills as they happen, so
+  // each fill lands in the FY of its OWN exit date and at its own
+  // consideration. The AIS statement is per-transaction, so a ladder that
+  // sold 40 in March and 60 in April must state two years, not one April
+  // figure. `getRealisedRows` returns the parent row unchanged for every
+  // non-staged trade, so nothing else here changes.
+  //
+  // The PURCHASE side is deliberately UNCHANGED: it is the parent's whole
+  // `buyValue` at the parent's `buyDate` (the FIRST entry), for open and
+  // closed rows alike. Splitting it per ENTRY leg — so a ladder built across
+  // two financial years states its purchases in both — is a RECORDED
+  // FOLLOW-UP, not this wave: it changes the purchase figure for every open
+  // staged position on the page, including ones nothing has been sold from.
+  const deliveryTrades = getTrades(scope.accountIds).filter((t) => DELIVERY.has(t.segment));
+  const realisedByTrade = new Map<number, { sellDate: string | null; sellValue: number }[]>();
+  for (const r of getRealisedRows(deliveryTrades)) {
+    const arr = realisedByTrade.get(r.id) ?? [];
+    arr.push({ sellDate: r.sellDate, sellValue: r.sellValue });
+    realisedByTrade.set(r.id, arr);
+  }
+  for (const t of deliveryTrades) {
     if (bump(fyOf(t.buyDate), "purchase", t.buyValue)) purchaseCounted.add(t.id);
-    if (!t.isOpen && bump(fyOf(t.sellDate), "sale", t.sellValue)) saleCounted.add(t.id);
+    for (const r of realisedByTrade.get(t.id) ?? []) {
+      // `saleCounted` still carries the PARENT id — TAX-IPO-LINK keys the
+      // counted-once rule on the trade, not on a fill.
+      if (bump(fyOf(r.sellDate), "sale", r.sellValue)) saleCounted.add(t.id);
+    }
   }
   const allotmentThroughTrade = ipoIdsCountedThroughTrades(purchaseCounted, scope.accountIds);
   const exitThroughTrade = ipoIdsCountedThroughTrades(saleCounted, scope.accountIds);

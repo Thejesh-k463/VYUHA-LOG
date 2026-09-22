@@ -437,13 +437,20 @@ const OPS: Op[] = [
           kpi: { count: 1, open: 0, net: 490.25 },
         },
         p1: {
-          taxNets: [192, 490.25, 490.25, 4970, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
+          // v4.5.0 wave 3b-ii (P1) — A1STG's booked exit fill is realised in the
+          // FY of its own exit date: one more gain (196.67), one more exported
+          // scrip, 40 x 25 = 1000 more consideration and 40 x 20 = 800 more cost.
+          // The operation below does not touch that ladder, so it simply rides
+          // along in every figure this scenario restates.
+          taxNets: [192, 196.67, 490.25, 490.25, 4970, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
           ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
-          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-          fyRealised: { [ORACLE_FY]: r2(6142.5 + a2Ipo) },
+          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A1STG", "A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+          // 5848.92 + 490.25 = 6339.17 (it was 5652.25 + 490.25 = 6142.5)
+          fyRealised: { [ORACLE_FY]: r2(6339.17 + a2Ipo) },
         },
         all: {
-          capital: { equityRealised: 7132.5, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(7132.5 + a2Ipo) },
+          // 7132.5 + A1STG's fill 196.67
+          capital: { equityRealised: 7329.17, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(7329.17 + a2Ipo) },
           kpi: { count: 10, open: 5, net: 7441.5 },
         },
       });
@@ -554,18 +561,24 @@ const OPS: Op[] = [
       return patch(base, {
         p1: {
           header: MERGED_HEADER_P1,
-          taxNets: [192, 490.25, 4970, b.ipoNet.legacy].sort((x, y) => x - y),
+          // v4.5.0 wave 3b-ii (P1) — A1STG's booked exit fill is realised in the
+          // FY of its own exit date: one more gain (196.67), one more exported
+          // scrip, 40 x 25 = 1000 more consideration and 40 x 20 = 800 more cost.
+          // The operation below does not touch that ladder, so it simply rides
+          // along in every figure this scenario restates.
+          taxNets: [192, 196.67, 490.25, 4970, b.ipoNet.legacy].sort((x, y) => x - y),
           ipoNames: ["ORACLE-LEGACY"],
-          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "ORACLE-LEGACY (IPO)"],
-          itrCount: 4,
-          deliveryConsideration: 29200,
-          deliveryCost: 23000,
-          fyRealised: { [ORACLE_FY]: r2(5652.25 + b.ipoNet.legacy) },
-          ais: { [`${ORACLE_FY} purchase`]: 49000, [`${ORACLE_FY} sale`]: 29200 },
+          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A1STG", "ORACLE-LEGACY (IPO)"],
+          itrCount: 5,
+          deliveryConsideration: 30200, // 29200 + 1000
+          deliveryCost: 23800, //          23000 + 800
+          fyRealised: { [ORACLE_FY]: r2(5848.92 + b.ipoNet.legacy) }, // 5652.25 + 196.67
+          ais: { [`${ORACLE_FY} purchase`]: 49000, [`${ORACLE_FY} sale`]: 30200 },
         },
         a2: EMPTY_VIEW,
         all: {
-          capital: { equityRealised: 6642.25, activeRealised: 0, ipoRealised: b.ipoNet.legacy, totalRealised: r2(6642.25 + b.ipoNet.legacy) },
+          // 6642.25 + A1STG's fill 196.67
+        capital: { equityRealised: 6838.92, activeRealised: 0, ipoRealised: b.ipoNet.legacy, totalRealised: r2(6838.92 + b.ipoNet.legacy) },
           kpi: { count: 9, open: 5, net: 6951.25 },
           ipoBookNet: b.ipoNet.legacy,
         },
@@ -645,10 +658,16 @@ const OPS: Op[] = [
         // the sale is stated by the record, once — plus the open purchase that
         // took the freed id, which the person's AIS purchase side counts.
         p1: {
-          taxNets: [192, 490.25, 490.25, 4970, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
+          // v4.5.0 wave 3b-ii (P1) — A1STG's booked exit fill is realised in the
+          // FY of its own exit date: one more gain (196.67), one more exported
+          // scrip, 40 x 25 = 1000 more consideration and 40 x 20 = 800 more cost.
+          // The operation below does not touch that ladder, so it simply rides
+          // along in every figure this scenario restates.
+          taxNets: [192, 196.67, 490.25, 490.25, 4970, b.ipoNet.linked, b.ipoNet.loose].sort((x, y) => x - y),
           ipoNames: ["A2IPOH", "ORACLE-LOOSE"],
-          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-          fyRealised: { [ORACLE_FY]: r2(6142.5 + a2Ipo) },
+          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A1STG", "A2IPOH (IPO)", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+          // 5848.92 + 490.25 = 6339.17 (it was 5652.25 + 490.25 = 6142.5)
+          fyRealised: { [ORACLE_FY]: r2(6339.17 + a2Ipo) },
           ais: { ...base.a1.person.ais, [`${ORACLE_FY} purchase`]: (base.a1.person.ais[`${ORACLE_FY} purchase`] ?? 0) + 1000 },
         },
         a1: openKpi(base.a1),
@@ -657,7 +676,8 @@ const OPS: Op[] = [
           kpi: { count: 1, open: 0, net: 490.25 },
         },
         all: {
-          capital: { equityRealised: 7132.5, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(7132.5 + a2Ipo) },
+          // 7132.5 + A1STG's fill 196.67
+          capital: { equityRealised: 7329.17, activeRealised: 0, ipoRealised: a2Ipo, totalRealised: r2(7329.17 + a2Ipo) },
           // 11 rows: the holding could not come back, and A1TAKEN took its id.
           kpi: { count: 11, open: 6, net: 7441.5 },
         },
@@ -698,16 +718,22 @@ const OPS: Op[] = [
           kpi: { count: 3, open: 0, net: r2(980.5 + n) },
         },
         p1: {
-          taxNets: [192, 490.25, 490.25, 490.25, 4970, n, b.ipoNet.loose].sort((x, y) => x - y),
-          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A2IPOH", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-          itrCount: 7,
-          deliveryConsideration: 33600,
-          deliveryCost: 26000,
-          fyRealised: { [ORACLE_FY]: r2(6632.75 + n + b.ipoNet.loose) },
-          ais: { [`${ORACLE_FY} purchase`]: 52000, [`${ORACLE_FY} sale`]: 33600 },
+          // v4.5.0 wave 3b-ii (P1) — A1STG's booked exit fill is realised in the
+          // FY of its own exit date: one more gain (196.67), one more exported
+          // scrip, 40 x 25 = 1000 more consideration and 40 x 20 = 800 more cost.
+          // The operation below does not touch that ladder, so it simply rides
+          // along in every figure this scenario restates.
+          taxNets: [192, 196.67, 490.25, 490.25, 490.25, 4970, n, b.ipoNet.loose].sort((x, y) => x - y),
+          itrScrips: ["A1JOIN", "A1SOLD1", "A1SOLD2", "A1STG", "A2IPOH", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+          itrCount: 8,
+          deliveryConsideration: 34600, // 33600 + 1000
+          deliveryCost: 26800, //          26000 + 800
+          fyRealised: { [ORACLE_FY]: r2(6829.42 + n + b.ipoNet.loose) }, // 6632.75 + 196.67
+          ais: { [`${ORACLE_FY} purchase`]: 52000, [`${ORACLE_FY} sale`]: 34600 },
         },
         all: {
-          capital: { equityRealised: r2(7622.75 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7622.75 + n + b.ipoNet.loose) },
+          // 7622.75 + A1STG's fill 196.67 = 7819.42
+          capital: { equityRealised: r2(7819.42 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7819.42 + n + b.ipoNet.loose) },
           // The KPI strip sums EVERY row, so the five open ones (115 + 194) are
           // in this figure and the duplicate adds itself to the baseline's.
           kpi: { count: 12, open: 5, net: r2(7931.75 + n) },
@@ -734,7 +760,9 @@ const OPS: Op[] = [
       // Only the two ACCOUNT-scoped readings change.
       return patch(base, {
         a1: {
-          capital: { equityRealised: 5652.25, activeRealised: 0, ipoRealised: 0, totalRealised: 5652.25 },
+          // 5652.25 of closed round trips + A1STG's booked fill 196.67 (v4.5.0
+          // wave 3b-ii) — the re-home moves no trade, so only the IPO line moves.
+          capital: { equityRealised: 5848.92, activeRealised: 0, ipoRealised: 0, totalRealised: 5848.92 },
           ipoBookNet: 0,
         },
         a2: { ipoBookNet: r2(b.ipoNet.linked + b.ipoNet.loose + b.ipoNet.legacy) },
@@ -768,13 +796,19 @@ const OPS: Op[] = [
           ipoBookNet: r2(priced.netPnl + b.ipoNet.loose),
         },
         p1: {
-          taxNets: [192, 490.25, 490.25, 590.25, 4970, b.ipoNet.loose].sort((x, y) => x - y),
-          deliveryConsideration: 32200,
-          fyRealised: { [ORACLE_FY]: r2(6732.75 + b.ipoNet.loose) },
-          ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 32200 },
+          // v4.5.0 wave 3b-ii (P1) — A1STG's booked exit fill is realised in the
+          // FY of its own exit date: one more gain (196.67), one more exported
+          // scrip, 40 x 25 = 1000 more consideration and 40 x 20 = 800 more cost.
+          // The operation below does not touch that ladder, so it simply rides
+          // along in every figure this scenario restates.
+          taxNets: [192, 196.67, 490.25, 490.25, 590.25, 4970, b.ipoNet.loose].sort((x, y) => x - y),
+          deliveryConsideration: 33200, // 32200 + 1000
+          fyRealised: { [ORACLE_FY]: r2(6929.42 + b.ipoNet.loose) }, // 6732.75 + 196.67
+          ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 33200 },
         },
         all: {
-          capital: { equityRealised: 7722.75, activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7722.75 + b.ipoNet.loose) },
+          // 7722.75 + A1STG's fill 196.67
+          capital: { equityRealised: 7919.42, activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7919.42 + b.ipoNet.loose) },
           kpi: { count: 11, open: 5, net: 8031.75 }, // 7931.75 + the extra ₹100 on the sale
           ipoBookNet: r2(priced.netPnl + b.ipoNet.loose + b.ipoNet.legacy),
         },
@@ -867,20 +901,27 @@ const OPS: Op[] = [
       const n = r2(closed.netPnl);
       return patch(base, {
         a1: {
-          capital: { equityRealised: r2(5652.25 + n), activeRealised: 0, ipoRealised: b.ipoNet.legacy, totalRealised: r2(5652.25 + n + b.ipoNet.legacy) },
+          // 5652.25 + A1STG's fill 196.67 = 5848.92, + A1PART's own net
+          capital: { equityRealised: r2(5848.92 + n), activeRealised: 0, ipoRealised: b.ipoNet.legacy, totalRealised: r2(5848.92 + n + b.ipoNet.legacy) },
           kpi: { count: 8, open: 4, net: r2(5961.25 - 115 + n) },
         },
         p1: {
-          taxNets: [192, 490.25, 490.25, 490.25, 4970, n, b.ipoNet.loose].sort((x, y) => x - y),
-          itrScrips: ["A1JOIN", "A1PART", "A1SOLD1", "A1SOLD2", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
-          itrCount: 7,
-          deliveryConsideration: 33420,
-          deliveryCost: 26000,
-          fyRealised: { [ORACLE_FY]: r2(6632.75 + n + b.ipoNet.loose) },
-          ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 33420 },
+          // v4.5.0 wave 3b-ii (P1) — A1STG's booked exit fill is realised in the
+          // FY of its own exit date: one more gain (196.67), one more exported
+          // scrip, 40 x 25 = 1000 more consideration and 40 x 20 = 800 more cost.
+          // The operation below does not touch that ladder, so it simply rides
+          // along in every figure this scenario restates.
+          taxNets: [192, 196.67, 490.25, 490.25, 490.25, 4970, n, b.ipoNet.loose].sort((x, y) => x - y),
+          itrScrips: ["A1JOIN", "A1PART", "A1SOLD1", "A1SOLD2", "A1STG", "A2IPOH", "A2SOLD", "ORACLE-LOOSE (IPO)"],
+          itrCount: 8,
+          deliveryConsideration: 34420, // 33420 + 1000
+          deliveryCost: 26800, //          26000 + 800
+          fyRealised: { [ORACLE_FY]: r2(6829.42 + n + b.ipoNet.loose) }, // 6632.75 + 196.67
+          ais: { [`${ORACLE_FY} purchase`]: 51000, [`${ORACLE_FY} sale`]: 34420 },
         },
         all: {
-          capital: { equityRealised: r2(7622.75 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7622.75 + n + b.ipoNet.loose) },
+          // 7622.75 + A1STG's fill 196.67 = 7819.42
+          capital: { equityRealised: r2(7819.42 + n), activeRealised: 0, ipoRealised: b.ipoNet.loose, totalRealised: r2(7819.42 + n + b.ipoNet.loose) },
           kpi: { count: 11, open: 4, net: r2(7931.75 - 115 + n) },
         },
       });
