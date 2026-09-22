@@ -143,17 +143,23 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
-**Upgrading from v4.3.x to v4.4.0 — nothing is asked of you.** The v4.4.0 installer runs the
-v4.3.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
+**Upgrading from v4.4.x to v4.5.0 — nothing is asked of you.** The v4.5.0 installer runs the
+v4.4.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
 "Delete the application data" checkbox appears, ticking it still erases the whole data folder, but
 not before your journal database and licence key have been named and copied to
 `Documents\Vyuha-backup-<date>`, and Cancel leaves everything exactly as it is.
 
-**Migrations on first launch of v4.4.0.** **One** database upgrade (0073: the per-segment risk cap,
-the risk source stamped on a trade, and the dated risk-free rate), applied behind the same automatic
-`backups\pre-migrate-<timestamp>.sqlite` copy described below. It adds columns; it changes no money
-figure and **no risk cap** — an untouched install stays at the ₹9,500 default and a cap you edited is
-left exactly as you set it. Upgrading from **v4.2.x** applies **0071, 0072 and 0073** in order.
+**Migrations on first launch of v4.5.0.** **One** database upgrade (0074: the broker plan an account
+is on, and the date it started), applied behind the same automatic
+`backups\pre-migrate-<timestamp>.sqlite` copy described below. It adds columns and changes no money
+figure. **Take your own backup first, as always.** Upgrading from **v4.3.x** applies **0073 and
+0074** in order.
+
+**What changes in how imports land, with no switch to set.** A sale imported for a holding you
+already hold now **closes that holding FIFO** instead of landing as a second row. Each import
+carries a **"Keep sells as separate rows"** toggle if you would rather it did not, the result card
+names what it closed, and an **Un-close** action on `/trades` puts a closed pair back as it was.
+Nothing already in your journal is changed by the update; this applies to what you import next.
 
 **One thing that happens on its own at first launch, and nothing to switch on.** The desktop
 rate-card refresh had failed on every launch since v3.2.0; 4.3.0 repairs the F&O STT rates for
@@ -216,7 +222,7 @@ removed. Leave the box unticked to keep the data where it is.
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_4.4.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.4`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_4.5.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.5`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

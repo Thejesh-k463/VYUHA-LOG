@@ -1,5 +1,43 @@
 # Changelog
 
+## v4.5.0 — 2026-09-22
+
+*The release where the sale closes the position, and the tax pack knows whose
+accounts it is reading.*
+
+- **Auto-close is ON.** A sale imported for a holding you already hold closes it
+  FIFO instead of landing as a second, unrelated row. Each import carries a
+  **"Keep sells as separate rows"** toggle, the result card names what it
+  closed, and an **Un-close** action on `/trades` puts a closed pair back as it
+  was. One execution can hold at most one closer; a sale with no date closes
+  nothing and is listed under Data Quality.
+- **Upstox pricing is plan-aware.** Upstox sells Basic (₹20 an order) and Plus
+  (₹30 an order); set the plan per account in Settings → Accounts. Every Upstox
+  delivery *estimate* now prices at the published min(₹20 or ₹30, 2.5 %) with a
+  ₹20 DP charge. A bill your broker's own file stated is kept as stated.
+- **Tax is per TAX PERSON.** A Tax person field on the account, a person picker
+  on `/reports/tax` when "All accounts" spans two persons (and no figure until
+  one is chosen), and the scope stated on every export.
+- **The bundled NSE ETF list** (350 ETFs; `/instruments` shows its as-of date
+  and sha256) drives STT and the capital-gains asset class — a gold or debt ETF
+  is no longer taxed as an equity share.
+- **Capital-gains heads follow the transfer date**, from one band table with
+  each band's Act cited; holding periods count in calendar months. *This moves
+  the short-/long-term line by up to two days for every equity trade.* The
+  ITR-2 item code for s.111A is A2; STT is added back in the capital-gains
+  buckets; MTF interest carries a "not deducted" line.
+- **A partly-sold staged position's fills are taxed in the year they were
+  sold**, not when the ladder finally closes — a ladder whose fills straddle
+  31 March moves part of its gain to the earlier year.
+- **Dhan rows regroup under tickers** (the raw name is kept on the row).
+- **A broker-stated bill survives a re-tag**, on imports made from this version
+  on.
+- **One database upgrade (0074)**, applied on first launch — take a backup
+  first, as always.
+
+Not in this release: no macOS build; the installer is still unsigned (Windows
+SmartScreen warns once); no network host is added.
+
 ## v4.4.0 — 2026-09-21
 
 *The release where four more of your broker's own files import themselves, the

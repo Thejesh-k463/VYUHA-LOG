@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-10798%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-10894%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-120%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
@@ -28,7 +28,37 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v4.4.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v4.5.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v4.5.0 — the sale that closes the position, and a tax pack that knows
+> whose accounts it is reading.** **Auto-close is ON**: a sale imported for a
+> holding you already hold now closes it **FIFO** instead of landing as a
+> second, unrelated row — each import carries a **"Keep sells as separate
+> rows"** toggle, the result card **names what it closed**, and an
+> **Un-close** action on `/trades` puts a closed pair back as it was.
+> **Upstox pricing is plan-aware**: Upstox sells **Basic (₹20 an order)** and
+> **Plus (₹30 an order)**, set per account in **Settings → Accounts**, and
+> every Upstox **delivery estimate** now prices at **min(₹20, 2.5%)** with a
+> **₹20** DP charge — a bill your broker's own file **stated** is kept as
+> stated. **Tax is per TAX PERSON**: a **Tax person** field on the account, a
+> person **picker** on `/reports/tax` when "All accounts" spans two of them,
+> and the scope stated on every export. The bundled **NSE ETF list** — **350
+> ETFs**, its as-of date and **sha256** shown on `/instruments` — drives
+> **STT** and the **capital-gains asset class**, so a gold or debt ETF is no
+> longer taxed as an equity share. **Capital-gains heads follow the TRANSFER
+> date**, from one band table with each band's Act cited, and holding periods
+> count in **calendar months**: **this moves the short-/long-term line by up to
+> two days for every equity trade**. The **ITR-2** item code for s.111A is
+> **A2**, **STT is added back** in the capital-gains buckets, and MTF interest
+> carries a **"not deducted"** line. A **partly-sold staged position**'s fills
+> are now taxed in the year they were **sold**, not when the ladder finally
+> closes — a ladder whose fills straddle **31 March** moves part of its gain to
+> the earlier year. **Dhan** rows regroup under **tickers**. A **broker-stated
+> bill survives a re-tag**, on imports made from this version on. **One
+> database upgrade, 0074**, applied on first launch — take a backup first, as
+> always. Not in this release: **no macOS build**, the installer is still
+> **unsigned** (Windows SmartScreen warns once), and **no network host** is
+> added.
 >
 > **v4.4.0 — four more of your broker's own files, chrome that moves, and
 > metrics that show their working.** The importer learns the **Zerodha Console
@@ -612,7 +642,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **10798** | **49** | **0** |
+| **10894** | **49** | **0** |
 | tests, 120 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
@@ -931,13 +961,13 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.3.x to v4.4.0:** the installer runs the v4.3.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migration 0073 runs on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy; upgrading from v4.2.x applies 0071, 0072 and 0073 in order. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.4.x to v4.5.0:** the installer runs the v4.4.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migration 0074 runs on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy; upgrading from v4.3.x applies 0073 and 0074 in order. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v4.4.0**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v4.5.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.
@@ -968,7 +998,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       10798 unit + integration tests across 473 files (+ tests/load: 16 load cases, run separately)
+tests/       10894 unit + integration tests across 473 files (+ tests/load: 16 load cases, run separately)
 e2e/         120 Playwright flows through the real app, in 35 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -989,7 +1019,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **10798 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **10894 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -1005,7 +1035,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (10798 tests) |
+| `npm test` | Vitest unit + integration suite (10894 tests) |
 | `npm run test:e2e` | Playwright e2e — 120 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -1075,7 +1105,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 10798 Vitest unit + integration tests (+ tests/load)
+  tests/          # 10894 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

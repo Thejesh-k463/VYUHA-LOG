@@ -34,6 +34,31 @@ single trader — needs something specific, a tuned build is on the table.
 
 You don't get that from software with a support queue.
 
+## New in v4.5.0
+
+The release where a sale closes the position it sold, and where the tax pack knows whose accounts it is reading.
+
+| Upgrade | What it gives you |
+|---|---|
+| **Auto-close is on** | A sale imported for a holding you already hold now **closes that holding FIFO** instead of landing as a second, unrelated row. Each import carries a **"Keep sells as separate rows"** toggle if you would rather it did not, the result card after an import **names what it closed**, and an **Un-close** action on `/trades` puts a closed pair back as it was. A sale with no date closes nothing and is listed in Data Quality. |
+| **Upstox pricing follows your plan** | Upstox sells two plans — **Basic (₹20 an order)** and **Plus (₹30 an order)** — and you say which one an account is on in **Settings → Accounts**, with the date it started. Every Upstox **delivery estimate** now prices at **min(₹20, 2.5%)** (it was 0.1%, which under-billed every order below ₹20,000) and the DP charge at **₹20** per scrip per day on sells. **A bill your broker's own file stated is kept as stated** — only estimates move. |
+| **Tax is per tax person** | Every account carries a **Tax person** field (a name or PAN), and accounts sharing it are taxed together. `/reports/tax`, the ITR pack, Harvest and the AIS reconcile read **one tax person's accounts**; with "All accounts" selected across two people you get a **person picker** and no figure until you pick. Every export states the scope it was taken on in its first line. |
+| **The bundled NSE ETF list** | A snapshot of NSE's own published ETF list — **350 ETFs**, with its **as-of date and sha256 shown on `/instruments`** — decides an ETF's **STT** and its **capital-gains asset class**. A gold, debt or global ETF is no longer charged and taxed as an equity share; an ETF the list does not carry is flagged in Data Quality rather than guessed at. |
+| **Capital-gains heads by transfer date** | The head, rate and exemption of a gain come from **one band table, each band citing the Act that set it**, chosen by the date of the transfer. Holding periods count in **calendar months** instead of 365 days — **this moves the short-/long-term line by up to two days for every equity trade**, and a sale exactly 365 days after the buy is short-term. The **ITR-2** item code for s.111A is **A2** (it had been A3, which is an ITR-3 row). **STT is added back** in the capital-gains buckets, and MTF interest and pledge charges carry a **"not deducted"** line stating the figure is a floor. |
+| **A partly-sold staged position is taxed when it sold** | The fills of a staged ladder are now realised **in the year they were sold**, per consumed tranche, instead of waiting for the ladder to close. **A ladder whose fills straddle 31 March moves part of its gain to the earlier year.** A closed ladder still reconciles to the aggregate on its parent row. |
+| **Dhan rows regroup under tickers** | A Dhan GTR or P&L file's scrip names resolve to **tickers** for display, so the same stock's rows group together; the raw name is kept on the row. |
+| **A broker-stated bill survives a re-tag** | Re-tagging a trade that was imported from a file stating its own charges now **keeps those charges** rather than re-pricing them from the rate card. This applies to **imports made from this version on**; a row imported before v4.5.0 still re-prices on a re-tag. |
+| **Upgrades in place** | A v4.4.0 journal opens straight into v4.5.0. **One database upgrade (0074)** is applied on first launch — it adds the account's broker-plan columns and moves no money figure. Before it runs, the app writes a full copy of your database to `backups\pre-migrate-<timestamp>.sqlite` in your data folder; **take your own backup first, as always**. The installer runs the v4.4.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. |
+
+**Not in this release, said plainly.** There is **no macOS build** — Windows only. The installer is **not code-signed**, so
+Windows SmartScreen warns once ("More info → Run anyway"); that is expected. **No network host** is added by this release: the
+ETF list and the index map are build-time snapshots, and the app contacts nothing to read them. The broker-stated-bill marker is
+written by **new imports only**. **F&O contract notes** are still not read; only the equity ones, from Groww and Upstox. Capital
+gains are still **blank where an input is missing** rather than invented: there is no cost-inflation index, so an indexed s.112
+figure is blank; a year holding a slab bucket or an undetermined row gets **no capital-gains total**; and the head of an ETF the
+bundled list does not carry, or of a hybrid underlying, reads blank with a Data Quality warning. Charges already stored on trades
+are not rewritten by any of this.
+
 ## New in v4.4.0
 
 The release where four more of your broker's own files import themselves, the chrome moves where you want it, and every
