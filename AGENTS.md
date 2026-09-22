@@ -13,6 +13,18 @@ import there fails only at `next build`, which is what `npm run verify` adds. CI
 this is about catching it before the push, not instead of CI.
 
 
+# End-of-session drift check
+
+`npm run drift:close-out` (structural half: `npm run drift`, also run by `tests/state-drift.test.ts`
+in CI) re-derives from the tree what the hand-off docs CLAIM: the four version strings, the newest
+migration vs `drizzle/meta/_journal.json` vs STATE §0, every backticked path and `npm run <name>`
+cited in AGENTS.md / README.md / STATE §0, the test-file / spec / flow counts on disk, README's test
+count against STATE §0's raw gate line, every cited sha, the archive's append-only-ness and
+DECISIONS being no older than STATE. Each check reads its two sides from DIFFERENT sources, and
+prints SKIP with a reason rather than PASS when it cannot derive a fact. **When it goes red, fix the
+DOC — never the check** (a self-agreeing README guard is how "9745 tests" outlived ~1,000 tests).
+
+
 # Invariants — breaking these reintroduces bugs that were expensive to find
 
 1. **Money is integer paise in the DB, rupees at runtime.** The `moneyPaise` custom type converts

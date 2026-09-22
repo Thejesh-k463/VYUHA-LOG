@@ -25,6 +25,8 @@
     "desktop:icons": "node scripts/make-logo.mjs && tauri icon src-tauri/icon-source.png",
     "bump-version": "node scripts/bump-version.mjs",
     "verify": "npm run typecheck && npm run lint && npm run test -- --run && npm run build",
+    "drift": "node scripts/state-drift-check.mjs",
+    "drift:close-out": "node scripts/state-drift-check.mjs --close-out",
     "release:verify": "node scripts/verify-release-signatures.mjs",
     "release:archive": "node scripts/release-archive.mjs",
     "mirror:push": "node scripts/mirror-push.mjs",

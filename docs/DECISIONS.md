@@ -8449,3 +8449,24 @@ read, every code is blank BY DESIGN, and a fixture on such a year pins nothing. 
 matrix, the calendar-month pins, a citation guard that `existsSync`-checks every primary-source file the epoch comments name),
 `tests/tax-heads-readonly.test.ts` (a full report render writes no stored column); 12 files re-pinned with the arithmetic shown. Account #3's 42 option rows are `nonSpeculative` and never enter the delivery branch: ₹75,132.75 unchanged, no
 stored column written by this wave.
+
+## 2026-09-22 — the end-of-session drift check is EXECUTABLE (`npm run drift:close-out`), not a reading
+
+**The ask (owner, 2026-09-22):** at the end of every session, audit whether every file, script, tool and item carries the latest
+information — no contradicting or stale items that make later work redo what was done — with credit usage as low as possible.
+
+**Why a script and not a prose audit.** This session alone re-found four drifts a reader had missed: README's "9745 tests" sat
+~1,000 below the suite for weeks (guarded only for self-agreement across its six copies); the Upstox design cited
+`mtf-accrual.ts:37` as a `findRates` site (it was `loadRatesMap`); the design review scoped the GTR re-key to one parser when
+three state company names; an e2e locator became ambiguous the day `/instruments` gained a second stamp. Every one is a FACT that
+the tree, git or package.json states independently of the document — so a check that reads BOTH sides from DIFFERENT sources
+finds it for zero model tokens, every session, and the model reads only the FAIL lines. A prose audit costs tokens every time and
+finds the same class again next month; a check finds it once and forever. Rules the script obeys: a check never agrees with itself
+(doc vs doc is not a check); it BLOCKS only on facts and prints SKIP with the reason for anything it cannot derive; output is ≤ 40
+lines; two modes — structural (holds at any commit; `tests/state-drift.test.ts` runs it in CI so a broken citation reddens the day
+it breaks) and `--close-out` (adds the counts and shas that legitimately lag mid-wave). **The rule (CLAUDE.md, AGENTS.md, STATE §0
+step 3): before `/clear`, `npm run drift:close-out` prints 0 FAIL — fix the DOC, never the check.** What the script cannot derive
+(a claim with no independent source) is what the once-per-session `doc-auditor` prose pass is for — bounded to the four live
+hand-off documents, and each confirmed finding becomes a new check rather than a note.
+
+**Measured on the first close-out run (a6ff466):** 19 PASS / 0 FAIL / 1 SKIP in ~2 s (~8 s with the Playwright `--list`); its first FAIL was README's "9745 tests" against STATE §0's 10,798 — six places rewritten. The one knowingly stale number: the absolute test count is one test behind disk until the next gate rewrites both documents from the raw line; `state-test-files` is judged against `git ls-tree` at the sha §0 quotes, which is what keeps it honest mid-wave.

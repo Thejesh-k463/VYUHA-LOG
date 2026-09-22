@@ -7,4 +7,5 @@ so it costs nothing until you read it.
 
 On conflict: `AGENTS.md` wins over `VYUHA-STATE.md`, and the code wins over both.
 
-Before `/clear`, update `VYUHA-STATE.md` with verified numbers — not recalled ones.
+Before `/clear`, update `VYUHA-STATE.md` with verified numbers — not recalled ones, then
+`npm run drift:close-out` must print 0 FAIL (fix the doc, never the check).
