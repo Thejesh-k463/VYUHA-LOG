@@ -13,12 +13,14 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { REVOKED_IDS } from "./license-revoked.mjs";
+import { defaultLedgerPath } from "./lib/license-mint.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ledgerPath = path.join(root, "license-ledger.jsonl");
+// Same resolution as license-issue.mjs: VYUHA_LICENSE_LEDGER when set (the
+// production ledger lives OUTSIDE the repo since 2026-09-22), else repo root.
+const ledgerPath = defaultLedgerPath();
 
 if (!existsSync(ledgerPath)) {
-  console.error("No license-ledger.jsonl yet — it is created the first time you run license-issue.mjs.");
+  console.error(`No ledger at ${ledgerPath} — set VYUHA_LICENSE_LEDGER or run license-issue.mjs first.`);
   process.exit(1);
 }
 

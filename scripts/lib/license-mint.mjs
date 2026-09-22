@@ -5,9 +5,10 @@
 //
 // PATHS. `defaultPemPath()` / `defaultLedgerPath()` resolve to the repo root
 // (license-private.pem / license-ledger.jsonl) UNLESS the env overrides
-// VYUHA_LICENSE_PEM / VYUHA_LICENSE_LEDGER are set. The overrides exist so
-// tests and smoke runs never touch the real vendor key or the real ledger.
-// Leave them unset in production; the scripts print which paths they used.
+// VYUHA_LICENSE_PEM / VYUHA_LICENSE_LEDGER are set. Since 2026-09-22 the REAL
+// key and ledger live outside the repo (T:\Thejesh\vyuha-secrets\) and the
+// owner's User-level env vars point there; tests set their own throwaway
+// overrides per process. The scripts print which paths they used.
 import { sign, createPrivateKey, createHash } from "node:crypto";
 import { readFileSync, appendFileSync, existsSync, mkdirSync, writeFileSync, copyFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

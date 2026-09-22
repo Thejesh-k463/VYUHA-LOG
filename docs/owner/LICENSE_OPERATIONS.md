@@ -12,7 +12,12 @@ license-private.pem   ← mints every key you will ever sell
 license-ledger.jsonl  ← the only record of what you have sold
 ```
 
-Both sit at the repo root. Both are **gitignored**. Neither is in any installer.
+Since 2026-09-22 both live **outside the repo** at `T:\Thejesh\vyuha-secrets\`, and the
+User-level env vars `VYUHA_LICENSE_PEM` / `VYUHA_LICENSE_LEDGER` point every licence script
+there (open a NEW terminal after changing them). They were never committed (gitignored since
+day one, verified with `git log --all -- license-private.pem license-ledger.jsonl`). Neither is
+in any installer. If a script reports "No ledger at …TRADE-JOURNAL\license-ledger.jsonl", the env
+vars are not set in that shell.
 
 - **Lose the .pem** → you can never issue another key. Existing keys keep working.
 - **Leak the .pem** → anyone can mint unlimited valid keys, indistinguishable from yours.
@@ -54,7 +59,7 @@ node scripts/license-backup.mjs --restore D:/Vyuha-keys/vyuha-keys-2026-08-15.vk
 Copy the `.vkb` somewhere that is not this machine. **The passphrase has no recovery** — put it
 in the password manager, not in the same folder as the bundle.
 
-> Path overrides for tests and smoke runs only: `VYUHA_LICENSE_PEM`, `VYUHA_LICENSE_LEDGER`
+> Path overrides (production points at `T:\Thejesh\vyuha-secrets\`; tests set throwaway ones): `VYUHA_LICENSE_PEM`, `VYUHA_LICENSE_LEDGER`
 > (read by every licence script via `scripts/lib/license-mint.mjs`), `VYUHA_REVOKED_MJS`,
 > `VYUHA_LICENSE_TS` (`license-revoke.mjs`). Leave them unset for real sales.
 
