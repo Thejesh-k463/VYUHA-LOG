@@ -300,8 +300,9 @@ export async function readOracleView(t: TempDb, accountId: number): Promise<Orac
   const c = capital.getCapitalSummary();
   const base = taxItr.getTaxBase();
   const itr = taxItr.getItrExportRows();
-  // Exactly the call /reports/tax makes (app/reports/tax/page.tsx:72).
-  const fyRows = tax.taxByFy([...base.trades, ...base.ipoTaxRows], settings.getSettings()?.fyStartMonth ?? 4);
+  // Exactly the call /reports/tax makes (app/reports/tax/page.tsx:112) — on
+  // `taxRows`, which carries the resolved assetClass, not the raw page rows.
+  const fyRows = tax.taxByFy([...base.taxRows, ...base.ipoTaxRows], settings.getSettings()?.fyStartMonth ?? 4);
   const kpi = trades.tradeStatsOf(trades.getJournalTrades());
   const ais = await aisRead();
 

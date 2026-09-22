@@ -3,13 +3,18 @@ import {
   monthlyBreakdown,
   monthlyByHead,
   MONTHLY_HEAD_CAVEAT,
-  type MonthlyTrade,
+  type MonthlyHeadTrade,
 } from "@/lib/analytics/monthly";
 
-const t = (over: Partial<MonthlyTrade> = {}): MonthlyTrade => ({
+// v4.5.0 — `monthlyByHead` takes a `MonthlyHeadTrade`: a month row PLUS the
+// asset class, because a month column and the FY table must not disagree about
+// which head a trade is in. `MonthlyHeadTrade extends MonthlyTrade`, so this one
+// factory still feeds `monthlyBreakdown` too.
+const t = (over: Partial<MonthlyHeadTrade> = {}): MonthlyHeadTrade => ({
   sellDate: "2026-05-10",
   buyDate: "2026-05-01",
   segment: "eq_delivery",
+  assetClass: "share",
   netPnl: 0,
   grossPnl: 0,
   chargesTotal: 0,
@@ -122,19 +127,52 @@ describe("monthlyByHead — realised, not owed", () => {
     ]);
     expect(rows).toHaveLength(1);
     const m = rows[0];
-    expect(m.stcg).toBe(1000);
-    expect(m.ltcg).toBe(5000);
+    expect(m.stcg111A).toBe(1000);
+    expect(m.ltcg112A).toBe(5000);
+    expect(m.stcgOther).toBe(0);
+    expect(m.ltcg112).toBe(0);
+    expect(m.cgUndetermined).toBe(0);
     expect(m.speculative).toBe(-300);
     expect(m.fnoBusiness).toBe(500); // 700 − 200
     expect(m.charges).toBe(220);
     expect(m.trades).toBe(5);
   });
 
-  it("uses the same 12-month line as the annual tax modules", () => {
-    const lt = monthlyByHead([t({ buyDate: "2025-05-10", sellDate: "2026-05-10", netPnl: 100 })]);
-    expect(lt[0].ltcg).toBe(100);
-    const st = monthlyByHead([t({ buyDate: "2025-05-11", sellDate: "2026-05-10", netPnl: 100 })]);
-    expect(st[0].stcg).toBe(100);
+  /**
+   * Still the same line as the annual modules — but that line is a CALENDAR
+   * MONTH one from v4.5.0 (S.2(42A) + General Clauses Act 1897 s.3(35)), not
+   * 365 days. Bought 10-May-2025, the sale on 10-May-2026 is exactly twelve
+   * months and NOT past them, so it is short-term; 11-May-2026 is the first
+   * long-term day. `monthly.ts` held the FOURTH copy of the 365-day count.
+   */
+  it("uses the same CALENDAR-MONTH line as the annual tax modules", () => {
+    const st = monthlyByHead([t({ buyDate: "2025-05-10", sellDate: "2026-05-10", netPnl: 100 })]);
+    expect(st[0].stcg111A).toBe(100);
+    expect(st[0].ltcg112A).toBe(0);
+    const lt = monthlyByHead([t({ buyDate: "2025-05-10", sellDate: "2026-05-11", netPnl: 100 })]);
+    expect(lt[0].ltcg112A).toBe(100);
+  });
+
+  it("puts a non-equity unit and an unknown asset in their own columns, never in s.111A", () => {
+    const rows = monthlyByHead([
+      // A gold ETF held 5 months: slab-rate short-term, not S.111A.
+      t({ assetClass: "otherUnit", buyDate: "2026-01-10", sellDate: "2026-05-10", netPnl: 400 }),
+      // A bare scrip code with no ISIN: the head is BLANK (invariant 6).
+      t({ assetClass: "undetermined", netPnl: 60 }),
+    ]);
+    expect(rows[0].stcgOther).toBe(400);
+    expect(rows[0].cgUndetermined).toBe(60);
+    expect(rows[0].stcg111A).toBe(0);
+  });
+
+  /**
+   * The month table is a record of what ARRIVED, so — unlike the annual tax
+   * tables — it does NOT add STT or the financing charges back. Its own caveat
+   * says so, and this pins the two apart.
+   */
+  it("reports the trade's own net P&L — no STT or MTF add-back happens here", () => {
+    const rows = monthlyByHead([t({ netPnl: 1000, chargesTotal: 120 })]);
+    expect(rows[0].stcg111A).toBe(1000);
   });
 
   it("orders months chronologically across a year boundary", () => {

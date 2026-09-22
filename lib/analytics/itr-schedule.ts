@@ -35,11 +35,17 @@
 import {
   capitalGainsRatesFor,
   grandfatheredCost,
-  isGrandfatherEligible,
-  classifyTerm,
   RATE_CUTOVER_DATE,
   type CarryForwardLot,
 } from "./capital-gains";
+import {
+  bucketFor,
+  resolveCgHead,
+  type CgAssetClass,
+  type CgBucketKey,
+  type CgHead,
+} from "./cg-heads";
+import { itrCgCodes, assessmentYearFor, type ItrForm } from "./itr-cg-codes";
 import { DELIVERY_SEGMENTS, FNO_SEGMENTS, turnoverContribution } from "./turnover";
 // Citations are resolved BY TAX YEAR — a 2023-24 pack must keep its 1961 Act
 // sections, not be retro-labelled with the 2025 Act's.
@@ -47,6 +53,8 @@ import { section, statuteNote } from "./statute";
 
 export interface ItrScheduleTrade {
   segment: string;
+  /** REQUIRED from v4.5.0 — see `CapitalGainsTrade.assetClass`. */
+  assetClass: CgAssetClass;
   buyDate: string | null;
   sellDate: string | null;
   /** Actual cost, pre-charge. */
@@ -59,6 +67,11 @@ export interface ItrScheduleTrade {
   chargesTotal: number;
   /** Excluded from capital-gains deductions — S.48 proviso, now s.72(3)(b). */
   sttCtt: number;
+  /** Financing costs. Excluded from the capital-gains deduction for the same
+   *  reason STT is: no court has held either to be transfer expenditure
+   *  (dossier §G2). They remain inside `chargesTotal` for the business heads. */
+  mtfInterest?: number;
+  pledgeCharges?: number;
   fmv31Jan2018?: number | null;
   isOpen: boolean;
 }
@@ -100,8 +113,18 @@ function fyOf(dateStr: string | null, fyStartMonth: number, fallback: string): s
  * S.48 proviso under the 1961 Act; s.72(3)(b) under the 2025 Act — the rule is
  * unchanged, and note both name only STT, never CTT.
  */
-export function transferExpenditure(t: { chargesTotal: number; sttCtt: number }): number {
-  return r2(Math.max(0, t.chargesTotal - t.sttCtt));
+export function transferExpenditure(t: {
+  chargesTotal: number;
+  sttCtt: number;
+  mtfInterest?: number;
+  pledgeCharges?: number;
+}): number {
+  return r2(
+    Math.max(
+      0,
+      t.chargesTotal - t.sttCtt - Math.max(0, t.mtfInterest ?? 0) - Math.max(0, t.pledgeCharges ?? 0),
+    ),
+  );
 }
 
 interface CgBucket {
@@ -110,11 +133,28 @@ interface CgBucket {
   cost: number;
   expenditure: number;
   stt: number;
+  /** MTF interest + pledge charges NOT deducted from this bucket. */
+  notDeducted: number;
   /** Set when at least one lot used a 31-Jan-2018 FMV. */
   grandfatheredLots: number;
+  /** One representative resolved head, for the citation and the rate. */
+  head: CgHead | null;
+  /** Every distinct §G1 cell that landed here — more than one means the bucket
+   *  spans a rate change and the reader must be told. */
+  cells: Set<string>;
+  /** Reasons a figure in this bucket cannot be priced. */
+  blank: Set<string>;
 }
 
-const emptyCg = (): CgBucket => ({ trades: 0, consideration: 0, cost: 0, expenditure: 0, stt: 0, grandfatheredLots: 0 });
+const emptyCg = (): CgBucket => ({
+  trades: 0, consideration: 0, cost: 0, expenditure: 0, stt: 0, notDeducted: 0,
+  grandfatheredLots: 0, head: null, cells: new Set<string>(), blank: new Set<string>(),
+});
+
+type CgBuckets = Record<CgBucketKey, CgBucket>;
+const emptyCgBuckets = (): CgBuckets => ({
+  stcg111A: emptyCg(), stcgOther: emptyCg(), ltcg112A: emptyCg(), ltcg112: emptyCg(), cgUndetermined: emptyCg(),
+});
 
 interface BpBucket {
   trades: number;
@@ -141,21 +181,23 @@ export function itrScheduleByFy(
 ): ItrScheduleFy[] {
   const map = new Map<
     string,
-    { st: CgBucket; lt: CgBucket; spec: BpBucket; fno: BpBucket; sellDates: string[] }
+    { cg: CgBuckets; spec: BpBucket; fno: BpBucket; sellDates: string[] }
   >();
 
   for (const t of trades) {
     if (t.isOpen) continue;
     const fy = fyOf(t.sellDate ?? t.buyDate, fyStartMonth, fallbackFy);
     const b =
-      map.get(fy) ?? { st: emptyCg(), lt: emptyCg(), spec: emptyBp(), fno: emptyBp(), sellDates: [] };
+      map.get(fy) ?? { cg: emptyCgBuckets(), spec: emptyBp(), fno: emptyBp(), sellDates: [] };
     if (t.sellDate) b.sellDates.push(t.sellDate);
 
     if (DELIVERY.has(t.segment)) {
-      const term = classifyTerm(t.buyDate, t.sellDate);
-      const bucket = term === "LT" ? b.lt : b.st;
+      // v4.5.0: the BOX follows the resolved head, not the segment. A gold ETF
+      // used to be written into the 112A box on no authority at all.
+      const head = resolveCgHead({ assetClass: t.assetClass, acquiredOn: t.buyDate, transferredOn: t.sellDate });
+      const bucket = b.cg[bucketFor(head.head)];
       // Grandfathering raises the cost basis of a pre-2018 lot; it never lowers it.
-      const eligible = term === "LT" && isGrandfatherEligible(t.buyDate);
+      const eligible = head.grandfatherEligible;
       const cost = eligible ? grandfatheredCost(t.buyValue, t.fmv31Jan2018 ?? null, t.sellValue) : t.buyValue;
       if (eligible && cost !== t.buyValue) bucket.grandfatheredLots++;
       bucket.trades++;
@@ -163,6 +205,10 @@ export function itrScheduleByFy(
       bucket.cost = r2(bucket.cost + cost);
       bucket.expenditure = r2(bucket.expenditure + transferExpenditure(t));
       bucket.stt = r2(bucket.stt + t.sttCtt);
+      bucket.notDeducted = r2(bucket.notDeducted + Math.max(0, t.mtfInterest ?? 0) + Math.max(0, t.pledgeCharges ?? 0));
+      bucket.head = bucket.head ?? head;
+      bucket.cells.add(head.cell);
+      if (head.ratePct == null) for (const r of head.reasons) bucket.blank.add(r);
     } else if (t.segment === "eq_intraday" || FNO.has(t.segment)) {
       const bucket = t.segment === "eq_intraday" ? b.spec : b.fno;
       bucket.trades++;
@@ -182,9 +228,74 @@ export function itrScheduleByFy(
     .sort((a, b) => a.fy.localeCompare(b.fy));
 }
 
+/** One capital-gains block, in the ITR's own shape. `code` is BLANK when this
+ *  release has not read the item numbers for this (form, AY) — invariant 6. */
+function cgBlock(
+  code: string | null,
+  title: string,
+  bucket: CgBucket,
+  opts: { exemption?: number | null; exemptionLabel?: string; indexation?: boolean },
+): ScheduleLine[] {
+  const c = (suffix: string) => (code ? `${code}${suffix}` : "");
+  const balance = r2(bucket.consideration - bucket.cost - bucket.expenditure);
+  const lines: ScheduleLine[] = [
+    { schedule: "Schedule CG", code: code ?? "", label: title, amount: null,
+      note: code ? undefined : "The item code for this row on this form and assessment year was not read for this release — copy the figures into the box the form itself names." },
+    { schedule: "Schedule CG", code: c("(a)"), label: "Full value of consideration", amount: bucket.consideration },
+    {
+      schedule: "Schedule CG",
+      code: c("(b)(i)"),
+      label: opts.indexation ? "Cost of acquisition — INDEXED" : "Cost of acquisition without indexation",
+      amount: opts.indexation ? null : bucket.cost,
+      note: opts.indexation
+        ? `Actual cost is ₹${bucket.cost.toLocaleString("en-IN")}. The INDEXED cost is blank: no cost-inflation-index table is bundled with this release, so it cannot be derived. Missing input — the CBDT CII notification for the acquisition and transfer years.`
+        : bucket.grandfatheredLots > 0
+          ? `${bucket.grandfatheredLots} lot(s) use the 31-Jan-2018 grandfathered cost.`
+          : undefined,
+    },
+    // Deliberately 0, not blank: a listed security cannot carry a cost of
+    // improvement, so 0 is the derived answer (invariant 6 forbids inventing a
+    // figure, not stating a known one). Both hand-written blocks this generic
+    // one replaced carried the line; the 3b-i tests caught its loss.
+    { schedule: "Schedule CG", code: c("(b)(ii)"), label: "Cost of improvement", amount: 0, note: "Not applicable to listed securities." },
+    {
+      schedule: "Schedule CG",
+      code: c("(b)(iii)"),
+      label: "Expenditure wholly and exclusively in connection with transfer",
+      amount: bucket.expenditure,
+      note:
+        `Excludes STT of ₹${bucket.stt.toLocaleString("en-IN")} — not allowable against capital gains (proviso to S.48).` +
+        (bucket.notDeducted > 0
+          ? ` Also excludes ₹${bucket.notDeducted.toLocaleString("en-IN")} of MTF interest and pledge charges: neither is transfer expenditure, and the High Courts are split on whether interest forms part of the cost of acquisition.`
+          : ""),
+    },
+    {
+      schedule: "Schedule CG",
+      code: c("(c)"),
+      label: opts.exemption != null ? "Capital gain before exemption" : "Balance (a − b) — capital gain",
+      amount: opts.indexation ? null : balance,
+      note: opts.indexation ? "Blank because the indexed cost above is blank." : undefined,
+    },
+  ];
+  if (opts.exemption != null) {
+    const exemption = balance > 0 ? r2(Math.min(balance, opts.exemption)) : 0;
+    lines.push(
+      {
+        schedule: "Schedule CG",
+        code: c("(d)"),
+        label: opts.exemptionLabel ?? `Deduction (exemption threshold ₹${opts.exemption.toLocaleString("en-IN")})`,
+        amount: exemption,
+        note: "FY-level exemption across ALL your 112A gains — if you hold equity outside this journal, the threshold is shared.",
+      },
+      { schedule: "Schedule CG", code: c("(e)"), label: "Net long-term capital gain (c − d)", amount: r2(balance - exemption) },
+    );
+  }
+  return lines;
+}
+
 function buildFy(
   fy: string,
-  b: { st: CgBucket; lt: CgBucket; spec: BpBucket; fno: BpBucket; sellDates: string[] },
+  b: { cg: CgBuckets; spec: BpBucket; fno: BpBucket; sellDates: string[] },
   carryForwardByFy?: Map<string, CarryForwardLot[]>,
 ): ItrScheduleFy {
   const lines: ScheduleLine[] = [];
@@ -198,58 +309,74 @@ function buildFy(
   const rates = capitalGainsRatesFor(lastSale);
   const straddles = sorted.length > 0 && sorted[0] < RATE_CUTOVER_DATE && lastSale >= RATE_CUTOVER_DATE;
 
-  // ── Schedule CG · A3 — STCG u/s 111A ──────────────────────────────────────
-  if (b.st.trades > 0) {
-    const balance = r2(b.st.consideration - b.st.cost - b.st.expenditure);
+  // ── Which form? Decided BEFORE Schedule CG, because ITR-2 and ITR-3 number
+  //    Schedule CG differently and the item codes are read off the form. ──────
+  const hasBusiness = b.spec.trades > 0 || b.fno.trades > 0;
+  const hasCg = (["stcg111A", "stcgOther", "ltcg112A", "ltcg112", "cgUndetermined"] as const)
+    .some((k) => b.cg[k].trades > 0);
+  const itrForm: ItrForm = hasBusiness ? "ITR-3" : "ITR-2";
+  const codes = itrCgCodes(itrForm, fy);
+  const ay = assessmentYearFor(fy);
+
+  // ── Schedule CG · short-term u/s 111A ─────────────────────────────────────
+  if (b.cg.stcg111A.trades > 0) {
     lines.push(
-      { schedule: "Schedule CG", code: "A3", label: "STCG on equity shares/units where STT is paid (u/s 111A)", amount: null },
-      { schedule: "Schedule CG", code: "A3(a)", label: "Full value of consideration", amount: b.st.consideration },
-      { schedule: "Schedule CG", code: "A3(b)(i)", label: "Cost of acquisition without indexation", amount: b.st.cost },
-      { schedule: "Schedule CG", code: "A3(b)(ii)", label: "Cost of improvement", amount: 0, note: "Not applicable to listed securities." },
-      {
-        schedule: "Schedule CG",
-        code: "A3(b)(iii)",
-        label: "Expenditure wholly and exclusively in connection with transfer",
-        amount: b.st.expenditure,
-        note: `Excludes STT of ₹${b.st.stt.toLocaleString("en-IN")} — not allowable against capital gains (proviso to S.48).`,
-      },
-      { schedule: "Schedule CG", code: "A3(c)", label: "Balance (a − b) — short-term capital gain", amount: balance },
+      ...cgBlock(codes.stcg111A, `STCG on equity shares/units where STT is paid (u/s ${section(fy, "stcgEquity")})`, b.cg.stcg111A, {}),
     );
   }
 
-  // ── Schedule CG · B4 — LTCG u/s 112A ──────────────────────────────────────
-  if (b.lt.trades > 0) {
-    const before = r2(b.lt.consideration - b.lt.cost - b.lt.expenditure);
-    const exemption = before > 0 ? r2(Math.min(before, rates.ltcgExemption)) : 0;
+  // ── Schedule CG · slab-rate short-term (ordinary unit, or s.50AA-deemed) ──
+  if (b.cg.stcgOther.trades > 0) {
     lines.push(
-      { schedule: "Schedule CG", code: "B4", label: "LTCG on equity shares/units where STT is paid (u/s 112A)", amount: null },
-      { schedule: "Schedule CG", code: "B4(a)", label: "Full value of consideration", amount: b.lt.consideration },
+      ...cgBlock(null, `Short-term capital gain taxed at SLAB rates — a non-equity-oriented unit, or one deemed short-term by ${section(fy, "stcgDeemedSmf")}`, b.cg.stcgOther, {}),
       {
         schedule: "Schedule CG",
-        code: "B4(b)(i)",
-        label: "Cost of acquisition without indexation",
-        amount: b.lt.cost,
-        note: b.lt.grandfatheredLots > 0
-          ? `${b.lt.grandfatheredLots} lot(s) use the 31-Jan-2018 grandfathered cost.`
-          : undefined,
+        code: "",
+        label: "Tax on the row above",
+        amount: null,
+        note: "Blank on purpose: it is taxed at your personal slab rate, which this journal does not know. The AMOUNT is complete; only the tax is missing.",
       },
-      {
-        schedule: "Schedule CG",
-        code: "B4(b)(iii)",
-        label: "Expenditure wholly and exclusively in connection with transfer",
-        amount: b.lt.expenditure,
-        note: `Excludes STT of ₹${b.lt.stt.toLocaleString("en-IN")} — not allowable against capital gains (proviso to S.48).`,
-      },
-      { schedule: "Schedule CG", code: "B4(c)", label: "Long-term capital gain before exemption", amount: before },
-      {
-        schedule: "Schedule CG",
-        code: "B4(d)",
-        label: `Deduction u/s ${section(fy, "ltcgEquity")} (exemption threshold ₹${rates.ltcgExemption.toLocaleString("en-IN")})`,
-        amount: exemption,
-        note: "FY-level exemption across ALL your 112A gains — if you hold equity outside this journal, the threshold is shared.",
-      },
-      { schedule: "Schedule CG", code: "B4(e)", label: "Net long-term capital gain (c − d)", amount: r2(before - exemption) },
     );
+  }
+
+  // ── Schedule CG · long-term u/s 112A ──────────────────────────────────────
+  if (b.cg.ltcg112A.trades > 0) {
+    const head = b.cg.ltcg112A.head;
+    const exemption = head?.exemption ?? rates.ltcgExemption;
+    const exempt1038 = head?.head === "ltcgExempt1038";
+    lines.push(
+      ...cgBlock(
+        exempt1038 ? null : codes.ltcg112A,
+        exempt1038
+          ? `Long-term capital gain EXEMPT under ${section(fy, "ltcgExempt1038")} (STT-paid equity, transfers up to 31-3-2018)`
+          : `LTCG on equity shares/units where STT is paid (u/s ${section(fy, "ltcgEquity")})`,
+        b.cg.ltcg112A,
+        exempt1038
+          ? {}
+          : { exemption, exemptionLabel: `Deduction u/s ${section(fy, "ltcgEquity")} (exemption threshold ₹${exemption.toLocaleString("en-IN")})` },
+      ),
+    );
+  }
+
+  // ── Schedule CG · long-term u/s 112 — a non-equity-oriented unit ──────────
+  if (b.cg.ltcg112.trades > 0) {
+    const head = b.cg.ltcg112.head;
+    lines.push(
+      ...cgBlock(codes.ltcg112, `LTCG on a unit that is NOT equity-oriented (u/s ${section(fy, "ltcgOther")})`, b.cg.ltcg112, {
+        indexation: !!head?.indexation,
+      }),
+    );
+  }
+
+  // ── Schedule CG · head undetermined — stated, never filed into a box ──────
+  if (b.cg.cgUndetermined.trades > 0) {
+    lines.push({
+      schedule: "Schedule CG",
+      code: "",
+      label: `${b.cg.cgUndetermined.trades} realised trade(s) whose capital-gains head this journal cannot determine`,
+      amount: null,
+      note: `Consideration ₹${b.cg.cgUndetermined.consideration.toLocaleString("en-IN")}, cost ₹${b.cg.cgUndetermined.cost.toLocaleString("en-IN")}. These are NOT written into any box: ${[...b.cg.cgUndetermined.blank].join(" ")}`,
+    });
   }
 
   // ── Schedule BP — business heads ──────────────────────────────────────────
@@ -308,10 +435,7 @@ function buildFy(
     });
   }
 
-  // ── Which form? ───────────────────────────────────────────────────────────
-  const hasBusiness = b.spec.trades > 0 || b.fno.trades > 0;
-  const hasCg = b.st.trades > 0 || b.lt.trades > 0;
-  const itrForm = hasBusiness ? "ITR-3" : "ITR-2";
+  // ── Why that form ─────────────────────────────────────────────────────────
   const formReason = hasBusiness
     ? `Intraday and/or F&O produce business income, which ITR-2 cannot carry — ITR-3 (or ITR-4 if you elect presumptive taxation) is indicated${hasCg ? ", and it also carries the capital-gains schedule" : ""}.`
     : "Only capital gains this year, with no business head — ITR-2 is indicated.";
@@ -331,9 +455,35 @@ function buildFy(
       `FY ${fy} straddles the 23-Jul-2024 rate cutover. The 112A exemption above uses the regime in force at the LAST sale of the year; gains realised on either side of the cutover carry different rates, so verify the split with your CA.`,
     );
   }
-  if (b.lt.trades > 0 && b.lt.grandfatheredLots === 0) {
+  if (b.cg.ltcg112A.trades > 0 && b.cg.ltcg112A.grandfatheredLots === 0) {
     cautions.push(
       "No lot claimed a 31-Jan-2018 grandfathered cost. If you hold equity bought before that date, enter its FMV on the Tax Summary page or the LTCG cost here is understated.",
+    );
+  }
+  if (b.cg.ltcg112A.grandfatheredLots > 0) {
+    cautions.push(
+      "On a grandfathered 112A lot, buy-side brokerage, stamp duty and their GST are treated here as part of transfer expenditure. Whether they instead form part of the cost of acquisition — and therefore interact with the 31-Jan-2018 substituted cost — is NOT verified in this release; the treatment is stated so your CA can change it.",
+    );
+  }
+  for (const key of ["stcg111A", "stcgOther", "ltcg112A", "ltcg112"] as const) {
+    const bucket = b.cg[key];
+    if (bucket.cells.size > 1) {
+      cautions.push(
+        `The ${key} block above spans more than one rate band (${[...bucket.cells].join(", ")}) — the rate changed inside FY ${fy}, so the block's own rate is an aggregate. Split it by sale date with your CA.`,
+      );
+    }
+  }
+  const notDeducted = (["stcg111A", "stcgOther", "ltcg112A", "ltcg112"] as const)
+    .reduce((s, k) => s + b.cg[k].notDeducted, 0);
+  if (notDeducted > 0) {
+    cautions.push(
+      `₹${r2(notDeducted).toLocaleString("en-IN")} of MTF interest and pledge/unpledge charges is NOT deducted anywhere in Schedule CG above. No court has held either to be expenditure incurred wholly and exclusively in connection with the transfer, and the High Courts are SPLIT on whether interest on borrowed money forms part of the cost of acquisition — there is no Supreme Court ruling. Your trade P&L elsewhere in Vyuha still nets them. The figure is a FLOOR: GST charged on those lines is not separable from the trade's single GST total.`,
+    );
+  }
+  if (hasCg && codes.notes.length > 0) cautions.push(...codes.notes);
+  if (hasCg && ay) {
+    cautions.push(
+      `Schedule CG item codes above are the ${itrForm} codes for AY ${ay}. They MOVE between years — on ITR-2, s.112A was B4 for AY 2025-26 and B3 for AY 2026-27 — so check them against the form you are actually filing.`,
     );
   }
   if (hasCg) {

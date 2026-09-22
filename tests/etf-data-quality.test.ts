@@ -3,9 +3,11 @@ import {
   assessDataQuality,
   etfClassSymbols,
   etfClassUndetermined,
+  codedSymbolNoIsin,
   type QualityInputs,
   type QualityTrade,
 } from "@/lib/analytics/data-quality";
+import { assetClassFor, resolveCgHead } from "@/lib/analytics/cg-heads";
 
 /**
  * v4.5.0 wave 3a — "ETF class undetermined" (dossier §F.2, ruling Q4(a)).
@@ -160,5 +162,65 @@ describe("the issue the report raises", () => {
     );
     expect(etfClassUndetermined(options)).toEqual([]);
     expect(find(inputs({ trades: options, knownSymbols: new Set(["NIFTY"]) }))).toBeUndefined();
+  });
+});
+
+/**
+ * P3 (v4.5.0 wave 3b) — a BARE NUMERIC SCRIP CODE with no ISIN.
+ *
+ * `isCodedSymbol` has recognised the shape since the Paytm work; what changed
+ * is what it MEANS for tax. The resolution chain deliberately KEEPS a code it
+ * cannot resolve (a trade you can see is worth more than one silently
+ * discarded), but a kept code is NOT evidence that an equity share was traded —
+ * and until this release every tax surface treated it as one and taxed it at
+ * S.111A/S.112A on nothing at all. `assetClassFor` now answers `undetermined`,
+ * which blanks the head, and this card names the code so the user can settle it.
+ */
+describe("codedSymbolNoIsin — P3, a numeric scrip code with no ISIN", () => {
+  const find = (i: QualityInputs) => assessDataQuality(i).issues.find((x) => x.code === "coded_symbol_no_isin");
+
+  it("fires on the three equity segments and never on F&O", () => {
+    for (const segment of EQ_SEGMENTS) {
+      expect(codedSymbolNoIsin([trade({ symbol: "532540", isin: null, segment })]), segment).toHaveLength(1);
+    }
+    // An F&O row is business income whatever its symbol looks like.
+    for (const segment of ["index_option", "stock_option", "future", "commodity_future", "commodity_option"]) {
+      expect(codedSymbolNoIsin([trade({ symbol: "532540", isin: null, segment })]), segment).toEqual([]);
+    }
+  });
+
+  it("does NOT fire once the row states an ISIN — that is the fix the user applies", () => {
+    expect(codedSymbolNoIsin([trade({ symbol: "532540", isin: "INE467B01029" })])).toEqual([]);
+    // …nor for an ordinary ticker, which is the overwhelming majority of a book.
+    expect(codedSymbolNoIsin([trade({ symbol: "TCS", isin: null })])).toEqual([]);
+    // A code with letters in it is not a bare numeric code.
+    expect(codedSymbolNoIsin([trade({ symbol: "532540A", isin: null })])).toEqual([]);
+  });
+
+  it("names the codes and states the CONSEQUENCE, not just the gap", () => {
+    const issue = find(inputs({
+      trades: [
+        trade({ id: 1, symbol: "532540", isin: null }),
+        trade({ id: 2, symbol: "500325", isin: null }),
+        trade({ id: 3, symbol: "TCS", isin: "INE467B01029" }),
+      ],
+      knownSymbols: new Set(["532540", "500325", "TCS"]),
+    }));
+    expect(issue?.count).toBe(2);
+    expect(issue?.ids).toEqual([1, 2]);
+    expect(issue?.detail).toContain("500325, 532540");
+    expect(issue?.detail).toMatch(/BLANK rather than assumed to be an equity share/);
+    expect(issue?.severity).toBe("warning");
+  });
+
+  it("is absent entirely from a book with no coded symbols", () => {
+    expect(find(inputs({ trades: [trade({ symbol: "TCS", isin: "INE467B01029" })] }))).toBeUndefined();
+    expect(find(inputs())).toBeUndefined();
+  });
+
+  it("the head really is blank for exactly that shape (the DQ card and the tax head agree)", () => {
+    expect(assetClassFor({ segment: "eq_delivery", symbol: "532540", isin: null })).toBe("undetermined");
+    expect(resolveCgHead({ assetClass: "undetermined", acquiredOn: "2025-01-01", transferredOn: "2025-06-01" }).head).toBe("undetermined");
+    expect(assetClassFor({ segment: "eq_delivery", symbol: "532540", isin: "INE467B01029" })).toBe("share");
   });
 });

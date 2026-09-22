@@ -56,6 +56,20 @@ export type SectionKey =
   | "derivativeCarveOut"
   | "stcgEquity"
   | "ltcgEquity"
+  // v4.5.0 — the heads the segment-driven code never had a name for. See
+  // lib/analytics/cg-heads.ts: a gold/debt ETF is not an equity-oriented fund
+  // and was being cited under S.111A/S.112A on no authority at all.
+  /** S.50AA deeming for a Specified Mutual Fund unit acquired on/after 1-4-2023. */
+  | "stcgDeemedSmf"
+  /** Long-term on a NON-equity-oriented unit — S.112, now s.197. */
+  | "ltcgOther"
+  /** The S.10(38) exemption, which governed every long-term STT-paid equity gain
+   *  from 1-10-2004 to 31-3-2018. It has no counterpart in the 2025 Act. */
+  | "ltcgExempt1038"
+  /** The holding-period definition itself — S.2(42A), now s.2(101). */
+  | "holdingPeriod"
+  /** What makes a fund "equity-oriented" — S.112A Explanation (a), now s.198(8). */
+  | "equityOrientedFund"
   | "grandfather"
   | "cgComputation"
   | "sttNotDeductibleCg"
@@ -104,6 +118,11 @@ const ITA_1961: Statute = {
     derivativeCarveOut: "S.43(5) proviso (d)",
     stcgEquity: "S.111A",
     ltcgEquity: "S.112A",
+    stcgDeemedSmf: "S.50AA",
+    ltcgOther: "S.112",
+    ltcgExempt1038: "S.10(38)",
+    holdingPeriod: "S.2(42A)",
+    equityOrientedFund: "S.112A Expl. (a)",
     grandfather: "S.55(2)(ac)",
     cgComputation: "S.48",
     sttNotDeductibleCg: "proviso to S.48",
@@ -140,6 +159,15 @@ const ITA_2025: Statute = {
     derivativeCarveOut: "s.66(33)",
     stcgEquity: "s.196",
     ltcgEquity: "s.198",
+    stcgDeemedSmf: "s.76",
+    ltcgOther: "s.197",
+    // The S.10(38) exemption was withdrawn by the Finance Act 2018 and has no
+    // counterpart in the 2025 Act. This string is unreachable through
+    // `resolveCgHead` (the E-EX1038 cell closes on 31-3-2018, eight years before
+    // this Act commenced) and exists only because the table is total.
+    ltcgExempt1038: "— (the S.10(38) exemption was withdrawn from 1-4-2018)",
+    holdingPeriod: "s.2(101)",
+    equityOrientedFund: "s.198(8)",
     grandfather: "s.90",
     cgComputation: "s.72",
     sttNotDeductibleCg: "s.72(3)(b)",

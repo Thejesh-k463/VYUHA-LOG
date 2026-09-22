@@ -5,7 +5,8 @@ import { AdvanceTaxCalc } from "@/components/reports/advance-tax-calc";
 import { ChallanEditor, type ChallanEditorRow } from "@/components/reports/challan-editor";
 import { getHarvestTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
-import { classifyGain } from "@/lib/analytics/capital-gains";
+import { classifyGain, MTF_NOT_DEDUCTED_NOTE } from "@/lib/analytics/capital-gains";
+import { assetClassFor, heldMoreThanMonths, holdingMonthsFor } from "@/lib/analytics/cg-heads";
 import { getSettings } from "@/lib/queries/settings";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
 import { computeAdvanceTax } from "@/lib/analytics/advance-tax";
@@ -14,15 +15,15 @@ import { advanceTaxFyWindow, challanTotalsByFy, findDuplicateChallan, getChallan
 import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
 import { needsPersonChoice, resolveTaxScope } from "@/lib/queries/tax-scope";
 import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, inr } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
 // Mirrors /reports/harvest: capital-gains harvesting is equity delivery only.
 const EQUITY_SEGMENTS = new Set(["eq_delivery", "eq_mtf"]);
-const daysHeld = (a: string | null, b: string) =>
-  a ? Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000) : 0;
+// The 365-day `daysHeld` helper that stood here is DELETED: the holding period
+// is a calendar-month rule with one home, lib/analytics/cg-heads.ts.
 
 export default async function AdvanceTaxPage({
   searchParams,
@@ -82,7 +83,10 @@ export default async function AdvanceTaxPage({
     .map((t) => {
       const qty = Math.max(t.buyQty - t.sellQty, 0) || t.buyQty;
       const price = mtm.get(t.symbol.toUpperCase()) ?? t.closingPrice ?? t.avgBuyPrice;
-      const term = daysHeld(t.buyDate, today) >= 365 ? "LT" : "ST";
+      // v4.5.0 — calendar months, and the class-aware holding period. Kept
+      // byte-identical to /reports/harvest so the two pages cannot disagree.
+      const assetClass = assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol });
+      const term = heldMoreThanMonths(t.buyDate, today, holdingMonthsFor(assetClass, today)) ? "LT" : "ST";
       return { id: t.id, symbol: t.symbol, qty, entry: t.avgBuyPrice, mtm: price, term, unrealised: (price - t.avgBuyPrice) * qty };
     });
 
@@ -90,10 +94,16 @@ export default async function AdvanceTaxPage({
   // the 31-Jan-2018 grandfathering path — so the two pages state one figure.
   let realisedStcg = 0;
   let realisedLtcg = 0;
+  /** Realised this FY with NO determinable head — excluded from both, stated. */
+  let realisedUndetermined = 0;
   for (const t of trades) {
     if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
     const g = classifyGain({
       segment: t.segment,
+      assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
+      sttCtt: t.sttCtt,
+      mtfInterest: t.mtfInterest,
+      pledgeCharges: t.pledgeCharges,
       buyDate: t.buyDate,
       sellDate: t.sellDate,
       buyValue: t.buyValue,
@@ -103,8 +113,9 @@ export default async function AdvanceTaxPage({
       // scaling as tax-itr.ts and /reports/harvest.
       fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
     });
-    if (g?.bucket === "ltcg") realisedLtcg += g.taxableGain;
-    else if (g?.bucket === "stcg") realisedStcg += g.taxableGain;
+    if (g?.bucket === "ltcg112A" || g?.bucket === "ltcg112") realisedLtcg += g.taxableGain;
+    else if (g?.bucket === "stcg111A" || g?.bucket === "stcgOther") realisedStcg += g.taxableGain;
+    else if (g?.bucket === "cgUndetermined") realisedUndetermined += g.taxableGain;
   }
 
   const harvest = computeHarvest(lots, realisedStcg, realisedLtcg, today, fyEnd);
@@ -198,6 +209,18 @@ export default async function AdvanceTaxPage({
                   maxDate={fyWindowEnd < today ? fyWindowEnd : today}
                 />
               </CardContent>
+              {/* The second-pass rulings, stated where the realised figures
+                  that feed the estimate are read. */}
+              <div className="space-y-2 border-t p-4 text-[0.6875rem] text-muted-foreground">
+                <p>{MTF_NOT_DEDUCTED_NOTE}</p>
+                {realisedUndetermined !== 0 && (
+                  <p className="text-warning">
+                    {inr(realisedUndetermined, { decimals: 0 })} of gain realised this FY has NO capital-gains head
+                    this journal can determine and is excluded from the realised figures the estimate uses. Fix the
+                    symbol or ISIN — see Data Quality.
+                  </p>
+                )}
+              </div>
             </Card>
           }
         />

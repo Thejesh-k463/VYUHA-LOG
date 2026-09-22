@@ -9,7 +9,19 @@ import { STALE_CLOSE_NOTE } from "@/lib/import/close-open-lots";
 import * as crossSource from "@/lib/import/cross-source";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
-import { taxByFy } from "@/lib/analytics/tax";
+import { taxByFy, type TaxTrade } from "@/lib/analytics/tax";
+import { assetClassFor } from "@/lib/analytics/cg-heads";
+
+/**
+ * v4.5.0 — `TaxTrade.assetClass` is REQUIRED and never defaulted, so a journal
+ * row has to be resolved through `assetClassFor()` before it reaches a head,
+ * exactly as `getTaxBase` does it (lib/queries/tax-itr.ts). A literal "share"
+ * here would re-create the bug the wave removed: a gold/debt ETF taxed at
+ * S.111A/S.112A. Every fixture below trades ordinary shares, and this resolves
+ * to `"share"` for them from the row's own ISIN and symbol.
+ */
+const taxRowsOf = (rows: readonly { segment: string; isin?: string | null; symbol?: string | null }[]): TaxTrade[] =>
+  rows.map((r) => ({ ...(r as unknown as TaxTrade), assetClass: assetClassFor(r) }));
 
 /**
  * v4.3.0 FIX WAVE 2H — THE SEAMS OF A SIX-BUILDER WAVE.
@@ -781,7 +793,7 @@ describe("E-b · the sale a Data Quality join consumed, back from Deleted items 
     expect((await trashList()).some((s) => s.id === lotSnap.id), "the refused snapshot stays listed").toBe(true);
     expect(rowsOf(B3_ACC).map((r) => [r.id, r.isOpen, r.buyQty, r.sellQty, r.sellValue, r.grossPnl])).toEqual([[L2.id, false, 100, 100, 25000, 4000]]);
     selectAccount(B3_ACC);
-    expect(taxByFy(tradeQueries.getJournalTrades()).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2026-27", 1, row(L2.id)!.netPnl]]);
+    expect(taxByFy(taxRowsOf(tradeQueries.getJournalTrades())).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2026-27", 1, row(L2.id)!.netPnl]]);
     expect(dqCard(B3_ACC)).toEqual({ pairs: [], sales: 0, buttons: 0 });
   });
 
@@ -805,7 +817,7 @@ describe("E-b · the sale a Data Quality join consumed, back from Deleted items 
       [L2, true, 100, 0, 0, 0],
     ]);
     selectAccount(B3_ACC);
-    expect(taxByFy(tradeQueries.getJournalTrades()).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2026-27", 1, row(L1)!.netPnl]]);
+    expect(taxByFy(taxRowsOf(tradeQueries.getJournalTrades())).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2026-27", 1, row(L1)!.netPnl]]);
     expect(dqCard(B3_ACC)).toEqual({ pairs: [], sales: 0, buttons: 0 });
     // The SALE direction of the same rule (the re-run 3 seam defect) is V1's, below.
   });
@@ -850,7 +862,7 @@ describe("E-b · the sale a Data Quality join consumed, back from Deleted items 
     expect([rejoined.status, rejoined.json.ok], rejoined.json.message).toEqual([200, true]);
     expect(rowsOf(B4_ACC).map((r) => [r.id, r.isOpen, r.buyQty, r.sellQty, r.sellValue, r.grossPnl])).toEqual([[L, false, 100, 100, 25000, 5000]]);
     selectAccount(B4_ACC);
-    expect(taxByFy(tradeQueries.getJournalTrades()).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2026-27", 1, row(L)!.netPnl]]);
+    expect(taxByFy(taxRowsOf(tradeQueries.getJournalTrades())).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2026-27", 1, row(L)!.netPnl]]);
     // Closed on the sale again, the lot records it again: the preview dedupes the fill.
     expect(importer.previewParsedFile(saleFile(SYM), null, B4_ACC).summary.dupCount).toBe(1);
   });
@@ -881,7 +893,7 @@ describe("E-c · a partly closed position closed from the Trades dialog and from
     const L = commitFill(C_LONG, "SEAMC", "BUY", 100, 200, "2026-03-02");
     const part = await actions.updateTradeAction(NO_STATE, editorForm(C_LONG, L.id, { sellQty: "60", avgSellPrice: "250", sellDate: "2026-03-20" }));
     expect(part.ok, part.message).toBe(true);
-    expect(taxByFy(tradeQueries.getJournalTrades()), "an open row realises nothing in the tax report").toEqual([]);
+    expect(taxByFy(taxRowsOf(tradeQueries.getJournalTrades())), "an open row realises nothing in the tax report").toEqual([]);
 
     freezeAt("2026-03-31T19:00:00.000Z"); // 2026-04-01 00:30 IST
     const { fd, html } = closeDialogForm(C_LONG, L.id, "255");
@@ -905,8 +917,11 @@ describe("E-c · a partly closed position closed from the Trades dialog and from
     expect(shown).toEqual([5200, 64.45, 5135.55]);
     expect([stats.count, stats.open, stats.gross, stats.net, stats.charges]).toEqual([1, 0, 5200, r.netPnl, r.chargesTotal]);
     expect(stats.net).toBe(Math.round((5200 - r.chargesTotal) * 100) / 100);
-    const fy = taxByFy(journal);
-    expect(fy.map((s) => [s.fy, s.stcg, s.totalRealised, s.trades])).toEqual([["2026-27", r.netPnl, r.netPnl, 1]]);
+    const fy = taxByFy(taxRowsOf(journal));
+    // v4.5.0: `stcg` is gone from FySummary. This row is an equity SHARE bought
+    // and sold inside one month, so it is s.111A short-term, and it carries no
+    // STT/MTF field in this fixture — the figure is unchanged at r.netPnl.
+    expect(fy.map((s) => [s.fy, s.stcg111A, s.totalRealised, s.trades])).toEqual([["2026-27", r.netPnl, r.netPnl, 1]]);
   });
 
   it("short mirror: sold 100 @250, the editor covers 60 @200, the risk cockpit's close route covers the rest @195 — buy 100 for 19,800, gross +5,200, no second row", async () => {
@@ -1583,7 +1598,7 @@ describe("E-f · an IPO whose stored exit date cannot be read, edited from /ipos
     const sold = row(tradeId)!;
     expect([sold.isOpen, sold.sellDate, sold.sellQty, sold.sellValue, sold.grossPnl]).toEqual([false, "2026-03-02", 10, 1500, 500]);
     selectAccount(F_ACC);
-    expect(taxByFy(tradeQueries.getJournalTrades()).map((s) => [s.fy, s.trades])).toEqual([["2025-26", 1]]);
+    expect(taxByFy(taxRowsOf(tradeQueries.getJournalTrades())).map((s) => [s.fy, s.trades])).toEqual([["2025-26", 1]]);
   });
 
   it("T3 · allotted, SOLD and linked — a pre-4.3.0 sync closed the holding on the unreadable '2026-02-30': the notice says the date is kept, a notes-only save answers 200 and moves nothing; the field typed then cleared is refused, a typed date sells on it", async () => {
@@ -1714,7 +1729,7 @@ describe("E-f · an IPO whose stored exit date cannot be read, edited from /ipos
     expect([stored("SEAMIPOV").notes, stored("SEAMIPOV").exitPrice, stored("SEAMIPOV").exitDate]).toEqual(["unsold, noted", null, null]);
     expect(holding(), "the holding's own sale, as the Trades editor stored it").toEqual(soldBook);
     selectAccount(F2_ACC);
-    expect(taxByFy(tradeQueries.getJournalTrades()).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2025-26", 1, soldBook[5]]]);
+    expect(taxByFy(taxRowsOf(tradeQueries.getJournalTrades())).map((s) => [s.fy, s.trades, s.totalRealised])).toEqual([["2025-26", 1, soldBook[5]]]);
     expect(textOf(formHtml(page("SEAMIPOV", F2_ACC)))).not.toContain("could not be read");
     // The re-run 4 seam defects (V2's kept sell leg over a partial sale and over a
     // corrected quantity; an /ipos exit cleared over the holding it closed) are X1's,
@@ -1727,7 +1742,7 @@ describe("E-f · an IPO whose stored exit date cannot be read, edited from /ipos
     selectAccount(accountId);
     const all = tradeQueries.getJournalTrades();
     const k = tradeQueries.tradeStatsOf(all);
-    return { kpi: [k.count, k.open, k.gross, k.charges, k.net], fy: taxByFy(all).map((s) => [s.fy, s.trades, s.totalRealised]) };
+    return { kpi: [k.count, k.open, k.gross, k.charges, k.net], fy: taxByFy(taxRowsOf(all)).map((s) => [s.fy, s.trades, s.totalRealised]) };
   };
   const refusedSold = { ok: false, message: "The linked holding has a sale recorded in Trades. Change its quantity or prices there, or remove the sale first. Nothing was saved." };
 
@@ -1992,7 +2007,7 @@ describe("E-f · an IPO whose stored exit date cannot be read, edited from /ipos
     const base = taxItr.getTaxBase();
     expect([base.exitedIpos.length, base.ipoTaxRows.length, base.cgTrades.map((c) => c.netPnl)]).toEqual([0, 0, [h.netPnl]]);
     expect(taxItr.getItrExportRows().map((r) => r.scrip)).toEqual(["SEAMIPOT"]);
-    expect(taxByFy([...base.trades, ...base.ipoTaxRows]).map((f) => [f.fy, f.trades, f.totalRealised])).toEqual([["2025-26", 1, h.netPnl]]);
+    expect(taxByFy([...base.taxRows, ...base.ipoTaxRows]).map((f) => [f.fy, f.trades, f.totalRealised])).toEqual([["2025-26", 1, h.netPnl]]);
 
     const aisRoute = await import("@/app/api/ais/route");
     const res = await aisRoute.POST(json("/api/ais", { text: "nothing to parse" }));

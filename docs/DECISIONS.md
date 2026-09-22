@@ -8393,3 +8393,59 @@ owes nothing — the size of the defect the one-line fix closed. Seed-shape pins
 keys 130 → 170, rows 620 → 700, planted-state 230 → 270 / 490 → 530, refresh counts +40 / +30 — each derived from the 80 rows.
 Account #3's 42 option rows are on no equity segment: `etfClassUndetermined` returns [] and `index_option` rates are identical with
 and without the etf rows.
+
+## 2026-09-22 — v4.5.0 wave 3b-i: capital-gains heads by transfer date, calendar months, P3 + P4, the second-pass rulings
+
+**One head resolver (invariant 2).** `lib/analytics/cg-heads.ts` `resolveCgHead(input)` is the ONLY place a capital-gains head, cell,
+rate, exemption or term is derived; `CapitalGainsTrade.assetClass` is REQUIRED, never defaulted — a default of `share` would
+silently recreate the bug in any caller that forgets it, and `tsc` found every re-derivation (seven readers re-routed:
+`classifyGain` / `aggregateTradesByFy` / `computeFySetOff` / `computeTaxTimeline`, `taxByFy`, `itrPackByFy`, `monthlyByHead`,
+`itrScheduleByFy`, `getTaxBase`, the four report pages). `stcg` / `ltcg` were REMOVED from the per-FY AND per-month shapes for the
+five buckets `stcg111A / stcgOther / ltcg112A / ltcg112 / cgUndetermined` (the per-month `MonthHeadRow` was not in the design's
+list but sits on the same page — one "STCG" column there would re-merge the heads). Every epoch constant sits in one place, ISO
+string comparison, each citing its primary-source file in `_data/etf-tax-primary-sources-2026-09-15/`; a citation to a missing
+file is a red test. **The bands, by TRANSFER date:** before 2004-10-01 slab / s.112 (tax BLANK — no CII); 2004-10-01..2008-03-31
+s.111A **10 %** (FA (No.2) 2004 s.26) / s.10(38) exempt; 2008-04-01..2017-03-31 15 % (FA 2008 s.21) / exempt; 2017-04-01..
+2018-03-31 15 % / share-LT **BLANK** (the FA 2017 s.10(38) proviso is NOT VERIFIED; an EOF unit stays exempt); 2018-04-01..
+2024-07-22 15 % / s.112A 10 % above ₹1 L; 2024-07-23..2026-03-31 **20 %** / 12.5 % above ₹1.25 L (FA (No.2) 2024); from 2026-04-01
+s.196 20 % / s.198 12.5 % (ITA 2025). Units: s.50AA deemed-ST (debt from 2023-04-01; gold/global only to 2025-03-31), s.112
+indexed with rate AND amount BLANK (no CII, and no pre-2024 s.112 rate in the folder), 12.5 % no indexation from 2024-07-23,
+s.197 rate BLANK (the captured Act text states none).
+
+**Design corrections, decided in the wave.** (1) `CgHeadKind` could not express the cell the design mandated: a long-term
+STT-paid equity gain 2004-10-01..2018-03-31 is EXEMPT under s.10(38) — neither `ltcg112A` (did not exist) nor `undetermined` (it is
+determined) — so `ltcgExempt1038` joined the enum and `statute.ts` (S.10(38), withdrawn from 2018-04-01). (2) "MTF interest +
+pledge charges + THEIR GST come out of every CG figure" is not computable in a pure module: `gst_paise` is ONE column over
+brokerage + exchange + SEBI + IPFT + DP + pledge, and splitting it needs a rate that only `charge_config` may supply (invariant 3).
+The add-back is `mtfInterest + pledgeCharges` exactly, every note states the figure is a FLOOR with the GST half still netted —
+not fabricating 18 % is the invariant-6 answer. (3) The grandfathering epoch moved 2018-01-31 → **2018-02-01**: "acquired before
+the 1st day of February, 2018" makes a 31-Jan-2018 lot ELIGIBLE. (4) `itr-schedule.ts` decides the form BEFORE Schedule CG — the
+codes are form-keyed.
+
+**Calendar months (owner ruling, wave-3 row 2).** ONE `heldMoreThanMonths(acquired, transferred, n)`: long-term only when the
+transfer is AFTER the same calendar date n months on (12 for a share / EOF unit at every date; 36 for a listed non-EOF unit
+transferred 2014-07-11..2024-07-22; 12 again from 2024-07-23), day clamped to the target month; `classifyTerm` is a wrapper; the
+365-day copies in `capital-gains.ts`, `tax.ts`, `itr.ts`, `monthly.ts` and two pages' `daysHeld` helpers were DELETED. A sale
+exactly 365 days after the buy is SHORT-TERM; 2023-03-01 → 2024-02-29 is ST (the 365-day rule said LT). This moves the ST/LT
+boundary by up to two days for every equity trade — release-noted, per the ruling. `tax-levers.ts`'s forward-looking
+`LONG_TERM_DAYS = 365` ("days to the 12-month line" on open lots) was left and can disagree by two days at the boundary → fix list.
+
+**ITR codes by (form, AY)** — `lib/analytics/itr-cg-codes.ts`: ITR-2 AY 2025-26 A2 / B4 / B9; AY 2026-27 A2 / **B3 / B8**; ITR-3 A3;
+anything else BLANK with a named reason. VYUHA had emitted A3 for s.111A on ITR-2 — wrong. **P3:** a BSE numeric scrip code with no
+ISIN → head UNDETERMINED (blank) + Data Quality `coded_symbol_no_isin` naming the code. **P4:** the s.111A rate comes from the band
+table; `capitalGainsRatesFor` is re-implemented on top of it so a report's rate and a head's rate cannot diverge, with
+`stcgBlank` / `ltcgBlank` flags where a band has no citable rate. **STT** is added back in the capital-gains buckets ONLY (s.48
+proviso; the speculative and F&O branches are byte-identical). `taxDue` is null for a year holding any slab bucket, any
+undetermined row, or an s.112 row whose indexed figure is null; per-bucket amounts still show with the missing input named. **Gaps,
+by owner ruling (T2, T3):** CII absent → indexation blank, the input named; the set-off ORDER across the 111A and slab buckets is
+UNVERIFIED (ITR-2 rule 164 in the folder, unread) → NO cap-gains total for such a year. **Found in the wave:** `lib/analytics/ipo.ts`
+ignored the new blank flags and would print ₹0 of tax for a pre-2004 exit — fixed in the test pass; an IPO exited long-term in
+2010–2018 now shows 0 % (s.10(38)), where it showed 10 % — correct, and a visible change. `app/api/ais/route.ts`'s `!isOpen` filter
+is P1's (3b-ii). **A regression the tests caught:** the generic `cgBlock` that replaced two hand-written Schedule CG blocks
+dropped their "(b)(ii) Cost of improvement = 0" line — deliberately 0, NOT blank (a listed security cannot carry one; invariant
+6 forbids inventing a figure, not stating a known one) — restored and pinned as an amount so a future "blank everything
+underived" sweep cannot swallow it. **Measured:** the ITR-2 fixture year had to move to FY 2025-26 — for an AY whose schema was not
+read, every code is blank BY DESIGN, and a fixture on such a year pins nothing. Tests: `tests/cg-heads.test.ts` (50: the 26-row
+matrix, the calendar-month pins, a citation guard that `existsSync`-checks every primary-source file the epoch comments name),
+`tests/tax-heads-readonly.test.ts` (a full report render writes no stored column); 12 files re-pinned with the arithmetic shown. Account #3's 42 option rows are `nonSpeculative` and never enter the delivery branch: ₹75,132.75 unchanged, no
+stored column written by this wave.

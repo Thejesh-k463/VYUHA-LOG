@@ -31,12 +31,15 @@ import {
   turnoverContribution,
 } from "./turnover";
 import { section, STATUTE_CUTOVER_FY } from "./statute";
+import { bucketFor, resolveCgHead, type CgAssetClass } from "./cg-heads";
 import { currentFy } from "./tax";
 
 export { TURNOVER_BASIS, BROKER_TURNOVER_BASIS };
 
 export interface ItrTrade {
   segment: string;
+  /** REQUIRED from v4.5.0 — see `CapitalGainsTrade.assetClass`. */
+  assetClass: CgAssetClass;
   buyDate: string | null;
   sellDate: string | null;
   grossPnl: number;
@@ -44,6 +47,11 @@ export interface ItrTrade {
   /** Sell-side consideration — the option premium half of turnover. Required. */
   sellValue: number;
   chargesTotal: number;
+  /** Added back in the capital-gains buckets only — proviso to S.48. */
+  sttCtt?: number;
+  /** Added back in the capital-gains buckets only (dossier §G2). */
+  mtfInterest?: number;
+  pledgeCharges?: number;
   isOpen: boolean;
 }
 
@@ -60,9 +68,17 @@ export interface HeadSummary {
 
 export interface CapitalGainsSummary {
   trades: number;
-  stcg: number;
-  ltcg: number;
+  // v4.5.0 — the five heads, never one "STCG"/"LTCG" pair. See `FyGrossGains`.
+  stcg111A: number;
+  stcgOther: number;
+  ltcg112A: number;
+  ltcg112: number;
+  cgUndetermined: number;
   charges: number;
+  /** ₹ of MTF interest + pledge charges NOT deducted from the buckets above. */
+  notDeductedMtf: number;
+  /** ₹ of STT added back into the buckets above. */
+  sttAddedBack: number;
 }
 
 export type AuditLevel = "audit-required" | "audit-unlikely" | "no-business-income";
@@ -104,8 +120,8 @@ function fyOf(dateStr: string | null, fyStartMonth: number, fallback: string): s
   return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 }
 
-const isLongTerm = (buy: string | null, sell: string | null) =>
-  !!buy && !!sell && (new Date(sell).getTime() - new Date(buy).getTime()) / 86400000 >= 365;
+// The 365-day `isLongTerm` copy that stood here is DELETED, not adjusted — the
+// holding period is a calendar-month rule with ONE home, lib/analytics/cg-heads.ts.
 
 function emptyHead(): HeadSummary {
   return { trades: 0, net: 0, gross: 0, turnover: 0, turnoverBroker: 0, charges: 0 };
@@ -168,7 +184,14 @@ export function itrPackByFy(
   for (const t of trades) {
     if (t.isOpen) continue;
     const fy = fyOf(t.sellDate ?? t.buyDate, fyStartMonth, fallbackFy);
-    const b = map.get(fy) ?? { spec: emptyHead(), fno: emptyHead(), cg: { trades: 0, stcg: 0, ltcg: 0, charges: 0 } };
+    const b = map.get(fy) ?? {
+      spec: emptyHead(),
+      fno: emptyHead(),
+      cg: {
+        trades: 0, stcg111A: 0, stcgOther: 0, ltcg112A: 0, ltcg112: 0, cgUndetermined: 0,
+        charges: 0, notDeductedMtf: 0, sttAddedBack: 0,
+      } as CapitalGainsSummary,
+    };
     if (t.segment === "eq_intraday") {
       b.spec.trades++;
       b.spec.net = r2(b.spec.net + t.netPnl);
@@ -185,8 +208,13 @@ export function itrPackByFy(
       b.fno.charges = r2(b.fno.charges + t.chargesTotal);
     } else if (DELIVERY.has(t.segment)) {
       b.cg.trades++;
-      if (isLongTerm(t.buyDate, t.sellDate)) b.cg.ltcg = r2(b.cg.ltcg + t.netPnl);
-      else b.cg.stcg = r2(b.cg.stcg + t.netPnl);
+      const head = resolveCgHead({ assetClass: t.assetClass, acquiredOn: t.buyDate, transferredOn: t.sellDate });
+      const addBackStt = Math.max(0, t.sttCtt ?? 0);
+      const addBackMtf = Math.max(0, t.mtfInterest ?? 0) + Math.max(0, t.pledgeCharges ?? 0);
+      const key = bucketFor(head.head);
+      b.cg[key] = r2(b.cg[key] + t.netPnl + addBackStt + addBackMtf);
+      b.cg.sttAddedBack = r2(b.cg.sttAddedBack + addBackStt);
+      b.cg.notDeductedMtf = r2(b.cg.notDeductedMtf + addBackMtf);
       b.cg.charges = r2(b.cg.charges + t.chargesTotal);
     }
     map.set(fy, b);

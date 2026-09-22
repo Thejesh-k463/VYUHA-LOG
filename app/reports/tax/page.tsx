@@ -11,6 +11,8 @@ import { monthlyByHead, MONTHLY_HEAD_CAVEAT } from "@/lib/analytics/monthly";
 import {
   aggregateTradesByFy,
   computeTaxTimeline,
+  MTF_NOT_DEDUCTED_NOTE,
+  STT_ADDED_BACK_NOTE,
   RATE_CUTOVER_DATE,
   GRANDFATHER_DATE,
   type LossBucket,
@@ -45,15 +47,23 @@ function fyOf(dateStr: string, fyStartMonth: number, fallback: string): string {
 
 const COLS = [
   { key: "fy", label: "FY" }, { key: "trades", label: "Trades" },
-  { key: "stcg", label: "STCG" }, { key: "ltcg", label: "LTCG" },
+  // v4.5.0 — five capital-gains heads, never one "STCG"/"LTCG" pair. A gold ETF
+  // and an equity share are not the same column.
+  { key: "stcg111A", label: "STCG 111A" }, { key: "stcgOther", label: "STCG slab/50AA" },
+  { key: "ltcg112A", label: "LTCG 112A" }, { key: "ltcg112", label: "LTCG 112" },
+  { key: "cgUndetermined", label: "CG head undetermined" },
   { key: "intradaySpeculative", label: "Intraday speculative" },
   { key: "fnoBusiness", label: "F&O business" }, { key: "fnoTurnover", label: "F&O turnover" },
   { key: "charges", label: "Charges" }, { key: "totalRealised", label: "Net realised" },
+  { key: "sttAddedBack", label: "STT added back (CG)" },
+  { key: "notDeductedMtf", label: "MTF interest + pledge not deducted" },
 ];
 
 const MONTH_HEAD_COLS = [
   { key: "ym", label: "Month" },
-  { key: "stcg", label: "STCG" }, { key: "ltcg", label: "LTCG" },
+  { key: "stcg111A", label: "STCG 111A" }, { key: "stcgOther", label: "STCG slab/50AA" },
+  { key: "ltcg112A", label: "LTCG 112A" }, { key: "ltcg112", label: "LTCG 112" },
+  { key: "cgUndetermined", label: "CG head undetermined" },
   { key: "speculative", label: "Intraday speculative" }, { key: "fnoBusiness", label: "F&O business" },
   { key: "charges", label: "Charges" }, { key: "trades", label: "Trades" },
 ];
@@ -90,11 +100,16 @@ export default async function TaxReportPage({
   // this page AND the on-demand /api/tax-itr export, so the two can never
   // drift. Same rows, same order, same JS filters as before — only the 59
   // never-read columns stopped being fetched.
-  const { trades, closedTrades, ipoTaxRows, cgTrades } = getTaxBase(person);
+  // `taxRows` carries the RESOLVED asset class and the three non-deductible
+  // charge lines — the page never re-derives a head from a segment (v4.5.0).
+  // `trades` (the raw projection, open rows included) is deliberately NOT read
+  // here any more: every figure on this page comes from `taxRows`, which
+  // carries the resolved asset class.
+  const { closedTrades, ipoTaxRows, cgTrades, taxRows } = getTaxBase(person);
   // Undated closed trades bucket under TODAY'S FY — passed explicitly so this
   // page and the analytics module can never disagree on the fallback year.
   const currentFy = deriveCurrentFy(fyStartMonth);
-  const rows = taxByFy([...trades, ...ipoTaxRows], fyStartMonth, currentFy);
+  const rows = taxByFy([...taxRows, ...ipoTaxRows], fyStartMonth, currentFy);
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
   const hasPreGrandfatherLot = cgTrades.some((t) => t.buyDate != null && t.buyDate < GRANDFATHER_DATE);
@@ -165,8 +180,8 @@ export default async function TaxReportPage({
 
   // WHEN income arrived, split the way the return splits it. Not a monthly bill.
   const monthHeads = monthlyByHead(
-    [...trades, ...ipoTaxRows].map((t) => ({
-      sellDate: t.sellDate, buyDate: t.buyDate, segment: t.segment,
+    [...taxRows, ...ipoTaxRows].map((t) => ({
+      sellDate: t.sellDate, buyDate: t.buyDate, segment: t.segment, assetClass: t.assetClass,
       netPnl: t.netPnl, grossPnl: t.grossPnl, chargesTotal: t.chargesTotal, isOpen: t.isOpen,
     })),
   );
@@ -207,8 +222,11 @@ export default async function TaxReportPage({
               <ReportTable>
                 <ReportThead>
                   <ReportTh>FY</ReportTh>
-                  <ReportTh align="right">STCG (equity)</ReportTh>
-                  <ReportTh align="right">LTCG (equity)</ReportTh>
+                  <ReportTh align="right">STCG 111A</ReportTh>
+                  <ReportTh align="right">STCG slab / 50AA</ReportTh>
+                  <ReportTh align="right">LTCG 112A</ReportTh>
+                  <ReportTh align="right">LTCG 112</ReportTh>
+                  <ReportTh align="right">Head undetermined</ReportTh>
                   <ReportTh align="right">Intraday speculative</ReportTh>
                   <ReportTh align="right">F&O business</ReportTh>
                   <ReportTh align="right">F&O turnover</ReportTh>
@@ -219,8 +237,15 @@ export default async function TaxReportPage({
                   {rows.map((r) => (
                     <ReportTr key={r.fy}>
                       <ReportTd className="font-medium">{r.fy}</ReportTd>
-                      <ReportTd align="right" className={pnl(r.stcg)}>{inr(r.stcg, { decimals: 0 })}</ReportTd>
-                      <ReportTd align="right" className={pnl(r.ltcg)}>{inr(r.ltcg, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.stcg111A)}>{inr(r.stcg111A, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.stcgOther)}>{inr(r.stcgOther, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.ltcg112A)}>{inr(r.ltcg112A, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.ltcg112)}>{inr(r.ltcg112, { decimals: 0 })}</ReportTd>
+                      {/* A head the journal cannot determine is printed BLANK,
+                          never ₹0 — invariant 6. */}
+                      <ReportTd align="right" className={pnl(r.cgUndetermined)}>
+                        {r.cgUndetermined === 0 ? "—" : inr(r.cgUndetermined, { decimals: 0 })}
+                      </ReportTd>
                       <ReportTd align="right" className={pnl(r.intradaySpeculative)}>{inr(r.intradaySpeculative, { decimals: 0 })}</ReportTd>
                       <ReportTd align="right" className={pnl(r.fnoBusiness)}>{inr(r.fnoBusiness, { decimals: 0 })}</ReportTd>
                       <ReportTd align="right" muted>{inr(r.fnoTurnover, { decimals: 0 })}</ReportTd>
@@ -250,8 +275,11 @@ export default async function TaxReportPage({
               <ReportTable>
                 <ReportThead>
                   <ReportTh>Month</ReportTh>
-                  <ReportTh align="right">STCG</ReportTh>
-                  <ReportTh align="right">LTCG</ReportTh>
+                  <ReportTh align="right">STCG 111A</ReportTh>
+                  <ReportTh align="right">STCG slab / 50AA</ReportTh>
+                  <ReportTh align="right">LTCG 112A</ReportTh>
+                  <ReportTh align="right">LTCG 112</ReportTh>
+                  <ReportTh align="right">Head undetermined</ReportTh>
                   <ReportTh align="right">Intraday speculative</ReportTh>
                   <ReportTh align="right">F&O business</ReportTh>
                   <ReportTh align="right">Charges</ReportTh>
@@ -261,8 +289,13 @@ export default async function TaxReportPage({
                   {monthHeadsShown.map((m) => (
                     <ReportTr key={m.ym}>
                       <ReportTd className="font-medium">{m.ym}</ReportTd>
-                      <ReportTd align="right" className={pnl(m.stcg)}>{inr(m.stcg, { decimals: 0 })}</ReportTd>
-                      <ReportTd align="right" className={pnl(m.ltcg)}>{inr(m.ltcg, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.stcg111A)}>{inr(m.stcg111A, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.stcgOther)}>{inr(m.stcgOther, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.ltcg112A)}>{inr(m.ltcg112A, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.ltcg112)}>{inr(m.ltcg112, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.cgUndetermined)}>
+                        {m.cgUndetermined === 0 ? "—" : inr(m.cgUndetermined, { decimals: 0 })}
+                      </ReportTd>
                       <ReportTd align="right" className={pnl(m.speculative)}>{inr(m.speculative, { decimals: 0 })}</ReportTd>
                       <ReportTd align="right" className={pnl(m.fnoBusiness)}>{inr(m.fnoBusiness, { decimals: 0 })}</ReportTd>
                       <ReportTd align="right" className="text-warning">{inr(m.charges, { decimals: 0 })}</ReportTd>
@@ -316,7 +349,13 @@ export default async function TaxReportPage({
                         <ReportTd className="font-medium">{r.fy}</ReportTd>
                         <ReportTd align="right">{inr(r.taxableStcg, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right">{inr(r.taxableLtcg, { decimals: 0 })}</ReportTd>
-                        <ReportTd align="right" className="font-medium text-warning">{inr(r.taxDue, { decimals: 0 })}</ReportTd>
+                        {/* BLANK, never ₹0, when the year holds a slab bucket,
+                            an undetermined head or an s.112 cell with no CII
+                            (invariant 6; owner answer T3). The per-bucket
+                            amounts above are complete either way. */}
+                        <ReportTd align="right" className="font-medium text-warning" title={r.taxDueBlankReasons.join(" ")}>
+                          {r.taxDue == null ? "—" : inr(r.taxDue, { decimals: 0 })}
+                        </ReportTd>
                         <ReportTd align="right" muted>{inr(r.taxableSpeculative, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right" muted>{inr(r.taxableNonSpeculative, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right" className="text-profit">{usedTotal > 0 ? inr(usedTotal, { decimals: 0 }) : "—"}</ReportTd>
@@ -326,6 +365,38 @@ export default async function TaxReportPage({
                   })}
                 </tbody>
               </ReportTable>
+            )}
+            {/* The three second-pass rulings, rendered where the figures they
+                move are read. Per YEAR, with the amount named — a note without
+                a number is not a disclosure. */}
+            {rows.some((r) => r.notDeductedMtf > 0 || r.sttAddedBack > 0) && (
+              <div className="space-y-2 border-t p-4 text-xs text-muted-foreground">
+                {rows
+                  .filter((r) => r.notDeductedMtf > 0 || r.sttAddedBack > 0)
+                  .map((r) => (
+                    <p key={r.fy}>
+                      <span className="font-medium text-foreground">FY {r.fy}:</span>{" "}
+                      {r.notDeductedMtf > 0 && (
+                        <>MTF interest / pledge charges not deducted: {inr(r.notDeductedMtf, { decimals: 0 })}. </>
+                      )}
+                      {r.sttAddedBack > 0 && <>STT added back into the capital-gains buckets: {inr(r.sttAddedBack, { decimals: 0 })}.</>}
+                    </p>
+                  ))}
+                <p>{MTF_NOT_DEDUCTED_NOTE}</p>
+                <p>{STT_ADDED_BACK_NOTE}</p>
+              </div>
+            )}
+            {timeline.some((r) => r.taxDueBlankReasons.length > 0) && (
+              <div className="space-y-2 border-t p-4 text-xs text-warning/90">
+                {timeline
+                  .filter((r) => r.taxDueBlankReasons.length > 0)
+                  .map((r) => (
+                    <p key={r.fy}>
+                      <span className="font-medium">FY {r.fy} — no capital-gains total is stated.</span>{" "}
+                      {r.taxDueBlankReasons.join(" ")}
+                    </p>
+                  ))}
+              </div>
             )}
           </CardContent>
         </Card>

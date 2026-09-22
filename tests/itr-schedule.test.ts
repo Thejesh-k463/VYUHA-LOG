@@ -25,10 +25,23 @@ import { section } from "@/lib/analytics/statute";
  *      gain loses exactly the numbers the schedule wants.
  */
 
+/**
+ * v4.5.0 — two things changed about this fixture.
+ *
+ *  • `assetClass` is REQUIRED and never defaulted (a gold/debt ETF unit is not
+ *    an equity share and must never be written into the 111A/112A boxes).
+ *  • The default sale moved to FY 2025-26. Schedule CG item codes are read off
+ *    a SPECIFIC form for a SPECIFIC assessment year, and this release has read
+ *    ITR-2 for AY 2025-26 (A2/B4/B9) and AY 2026-27 (A2/B3/B8) only. FY 2025-26
+ *    is AY 2026-27, so these fixtures exercise real codes; the old FY 2026-27
+ *    default is AY 2027-28, whose codes are deliberately BLANK (invariant 6)
+ *    and is pinned as such in "Schedule CG item codes" below.
+ */
 const trade = (over: Partial<ItrScheduleTrade> = {}): ItrScheduleTrade => ({
   segment: "eq_delivery",
-  buyDate: "2026-05-01",
-  sellDate: "2026-06-01",
+  assetClass: "share",
+  buyDate: "2025-05-01",
+  sellDate: "2025-06-01",
   buyValue: 100000,
   sellValue: 110000,
   grossPnl: 10000,
@@ -51,33 +64,55 @@ describe("transfer expenditure", () => {
   it("never goes negative if STT somehow exceeds the recorded total", () => {
     expect(transferExpenditure({ chargesTotal: 50, sttCtt: 110 })).toBe(0);
   });
+
+  /**
+   * v4.5.0 — MTF interest and pledge/unpledge charges leave the deduction too.
+   * Neither has been held to be expenditure incurred wholly and exclusively in
+   * connection with the transfer, and the High Courts are SPLIT on whether
+   * interest forms part of the cost of acquisition (dossier §G2). They stay
+   * inside `chargesTotal` for the two BUSINESS heads, which is the asymmetry.
+   */
+  it("also excludes MTF interest and pledge charges — 200 − 110 STT − 30 − 10 = 50", () => {
+    expect(transferExpenditure({ chargesTotal: 200, sttCtt: 110, mtfInterest: 30, pledgeCharges: 10 })).toBe(50);
+    // Absent fields change nothing, and a negative one never INCREASES it.
+    expect(transferExpenditure({ chargesTotal: 200, sttCtt: 110, mtfInterest: -30 })).toBe(90);
+  });
 });
 
-describe("Schedule CG — A3 (STCG u/s 111A)", () => {
+describe("Schedule CG — A2 (STCG u/s 111A on ITR-2)", () => {
   it("reports consideration and cost separately, not netted", () => {
     const packs = itrScheduleByFy([trade()]);
-    expect(lineOf(packs, "A3(a)")?.amount).toBe(110000);
-    expect(lineOf(packs, "A3(b)(i)")?.amount).toBe(100000);
+    expect(lineOf(packs, "A2(a)")?.amount).toBe(110000);
+    expect(lineOf(packs, "A2(b)(i)")?.amount).toBe(100000);
   });
 
   it("deducts brokerage but NOT STT", () => {
     const packs = itrScheduleByFy([trade({ chargesTotal: 200, sttCtt: 110 })]);
-    expect(lineOf(packs, "A3(b)(iii)")?.amount).toBe(90);
+    expect(lineOf(packs, "A2(b)(iii)")?.amount).toBe(90);
     // The balance must therefore be HIGHER than the app's own netPnl, which is
     // net of STT too. That gap is the whole point of this module.
-    expect(lineOf(packs, "A3(c)")?.amount).toBe(110000 - 100000 - 90);
-    expect(lineOf(packs, "A3(c)")?.amount).toBeGreaterThan(9800);
+    expect(lineOf(packs, "A2(c)")?.amount).toBe(110000 - 100000 - 90);
+    expect(lineOf(packs, "A2(c)")?.amount).toBeGreaterThan(9800);
   });
 
   it("states the excluded STT on the line itself", () => {
     const packs = itrScheduleByFy([trade({ sttCtt: 110 })]);
-    expect(lineOf(packs, "A3(b)(iii)")?.note).toMatch(/S\.48/);
-    expect(lineOf(packs, "A3(b)(iii)")?.note).toMatch(/110/);
+    expect(lineOf(packs, "A2(b)(iii)")?.note).toMatch(/S\.48/);
+    expect(lineOf(packs, "A2(b)(iii)")?.note).toMatch(/110/);
   });
 
-  it("reports cost of improvement as a real zero, not a blank", () => {
-    // Listed securities cannot have one; 0 is the correct answer, not "unknown".
-    expect(lineOf(itrScheduleByFy([trade()]), "A3(b)(ii)")?.amount).toBe(0);
+  /**
+   * Wave 3b-i: the generic `cgBlock` that replaced the two hand-written blocks
+   * at first DROPPED the "(b)(ii) Cost of improvement = 0" line both of them
+   * carried. A listed security cannot have one, so 0 is the derived answer and
+   * deliberately NOT a blank — pinned as an amount, not just a code, so a
+   * future "blank everything we cannot derive" sweep cannot swallow it.
+   */
+  it("emits consideration, cost, improvement and expenditure as separate boxes", () => {
+    const packs = itrScheduleByFy([trade()]);
+    const codes = packs.flatMap((p) => p.lines).map((l) => l.code);
+    expect(codes).toEqual(expect.arrayContaining(["A2", "A2(a)", "A2(b)(i)", "A2(b)(ii)", "A2(b)(iii)", "A2(c)"]));
+    expect(lineOf(packs, "A2(b)(ii)")?.amount, "a listed security's cost of improvement is 0, not blank").toBe(0);
   });
 
   it("aggregates several short-term lots", () => {
@@ -85,46 +120,47 @@ describe("Schedule CG — A3 (STCG u/s 111A)", () => {
       trade({ sellValue: 110000, buyValue: 100000, chargesTotal: 200, sttCtt: 110 }),
       trade({ sellValue: 50000, buyValue: 45000, chargesTotal: 100, sttCtt: 50 }),
     ]);
-    expect(lineOf(packs, "A3(a)")?.amount).toBe(160000);
-    expect(lineOf(packs, "A3(b)(i)")?.amount).toBe(145000);
-    expect(lineOf(packs, "A3(b)(iii)")?.amount).toBe(140);
+    expect(lineOf(packs, "A2(a)")?.amount).toBe(160000);
+    expect(lineOf(packs, "A2(b)(i)")?.amount).toBe(145000);
+    expect(lineOf(packs, "A2(b)(iii)")?.amount).toBe(140);
   });
 
-  it("omits A3 entirely when there were no short-term equity sales", () => {
+  it("omits the block entirely when there were no short-term equity sales", () => {
     const packs = itrScheduleByFy([trade({ segment: "index_option" })]);
+    expect(lineOf(packs, "A2(a)")).toBeUndefined();
     expect(lineOf(packs, "A3(a)")).toBeUndefined();
   });
 });
 
-describe("Schedule CG — B4 (LTCG u/s 112A)", () => {
+describe("Schedule CG — B3 (LTCG u/s 112A on the AY 2026-27 ITR-2)", () => {
   const longTerm = (over: Partial<ItrScheduleTrade> = {}) =>
-    trade({ buyDate: "2024-01-01", sellDate: "2026-06-01", ...over });
+    trade({ buyDate: "2024-01-01", sellDate: "2025-06-01", ...over });
 
   it("classifies a holding over twelve months as long-term", () => {
     const packs = itrScheduleByFy([longTerm()]);
-    expect(lineOf(packs, "B4(a)")?.amount).toBe(110000);
-    expect(lineOf(packs, "A3(a)")).toBeUndefined();
+    expect(lineOf(packs, "B3(a)")?.amount).toBe(110000);
+    expect(lineOf(packs, "A2(a)")).toBeUndefined();
   });
 
   it("applies the ₹1.25L exemption and nets it off", () => {
     const packs = itrScheduleByFy([longTerm({ buyValue: 100000, sellValue: 400000, chargesTotal: 400, sttCtt: 300 })]);
-    const before = lineOf(packs, "B4(c)")!.amount!;
+    const before = lineOf(packs, "B3(c)")!.amount!;
     expect(before).toBe(400000 - 100000 - 100);
-    expect(lineOf(packs, "B4(d)")?.amount).toBe(125000);
-    expect(lineOf(packs, "B4(e)")?.amount).toBe(before - 125000);
+    expect(lineOf(packs, "B3(d)")?.amount).toBe(125000);
+    expect(lineOf(packs, "B3(e)")?.amount).toBe(before - 125000);
   });
 
   it("caps the exemption at the actual gain rather than manufacturing a loss", () => {
     const packs = itrScheduleByFy([longTerm({ buyValue: 100000, sellValue: 110000, chargesTotal: 200, sttCtt: 110 })]);
-    const before = lineOf(packs, "B4(c)")!.amount!;
-    expect(lineOf(packs, "B4(d)")?.amount).toBe(before);
-    expect(lineOf(packs, "B4(e)")?.amount).toBe(0);
+    const before = lineOf(packs, "B3(c)")!.amount!;
+    expect(lineOf(packs, "B3(d)")?.amount).toBe(before);
+    expect(lineOf(packs, "B3(e)")?.amount).toBe(0);
   });
 
   it("claims no exemption against a long-term loss", () => {
     const packs = itrScheduleByFy([longTerm({ buyValue: 200000, sellValue: 110000 })]);
-    expect(lineOf(packs, "B4(c)")!.amount!).toBeLessThan(0);
-    expect(lineOf(packs, "B4(d)")?.amount).toBe(0);
+    expect(lineOf(packs, "B3(c)")!.amount!).toBeLessThan(0);
+    expect(lineOf(packs, "B3(d)")?.amount).toBe(0);
   });
 
   it("uses the grandfathered cost for a pre-2018 lot and says how many", () => {
@@ -132,13 +168,151 @@ describe("Schedule CG — B4 (LTCG u/s 112A)", () => {
       longTerm({ buyDate: "2015-06-01", buyValue: 50000, sellValue: 300000, fmv31Jan2018: 200000 }),
     ]);
     // Grandfathering raises cost to min(FMV, consideration) when that beats actual.
-    expect(lineOf(packs, "B4(b)(i)")?.amount).toBe(200000);
-    expect(lineOf(packs, "B4(b)(i)")?.note).toMatch(/grandfathered/i);
+    expect(lineOf(packs, "B3(b)(i)")?.amount).toBe(200000);
+    expect(lineOf(packs, "B3(b)(i)")?.note).toMatch(/grandfathered/i);
   });
 
   it("warns when a long-term book claimed no grandfathering at all", () => {
     const packs = itrScheduleByFy([longTerm()]);
     expect(packs[0].cautions.some((c) => /31-Jan-2018/.test(c))).toBe(true);
+  });
+});
+
+/**
+ * T2 (v4.5.0) — Schedule CG item codes are a pointer into a SPECIFIC PDF of a
+ * SPECIFIC assessment year, and this module used to emit one set for all of
+ * them: A3 for s.111A and B4 for s.112A. On ITR-2, s.111A is item **A2** (A3 is
+ * a different row), and the codes MOVE between years — s.112A is B4 on the
+ * AY 2025-26 ITR-2 and B3 on AY 2026-27, with the s.112 row moving B9 → B8.
+ * A wrong box number is transcribed straight into the utility and is invisible
+ * until the return is rejected, so an (form, AY) pair this release has not read
+ * a schema for prints BLANK (invariant 6).
+ */
+describe("Schedule CG item codes — per form, per assessment year", () => {
+  const codesOf = (packs: ReturnType<typeof itrScheduleByFy>) =>
+    packs.flatMap((p) => p.lines).filter((l) => l.schedule === "Schedule CG" && l.amount === null && !l.code.includes("(")).map((l) => l.code);
+
+  it("ITR-2, AY 2025-26 (FY 2024-25): A2 short-term, B4 s.112A, B9 s.112", () => {
+    // incometaxgov-ITR-2_2025_Main_V1.2-schema-AY2025-26.json
+    const st = itrScheduleByFy([trade({ buyDate: "2024-08-01", sellDate: "2024-09-01" })]);
+    expect(st[0].fy).toBe("2024-25");
+    expect(st[0].itrForm).toBe("ITR-2");
+    expect(lineOf(st, "A2(a)")?.amount).toBe(110000);
+    expect(lineOf(st, "A3(a)")).toBeUndefined(); // A3 is a DIFFERENT row on ITR-2
+
+    const lt = itrScheduleByFy([trade({ buyDate: "2022-08-01", sellDate: "2024-09-01" })]);
+    expect(lineOf(lt, "B4(a)")?.amount).toBe(110000);
+
+    const unit = itrScheduleByFy([trade({ assetClass: "otherUnit", buyDate: "2019-08-01", sellDate: "2024-09-01" })]);
+    expect(lineOf(unit, "B9(a)")?.amount).toBe(110000);
+  });
+
+  it("ITR-2, AY 2026-27 (FY 2025-26): the s.112A row is B3 and the s.112 row B8", () => {
+    // incometaxgov ITR-2 schema AY2026-27 + incometaxgov-notification-46-2026-….pdf
+    expect(lineOf(itrScheduleByFy([trade()]), "A2(a)")?.amount).toBe(110000);
+    expect(lineOf(itrScheduleByFy([trade({ buyDate: "2023-01-01" })]), "B3(a)")?.amount).toBe(110000);
+    expect(lineOf(itrScheduleByFy([trade({ assetClass: "otherUnit", buyDate: "2020-01-01" })]), "B8(a)")?.amount).toBe(110000);
+    // …and the codes that belong to the OTHER assessment year are not emitted.
+    expect(lineOf(itrScheduleByFy([trade({ buyDate: "2023-01-01" })]), "B4(a)")).toBeUndefined();
+  });
+
+  it("ITR-3 numbers Schedule CG differently: s.111A really IS A3 there", () => {
+    // Any business head forces ITR-3, and §F.1 verified only its A3 = 111A row.
+    const packs = itrScheduleByFy([trade(), trade({ segment: "eq_intraday", netPnl: 100 })]);
+    expect(packs[0].itrForm).toBe("ITR-3");
+    expect(lineOf(packs, "A3(a)")?.amount).toBe(110000);
+    expect(lineOf(packs, "A2(a)")).toBeUndefined();
+  });
+
+  it("ITR-3's long-term rows are BLANK, not borrowed from ITR-2", () => {
+    const packs = itrScheduleByFy([trade({ buyDate: "2023-01-01" }), trade({ segment: "eq_intraday", netPnl: 100 })]);
+    expect(lineOf(packs, "B3(a)")).toBeUndefined();
+    expect(lineOf(packs, "B4(a)")).toBeUndefined();
+    // The block is still printed — with no code and a line saying why.
+    const blank = packs[0].lines.find((l) => l.label.includes("112A"));
+    expect(blank?.code).toBe("");
+    expect(blank?.note).toMatch(/was not read for this release/);
+    expect(packs[0].cautions.some((c) => /long-term item codes were not read/i.test(c))).toBe(true);
+  });
+
+  it("an assessment year this release has not read prints NO code at all", () => {
+    // FY 2026-27 is AY 2027-28: no schema read, so a nearby year's codes would
+    // be wrong, not approximate.
+    const packs = itrScheduleByFy([trade({ buyDate: "2026-05-01", sellDate: "2026-06-01" })]);
+    expect(packs[0].fy).toBe("2026-27");
+    expect(codesOf(packs).every((c) => c === "")).toBe(true);
+    expect(lineOf(packs, "A2(a)")).toBeUndefined();
+    expect(lineOf(packs, "A3(a)")).toBeUndefined();
+    expect(packs[0].cautions.some((c) => /AY 2027-28/.test(c))).toBe(true);
+  });
+
+  it("names the assessment year and warns that the codes move between years", () => {
+    const packs = itrScheduleByFy([trade()]);
+    expect(packs[0].cautions.some((c) => /ITR-2 codes for AY 2026-27/.test(c))).toBe(true);
+    expect(packs[0].cautions.some((c) => /B4 for AY 2025-26 and B3 for AY 2026-27/.test(c))).toBe(true);
+  });
+});
+
+/**
+ * A NON-equity-oriented unit (gold, silver, international, debt). It never
+ * reaches s.111A/s.112A: no STT is charged on it, so the concessional rate
+ * cannot apply. Before v4.5.0 the box followed the SEGMENT and a gold ETF was
+ * written straight into the 112A box.
+ */
+describe("Schedule CG — the s.112 block for a unit that is not equity-oriented", () => {
+  it("routes a long-held gold unit to s.112, never to the 112A box", () => {
+    const packs = itrScheduleByFy([trade({ assetClass: "otherUnit", buyDate: "2020-01-01" })]);
+    expect(lineOf(packs, "B8(a)")?.amount).toBe(110000);
+    expect(lineOf(packs, "B3(a)")).toBeUndefined();
+    // …and it gets NO ₹1.25 L exemption: that threshold belongs to s.112A only.
+    expect(lineOf(packs, "B8(d)")).toBeUndefined();
+  });
+
+  it("blanks the INDEXED cost and the gain for a pre-23-Jul-2024 s.112 cell — no CII is bundled", () => {
+    // Transferred 1-Sep-2023: S.112 on an INDEXED cost. The actual cost is
+    // stated in the note, but the indexed cost, and therefore the gain, are
+    // BLANK — the CBDT cost-inflation-index notification is not in this
+    // release's primary-source set (invariant 6, owner answer T2).
+    const packs = itrScheduleByFy([trade({ assetClass: "otherUnit", buyDate: "2018-01-01", sellDate: "2023-09-01" })]);
+    const cost = packs[0].lines.find((l) => l.label.includes("INDEXED"));
+    expect(cost).toBeDefined();
+    expect(cost!.amount).toBeNull();
+    expect(cost!.note).toMatch(/cost-inflation-index/i);
+    expect(cost!.note).toMatch(/1,00,000/); // the ACTUAL cost is still stated
+    const balance = packs[0].lines.find((l) => l.label.startsWith("Balance"));
+    expect(balance?.amount).toBeNull();
+  });
+
+  it("a slab-rate short-term unit states its AMOUNT and blanks only its TAX", () => {
+    const packs = itrScheduleByFy([trade({ assetClass: "debtUnit", buyDate: "2025-05-01" })]);
+    const tax = packs[0].lines.find((l) => l.label === "Tax on the row above");
+    expect(tax?.amount).toBeNull();
+    expect(tax?.note).toMatch(/slab rate, which this journal does not know/);
+    // The consideration and cost are complete — only the tax is missing.
+    const block = packs[0].lines.find((l) => l.label.includes("SLAB rates"));
+    expect(block).toBeDefined();
+    expect(block!.code).toBe(""); // no ITR box was read for this row
+  });
+});
+
+/** Second-pass ruling (b) — the "not deducted" figure and its caution. */
+describe("Schedule CG — MTF interest and pledge charges", () => {
+  it("excludes them from transfer expenditure and says so on the line and in a caution", () => {
+    const packs = itrScheduleByFy([trade({ chargesTotal: 200, sttCtt: 110, mtfInterest: 30, pledgeCharges: 10 })]);
+    // 200 − 110 STT − 40 financing = 50.
+    expect(lineOf(packs, "A2(b)(iii)")?.amount).toBe(50);
+    expect(lineOf(packs, "A2(b)(iii)")?.note).toMatch(/MTF interest and pledge charges/);
+    const caution = packs[0].cautions.find((c) => /MTF interest and pledge/.test(c));
+    expect(caution).toMatch(/₹40/);
+    // The FLOOR sentence must travel with it: the GST on those lines is not
+    // separable from the trade's single GST total, so it is still netted.
+    expect(caution).toMatch(/FLOOR/);
+    expect(caution).toMatch(/no Supreme Court ruling/);
+  });
+
+  it("carries no such caution when there is nothing to report", () => {
+    const packs = itrScheduleByFy([trade({ chargesTotal: 200, sttCtt: 110 })]);
+    expect(packs[0].cautions.some((c) => /MTF interest and pledge/.test(c))).toBe(false);
   });
 });
 
@@ -178,8 +352,8 @@ describe("Schedule BP — business heads", () => {
     ]);
     const rows = taxByFy([
       {
-        segment: "index_option", instrumentType: "option",
-        buyDate: "2026-05-01", sellDate: "2026-06-01",
+        segment: "index_option", assetClass: "share", instrumentType: "option",
+        buyDate: "2025-05-01", sellDate: "2025-06-01",
         grossPnl: 8500, netPnl: 8000, buyValue: 100000, sellValue: 120000,
         chargesTotal: 200, isOpen: false,
       },
@@ -219,7 +393,7 @@ describe("Schedule CFL — carry forward", () => {
     const cf = new Map<string, CarryForwardLot[]>([
       ["2026-27", [{ bucket: "nonSpeculative", fyIncurred: "2026-27", amount: 112997 }]],
     ]);
-    const packs = itrScheduleByFy([trade({ segment: "index_option", netPnl: -112997 })], 4, "2026-27", cf);
+    const packs = itrScheduleByFy([trade({ segment: "index_option", netPnl: -112997, buyDate: "2026-05-01", sellDate: "2026-06-01" })], 4, "2026-27", cf);
     const line = lineOf(packs, "CFL-nonSpeculative");
     expect(line?.amount).toBe(112997);
     expect(line?.note).toMatch(/8 years/);
@@ -230,13 +404,13 @@ describe("Schedule CFL — carry forward", () => {
     const cf = new Map<string, CarryForwardLot[]>([
       ["2026-27", [{ bucket: "speculative", fyIncurred: "2026-27", amount: 82088 }]],
     ]);
-    const packs = itrScheduleByFy([trade({ segment: "eq_intraday", netPnl: -82088 })], 4, "2026-27", cf);
+    const packs = itrScheduleByFy([trade({ segment: "eq_intraday", netPnl: -82088, buyDate: "2026-05-01", sellDate: "2026-06-01" })], 4, "2026-27", cf);
     expect(lineOf(packs, "CFL-speculative")?.note).toMatch(/4 years/);
     expect(lineOf(packs, "CFL-speculative")?.note).toMatch(/2030-31/);
   });
 
   it("distinguishes 'no losses' from 'not supplied'", () => {
-    const supplied = itrScheduleByFy([trade()], 4, "2026-27", new Map());
+    const supplied = itrScheduleByFy([trade()], 4, "2025-26", new Map());
     expect(lineOf(supplied, "CFL")?.amount).toBe(0);
 
     const notSupplied = itrScheduleByFy([trade()]);
@@ -270,8 +444,8 @@ describe("scoping and cautions", () => {
   it("always carries the preparation-not-advice caution and the STT asymmetry", () => {
     const packs = itrScheduleByFy([trade()]);
     expect(packs[0].cautions.some((c) => /not a filed return/i.test(c))).toBe(true);
-    // The fixture sells in FY 2026-27, so the STT caution cites the 2025 Act.
-    expect(packs[0].cautions.some((c) => c.includes(section("2026-27", "sttNotDeductibleCg")))).toBe(true);
+    // The fixture sells in FY 2025-26, so the STT caution cites the 1961 Act.
+    expect(packs[0].cautions.some((c) => c.includes(section("2025-26", "sttNotDeductibleCg")))).toBe(true);
   });
 
   it("cites the Act that governed the YEAR, not today's, and names it", () => {
@@ -283,10 +457,11 @@ describe("scoping and cautions", () => {
     expect(old[0].cautions.some((c) => c.includes("Income-tax Act, 1961"))).toBe(true);
     expect(old[0].cautions.some((c) => c.includes("repealed"))).toBe(true);
 
-    const now = itrScheduleByFy([trade()]);
+    const now = itrScheduleByFy([trade({ buyDate: "2026-05-01", sellDate: "2026-06-01" })]);
+    expect(now[0].fy).toBe("2026-27");
     expect(now[0].cautions.some((c) => c.includes("Income-tax Act, 2025"))).toBe(true);
     // …and the BP labels move with it.
-    const spec = itrScheduleByFy([trade({ segment: "eq_intraday", netPnl: 100 })]);
+    const spec = itrScheduleByFy([trade({ segment: "eq_intraday", netPnl: 100, buyDate: "2026-05-01", sellDate: "2026-06-01" })]);
     expect(lineOf(spec, "BP-SPEC")?.label).toContain("s.66(31)");
     const specOld = itrScheduleByFy([
       trade({ segment: "eq_intraday", netPnl: 100, buyDate: "2024-05-01", sellDate: "2024-09-01" }),
@@ -296,7 +471,7 @@ describe("scoping and cautions", () => {
 
   it("never states an amount it cannot derive as zero", () => {
     const packs = itrScheduleByFy([trade()]);
-    const heading = packs[0].lines.find((l) => l.code === "A3");
+    const heading = packs[0].lines.find((l) => l.code === "A2");
     expect(heading?.amount).toBeNull(); // a section heading, not a figure
   });
 });
@@ -306,7 +481,7 @@ describe("export rows", () => {
     const rows = scheduleExportRows(itrScheduleByFy([trade()]));
     expect(rows.length).toBeGreaterThan(0);
     for (const r of rows) {
-      expect(r.fy).toBe("2026-27");
+      expect(r.fy).toBe("2025-26");
       expect(r.form).toBe("ITR-2");
       expect(r.schedule.startsWith("Schedule")).toBe(true);
     }
@@ -315,7 +490,7 @@ describe("export rows", () => {
   it("renders a null amount as blank rather than 0", () => {
     // A blank cell reads as "not applicable"; a 0 reads as a figure.
     const rows = scheduleExportRows(itrScheduleByFy([trade()]));
-    expect(rows.find((r) => r.code === "A3")?.amount).toBe("");
+    expect(rows.find((r) => r.code === "A2")?.amount).toBe("");
   });
 });
 

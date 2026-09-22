@@ -38,6 +38,7 @@
  */
 
 import { DELIVERY_SEGMENTS, FNO_SEGMENTS, SPECULATIVE_SEGMENT } from "./turnover";
+import { bucketFor, resolveCgHead, type CgAssetClass } from "./cg-heads";
 
 export interface MonthlyTrade {
   /** Realisation date. A trade with none cannot be placed in a month. */
@@ -174,14 +175,24 @@ export function monthlyBreakdown(trades: MonthlyTrade[]): MonthlyReport {
 export const MONTHLY_HEAD_CAVEAT =
   "This is what you REALISED each month, split by head — not a monthly tax bill. Tax is computed for the whole year: set-off between heads, the long-term exemption threshold and the slab rates are all annual, so no month has a tax figure of its own. Use this to see when income arrived, and the yearly tables to see what is owed.";
 
+/** What `monthlyByHead` needs beyond a month row: WHAT was transferred. */
+export interface MonthlyHeadTrade extends MonthlyTrade {
+  assetClass: CgAssetClass;
+}
+
 export interface MonthHeadRow {
   ym: string;
   year: number;
   month: number;
-  /** Short-term capital gains — equity delivery and MTF held under 12 months. */
-  stcg: number;
-  /** Long-term capital gains. */
-  ltcg: number;
+  // v4.5.0 — the same five capital-gains buckets the annual tables use, so a
+  // month column and the FY table cannot disagree about which head a trade is
+  // in. A single "STCG" column merged a concessional 111A gain with a slab-rate
+  // one and with an s.50AA-deemed gain.
+  stcg111A: number;
+  stcgOther: number;
+  ltcg112A: number;
+  ltcg112: number;
+  cgUndetermined: number;
   /** Speculative business — intraday equity. */
   speculative: number;
   /** Non-speculative business — F&O. */
@@ -190,22 +201,18 @@ export interface MonthHeadRow {
   trades: number;
 }
 
-const LONG_TERM_DAYS = 365;
-
-function isLongTerm(buy: string | null, sell: string | null): boolean {
-  if (!buy || !sell) return false;
-  const days = (new Date(sell + "T00:00:00").getTime() - new Date(buy + "T00:00:00").getTime()) / 86400000;
-  return days >= LONG_TERM_DAYS;
-}
+// `LONG_TERM_DAYS = 365` and its `isLongTerm` are DELETED, not adjusted: the
+// holding period is a calendar-month rule and lives once, in
+// `lib/analytics/cg-heads.ts`. This was the fourth copy.
 
 /**
  * Realised P&L per month, split by the head the Act puts it in.
  *
- * Uses the same segment sets and the same 12-month line as the annual tax
- * modules, so a month column and the FY table cannot disagree about which head
- * a trade belongs to.
+ * Amounts here are the trade's OWN net P&L — this table is a record of what
+ * arrived, not a tax computation, so the STT and financing add-backs the annual
+ * tables apply deliberately do NOT happen here (see `MONTHLY_HEAD_CAVEAT`).
  */
-export function monthlyByHead(trades: MonthlyTrade[]): MonthHeadRow[] {
+export function monthlyByHead(trades: MonthlyHeadTrade[]): MonthHeadRow[] {
   const map = new Map<string, MonthHeadRow>();
 
   for (const t of trades) {
@@ -214,11 +221,11 @@ export function monthlyByHead(trades: MonthlyTrade[]): MonthHeadRow[] {
     const [year, month] = ym.split("-").map(Number);
     const row =
       map.get(ym) ??
-      { ym, year, month, stcg: 0, ltcg: 0, speculative: 0, fnoBusiness: 0, charges: 0, trades: 0 };
+      { ym, year, month, stcg111A: 0, stcgOther: 0, ltcg112A: 0, ltcg112: 0, cgUndetermined: 0, speculative: 0, fnoBusiness: 0, charges: 0, trades: 0 };
 
     if (DELIVERY_SEGMENTS.has(t.segment)) {
-      if (isLongTerm(t.buyDate, t.sellDate)) row.ltcg += t.netPnl;
-      else row.stcg += t.netPnl;
+      const head = resolveCgHead({ assetClass: t.assetClass, acquiredOn: t.buyDate, transferredOn: t.sellDate });
+      row[bucketFor(head.head)] += t.netPnl;
     } else if (t.segment === SPECULATIVE_SEGMENT) {
       row.speculative += t.netPnl;
     } else if (FNO_SEGMENTS.has(t.segment)) {
@@ -232,8 +239,11 @@ export function monthlyByHead(trades: MonthlyTrade[]): MonthHeadRow[] {
   return [...map.values()]
     .map((r) => ({
       ...r,
-      stcg: r2(r.stcg),
-      ltcg: r2(r.ltcg),
+      stcg111A: r2(r.stcg111A),
+      stcgOther: r2(r.stcgOther),
+      ltcg112A: r2(r.ltcg112A),
+      ltcg112: r2(r.ltcg112),
+      cgUndetermined: r2(r.cgUndetermined),
       speculative: r2(r.speculative),
       fnoBusiness: r2(r.fnoBusiness),
       charges: r2(r.charges),

@@ -58,10 +58,17 @@ export type IpoStatus = "not_allotted" | "allotted" | "listed" | "exited";
 
 export interface IpoTaxEstimate {
   term: GainTerm; // ST | LT
-  ratePct: number; // 15/20 (ST) or 10/12.5 (LT) by exit date
+  /** null where this release can state NO rate for the exit date — a pre-1-10-2004
+   *  slab-rate short-term gain, or an S.112 cell needing a CII nothing bundles. */
+  ratePct: number | null;
   taxableGain: number; // net P&L (post-charges); 0-floored for tax
-  estTax: number; // ratePct × max(0, taxableGain)
-  postTaxNet: number; // netPnl − estTax
+  /** ratePct × max(0, taxableGain), or null when `ratePct` is null. NEVER 0:
+   *  ₹0 of tax reads as "nothing is owed", which is a different claim from
+   *  "this journal cannot say" (invariant 6). */
+  estTax: number | null;
+  postTaxNet: number | null; // netPnl − estTax; null when estTax is
+  /** Why the three figures above are blank. null when they are numbers. */
+  blankReason: string | null;
   acquisitionDate: string | null; // the date the holding period ran from
   isLoss: boolean; // capital loss — set-off/carry-forward applies instead of tax
 }
@@ -470,14 +477,24 @@ export function ipoTaxEstimate(
   const term = classifyTerm(acquisitionDate ?? null, exitDate ?? null); // no dates → ST (conservative)
   const rates = capitalGainsRatesFor(exitDate ?? "9999-12-31"); // no exit date → current regime
   const rate = term === "ST" ? rates.stcgPct : rates.ltcgPct;
+  // v4.5.0 — `capitalGainsRatesFor` gained `stcgBlank`/`ltcgBlank`: for a
+  // transfer this release can cite NO rate for (before Chapter VII commenced on
+  // 1-10-2004 the short-term rate was the user's slab and the long-term cell was
+  // S.112 on an indexed cost with no CII bundled) it returns 0 WITH the flag set.
+  // Reading the 0 and ignoring the flag printed "₹0 of tax" on a pre-2004 exit —
+  // a figure the app had not derived, stated as if it had (invariant 6).
+  const blank = term === "ST" ? rates.stcgBlank : rates.ltcgBlank;
   const taxableGain = Math.max(0, netPnl);
-  const estTax = r2(taxableGain * rate);
+  const estTax = blank ? null : r2(taxableGain * rate);
   return {
     term,
-    ratePct: r2(rate * 100),
+    ratePct: blank ? null : r2(rate * 100),
     taxableGain: r2(taxableGain),
     estTax,
-    postTaxNet: r2(netPnl - estTax),
+    postTaxNet: estTax == null ? null : r2(netPnl - estTax),
+    blankReason: blank
+      ? "No capital-gains rate for this exit date is in this release's primary-source set — a short-term gain before 1-10-2004 was taxed at your personal slab rate, and the long-term cell was S.112 on an INDEXED cost, which needs a cost-inflation-index table this release does not bundle. The tax is left blank rather than stated as ₹0."
+      : null,
     acquisitionDate: acquisitionDate ?? null,
     isLoss: netPnl < 0,
   };
@@ -578,6 +595,10 @@ export interface IpoSummary {
   unrealised: number; // listed (holding) mark-to-listing
   estTax: number; // Σ estimated tax across priced exits (informational)
   postTaxNet: number; // realisedNet − estTax
+  /** Priced exits whose TAX is blank because no rate for their exit date is in
+   *  this release's primary-source set. They are in `realisedNet` and in NO
+   *  part of `estTax` — the count is what stops the total reading as complete. */
+  blankTaxExitCount: number;
 }
 
 export function summariseIpos(list: IpoComputed[]): IpoSummary {
@@ -587,7 +608,7 @@ export function summariseIpos(list: IpoComputed[]): IpoSummary {
     allottedCount: 0, notAllottedCount: 0, listedCount: 0, exitedCount: 0,
     pricedExitCount: 0, unpricedExitCount: 0,
     applicationAmount: 0, investedAllotted: 0, listingGains: 0, realisedNet: 0, unrealised: 0,
-    estTax: 0, postTaxNet: 0,
+    estTax: 0, postTaxNet: 0, blankTaxExitCount: 0,
   };
   for (const i of list) {
     s.applicationAmount += i.applicationAmount;
@@ -603,7 +624,11 @@ export function summariseIpos(list: IpoComputed[]): IpoSummary {
       if (i.realised) {
         s.pricedExitCount++;
         s.realisedNet += i.netPnl;
-        if (i.tax) s.estTax += i.tax.estTax;
+        // An exit whose rate this release cannot cite adds NOTHING to the
+        // estimate and is counted apart, exactly as an unpriced exit is: a
+        // silently-omitted exit would understate the total without saying so.
+        if (i.tax?.estTax != null) s.estTax += i.tax.estTax;
+        else if (i.tax) s.blankTaxExitCount++;
       } else {
         s.unpricedExitCount++;
       }

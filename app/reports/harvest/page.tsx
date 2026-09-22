@@ -8,7 +8,8 @@ import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { daysBetween, fyWindowFor, type OpenLot } from "@/lib/analytics/harvest";
-import { classifyGain } from "@/lib/analytics/capital-gains";
+import { classifyGain, MTF_NOT_DEDUCTED_NOTE } from "@/lib/analytics/capital-gains";
+import { assetClassFor, heldMoreThanMonths, holdingMonthsFor } from "@/lib/analytics/cg-heads";
 import {
   sttSplit,
   ltcgRunway,
@@ -25,8 +26,8 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 export const dynamic = "force-dynamic";
 
 const EQUITY_SEGMENTS = new Set(["eq_delivery", "eq_mtf"]);
-const daysHeld = (a: string | null, b: string) =>
-  a ? Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000) : 0;
+// The 365-day `daysHeld` helper that stood here is DELETED: the holding period
+// is a calendar-month rule with one home, lib/analytics/cg-heads.ts.
 
 export default async function HarvestPage({
   searchParams,
@@ -69,7 +70,12 @@ export default async function HarvestPage({
     .map((t) => {
       const qty = Math.max(t.buyQty - t.sellQty, 0) || t.buyQty;
       const price = mtm.get(t.symbol.toUpperCase()) ?? t.closingPrice ?? t.avgBuyPrice;
-      const term = daysHeld(t.buyDate, today) >= 365 ? "LT" : "ST";
+      // v4.5.0 — CALENDAR months, and the holding period the ASSET CLASS needs:
+      // 12 for a share or an equity-oriented unit, 36 for a listed non-EOF unit
+      // transferred 11-07-2014..22-07-2024. The 365-day line this replaces was
+      // wrong by up to two days for every lot and by two YEARS for a gold ETF.
+      const assetClass = assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol });
+      const term = heldMoreThanMonths(t.buyDate, today, holdingMonthsFor(assetClass, today)) ? "LT" : "ST";
       return { id: t.id, symbol: t.symbol, qty, entry: t.avgBuyPrice, mtm: price, term, unrealised: (price - t.avgBuyPrice) * qty };
     });
 
@@ -81,10 +87,18 @@ export default async function HarvestPage({
   // pre-2018 lot reads the same on both pages.
   let realisedStcg = 0;
   let realisedLtcg = 0;
+  // Realised gain this FY whose head this journal cannot determine. It is
+  // EXCLUDED from both figures above and stated separately — folding it into
+  // either one would make the harvesting arithmetic confidently wrong.
+  let realisedUndetermined = 0;
   for (const t of trades) {
     if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
     const g = classifyGain({
       segment: t.segment,
+      assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
+      sttCtt: t.sttCtt,
+      mtfInterest: t.mtfInterest,
+      pledgeCharges: t.pledgeCharges,
       buyDate: t.buyDate,
       sellDate: t.sellDate,
       buyValue: t.buyValue,
@@ -95,8 +109,9 @@ export default async function HarvestPage({
       // lib/queries/tax-itr.ts uses, so both tax surfaces agree.
       fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
     });
-    if (g?.bucket === "ltcg") realisedLtcg += g.taxableGain;
-    else if (g?.bucket === "stcg") realisedStcg += g.taxableGain;
+    if (g?.bucket === "ltcg112A" || g?.bucket === "ltcg112") realisedLtcg += g.taxableGain;
+    else if (g?.bucket === "stcg111A" || g?.bucket === "stcgOther") realisedStcg += g.taxableGain;
+    else if (g?.bucket === "cgUndetermined") realisedUndetermined += g.taxableGain;
   }
 
   // ── Tax levers (v3.3.0) ────────────────────────────────────────────────
@@ -242,6 +257,14 @@ export default async function HarvestPage({
             Set-off rules: short-term losses offset STCG then LTCG; long-term losses offset LTCG only. Rates are
             resolved from the date of sale. Realised figures are net (post-charge), matching the Tax Summary.
           </p>
+          <p>{MTF_NOT_DEDUCTED_NOTE}</p>
+          {realisedUndetermined !== 0 && (
+            <p className="text-warning">
+              {inr(realisedUndetermined, { decimals: 0 })} of gain realised this FY has NO capital-gains head this
+              journal can determine, and is excluded from both realised figures above — it is neither short- nor
+              long-term until the symbol or ISIN is fixed. See Data Quality.
+            </p>
+          )}
           {/* LTCG_THRESHOLD_CAVEAT renders verbatim in HarvestSim, directly
               under the headroom KPI it qualifies. */}
           <p>{NO_WASH_SALE_CAVEAT}</p>

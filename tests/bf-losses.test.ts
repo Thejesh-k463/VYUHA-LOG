@@ -50,8 +50,15 @@ function req(body: unknown): Request {
 
 const fy = (name: string, over: Partial<FyGrossGains> = {}): FyGrossGains => ({
   fy: name,
-  stcg: 0,
-  ltcg: 0,
+  // v4.5.0 — the five heads replace one `stcg`/`ltcg` pair; see FyGrossGains.
+  stcg111A: 0,
+  stcgOther: 0,
+  ltcg112A: 0,
+  ltcg112: 0,
+  cgUndetermined: 0,
+  notDeductedMtf: 0,
+  sttAddedBack: 0,
+  blankReasons: [],
   speculative: 0,
   nonSpeculative: 0,
   stcgRate: 0.2,
@@ -170,8 +177,8 @@ describe("toSeedLots + expiry alignment (red-on-revert)", () => {
     // lossExpiryFy changes (revert the 8y/4y windows), the engine absorbs or
     // prunes in a different FY than the displayed expiry and this fails.
     const gainFor: Record<LossBucket, Partial<FyGrossGains>> = {
-      stcl: { stcg: 5000 },
-      ltcl: { ltcg: 5000 },
+      stcl: { stcg111A: 5000 },
+      ltcl: { ltcg112A: 5000 },
       speculative: { speculative: 5000 },
       nonSpeculative: { nonSpeculative: 5000 },
     };
@@ -208,7 +215,7 @@ describe("page-level seed wiring (query + engine — what the tax page computes)
   it("a seeded STCL reduces the first FY's taxable STCG in the timeline", () => {
     selectAccount(PRIMARY); // holds 2022-23 stcl ₹60,000
     const seed = bf.toSeedLots(bf.getBfLossRows());
-    const gains = [fy("2025-26", { stcg: 100000 })];
+    const gains = [fy("2025-26", { stcg111A: 100000 })];
 
     const unseeded = computeTaxTimeline(gains);
     const seeded = computeTaxTimeline(gains, seed);
@@ -236,7 +243,7 @@ describe("seed guard — a journalled FY cannot double-count (adversarial probe,
   it("PROBE 1: an FY filed as a b/f lot AND imported later stays ₹50k taxable — the unguarded seed made it 0", () => {
     // FY23-24: net STCL 50k now journalled; the user had already entered the
     // same 50k as a lot before importing that year. FY24-25: 1L STCG.
-    const byFy = [fy("2023-24", { stcg: -50000 }), fy("2024-25", { stcg: 100000 })];
+    const byFy = [fy("2023-24", { stcg111A: -50000 }), fy("2024-25", { stcg111A: 100000 })];
     const legacy = lots([{ incurredFy: "2023-24", head: "stcl", amount: 50000 }]);
     const guard = { journalledFys: new Set(byFy.map((f) => f.fy)), currentFy: "2026-27" };
 
@@ -255,7 +262,7 @@ describe("seed guard — a journalled FY cannot double-count (adversarial probe,
     expect(res.message).toMatch(/hasn't happened yet/);
     // Belt-and-braces: a legacy future-dated lot is excluded at read time too.
     const legacy = lots([{ incurredFy: "2035-36", head: "stcl", amount: 40000 }]);
-    const byFy = [fy("2025-26", { stcg: 100000 })];
+    const byFy = [fy("2025-26", { stcg111A: 100000 })];
     const [r] = computeTaxTimeline(byFy, bf.toSeedLots(legacy, { journalledFys: new Set(["2025-26"]), currentFy: "2026-27" }));
     expect(r.taxableStcg).toBe(100000);
     expect(r.usedCarryForward).toHaveLength(0);

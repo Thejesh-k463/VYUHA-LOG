@@ -7,6 +7,10 @@ import { itrPackByFy, type ItrTrade } from "@/lib/analytics/itr";
 
 const t = (over: Partial<TaxTrade> = {}): TaxTrade => ({
   segment: "eq_delivery",
+  // v4.5.0 — REQUIRED and never defaulted in product code: a gold/debt ETF unit
+  // is not an equity share and must never reach s.111A/s.112A. These fixtures
+  // are about ordinary listed shares, so they say so.
+  assetClass: "share",
   instrumentType: "equity",
   buyDate: "2026-05-01",
   sellDate: "2026-06-01",
@@ -35,19 +39,75 @@ describe("taxByFy — head segregation", () => {
     expect(fy.fy).toBe("2026-27");
     expect(fy.intradaySpeculative).toBe(4800);
     expect(fy.fnoBusiness).toBe(4200); // 8500 − 4300
-    expect(fy.stcg).toBe(2000);
-    expect(fy.ltcg).toBe(15000);
+    expect(fy.stcg111A).toBe(2000);
+    expect(fy.ltcg112A).toBe(15000);
+    expect(fy.stcgOther).toBe(0);
+    expect(fy.ltcg112).toBe(0);
+    expect(fy.cgUndetermined).toBe(0);
     expect(fy.trades).toBe(5);
   });
 
-  it("holds long-term at exactly 365 days and short-term one day under", () => {
-    const lt = taxByFy([t({ buyDate: "2025-06-01", sellDate: "2026-06-01", netPnl: 100 })]);
-    expect(lt[0].ltcg).toBe(100);
-    expect(lt[0].stcg).toBe(0);
+  /**
+   * The old pin — "holds long-term at exactly 365 days" — is WRONG LAW and is
+   * re-pinned to the statute (v4.5.0, T3). S.2(42A) says twelve MONTHS, and the
+   * General Clauses Act, 1897 s.3(35) makes a month a calendar month reckoned
+   * from a date (`indiacode-general-clauses-act-1897-s3-definitions-item.json`).
+   * Bought 1-Jun-2025, the sale on 1-Jun-2026 is 365 days later but is NOT past
+   * the same calendar date twelve months on, so it is still SHORT-term. The
+   * first long-term day is 2-Jun-2026. The 365-day copy this replaces sat in
+   * FOUR modules and moved the line by up to two days in both directions.
+   */
+  it("needs the transfer PAST the same calendar date 12 months on — 365 days is still short-term", () => {
+    const st = taxByFy([t({ buyDate: "2025-06-01", sellDate: "2026-06-01", netPnl: 100 })]);
+    expect(st[0].stcg111A).toBe(100);
+    expect(st[0].ltcg112A).toBe(0);
 
-    const st = taxByFy([t({ buyDate: "2025-06-02", sellDate: "2026-06-01", netPnl: 100 })]);
-    expect(st[0].stcg).toBe(100);
-    expect(st[0].ltcg).toBe(0);
+    const lt = taxByFy([t({ buyDate: "2025-06-01", sellDate: "2026-06-02", netPnl: 100 })]);
+    expect(lt[0].ltcg112A).toBe(100);
+    expect(lt[0].stcg111A).toBe(0);
+  });
+
+  /**
+   * Second-pass ruling (a). STT is added back in the CAPITAL-GAINS buckets only
+   * (proviso to S.48 / s.72(3)(b)); the two BUSINESS heads keep it as an
+   * allowable expense (S.36(1)(xv)), so their figures are byte-identical to
+   * what they were before this wave.
+   */
+  it("adds STT and financing charges back on delivery rows and leaves the business heads untouched", () => {
+    const charges = { sttCtt: 25, mtfInterest: 60, pledgeCharges: 15 };
+    const [fy] = taxByFy([
+      t({ segment: "eq_mtf", buyDate: "2026-04-01", sellDate: "2026-06-01", netPnl: 1000, ...charges }),
+      t({ segment: "eq_intraday", netPnl: 500, ...charges }),
+      t({ segment: "future", netPnl: 700, ...charges }),
+    ]);
+    // Delivery/MTF: 1000 + 25 STT + (60 + 15) financing = 1100.
+    expect(fy.stcg111A).toBe(1100);
+    expect(fy.sttAddedBack).toBe(25);
+    expect(fy.notDeductedMtf).toBe(75); // principal only — the GST on those lines is not separable
+    // Business heads: unchanged, and identical to the same rows with no charge fields.
+    const [plain] = taxByFy([
+      t({ segment: "eq_intraday", netPnl: 500 }),
+      t({ segment: "future", netPnl: 700 }),
+    ]);
+    expect(fy.intradaySpeculative).toBe(plain.intradaySpeculative);
+    expect(fy.fnoBusiness).toBe(plain.fnoBusiness);
+    expect(fy.intradaySpeculative).toBe(500);
+    expect(fy.fnoBusiness).toBe(700);
+  });
+
+  it("routes a gold ETF unit to s.112, a coded-symbol row to cgUndetermined", () => {
+    const [fy] = taxByFy([
+      // Held past 12 months and transferred after 23-7-2024 → S.112 at 12.5%.
+      t({ assetClass: "otherUnit", buyDate: "2024-01-01", sellDate: "2026-06-01", netPnl: 900 }),
+      // Held 1 month → slab-rate short-term, NOT s.111A (no STT is charged on it).
+      t({ assetClass: "debtUnit", buyDate: "2026-05-01", sellDate: "2026-06-01", netPnl: 100 }),
+      t({ assetClass: "undetermined", netPnl: 50 }),
+    ]);
+    expect(fy.ltcg112).toBe(900);
+    expect(fy.stcgOther).toBe(100);
+    expect(fy.cgUndetermined).toBe(50);
+    expect(fy.stcg111A).toBe(0);
+    expect(fy.ltcg112A).toBe(0);
   });
 
   it("excludes open positions from every head", () => {
@@ -126,6 +186,7 @@ describe("turnover agrees across /reports/tax and /reports/itr", () => {
     );
     const itrTrades: ItrTrade[] = shared.map((s) => ({
       segment: s.segment,
+      assetClass: "share", // F&O rows: the class never reaches a head, but the field is required
       buyDate: "2026-05-01",
       sellDate: "2026-06-01",
       grossPnl: s.grossPnl,

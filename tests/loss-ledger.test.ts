@@ -2,7 +2,14 @@ import { describe, it, expect } from "vitest";
 import { computeTaxTimeline, lossExpiryFy, type FyGrossGains } from "@/lib/analytics/capital-gains";
 import { buildLossLedger } from "@/lib/analytics/loss-ledger";
 
-const base = { stcg: 0, ltcg: 0, speculative: 0, nonSpeculative: 0, stcgRate: 0.2, ltcgRate: 0.125, ltcgExemption: 125000 };
+/**
+ * v4.5.0 — `FyGrossGains` has FIVE capital-gains buckets, not one `stcg` and one
+ * `ltcg`: a concessional s.111A gain, a slab-rate one, s.112A, s.112 and a gain
+ * whose head this journal cannot determine. The SET-OFF arithmetic is unchanged
+ * (sections 70/71 run on the aggregate short- and long-term totals), so every
+ * fixture that said `stcg: N` says `stcg111A: N` and gets the identical answer.
+ */
+const base = { stcg111A: 0, stcgOther: 0, ltcg112A: 0, ltcg112: 0, cgUndetermined: 0, notDeductedMtf: 0, sttAddedBack: 0, blankReasons: [], speculative: 0, nonSpeculative: 0, stcgRate: 0.2, ltcgRate: 0.125, ltcgExemption: 125000 };
 const fy = (label: string, o: Partial<FyGrossGains>): FyGrossGains => ({ ...base, fy: label, ...o });
 
 describe("lossExpiryFy — the 8/8/8/4-year carry-forward windows", () => {
@@ -19,11 +26,11 @@ describe("lossExpiryFy — the 8/8/8/4-year carry-forward windows", () => {
   it("agrees with the timeline's own pruning: usable IN the expiry FY, gone the FY after", () => {
     expect(lossExpiryFy("stcl", "2016-17")).toBe("2024-25");
     // Usable in the FY the helper names…
-    const used = computeTaxTimeline([fy("2016-17", { stcg: -10000 }), fy("2024-25", { stcg: 10000 })]);
+    const used = computeTaxTimeline([fy("2016-17", { stcg111A: -10000 }), fy("2024-25", { stcg111A: 10000 })]);
     expect(used[1].taxableStcg).toBe(0);
     expect(used[1].usedCarryForward).toEqual([{ bucket: "stcl", fyIncurred: "2016-17", amount: 10000 }]);
     // …and pruned the FY after.
-    const gone = computeTaxTimeline([fy("2016-17", { stcg: -10000 }), fy("2025-26", { stcg: 10000 })]);
+    const gone = computeTaxTimeline([fy("2016-17", { stcg111A: -10000 }), fy("2025-26", { stcg111A: 10000 })]);
     expect(gone[1].taxableStcg).toBe(10000);
     expect(gone[1].usedCarryForward).toEqual([]);
     expect(gone[1].newCarryForward).toEqual([]);
@@ -44,17 +51,17 @@ describe("buildLossLedger — surviving vintages as of the latest FY", () => {
   });
 
   it("no losses anywhere → empty ledger", () => {
-    const t = computeTaxTimeline([fy("2024-25", { stcg: 50000 })]);
+    const t = computeTaxTimeline([fy("2024-25", { stcg111A: 50000 })]);
     expect(buildLossLedger(t)).toEqual([]);
   });
 
   it("a fully absorbed vintage drops out", () => {
-    const t = computeTaxTimeline([fy("2023-24", { stcg: -10000 }), fy("2024-25", { stcg: 10000 })]);
+    const t = computeTaxTimeline([fy("2023-24", { stcg111A: -10000 }), fy("2024-25", { stcg111A: 10000 })]);
     expect(buildLossLedger(t)).toEqual([]);
   });
 
   it("partial absorption: original, absorbed and remaining reconcile", () => {
-    const t = computeTaxTimeline([fy("2023-24", { stcg: -100000 }), fy("2024-25", { stcg: 30000 })]);
+    const t = computeTaxTimeline([fy("2023-24", { stcg111A: -100000 }), fy("2024-25", { stcg111A: 30000 })]);
     expect(buildLossLedger(t)).toEqual([
       {
         bucket: "stcl",
@@ -69,9 +76,9 @@ describe("buildLossLedger — surviving vintages as of the latest FY", () => {
 
   it("absorption across MULTIPLE later FYs sums into one absorbed figure", () => {
     const t = computeTaxTimeline([
-      fy("2022-23", { stcg: -100000 }),
-      fy("2023-24", { stcg: 25000 }),
-      fy("2024-25", { stcg: 15000 }),
+      fy("2022-23", { stcg111A: -100000 }),
+      fy("2023-24", { stcg111A: 25000 }),
+      fy("2024-25", { stcg111A: 15000 }),
     ]);
     const ledger = buildLossLedger(t);
     expect(ledger).toHaveLength(1);
@@ -80,7 +87,7 @@ describe("buildLossLedger — surviving vintages as of the latest FY", () => {
   });
 
   it("a vintage incurred in the LATEST FY appears untouched (absorbed 0)", () => {
-    const t = computeTaxTimeline([fy("2024-25", { ltcg: -40000 })]);
+    const t = computeTaxTimeline([fy("2024-25", { ltcg112A: -40000 })]);
     expect(buildLossLedger(t)).toEqual([
       { bucket: "ltcl", fyIncurred: "2024-25", originalAmount: 40000, absorbed: 0, remaining: 40000, expiresAfterFy: "2032-33" },
     ]);
@@ -88,14 +95,14 @@ describe("buildLossLedger — surviving vintages as of the latest FY", () => {
 
   it("an expired vintage never reaches the ledger", () => {
     // Speculative window is 4 years: a 2016-17 loss is long gone by 2025-26.
-    const t = computeTaxTimeline([fy("2016-17", { speculative: -5000 }), fy("2025-26", { stcg: 1000 })]);
+    const t = computeTaxTimeline([fy("2016-17", { speculative: -5000 }), fy("2025-26", { stcg111A: 1000 })]);
     expect(buildLossLedger(t)).toEqual([]);
   });
 
   it("multiple vintages sort oldest-first, then in bucket order", () => {
     const t = computeTaxTimeline([
       fy("2023-24", { nonSpeculative: -20000, speculative: -8000 }),
-      fy("2024-25", { stcg: -12000 }),
+      fy("2024-25", { stcg111A: -12000 }),
     ]);
     const ledger = buildLossLedger(t);
     expect(ledger.map((r) => [r.fyIncurred, r.bucket])).toEqual([
@@ -112,7 +119,7 @@ describe("buildLossLedger — surviving vintages as of the latest FY", () => {
     // timeline — the ledger reports null rather than inventing an original.
     // The later carry-forward editor stage relies on exactly this contract.
     const t = computeTaxTimeline(
-      [fy("2025-26", { stcg: 30000 })],
+      [fy("2025-26", { stcg111A: 30000 })],
       [{ bucket: "stcl", fyIncurred: "2023-24", amount: 100000 }],
     );
     expect(buildLossLedger(t)).toEqual([

@@ -137,7 +137,7 @@ describe("ipoTaxEstimate — STCG/LTCG on exit", () => {
     expect(c.tax!.term).toBe("ST");
     expect(c.tax!.ratePct).toBe(20);
     expect(c.tax!.estTax).toBeCloseTo(c.netPnl * 0.2, 1);
-    expect(c.tax!.postTaxNet).toBeCloseTo(c.netPnl - c.tax!.estTax, 1);
+    expect(c.tax!.postTaxNet).toBeCloseTo(c.netPnl - c.tax!.estTax!, 1);
   });
 
   it("held ≥365 days = LTCG at 12.5%", () => {
@@ -150,6 +150,58 @@ describe("ipoTaxEstimate — STCG/LTCG on exit", () => {
     const t = ipoTaxEstimate(1000, "2024-05-01", "2024-07-01");
     expect(t.ratePct).toBe(15);
     expect(t.estTax).toBe(150);
+    expect(t.blankReason).toBeNull();
+  });
+
+  /**
+   * v4.5.0 wave 3b-i, ASSIGNED PRODUCT FIX (invariant 6).
+   *
+   * `capitalGainsRatesFor` gained `stcgBlank`/`ltcgBlank`: where this release
+   * can cite NO rate for a transfer date it returns 0 WITH the flag set.
+   * `ipoTaxEstimate` read the 0 and ignored the flag, so an IPO exited before
+   * Chapter VII (STT) commenced on 1-10-2004 printed "₹0 of tax" — a figure the
+   * app had not derived, stated as if it had. Before that date a short-term
+   * gain was taxed at the user's personal SLAB rate, which this journal does not
+   * know (`egazette-22230-SO1058E-2004-09-28-STT-chapter-VII-commencement-….pdf`).
+   */
+  it("an exit before 1-10-2004 states NO tax — not ₹0", () => {
+    const t = ipoTaxEstimate(1000, "2003-01-01", "2003-06-01");
+    expect(t.term).toBe("ST");
+    expect(t.ratePct).toBeNull();
+    expect(t.estTax).toBeNull();
+    expect(t.estTax).not.toBe(0); // the whole defect: 0 read as "nothing is owed"
+    expect(t.postTaxNet).toBeNull();
+    expect(t.blankReason).toMatch(/slab rate/);
+    // The AMOUNT is still complete — only the tax is missing.
+    expect(t.taxableGain).toBe(1000);
+  });
+
+  /**
+   * The same date range LONG-term is a different answer, and a deliberate change
+   * from the old flat 10%: between 1-10-2004 and 31-3-2018 a long-term STT-paid
+   * equity gain was EXEMPT under S.10(38), so 0 is CORRECT here and the flag is
+   * false (`incometaxindia-finance-no2-act-2004-s5h-s10-38-…-capture.txt`;
+   * sunset in `egazette-184302-finance-act-2018-act13.pdf`).
+   */
+  it("a 2016 long-term exit is EXEMPT under S.10(38) — 0 tax, stated, not blank", () => {
+    const t = ipoTaxEstimate(1000, "2014-01-01", "2016-06-01");
+    expect(t.term).toBe("LT");
+    expect(t.ratePct).toBe(0);
+    expect(t.estTax).toBe(0);
+    expect(t.blankReason).toBeNull();
+    expect(t.postTaxNet).toBe(1000);
+  });
+
+  it("a blank-tax exit keeps its NET in the summary and is counted apart", () => {
+    // It must not silently vanish from realisedNet, and it must not be folded
+    // into estTax as a zero either.
+    const s = summariseIpos([
+      computeIpo(ipo({ id: 1, allotted: true, allottedQty: 50, exitPrice: 140, allotmentDate: "2003-01-01", exitDate: "2003-06-01" })),
+    ]);
+    expect(s.pricedExitCount).toBe(1);
+    expect(s.blankTaxExitCount).toBe(1);
+    expect(s.estTax).toBe(0);
+    expect(s.realisedNet).not.toBe(0);
   });
 
   it("a loss owes no tax and is flagged as a set-off-able capital loss", () => {
@@ -205,7 +257,7 @@ describe("summariseIpos", () => {
       computeIpo(ipo({ id: 2, lotsApplied: 1, allotted: true, allottedQty: 50, listingPrice: 120 })),
     ];
     const s = summariseIpos(list);
-    expect(s.estTax).toBeCloseTo(list[0].tax!.estTax, 1);
+    expect(s.estTax).toBeCloseTo(list[0].tax!.estTax!, 1);
     expect(s.postTaxNet).toBeCloseTo(s.realisedNet - s.estTax, 1);
   });
 

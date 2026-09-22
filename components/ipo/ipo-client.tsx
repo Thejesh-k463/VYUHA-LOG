@@ -162,8 +162,8 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
                           {!r.realised && r.status === "listed" && <span className="ml-1 text-[9px] text-muted-foreground">unrl</span>}
                         </td>
                         <td className="px-2.5 py-2 text-right tabular-nums text-warning">
-                          {r.tax && !r.tax.isLoss ? num(r.tax.estTax, 0) : r.tax?.isLoss ? "loss" : "—"}
-                          {r.tax && !r.tax.isLoss && <span className="ml-1 text-[9px] text-muted-foreground">{r.tax.term === "ST" ? "STCG" : "LTCG"}</span>}
+                          {r.tax && !r.tax.isLoss && r.tax.estTax != null ? num(r.tax.estTax, 0) : r.tax?.isLoss ? "loss" : "—"}
+                          {r.tax && !r.tax.isLoss && r.tax.estTax != null && <span className="ml-1 text-[9px] text-muted-foreground">{r.tax.term === "ST" ? "STCG" : "LTCG"}</span>}
                         </td>
                         <td className={`px-2.5 py-2 text-right tabular-nums ${r.returnPct == null ? "" : pnl(r.returnPct)}`}>{r.returnPct == null ? "—" : `${r.returnPct.toFixed(1)}%`}</td>
                         <td className="px-2.5 py-2">
@@ -271,12 +271,16 @@ export function IpoStatement({ r }: { r: IpoComputed }) {
                 <Row k="Tax" v="capital loss — set-off / carry-forward applies" cls="text-muted-foreground" />
               ) : (
                 <>
+                  {/* v4.5.0 — a blank rate prints an em dash and its reason, never
+                      ₹0 of tax: "nothing is owed" and "this journal cannot say"
+                      are different claims (invariant 6). */}
                   <Row
-                    k={`${r.tax.term === "ST" ? "STCG" : "LTCG"} @ ${r.tax.ratePct}% (held from ${r.tax.acquisitionDate ?? "—"})`}
-                    v={`− ${inr(r.tax.estTax)}`}
+                    k={`${r.tax.term === "ST" ? "STCG" : "LTCG"} @ ${r.tax.ratePct == null ? "—" : `${r.tax.ratePct}%`} (held from ${r.tax.acquisitionDate ?? "—"})`}
+                    v={r.tax.estTax == null ? "—" : `− ${inr(r.tax.estTax)}`}
                     cls="text-warning"
                   />
-                  <Row k="Post-tax net" v={inr(r.tax.postTaxNet)} cls={pnl(r.tax.postTaxNet)} strong />
+                  {r.tax.blankReason && <Row k="Why blank" v={r.tax.blankReason} cls="text-muted-foreground" />}
+                  <Row k="Post-tax net" v={r.tax.postTaxNet == null ? "—" : inr(r.tax.postTaxNet)} cls={r.tax.postTaxNet == null ? "" : pnl(r.tax.postTaxNet)} strong />
                 </>
               )}
             </>
@@ -664,8 +668,8 @@ export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: 
               <Cell k={previewCellLabel("Net P&L", broker)} v={preview.unpriced ? "—" : inr(preview.netPnl)} cls={preview.unpriced ? "" : pnl(preview.netPnl)} strong />
               {preview.tax && !preview.tax.isLoss && (
                 <>
-                  <Cell k={previewCellLabel(`${preview.tax.term === "ST" ? "STCG" : "LTCG"} @${preview.tax.ratePct}%`, broker)} v={inr(preview.tax.estTax)} cls="text-warning" />
-                  <Cell k={previewCellLabel("Post-tax net", broker)} v={inr(preview.tax.postTaxNet)} cls={pnl(preview.tax.postTaxNet)} strong />
+                  <Cell k={previewCellLabel(`${preview.tax.term === "ST" ? "STCG" : "LTCG"} @${preview.tax.ratePct == null ? "—" : `${preview.tax.ratePct}%`}`, broker)} v={preview.tax.estTax == null ? "—" : inr(preview.tax.estTax)} cls="text-warning" />
+                  <Cell k={previewCellLabel("Post-tax net", broker)} v={preview.tax.postTaxNet == null ? "—" : inr(preview.tax.postTaxNet)} cls={preview.tax.postTaxNet == null ? "" : pnl(preview.tax.postTaxNet)} strong />
                 </>
               )}
               {preview.tax?.isLoss && <Cell k="Tax" v="loss — set-off" cls="text-muted-foreground" />}

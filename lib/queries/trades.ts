@@ -529,6 +529,10 @@ const TAX_FIELDS = [
   // ISIN first, the symbol only as a fallback. COLUMNS ONLY, no new WHERE, so
   // `scopedBookRows` keeps invariant 8 and row order is unchanged.
   "isin",
+  // v4.5.0 wave 3b — the three charge lines that are NOT deductible against a
+  // capital gain and are therefore added back in the CG buckets only: STT
+  // (proviso to S.48) and the two financing lines (dossier §G2). Columns only.
+  "sttCtt", "mtfInterest", "pledgeCharges",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type TaxPageTrade = Pick<Trade, (typeof TAX_FIELDS)[number]>;
@@ -563,6 +567,10 @@ const HARVEST_FIELDS = [
   // v4.5.0 wave 3a — same as TAX_FIELDS: the ETF class is keyed on the ISIN.
   // Columns only, no new WHERE.
   "isin",
+  // v4.5.0 wave 3b — the two financing lines that are NOT deductible against a
+  // capital gain, so /reports/harvest and /reports/advance-tax agree with
+  // /reports/tax on the realised figure. Columns only.
+  "mtfInterest", "pledgeCharges",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;

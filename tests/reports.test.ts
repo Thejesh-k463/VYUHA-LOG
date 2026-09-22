@@ -92,19 +92,27 @@ describe("discipline scorecard", () => {
 });
 
 describe("tax summary scaffold", () => {
+  // v4.5.0 — `assetClass` is REQUIRED on a TaxTrade and never defaulted; these
+  // are ordinary listed shares, so they say so rather than letting a default
+  // tax a fund unit at S.111A/S.112A.
   const trades: TaxTrade[] = [
-    { segment: "eq_delivery", instrumentType: "equity", sellDate: "2026-06-01", buyDate: "2026-05-30", grossPnl: 1100, netPnl: 1000, buyValue: 49000, sellValue: 50000, chargesTotal: 100, isOpen: false },
-    { segment: "eq_intraday", instrumentType: "equity", sellDate: "2026-06-02", buyDate: "2026-06-02", grossPnl: -400, netPnl: -500, buyValue: 20000, sellValue: 19600, chargesTotal: 100, isOpen: false },
-    { segment: "index_option", instrumentType: "option", sellDate: "2026-06-03", buyDate: "2026-06-03", grossPnl: 2100, netPnl: 2000, buyValue: 10000, sellValue: 12000, chargesTotal: 100, isOpen: false },
-    { segment: "eq_delivery", instrumentType: "equity", sellDate: "2026-06-01", buyDate: "2025-01-01", grossPnl: 5200, netPnl: 5000, buyValue: 40000, sellValue: 45000, chargesTotal: 200, isOpen: false },
+    { segment: "eq_delivery", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-01", buyDate: "2026-05-30", grossPnl: 1100, netPnl: 1000, buyValue: 49000, sellValue: 50000, chargesTotal: 100, isOpen: false },
+    { segment: "eq_intraday", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-02", buyDate: "2026-06-02", grossPnl: -400, netPnl: -500, buyValue: 20000, sellValue: 19600, chargesTotal: 100, isOpen: false },
+    { segment: "index_option", assetClass: "share", instrumentType: "option", sellDate: "2026-06-03", buyDate: "2026-06-03", grossPnl: 2100, netPnl: 2000, buyValue: 10000, sellValue: 12000, chargesTotal: 100, isOpen: false },
+    { segment: "eq_delivery", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-01", buyDate: "2025-01-01", grossPnl: 5200, netPnl: 5000, buyValue: 40000, sellValue: 45000, chargesTotal: 200, isOpen: false },
   ];
   it("classifies STCG/LTCG/intraday/F&O per FY with turnover", () => {
     const fy = taxByFy(trades, 4, "2026-27");
     expect(fy.length).toBe(1);
     const s = fy[0];
     expect(s.fy).toBe("2026-27");
-    expect(s.stcg).toBe(1000);
-    expect(s.ltcg).toBe(5000);
+    // Both delivery rows are shares: one held 2 days (s.111A), one held from
+    // 1-Jan-2025 to 1-Jun-2026, past twelve calendar months (s.112A). Neither
+    // fixture carries an STT or financing line, so no add-back moves a figure.
+    expect(s.stcg111A).toBe(1000);
+    expect(s.ltcg112A).toBe(5000);
+    expect(s.sttAddedBack).toBe(0);
+    expect(s.notDeductedMtf).toBe(0);
     expect(s.intradaySpeculative).toBe(-500);
     expect(s.fnoBusiness).toBe(2000);
     expect(s.fnoTurnover).toBe(14100); // |2100| + 12000 premium

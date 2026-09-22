@@ -86,7 +86,10 @@ const ipoNetOf = (accountId: number) => {
 function taxOf(accountId: number) {
   selectAccount(accountId);
   const base = taxItr.getTaxBase();
-  const fy = tax.taxByFy([...base.trades, ...base.ipoTaxRows], 4, FY);
+  // v4.5.0 — `taxRows` (not `trades`) is what /reports/tax feeds taxByFy: the
+  // same closed rows, carrying the RESOLVED assetClass and the three
+  // non-deductible charge lines (app/reports/tax/page.tsx:112).
+  const fy = tax.taxByFy([...base.taxRows, ...base.ipoTaxRows], 4, FY);
   return {
     ipoNames: base.exitedIpos.map((r) => r.name),
     ipoTaxNets: base.ipoTaxRows.map((r) => r.netPnl),

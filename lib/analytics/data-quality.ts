@@ -112,6 +112,30 @@ export function etfClassUndetermined(trades: readonly QualityTrade[]): QualityTr
   });
 }
 
+/**
+ * Rows whose SYMBOL is still a bare numeric exchange scrip code and that state
+ * no ISIN (v4.5.0 wave 3b, defect P3).
+ *
+ * The resolution chain (`lib/import/isin-symbol.ts`) deliberately KEEPS a code
+ * it cannot resolve rather than dropping the row — a trade you can see is worth
+ * more than one silently discarded. But a kept code is not evidence that the
+ * instrument is an equity share, and until v4.5.0 the tax surfaces treated it
+ * as one and taxed it at S.111A/S.112A. `assetClassFor` now answers
+ * `undetermined` for exactly this shape, and this issue names the codes so the
+ * user can settle them.
+ *
+ * Restricted to the delivery/MTF/intraday segments: an F&O row is business
+ * income whatever its symbol looks like, so nothing there is affected.
+ */
+export function codedSymbolNoIsin(trades: readonly QualityTrade[]): QualityTrade[] {
+  return trades.filter(
+    (t) =>
+      ETF_CLASS_SEGMENTS.has(t.segment) &&
+      !String(t.isin ?? "").trim() &&
+      /^\d+$/.test(String(t.symbol ?? "").trim()),
+  );
+}
+
 /** The distinct symbols an issue is about, as the card prints them. */
 export function etfClassSymbols(rows: readonly QualityTrade[], limit = 6): string {
   const names = [...new Set(rows.map((t) => t.symbol.toUpperCase()))].sort();
@@ -1528,6 +1552,24 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
       href: "/trades",
     },
     undetermined.map((t) => t.id),
+  );
+
+  // P4/P3 (v4.5.0 wave 3b) — a BARE BSE SCRIP CODE with no ISIN. `isCodedSymbol`
+  // has recognised the shape since the Paytm work; what changed is what it MEANS
+  // for tax: the row is not known to be an equity share, so `assetClassFor`
+  // answers `undetermined` and its capital-gains head is BLANK (invariant 6).
+  // Naming the code is the whole fix — the user knows what 532540 is.
+  const codedNoIsin = codedSymbolNoIsin(i.trades);
+  add(
+    {
+      code: "coded_symbol_no_isin",
+      severity: "warning",
+      title: "Numeric scrip code with no ISIN",
+      detail: `These rows state a bare exchange scrip code and no ISIN, so this journal cannot say what was traded: ${etfClassSymbols(codedNoIsin)}. Their capital-gains head, term and rate are left BLANK rather than assumed to be an equity share — set the symbol or the ISIN on the trade and they resolve.`,
+      count: codedNoIsin.length,
+      href: "/trades",
+    },
+    codedNoIsin.map((t) => t.id),
   );
 
   const options = i.trades.filter((t) => t.instrumentType === "option" && (!t.expiry || t.strike == null || !t.optionType));

@@ -12,7 +12,8 @@ import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy } from "@/lib/analyt
 import { section } from "@/lib/analytics/statute";
 import { itrScheduleByFy, scheduleExportRows, taxesPaidByFy, taxesPaidExportRows } from "@/lib/analytics/itr-schedule";
 import { getChallans } from "@/lib/queries/challans";
-import { aggregateTradesByFy, computeTaxTimeline, type CarryForwardLot } from "@/lib/analytics/capital-gains";
+import { aggregateTradesByFy, computeTaxTimeline, MTF_NOT_DEDUCTED_NOTE, type CarryForwardLot } from "@/lib/analytics/capital-gains";
+import { assetClassFor } from "@/lib/analytics/cg-heads";
 import { currentFy as deriveCurrentFy } from "@/lib/analytics/tax";
 import { getBfLossRows, toSeedLots } from "@/lib/queries/bf-losses";
 import { inr } from "@/lib/format";
@@ -77,12 +78,20 @@ export default async function ItrPackPage({
   const scopeNote = taxScopeHeader(scope);
   // `getTrades(scope.accountIds)` and not `getTaxTrades`: the schedule builder
   // reads `sttCtt`, which the tax projection does not carry.
-  const trades = getTrades(scope.accountIds);
+  const rawTrades = getTrades(scope.accountIds);
+  // v4.5.0 — the asset class is resolved ONCE, here, and threaded into all
+  // three builders below. Every one of them used to re-derive the head from the
+  // segment, so a gold ETF was a 112A gain on three different tables.
+  const trades = rawTrades.map((t) => ({
+    ...t,
+    assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
+  }));
   const packs = itrPackByFy(
     trades.map((t) => ({
-      segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+      segment: t.segment, assetClass: t.assetClass, buyDate: t.buyDate, sellDate: t.sellDate,
       grossPnl: t.grossPnl, netPnl: t.netPnl, sellValue: t.sellValue,
-      chargesTotal: t.chargesTotal, isOpen: t.isOpen,
+      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
+      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges, isOpen: t.isOpen,
     })),
     fyStartMonth,
   );
@@ -92,8 +101,9 @@ export default async function ItrPackPage({
   const currentFy = packs[packs.length - 1]?.fy ?? "2026-27";
   const byFy = aggregateTradesByFy(
     trades.filter((t) => !t.isOpen).map((t) => ({
-      segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+      segment: t.segment, assetClass: t.assetClass, buyDate: t.buyDate, sellDate: t.sellDate,
       buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
+      sttCtt: t.sttCtt, mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
       fmv31Jan2018: t.fmv31Jan2018,
     })),
     fyStartMonth,
@@ -112,10 +122,11 @@ export default async function ItrPackPage({
 
   const schedules = itrScheduleByFy(
     trades.map((t) => ({
-      segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+      segment: t.segment, assetClass: t.assetClass, buyDate: t.buyDate, sellDate: t.sellDate,
       buyValue: t.buyValue, sellValue: t.sellValue,
       grossPnl: t.grossPnl, netPnl: t.netPnl,
       chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
+      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
       fmv31Jan2018: t.fmv31Jan2018, isOpen: t.isOpen,
     })),
     fyStartMonth,
@@ -140,8 +151,15 @@ export default async function ItrPackPage({
   const exportRows = packs.flatMap((p) => [
     { fy: p.fy, head: "Speculative business (intraday equity)", trades: p.speculative.trades, net: p.speculative.net, turnover: p.speculative.turnover, turnoverBroker: p.speculative.turnoverBroker, charges: p.speculative.charges },
     { fy: p.fy, head: "Non-speculative business (F&O)", trades: p.nonSpeculative.trades, net: p.nonSpeculative.net, turnover: p.nonSpeculative.turnover, turnoverBroker: p.nonSpeculative.turnoverBroker, charges: p.nonSpeculative.charges },
-    { fy: p.fy, head: "Capital gains — STCG", trades: p.capitalGains.trades, net: p.capitalGains.stcg, turnover: 0, turnoverBroker: 0, charges: p.capitalGains.charges },
-    { fy: p.fy, head: "Capital gains — LTCG", trades: 0, net: p.capitalGains.ltcg, turnover: 0, turnoverBroker: 0, charges: 0 },
+    // v4.5.0 — one row per HEAD, not one "STCG" row that merged a concessional
+    // 111A gain with a slab-rate one and an s.50AA-deemed one.
+    { fy: p.fy, head: "Capital gains — STCG (s.111A)", trades: p.capitalGains.trades, net: p.capitalGains.stcg111A, turnover: 0, turnoverBroker: 0, charges: p.capitalGains.charges },
+    { fy: p.fy, head: "Capital gains — STCG at slab / s.50AA deemed", trades: 0, net: p.capitalGains.stcgOther, turnover: 0, turnoverBroker: 0, charges: 0 },
+    { fy: p.fy, head: "Capital gains — LTCG (s.112A)", trades: 0, net: p.capitalGains.ltcg112A, turnover: 0, turnoverBroker: 0, charges: 0 },
+    { fy: p.fy, head: "Capital gains — LTCG (s.112, non-equity unit)", trades: 0, net: p.capitalGains.ltcg112, turnover: 0, turnoverBroker: 0, charges: 0 },
+    { fy: p.fy, head: "Capital gains — head undetermined", trades: 0, net: p.capitalGains.cgUndetermined, turnover: 0, turnoverBroker: 0, charges: 0 },
+    { fy: p.fy, head: "MTF interest + pledge charges NOT deducted", trades: 0, net: p.capitalGains.notDeductedMtf, turnover: 0, turnoverBroker: 0, charges: 0 },
+    { fy: p.fy, head: "STT added back in the capital-gains buckets", trades: 0, net: p.capitalGains.sttAddedBack, turnover: 0, turnoverBroker: 0, charges: 0 },
   ]);
 
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -200,9 +218,36 @@ export default async function ItrPackPage({
                 <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   <KpiCard label="Speculative (intraday)" valueNum={p.speculative.net} format="inr0" valueClassName={pnl(p.speculative.net)} sub={`turnover ${inr(p.speculative.turnover, { decimals: 0 })} · ${p.speculative.trades} trades`} />
                   <KpiCard label="Non-speculative (F&O)" valueNum={p.nonSpeculative.net} format="inr0" valueClassName={pnl(p.nonSpeculative.net)} sub={`turnover ${inr(p.nonSpeculative.turnover, { decimals: 0 })} · ${p.nonSpeculative.trades} trades`} />
-                  <KpiCard label="STCG (delivery/MTF)" valueNum={p.capitalGains.stcg} format="inr0" valueClassName={pnl(p.capitalGains.stcg)} sub={`${p.capitalGains.trades} CG trades`} />
-                  <KpiCard label="LTCG (≥ 12m)" valueNum={p.capitalGains.ltcg} format="inr0" valueClassName={pnl(p.capitalGains.ltcg)} sub="grandfathering on Tax Summary" />
+                  <KpiCard label={`STCG (${section(p.fy, "stcgEquity")})`} valueNum={p.capitalGains.stcg111A} format="inr0" valueClassName={pnl(p.capitalGains.stcg111A)} sub={`${p.capitalGains.trades} CG trades`} />
+                  <KpiCard label={`LTCG (${section(p.fy, "ltcgEquity")})`} valueNum={p.capitalGains.ltcg112A} format="inr0" valueClassName={pnl(p.capitalGains.ltcg112A)} sub="grandfathering on Tax Summary" />
                 </section>
+                {/* The three non-112A capital-gains heads only appear when the
+                    book actually holds one — a permanently-zero column reads as
+                    a figure rather than an absence. */}
+                {(p.capitalGains.stcgOther !== 0 || p.capitalGains.ltcg112 !== 0 || p.capitalGains.cgUndetermined !== 0) && (
+                  <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                    {p.capitalGains.stcgOther !== 0 && (
+                      <KpiCard label={`STCG at slab / ${section(p.fy, "stcgDeemedSmf")} deemed`} valueNum={p.capitalGains.stcgOther} format="inr0" valueClassName={pnl(p.capitalGains.stcgOther)} sub="tax blank — slab rate not known here" />
+                    )}
+                    {p.capitalGains.ltcg112 !== 0 && (
+                      <KpiCard label={`LTCG (${section(p.fy, "ltcgOther")}) — non-equity unit`} valueNum={p.capitalGains.ltcg112} format="inr0" valueClassName={pnl(p.capitalGains.ltcg112)} sub="no cost-inflation index bundled" />
+                    )}
+                    {p.capitalGains.cgUndetermined !== 0 && (
+                      <KpiCard label="Head undetermined" valueNum={p.capitalGains.cgUndetermined} format="inr0" valueClassName={pnl(p.capitalGains.cgUndetermined)} sub="fix the symbol or ISIN — see Data Quality" />
+                    )}
+                  </section>
+                )}
+                {(p.capitalGains.notDeductedMtf > 0 || p.capitalGains.sttAddedBack > 0) && (
+                  <p className="text-xs text-muted-foreground">
+                    {p.capitalGains.notDeductedMtf > 0 && (
+                      <>MTF interest / pledge charges not deducted: {inr(p.capitalGains.notDeductedMtf, { decimals: 0 })}. </>
+                    )}
+                    {p.capitalGains.sttAddedBack > 0 && (
+                      <>STT added back in the capital-gains buckets: {inr(p.capitalGains.sttAddedBack, { decimals: 0 })}. </>
+                    )}
+                    {MTF_NOT_DEDUCTED_NOTE}
+                  </p>
+                )}
 
                 {/* Turnover, both ways — the same book produces BOTH numbers,
                     and they can land on opposite sides of an audit threshold.

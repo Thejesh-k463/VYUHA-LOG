@@ -3,6 +3,9 @@ import { itrPackByFy, auditVerdict, AUDIT_LIMIT_DIGITAL, type ItrTrade } from ".
 
 const t = (over: Partial<ItrTrade>): ItrTrade => ({
   segment: "eq_intraday",
+  // v4.5.0 — REQUIRED, never defaulted: the head follows the ASSET CLASS, not
+  // the segment. These fixtures trade ordinary listed shares.
+  assetClass: "share",
   buyDate: "2026-05-01",
   sellDate: "2026-05-01",
   grossPnl: 0,
@@ -35,10 +38,38 @@ describe("itrPackByFy — head segregation", () => {
     expect(p.nonSpeculative.trades).toBe(2);
     expect(p.nonSpeculative.net).toBe(2200);
     expect(p.nonSpeculative.turnover).toBe(17000);
-    // Capital gains: delivery held 1 month = STCG; MTF held 2 years = LTCG
-    expect(p.capitalGains.stcg).toBe(2000);
-    expect(p.capitalGains.ltcg).toBe(15000);
+    // Capital gains: delivery held 1 month = s.111A short-term; MTF held 2
+    // years = s.112A long-term. v4.5.0 names the SECTION — one "stcg" column
+    // merged a concessional gain with a slab-rate one.
+    expect(p.capitalGains.stcg111A).toBe(2000);
+    expect(p.capitalGains.ltcg112A).toBe(15000);
+    expect(p.capitalGains.stcgOther).toBe(0);
+    expect(p.capitalGains.ltcg112).toBe(0);
+    expect(p.capitalGains.cgUndetermined).toBe(0);
     expect(p.capitalGains.trades).toBe(2);
+    // No STT or financing charge on these fixtures, so nothing was added back.
+    expect(p.capitalGains.sttAddedBack).toBe(0);
+    expect(p.capitalGains.notDeductedMtf).toBe(0);
+  });
+
+  /** Second-pass ruling (a), on the ITR pack too: the add-back is CG-only. */
+  it("adds STT and financing charges back into the CG heads, never the business heads", () => {
+    const charges = { sttCtt: 30, mtfInterest: 20, pledgeCharges: 10 };
+    const [p] = itrPackByFy([
+      t({ segment: "eq_delivery", buyDate: "2026-04-01", sellDate: "2026-05-01", netPnl: 1000, ...charges }),
+      t({ segment: "eq_intraday", grossPnl: 500, netPnl: 500, ...charges }),
+      t({ segment: "future", grossPnl: 400, netPnl: 400, ...charges }),
+    ]);
+    // 1000 + 30 STT + (20 + 10) financing = 1060.
+    expect(p.capitalGains.stcg111A).toBe(1060);
+    expect(p.capitalGains.sttAddedBack).toBe(30);
+    expect(p.capitalGains.notDeductedMtf).toBe(30);
+    const [plain] = itrPackByFy([
+      t({ segment: "eq_intraday", grossPnl: 500, netPnl: 500 }),
+      t({ segment: "future", grossPnl: 400, netPnl: 400 }),
+    ]);
+    expect(p.speculative).toEqual(plain.speculative);
+    expect(p.nonSpeculative).toEqual(plain.nonSpeculative);
   });
 
   it("carries BOTH turnover bases and an audit read on each (owner decision 2026-09-01)", () => {
