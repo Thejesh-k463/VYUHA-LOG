@@ -8663,3 +8663,42 @@ the CI run on `86bcd06` was 35763585856 SUCCESS 6/6 the whole time — a release
 **Prose pass (the owner asked whether it happened — it had not, the executable half alone had run): `doc-auditor` on Sonnet over 8 files, 0 findings, 12 tool calls,
 ~89k subagent tokens; one GAP (the release skill did not yet state the owner-publishes stop) — fixed in the skill and the prose pass made mandatory in AGENTS.md
 "End-of-session drift check" with a cite-or-it-did-not-happen rule (this line is the cite).**
+
+## 2026-09-23 — the fleet-tune pass (the eighteenth session): prompts changed, enforcement proposed, what the record measured
+
+Ran because the SessionStart line said DUE (14.3 days since the last tune; 45 sessions / 274 hook decisions since 2026-09-09) and
+the seventeenth session's paste block scheduled it for its own session. No product code changed; `npm run verify` NOT re-run.
+**Measured (the report at `~/.claude/coord/learnings/reports/2026-09-23.md`; folded from `events.jsonl` with node, since the rtk
+grep hook summarises grep output):** the coord "heredoc feeding an interpreter" DENY fired **250 times** in 14 days across 43
+sessions — VYUHA 175 / HUB 63 / SENTINEL 12 — and **191 of them were `python - <<'EOF'` patch scripts** (`s.replace(...)` over one
+file); the only `git commit -F -` case was 1. Every one is a wasted turn, not a mis-scoped rule (the rule guards a real corruption
+class, DECISIONS 2026-09-08), so the fix is prompt-side: `builder.md` and `vyuha-builder.md` now say write the script to the
+scratchpad with the Write tool and run it by ABSOLUTE path (`$CLAUDE_SCRATCHPAD` is unset inside Bash). The "DECISIONS.md read whole"
+DENY fired **20 times**, all VYUHA — `vyuha-builder.md`, `vyuha-auditor.md`, `doc-auditor.md` and `skeptic.md` now say
+`grep -n '^## 2026-'` for the headings, then `sed -n` one entry. **46 `general-purpose` subagent calls:** ten were research briefs
+("Research Indian F&O data sources", "Upstox plans deep research", "Research pre-Oct-2024 exchange txn charges") with no agent to
+route to → a global `researcher` agent (Opus per the standing default; read-only under `readonly-guard`; WebSearch/WebFetch;
+every claim cited with tier, date and a ≤15-word quote, unsourced claims listed separately; it never proposes a design); four were
+"Verify X independently" → `skeptic`'s description gained "verify this independently" / "double-check the fix" / "did that actually
+land". **Stale paths:** five global agents cited `T:/Thejesh/CLAUDE-CODE/TRADE-SENTINAL/…` or `tools/impact_gates.py` — the repo
+moved to `SENTINEL/bot` on 2026-09-10 and the two files live at `SENTINEL/bot/sentinel/docs/DECISIONS.md` (1.1 MB now, was 917 KB)
+and `SENTINEL/bot/sentinel/tools/impact_gates.py` (it resolves its own root; run as
+`sentinel/.venv/Scripts/python.exe sentinel/tools/impact_gates.py` from `bot/`) — all repointed. **0× for a second consecutive tune**
+(one more before a deletion proposal): `budget-governor`, `coord-doctor`, `vyuha-monitor`, `atlas-builder/-monitor/-verifier`, and
+the skills `budget`, `fleet-status`, `prove-it`, `token-efficient-coding`, `vyuha-status`, `vyuha-verify` — their jobs were done
+inline by the orchestrator each time (the release steward and verifier agents WERE used, 3× and 32×). **25 of 45 sessions crossed
+400K context** (worst 809K) — no proposal: the 2026-09-11 wave-guard proposal was rejected as a false premise and `context-watch`
+logs no decisions, so the record cannot say whether it fired.
+**Enforcement, PROPOSED not applied:** `coord/config.json` registers SENTINEL at `T:/Thejesh/CLAUDE-CODE/TRADE-SENTINAL`, which
+does not exist — so the stale-path detector STILL names `sentinel/…` tokens after the repoint (it resolves against registered roots),
+and the coord repo-ownership rule cannot match a write into `SENTINEL/bot`. Written as `[PENDING]` in `HOOK-PROPOSALS.md`; two
+proposals now await the owner. The hook-gate denied two of this session's commands that merely NAMED a gated path inside a heredoc
+or beside a redirect (the documented substring behaviour) — rephrased via a scratch file, never unlocked.
+Rejected: a per-repo `researcher` (the ten calls spanned HUB, VYUHA and SENTINEL); Sonnet for it (research briefs feed designs and
+the estate's default is Opus); editing `learn.mjs`'s subdir walk to paper over the config root (a hook file, and the config is
+the actual defect). Global edits committed in the `~/.claude` repo (its own git, no remote); `learn.mjs mark-tuned` done; next tune
+due ~2026-09-30.
+**Prose pass: 8 files / 0 findings / 17 tool calls** (`doc-auditor` on Sonnet, ~92k subagent tokens; harness-metered 22 tool uses)
+over STATE §0, the archived block (byte-compared to `git show HEAD:VYUHA-STATE.md`), AGENTS.md, CLAUDE.md, README top, the session
+log's new ledger + paste block, and the two edited VYUHA agent prompts; the CI reading (35780535565 6/6 on `06d02a9`; the `a9d5c59`
+run `cancelled` = superseded) and the HEAD chain re-derived by the auditor.

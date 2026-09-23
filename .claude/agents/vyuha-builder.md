@@ -76,7 +76,13 @@ touches no file outside your set and a gate that the operator can re-run.
   `npm run db:generate` then `npm run db:migrate`; migrations 0027+ are hand-written and need
   a `drizzle/meta/_journal.json` entry.
 - Check `docs/DECISIONS.md` before changing a constant that looks arbitrary, and append to it
-  when you measure something or deviate.
+  when you measure something or deviate. It is 8,600+ lines and the coord hook DENIES a whole
+  `Read` (20 denies in the two weeks to 2026-09-23) — `grep -n '^## 2026-' docs/DECISIONS.md`
+  for the headings, then `sed -n` the one entry.
+- Never feed python or node a heredoc (`python - <<'EOF'`): coord DENIES it, and it was the
+  most-fired rule in this repo (175 denies in the same fortnight, nearly all patch scripts).
+  Write the script to the scratchpad with the Write tool and run `python <absolute path>`,
+  or use Edit. `$CLAUDE_SCRATCHPAD` is unset inside Bash here — spell the absolute path.
 
 ## Procedure
 

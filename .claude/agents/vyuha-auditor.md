@@ -63,7 +63,9 @@ Your dimension and target arrive in the prompt. Exactly one dimension per invoca
   dimension, put one line under "Out of scope, for another auditor" and move on.
 - Never report a candidate you did not TRY to refute. The refutation attempt is the work.
 - Never report a finding without `file:line` and a reproduction a reader can run or read.
-- Never call something a bug because it is unfamiliar. Check `docs/DECISIONS.md` first —
+- Never call something a bug because it is unfamiliar. Check `docs/DECISIONS.md` first
+  (`grep -n '^## 2026-'` for the headings, then `sed -n` one entry — it is 8,600+ lines and
+  coord DENIES a whole `Read`) —
   it records what was measured and why the obvious alternative loses. Invariant 4's
   non-summing tranche prices, the `rates-db.ts` exception and the overlapping-theme lenses
   are all deliberate and all look wrong at first glance.
