@@ -8702,3 +8702,17 @@ due ~2026-09-30.
 over STATE §0, the archived block (byte-compared to `git show HEAD:VYUHA-STATE.md`), AGENTS.md, CLAUDE.md, README top, the session
 log's new ledger + paste block, and the two edited VYUHA agent prompts; the CI reading (35780535565 6/6 on `06d02a9`; the `a9d5c59`
 run `cancelled` = superseded) and the HEAD chain re-derived by the auditor.
+
+## 2026-09-24 — the owner closed v4.5.0: installed off the build machine, smoke-tested, WDSI submitted; no rework after /clear
+
+Owner, 2026-09-24: "I have finished my steps and all are working and correct (even after clear, no rework should be done for the
+completed items)." Read as STATE §0 row 16's owner-owed items — the 4.5.0 install on a non-build machine, its six-item smoke test
+(account #3 net ₹75,132.75 after migration 0074; a re-tag leaving a stated bill alone; the auto-close card; the tax-person picker
+under two persons; a gold ETF outside the ₹1.25 L exemption; the updater offering 4.5.0 to an installed 4.4.0) and the WDSI
+submission. These are OWNER-verified: no session re-derived a number from the owner's machine, and none will — the ruling is that
+a cleared session does not re-open a closed item. Checked on disk BEFORE recording, so the report was not over-read: the two hook
+proposals in `~/.claude/coord/learnings/HOOK-PROPOSALS.md` are still `[PENDING]` and `coord/config.json` still registers SENTINEL
+at the pre-move path — those remain operator-owed. winget stays HELD by choice. Row 16 CLOSED; §0.4 question 1 answered; the
+4.4.0 install/WDSI question subsumed. Session gate: HEAD `16ea079`, CI 35894541800 6/6, tag v4.5.0, `releases/latest` v4.5.0,
+`npm run verify` not re-run (no code change). Rejected: asking whether "my steps" included the hook proposals — the disk answered it.
+**Prose pass: 8 files / 0 findings / 17 tool calls (doc-auditor on Sonnet, ~71k subagent tokens; harness-metered 23) — STATE §0, the archived block byte-compared to HEAD, AGENTS.md, CLAUDE.md, README top, the session log, the 2026-09-24 entry, HOOK-PROPOSALS.md markers; HEAD chain and CI re-derived by the auditor.**
