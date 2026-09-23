@@ -8765,3 +8765,58 @@ high/low (before C2).
 Owner-owed input: the eight calendar source files (`00-SPEC-PLAN.md` §6), saved into one folder. The two hook
 proposals are still `[PENDING]`.
 **Prose pass: 16 files / 1 finding / 42 tool calls** (doc-auditor on Sonnet, ~115k subagent tokens; over its 35-call cap, stated) — the archived block byte-equal to HEAD's §0 (diff exit 0); every cited path, npm script, the tag, version 4.5.0, migration 0074, the palette's 418 lines and the 10-entry Analytics group re-derived; ONE finding fixed: R0 and LEDGER R-1 said 74 analytics modules, the tree has 71.
+
+## 2026-09-24 — alignment audit after the scope session: one paste block, one ledger, 24 findings fixed, seven ambiguities settled
+
+The owner asked whether the session ran in the right folder, whether files were saved without mismatch, and whether
+v4.6.0 can be built without misreading. Folder: correct (`git rev-parse --show-toplevel` = TRADE-JOURNAL). The research
+lives OUTSIDE the repo by precedent (`21-V450-BUILD`). The owner's "file not found" was a repo-relative link
+(`LIVE-DESK-RESEARCH/…` opened as `TRADE-JOURNAL/LIVE-DESK-RESEARCH/…`), not a missing file (LEDGER L-4).
+**Correction to the scope entry above:** "the eight calendar source files (`00-SPEC-PLAN.md` §6)" is superseded. The ONE
+list is `VYUHA/LIVE-DESK-RESEARCH/_data/market-calendar-2026-09-24/DOWNLOAD-LIST.md`, with 10 items (1–5 and 7 required;
+6 and 8–10 optional, built as "secondary"). The spec's own §6 copy was deleted so the numbering cannot drift.
+
+**Fixed by the session before the audit:**
+- STATE §3 routed new sessions to the retired `NEXT-SESSION-CONTINUATION.md` and the ledger to `09-BUILD-LEDGER.md`.
+  Both are now history, with banners; `docs/LEDGER.md` is the ledger from v4.6.0.
+- STATE §8.00 said "awaiting build"; it now says v4.7.0 C4.
+- AGENTS.md cited the moved `TRADE-SENTINAL/sentinel/NIFTY INDICES`; it is now `SENTINEL/bot/…`.
+- The spec named the Clinic both `/reports/clinic` and a hub tab. It is the hub tab `/reports/edge-clinic?tab=clinic`,
+  and `/reports/clinic` redirects there.
+- The paste block moved from the v4.5.0 log to `22-V460-BUILD/SESSION-LOG.md`, the ONLY current one.
+- 06-ANSWERS gained a pointer section to the spec's §0 table.
+- Both VYUHA memory sets were repointed. The Positions-tab inputs are discharged by P1/P2; the Q69b "Fable for auditors"
+  rule is superseded by the global Opus-first policy.
+
+**Independent audit** (`skeptic` on Opus): 77 files / 24 findings / 41 tool calls. All 24 are fixed in the same commit:
+- This entry did not exist although four files cited it.
+- STATE's "newest DECISIONS" line; the HEAD claim, made true by this commit.
+- `DOWNLOAD-LIST.md` contradicted itself on missing files.
+- The license script is `scripts/license-issue.mjs`, not `license-mint.mjs`.
+- The Research `00-INDEX.md` banner pointed to the retired file.
+- Two skills still waited with `gh run list --commit`, and the audit skill said "Fable".
+- The design reviewer cited a repo-relative research path.
+- The paste block's model line could be read loosely.
+- Cosmetic: STATE line 5's date, the `workspace.ts` per-tab hiding, "the next migration (0075 today)", and the W1 ledger check.
+
+**Seven ambiguities settled** (two builders would otherwise build different things). Decided under the decision policy;
+the owner may overrule each:
+1. **CAS membership** is known only from the F&O-underlyings snapshot's date onward. Before that (from 2026-08-03) the
+   calendar applies R4 rule 2's union band, labelled "closing window". Stored marks are never rewritten. Rejected:
+   back-applying today's list to August (it would assert a membership nobody recorded).
+2. **Call sites:** 18 migrate (R4 rows 1–12 and 14–19). Row 13 stays as the one canonical IST, row 20 (sebi-radar rules)
+   is out of W1, and row 21 stays. Rejected: "all 21" (it would move the canonical IST into itself).
+3. **Mark minutes, exact:** CAS stocks from 15:36, non-CAS from 15:31, F&O from 15:45. Each boundary is pinned by a
+   refused/allowed test.
+4. **Cap band types:** `getCapBandMap()` returns AMFI large/mid/small. The old map becomes `getIndexBandMap()` (with
+   micro and unclassified) for the Atlas lens, and AGENTS.md is updated in W2.
+5. **AMFI file:** the script fetches it and records its sha256. If the host refuses, the owner downloads it and passes
+   `--amfi`.
+6. **The missing-file rule** of the download list (above).
+7. **Positions canvas:** ruling S1 scheduled row 6 but did not answer "round 3 as shown, or changes?". That question is
+   added to the spec's §4 as "Before C4", together with the owner's unspecified tweaks.
+
+Not verifiable in-session: whether the owner meant S1 as "build round 3 as shown" (asked at C4), and R1's
+Bailey/López de Prado formulas (checked against the paper at C1).
+**Prose pass: the independent audit above IS this entry's prose pass — 77 files / 24 findings / 41 tool calls (skeptic on Opus, ~132k subagent tokens), all 24 fixed in this commit.**
+**Also fixed in this commit (found while gating it):** `scripts/state-drift-check.mjs` had the session-log path hard-coded to `21-V450-BUILD`; it now reads the highest-numbered build folder STATE §0 names (LEDGER F-1, `tests/state-drift.test.ts` 3/3). Two checks that the §0 rewrite had silently turned into SKIP (`state-head-ancestor`, `migration-vs-state`) run again. Close-out: 21 PASS / 0 FAIL / 2 SKIP.

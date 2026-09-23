@@ -26,7 +26,7 @@ orchestrator's decided designs, so the builders receive a design that already su
 - AGENTS.md's invariants bind (money in paise once at the boundary, invariant 6 never a fabricated figure, invariant 8
   account scoping, invariant 9 no write to account 0, stored charges never rewritten — F1). A design that satisfies the
   finding but breaks an invariant is REVISE.
-- The owner's rulings in `LIVE-DESK-RESEARCH/06-ANSWERS.md` and the DECISIONS entries bind; never propose re-asking one.
+- The owner's rulings bind: `VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` (to v4.5.0), the current build folder's `00-SPEC-PLAN.md` §0 (today `VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/`), and the DECISIONS entries; never propose re-asking one.
 
 ## Procedure
 

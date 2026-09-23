@@ -16,7 +16,7 @@ you gate. This skill does not fork; it runs in your context so you can hold the 
 ## 0. Before the fan-out — three rules learned on v4.0.0 (2026-09-06)
 
 1. **The target commit is pushed and its CI run exists before step 1 starts.** Merge, push,
-   wait for `gh run list --commit <sha>`, THEN audit. v4.0.0 batched merge + bump + fix wave into
+   wait for its CI run (a plain `gh run list --limit 3`, match the sha — never `--commit`), THEN audit. v4.0.0 batched merge + bump + fix wave into
    one push, so two test-drift reds (a local-vs-IST date, a sidebar fold that had grown to six
    screens) surfaced a day late. Any red CI job on the target counts as a finding in the union.
 2. **Seam pass first for any multi-builder target.** Launch `vyuha-seam-tester` on the wave's
@@ -56,7 +56,7 @@ you gate. This skill does not fork; it runs in your context so you can hold the 
 
 Run it over `<last tag>..HEAD` after the last feature/fix wave has its CI run. It exists because nine diff-scoped rounds
 missed four 4.3.0 product defects that the release-notes draft found in an hour (DECISIONS 2026-09-11, C-3..C-6). One
-workflow, auditors and skeptic on Fable, in this order:
+workflow, auditors and skeptic on Opus (Fable only after Opus has failed two distinct approaches), in this order:
 
 1. **Release-notes claims — drafted FIRST.** One agent drafts the CHANGELOG section, the README quote, the client README
    "New in", the install-guide upgrade lines and the landing chip into the scratchpad, every claim checked against CODE with
@@ -72,7 +72,7 @@ workflow, auditors and skeptic on Fable, in this order:
 5. **Mutation on money and data paths.** For each changed module that computes or writes money, rates or trades: name the
    smallest mutants and prove the suite kills them; a module that guards money gets an IN-SUITE mutant table
    (`tests/rate-card-refresh.test.ts` is the pattern).
-6. **Upgrade on a copy of the owner's live DB** (STATE §0.3 V3 procedure): the real sidecar startup twice, the migration +1
+6. **Upgrade on a copy of the owner's live DB** (the V3 procedure — `VYUHA-STATE-ARCHIVE.md`, grep `V3 —`; DECISIONS 2026-09-11): the real sidecar startup twice, the migration +1
    then +0, the rate-card refresh counts as expected then 0/0. The only lens that found F1.
 7. **Seams** (`vyuha-seam-tester`) when the release had more than one builder.
 8. **Completeness critic, last.** One agent lists what no lens covered — diff files no auditor opened, rulings not traced,

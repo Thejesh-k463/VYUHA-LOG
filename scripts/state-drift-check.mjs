@@ -87,8 +87,6 @@ function walk(dir, test, base = dir, out = []) {
 const agents = doc("AGENTS.md");
 const readme = doc("README.md");
 const stateFull = doc("VYUHA-STATE.md");
-const sessionLogRel = "../LIVE-DESK-RESEARCH/21-V450-BUILD/SESSION-LOG.md";
-const sessionLog = doc(sessionLogRel);
 const answersRel = "../LIVE-DESK-RESEARCH/06-ANSWERS.md";
 const answers = doc(answersRel);
 const sessionPrompt = doc("docs/SESSION_PROMPT.md");
@@ -107,6 +105,11 @@ if (stateFull) {
     state0Line = lineAt(stateFull, start);
   }
 }
+/** The CURRENT session log = the highest-numbered `NN-VNNN-BUILD/SESSION-LOG.md` that STATE §0 names. It was a
+ *  hard-coded `21-V450-BUILD` path, which went stale the day v4.6.0 opened `22-V460-BUILD` (LEDGER L-5's class). */
+const sessionLogFolder = [...state0.matchAll(/(\d{2}-V\d{3,}-BUILD)\/SESSION-LOG\.md/g)].map((m) => m[1]).sort().at(-1);
+const sessionLogRel = sessionLogFolder ? `../LIVE-DESK-RESEARCH/${sessionLogFolder}/SESSION-LOG.md` : "a SESSION-LOG.md named in STATE §0";
+const sessionLog = sessionLogFolder ? doc(sessionLogRel) : null;
 const s0cite = (re) => {
   const m = re.exec(state0);
   return m ? `VYUHA-STATE.md:${state0Line + state0.slice(0, m.index).split(/\r?\n/).length - 1}` : "VYUHA-STATE.md §0";
@@ -362,8 +365,8 @@ if (closeOut) {
     }
   }
   if (!sessionLog) skip("cited-shas", `${sessionLogRel} absent — STATE §0 only would be a partial check`, "STATE §0 + SESSION-LOG.md");
-  else if (!bad.length) pass("cited-shas", `${counted} shas cited`, "all resolve via git cat-file", "STATE §0 + 21-V450-BUILD/SESSION-LOG.md");
-  else fail("cited-shas", `${counted} cited`, `unresolvable: ${t([...new Set(bad)].join(", "), 100)}`, "STATE §0 + 21-V450-BUILD/SESSION-LOG.md");
+  else if (!bad.length) pass("cited-shas", `${counted} shas cited`, "all resolve via git cat-file", `STATE §0 + ${sessionLogFolder}/SESSION-LOG.md`);
+  else fail("cited-shas", `${counted} cited`, `unresolvable: ${t([...new Set(bad)].join(", "), 100)}`, `STATE §0 + ${sessionLogFolder}/SESSION-LOG.md`);
 
   const headClaim = /HEAD[^`\n]{0,6}`([0-9a-f]{7,40})`/.exec(state0)?.[1];
   if (!headClaim) skip("state-head-ancestor", "STATE §0 names no HEAD sha", "VYUHA-STATE.md §0");

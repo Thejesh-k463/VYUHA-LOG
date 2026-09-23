@@ -162,7 +162,7 @@ stored little-endian.
 - CI refuses to bless an incomplete release. If it refuses, it is right — do not
   hand-publish around it.
 - **The MERGE commit gets its own CI run before the audit starts** (2026-09-06): merge, push,
-  wait for `gh run list --commit <sha>`, then audit. v4.0.0 pushed merge + bump + fix wave
+  wait for its CI run (a plain `gh run list --limit 3`, match the sha — never `--commit`), then audit. v4.0.0 pushed merge + bump + fix wave
   together and two test-drift reds surfaced a day late. Audit reds on CI are findings, not noise.
 
 ---

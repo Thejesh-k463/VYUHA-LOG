@@ -280,7 +280,7 @@ optional size source, and they are different KINDS of fact:
 
 ```
 node scripts/build-nse-index-map.mjs \
-  --src      "T:/Thejesh/CLAUDE-CODE/TRADE-SENTINAL/sentinel/NIFTY INDICES" \
+  --src      "T:/Thejesh/CLAUDE-CODE/SENTINEL/bot/sentinel/NIFTY INDICES" \
   --size-src "T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/_data/index-constituents-2026-09-06" \
   [--as-of YYYY-MM-DD] [--captured-at YYYY-MM-DD]
 ```
