@@ -8716,3 +8716,52 @@ at the pre-move path — those remain operator-owed. winget stays HELD by choice
 4.4.0 install/WDSI question subsumed. Session gate: HEAD `16ea079`, CI 35894541800 6/6, tag v4.5.0, `releases/latest` v4.5.0,
 `npm run verify` not re-run (no code change). Rejected: asking whether "my steps" included the hook proposals — the disk answered it.
 **Prose pass: 8 files / 0 findings / 17 tool calls (doc-auditor on Sonnet, ~71k subagent tokens; harness-metered 23) — STATE §0, the archived block byte-compared to HEAD, AGENTS.md, CLAUDE.md, README top, the session log, the 2026-09-24 entry, HOOK-PROPOSALS.md markers; HEAD chain and CI re-derived by the auditor.**
+
+## 2026-09-24 — v4.6.0/v4.7.0 scope: the owner's rulings, the research that fed them, and the market-calendar finding
+
+The owner opened v4.6.0 (STATE row 18) with rows 6, 10, 18 and three new asks: prescriptive analytics per segment and
+setup, a Help Desk revamp, and the full Indian listed universe. Then two more: fold the analytics tabs, and check the
+recent market-timing changes (CAS). Five research reports, all outside git in
+`VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/research/` (R0 inventory, R1 prescriptive analytics, R2 help desk, R3 stock
+universe, R4 market calendar). They were written by subagents that returned ≤ 450-word summaries, so the orchestrator
+never held the reports. Then three question groups (12 questions). **The ruling table is `22-V460-BUILD/00-SPEC-PLAN.md` §0.**
+The binding headlines:
+- **Two releases.** v4.6.0 = market calendar (W1) → universe + row 10 (W2) → analytics hubs (W3) → Help revamp +
+  getting-started strip (W4) → Q51 + Atlas v3 (W5) → row 9 (W6) → row 17 (W7). v4.7.0 = Edge Clinic, journal Kelly,
+  row 6 Positions tab, Q18 Telegram. Q42b and the openalgo facade were not chosen.
+- **Universe:** build-time polite crawl (NSE `getSymbolData`/`getMetaData`, BSE `ComHeadernew`) on the owner's machine.
+  The owner accepted the ToS exposure R3 §6 names. AMFI's half-yearly rank is THE cap band, and index membership
+  becomes a lens. NSE Emerge gets a blank band plus a reason. Scope is NSE mainboard + Emerge + BSE-only equities.
+- **Market calendar (a LIVE defect):** SEBI's CAS circular (issued 2026-01-16, effective 2026-08-03; primary, sha256
+  in R4) ends F&O stocks' continuous session at 15:15, strikes their close in a 15:15–15:35 auction, runs F&O to 15:40
+  and adds a 15:50–16:00 post-close. The pre-open was revised from 2026-09-07. The app saves the daily mark from 15:30
+  (`persist-mark.ts:80`) and buckets every fill after 15:30 as off-session (`cockpit.ts:107-129`). It keeps a
+  sidebar clock that ignores holidays and a one-year holiday set ending 2026-12-31: 21 hard-coded call sites in all.
+  Ruled: W1 of v4.6.0, one effective-dated module plus a bundled file built from the owner's downloads, marks only
+  after the official close.
+- **Analytics:** three hubs (Edge Clinic / Capital & Expiry / Costs) take Analytics from 10 entries to 6. The Clinic
+  words its advice by evidence grade and never states counterfactual rupees. New data: setup grade and intra-trade
+  high/low. The VIX snapshot is not taken.
+- **Help:** search-first card grid, accordions, large-text dialogs, ⌘K help source, "?" deep links,
+  glossary + shortcuts, Playwright screenshots. The session rewrites the content and the owner reviews it.
+  No guided tours.
+- **Records:** `docs/LEDGER.md` (in the repo) with [LESSON]/[FIX]/[UPGRADE]/[RESEARCH]/[DECISION] rows. Git tags stay
+  for releases only, because wave tags would break every `git tag --sort=-creatordate | head -1` gate.
+
+**Decided by the session, under the decision policy:**
+- No `cmdk`: the existing 418-line `command-palette.tsx` gains a help source. Rejected: a second palette.
+- One new dependency, `@radix-ui/react-accordion`, spliced into the lock. Rejected: MiniSearch until a measured miss
+  rate justifies it.
+- Past `coversThrough`, a weekday is a trading day FLAGGED "calendar not verified", with a DQ warning. Rejected:
+  treating unknown days as closed, which would stop marks silently.
+- The hubs ship in 4.6.0 with their existing tabs, and the Clinic tab lands in 4.7.0.
+- The ledger lives in the repo, not the research folder, so the drift check can read it.
+
+Rejected by the owner or not chosen: guided tours, auto-generated media clips, a Hindi toggle, the India VIX regime
+cuts, licensed reference data (cost unknown), per-kind Telegram toggles.
+Questions still owed, each asked at its wave's start: the 20 unanswered 06a AQ questions (before W5); harvest
+`sttSplit` counting and the Upstox-residual acceptance (before W7); setup-grade labels and typed-vs-auto intra-trade
+high/low (before C2).
+Owner-owed input: the eight calendar source files (`00-SPEC-PLAN.md` §6), saved into one folder. The two hook
+proposals are still `[PENDING]`.
+**Prose pass: 16 files / 1 finding / 42 tool calls** (doc-auditor on Sonnet, ~115k subagent tokens; over its 35-call cap, stated) — the archived block byte-equal to HEAD's §0 (diff exit 0); every cited path, npm script, the tag, version 4.5.0, migration 0074, the palette's 418 lines and the 10-entry Analytics group re-derived; ONE finding fixed: R0 and LEDGER R-1 said 74 analytics modules, the tree has 71.
