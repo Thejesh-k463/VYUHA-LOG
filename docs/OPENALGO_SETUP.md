@@ -17,7 +17,8 @@ entirely on **your own computer**.
   in between, not a service in the cloud. Keep it on `127.0.0.1` (Vyuha warns
   you before saving any non-local address, because at that moment your trade
   data would leave your computer).
-- **Vyuha's pull is read-only**: it calls one endpoint (`/api/v1/tradebook`),
+- **Vyuha's pull is read-only**: it pulls trades only from `/api/v1/tradebook` (saving the connection
+  also makes a read-only `/api/v1/funds` check, which the Live Desk repeats each time it connects),
   imports through the same preview → charges → duplicate-check pipeline as
   every file, and computes charges from your rate card — it never places,
   modifies or cancels an order.

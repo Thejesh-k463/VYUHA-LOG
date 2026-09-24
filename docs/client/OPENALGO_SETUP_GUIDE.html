@@ -152,7 +152,7 @@
     <p>OpenAlgo is a program you install and run locally. Your broker credentials live in its
     <span class="mono">.env</span> file on your disk — never in Vyuha, never in any cloud.</p></div>
   <div class="card"><div class="ico">📥</div><h3>Vyuha only reads</h3>
-    <p>Vyuha calls one endpoint (<span class="mono">/api/v1/tradebook</span>) and imports through the same
+    <p>Vyuha pulls trades only from <span class="mono">/api/v1/tradebook</span> (saving the connection also makes a read-only <span class="mono">/api/v1/funds</span> check, which the Live Desk repeats each time it connects) and imports through the same
     preview → charges → duplicate-check pipeline as every file. It never places, modifies or cancels an order.</p></div>
   <div class="card"><div class="ico">🔌</div><h3>Off by default</h3>
     <p>The integration does not exist in the UI until you switch it on in
@@ -169,7 +169,7 @@
     <i>to</i> your machine — OpenAlgo is a medium in between, not a service in the cloud. Keep it on
     <code>127.0.0.1</code> (Vyuha warns you before saving any non-local address, because at that
     moment your trade data would leave your computer).</li>
-  <li><b>Vyuha's pull is read-only</b>: it calls one endpoint (<code>/api/v1/tradebook</code>),
+  <li><b>Vyuha's pull is read-only</b>: it pulls trades only from <code>/api/v1/tradebook</code> (saving the connection also makes a read-only <code>/api/v1/funds</code> check, which the Live Desk repeats each time it connects),
     imports through the same preview → charges → duplicate-check pipeline as every file, and
     computes charges from your rate card — it never places, modifies or cancels an order.</li>
   <li>Because of all of the above, the integration is <b>off by default</b>. You switch it on

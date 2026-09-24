@@ -8910,3 +8910,67 @@ contradicted its own v4.2.0 block — the block is restored as it shipped (15:31
 v4.1.0 row claiming holiday refusal is NOT drift: `tests/seams-v41-fix2.test.ts` S6b keeps that shipped row CURRENT on purpose
 (no user-facing surface may promise a write the app no longer makes), so it carries the current 15:36 wording. The seam test
 now reads the current-state docs (client README, PRIVACY, the setup guide) for 15:36 and README.md / CHANGELOG as history.
+
+## 2026-09-25 — Brokers + OpenAlgo scope: Fyers, Kotak Neo, Nuvama native; OpenAlgo 2.0.2.6 safety + WebSocket; only v4.6.0 and v4.7.0
+
+The owner asked how to bring OpenAlgo up to date, to add Fyers, Nuvama and Kotak Neo (github.com/Kotak-Neo), and to revisit
+broker integration against recent changes, then answered two question groups (8 questions). Five research reports, outside
+git in `VYUHA/LIVE-DESK-RESEARCH/23-BROKERS-OPENALGO-2026-09-25/` (the agents' sandboxes refused writes; the session saved
+each final message verbatim): **R5** VYUHA's own broker inventory, **R6** OpenAlgo upstream, **R7** Fyers + Nuvama, **R8**
+Kotak Neo, **R9** the 2025–26 broker-API landscape. **The ruling table is `22-V460-BUILD/00-SPEC-PLAN.md` §0 rows B1–B6.**
+
+**Data points that decided it (primary unless marked):**
+- Static IP does not bind a read-only journal: NSE's retail-algo FAQ (3 Nov 2025) limits it to investors "using API for
+  placing orders"; Zerodha, Dhan, Angel One, Upstox (standard token), Kotak Neo, Fyers, 5paisa and INDstocks apply it to
+  order calls only. The exception — Upstox's Analytics token on account APIs needs a whitelisted IP from 6 Jun 2026 — is
+  already covered by VYUHA's help text. Nuvama's changelog says "Static IP Mandatory" with no read-only exemption stated.
+- **Q24's owed citation is found:** NSE/INVG/67858 (5 May 2025), Annexure A.8 — "All API sessions shall be compulsorily
+  logged out every day". The 2026-09-06 entry's softening condition can now cite it.
+- Nothing found breaks the four native pulls (Kite `/trades`, Dhan v2 with PIN+TOTP, Angel `getTradeBook`, Upstox
+  `get-trades-for-day`; the Upstox v2 deprecation list does not include it).
+- **OpenAlgo is at 2.0.2.6 (2026-09-22), API still `/api/v1`, 36 plugins (Fyers and Kotak Neo in; Nuvama and Sahi out —
+  its "Nubra (Nuvama)" label is wrong: Nubra is Zanskar Securities).** Correctness risks for VYUHA's integration, all
+  unguarded today: analyzer mode routes API tradebook calls to SANDBOX fills (`mode: "analyze"`); Groww prices above ₹100
+  were divided by 100 before 2.0.2.4; Zerodha MCX quantity is in units from 2.0.2.6 and `trade_value` ≠ qty × price there;
+  new exchange codes `NCO` / `NCDEX` map to nothing in VYUHA. Security fixes in 2.0.0.6, 2.0.1.8, 2.0.2.2. A WebSocket at
+  `ws://127.0.0.1:8765` (15-s auth grace, LTP/Quote/Depth, source timestamps) can replace 1–5 s polling. Its Python and
+  Node SDKs are MIT; the platform is AGPL-3.0 and stays reached over HTTP only. No OpenAlgo version had ever been recorded
+  in the repo; only the Dhan and Upstox plugins were exercised live (2026-08-26/27).
+- **R8 answers an old open question: OpenAlgo's `kotak` adapter is the Neo API** (it calls `tradeApiLogin` and
+  `/quick/user/trades`). Kotak Neo: Trade API free, TOTP → MPIN login, static IP for order APIs only (from 1 Apr 2026),
+  trade book today-only, 10 req/s, MIT SDK, REST callable from any language; no export layout published; "₹0 brokerage on
+  Trade API" orders cannot be told apart in a fill.
+- Fyers: free API, OAuth auth-code + daily token, reads allowed without static IP ("Data-Only" apps keep order details,
+  positions, holdings), MIT/ISC SDKs, date-range `/trade-history` `/charges-history` `/tax-pnl-history` `/ledger-history`
+  (response fields not readable anywhere — pin on the first real pull), Prime ₹15 / Standard ₹20 plans.
+- The owner filed REAL exports on 2026-09-22/24: a Fyers tradebook + realised P&L (CSV) and a Nuvama P&L report (XLSX with
+  its own field dictionary; it carries the holder's personal details — fixtures must be redacted). That opens native FILE
+  parsers for both under the "a verified real export is what published means" rule.
+- Market share (Jan 2026 NSE active clients, secondary): Groww 28.1%, Zerodha 15.5%, Angel One 15.2%, ICICI 4.6%, Upstox
+  4.6%, HDFC 3.2%, Kotak 3.1%, Dhan 2.3%. No "any broker" API exists (depository AA data has no prices; NSE's daily trade
+  email has no API).
+
+**Owner rulings (B1–B6):** only v4.6.0 and v4.7.0 carry everything left — nothing slips (v4.6.0 + W8, W9; v4.7.0 + C6, C7);
+native read-only pulls for Fyers, Kotak Neo (built from docs, LABELLED unverified — no account) and Nuvama; OpenAlgo safety
+fixes + version check + setup guide, and the WebSocket feed (not: more OpenAlgo endpoints); Fyers + Nuvama join the broker
+list (not: ICICI, HDFC Sky, INDmoney, 5paisa, Motilal); new brokers' live prices via the OpenAlgo WebSocket only; the Nuvama
+P&L report is enough for now.
+
+**Decided by the session under the decision policy (the owner may overrule):**
+- **W8 goes next, before W2**: the sandbox-fill and Groww ÷100 paths are live correctness risks in the shipped v4.5.0.
+  v4.6.0 order: W1 ✓ → W8 → W2 → W9 → W3 → W4 → W5 → W6 → W7. Rejected: appending W8/W9 after W7 (leaves the risk live
+  for the whole release).
+- The minimum OpenAlgo version is **2.0.2.6**, and W8 must find a DOCUMENTED source for the running version or fall back to
+  a capability check that says so. `NCO`/`NCDEX` rows are refused with a Data Quality line, never mapped (invariant 6).
+- C6 calls broker REST from TypeScript — no SDK dependency; every new broker host goes through the egress guard, a PRIVACY
+  item-3 amendment and its own consent + ack version; `vyuha-design-reviewer` reviews C6 before a builder (identity /
+  de-duplication across file, OpenAlgo and native sources).
+- AGENTS.md now states the no-AGPL rule explicitly (it lived only in paste blocks) and that Fyers and Nuvama left the
+  "unpublished format" list. Stale statements corrected in the same commit: "the pull calls one endpoint" (the save step
+  also probes `/funds`) in `docs/OPENALGO_SETUP.md`, the in-app Help and the client setup guide; STATE's "Kotak Securities
+  is Neo or legacy" (answered: Neo); `docs/BROKER_FORMATS.md`'s closed list.
+**Prose pass: 12 files / 1 finding / 19 tool calls** (doc-auditor on Sonnet) over the spec, STATE §0, both 2026-09-25
+DECISIONS entries, LEDGER, AGENTS.md, BROKER_FORMATS, the OpenAlgo setup docs, the in-app Help string, the research index and
+the session log. The one CONFIRMED finding — the session-log paste block still said "W2 next" — is fixed by the block
+rewritten at this close (W8 next). Everything else agreed: the wave order in every file, the not-chosen brokers absent
+from all plans, the research folder holding exactly R5–R9, the owner files named as the spec names them.

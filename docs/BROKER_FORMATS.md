@@ -663,7 +663,7 @@ Still not built (as of 2026-09-17): a Zerodha ledger parser (Console Funds state
 parser (Client Fund Ledger), and Groww / Upstox contract-note parsers — the real exports arrived 2026-09-16/17
 (`VYUHA/BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md`; the parser wave is STATE §0.1 row 15). The three items
 this line used to name are done: the Paytm P&L parser and short-sell / cross-exchange pairing shipped in v3.9.0,
-and the Dhan MTF Report was ruled out of existence (DECISIONS 2026-08-30). Kotak Neo, Sahi, Paytm F&O and Groww F&O are CLOSED (no account / no such trading).
+and the Dhan MTF Report was ruled out of existence (DECISIONS 2026-08-30). Kotak Neo, Sahi, Paytm F&O and Groww F&O are CLOSED (no account / no such trading). **Fyers and Nuvama OPENED 2026-09-25**: the owner filed real exports (`FYERS_tradebook_…csv`, `FYERS_realised_p&l_…csv`, `NUVAMA_PnL_Report_23-Sep-26.xlsx`); their parsers are v4.6.0 wave W9 (spec `VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/00-SPEC-PLAN.md`), and a Kotak Neo native API pull is v4.7.0 C6 — its FILE formats stay unpublished.
 
 ## Status (2026-08-20)
 

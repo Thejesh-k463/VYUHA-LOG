@@ -133,7 +133,8 @@ close-out DECISIONS entry — a session that cannot cite that line did not run i
   mapper, where the user says whose it is — a question is always better than a confident wrong
   answer.
 - **Never invent a parser for a format nobody has published — a VERIFIED REAL EXPORT is what
-  "published" means.** Kotak Neo and Sahi still document their export columns nowhere, so their
+  "published" means.** Kotak Neo and Sahi still document their export columns nowhere (Fyers and
+  Nuvama left this list on 2026-09-25, when the owner filed real exports — parsers in v4.6.0 W9), so their
   files belong to `lib/import/generic-map.ts`, which asks; it refuses a row it cannot read rather
   than coercing a bad cell to 0, because a trade for zero shares at zero rupees is worse than no
   trade. Paytm Money moved OFF this list on 2026-08-12 when a real export pinned its layout —
@@ -160,6 +161,12 @@ close-out DECISIONS entry — a session that cannot cite that line did not run i
 
 
 # Adding a dependency
+
+**Never add an AGPL (or GPL) dependency, and never bundle, vendor or link AGPL code.** OpenAlgo
+(AGPL-3.0) is reached ONLY over HTTP/WebSocket as a separate program the user installs and runs
+themselves; broker SDKs are not dependencies either — broker APIs are called as REST from
+TypeScript (the Fyers, Kotak Neo and Nuvama SDKs are MIT/ISC, but a REST call needs none).
+Shepherd.js is AGPL and is rejected (LEDGER R-3).
 
 **Never let npm rewrite `package-lock.json` — not even plain `npm install`.** On this dependency
 graph a plain `npm install <pkg>` (fully installed tree, no flags) deterministically prunes

@@ -273,7 +273,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     notes: [
       "The honest part: your broker credentials go into OpenAlgo, not Vyuha. Vyuha stores only the OpenAlgo API key — encrypted at rest with a machine-bound key, sent nowhere except your own instance — and the address it runs on; both are revocable from OpenAlgo's own screen without touching your broker account.",
       "The risk is real but small, and you should understand it: you are running one more program that holds a broker credential. The data itself only ever flows from your broker to your machine — OpenAlgo is a medium in between, not a service in the cloud. Keep it on 127.0.0.1; Vyuha warns before saving any non-local address, because at that moment your trade data would leave your computer.",
-      "Vyuha's pull is read-only: it calls one endpoint (/api/v1/tradebook) and never places, modifies or cancels an order.",
+      "Vyuha's pull is read-only: it pulls trades only from /api/v1/tradebook (saving the connection also makes a read-only /api/v1/funds check, which the Live Desk repeats each time it connects) and never places, modifies or cancels an order.",
     ],
     guide: OPENALGO_GUIDE,
   },
