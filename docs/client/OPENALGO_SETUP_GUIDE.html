@@ -152,7 +152,7 @@
     <p>OpenAlgo is a program you install and run locally. Your broker credentials live in its
     <span class="mono">.env</span> file on your disk — never in Vyuha, never in any cloud.</p></div>
   <div class="card"><div class="ico">📥</div><h3>Vyuha only reads</h3>
-    <p>Vyuha pulls trades only from <span class="mono">/api/v1/tradebook</span>, after reading OpenAlgo's version from <span class="mono">/auth/app-info</span> (saving the connection makes no network call; the Live Desk's feed makes a read-only <span class="mono">/api/v1/funds</span> check each time it connects) and imports through the same
+    <p>Vyuha pulls trades only from <span class="mono">/api/v1/tradebook</span>, after reading OpenAlgo's version from <span class="mono">/auth/app-info</span> (saving the connection makes no network call; the desk's connection check is a read-only <span class="mono">/api/v1/funds</span> call — see <a href="#live">section 9</a>) and imports through the same
     preview → charges → duplicate-check pipeline as every file. It never places, modifies or cancels an order.</p></div>
   <div class="card"><div class="ico">🔌</div><h3>Off by default</h3>
     <p>The integration does not exist in the UI until you switch it on in

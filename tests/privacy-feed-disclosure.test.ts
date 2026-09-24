@@ -121,8 +121,11 @@ const LOOPBACK = /127\.0\.0\.1|loopback/i;
  * a paragraph and the conditions are required in THAT paragraph.
  */
 function paragraphs(text: string): string[] {
+  // `\r?` both sides (v4.6.0 W8): the Windows checkout is CRLF, and `\n[ \t]*\n`
+  // never matched `\r\n\r\n` — every Windows run judged each file as ONE paragraph
+  // and passed vacuously while Linux CI (LF) judged the real paragraphs.
   return text
-    .split(/\n[ \t]*\n/)
+    .split(/\r?\n[ \t]*\r?\n/)
     .map((p) => p.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
