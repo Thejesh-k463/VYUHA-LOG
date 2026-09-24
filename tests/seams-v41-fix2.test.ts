@@ -1056,7 +1056,9 @@ describe("SEAM 7 · every place C says /funds is posted, really posts it", () =>
     // C'S SENTENCE names the check and the desk, which is what the three call
     // sites above are. `health()` is the ONE function that posts /funds.
     const item = OPENALGO_FEED_ITEMS[3];
-    expect(item.title).toBe("A /funds request when the feed is checked, and when the desk connects");
+    // v4.6.0 W8 added the keyless version read beside /funds (disclosure "4",
+    // amended before release — see the constant's note).
+    expect(item.title).toBe("A /funds request and a version read when the feed is checked, and when the desk connects");
     expect(item.body).toContain(
       "calls OpenAlgo's /funds endpoint once, and the desk does the same each time it opens and each time its price stream reconnects",
     );

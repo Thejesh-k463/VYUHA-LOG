@@ -526,6 +526,13 @@
       "when": 1788800800000,
       "tag": "0074_account-broker-plan",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1788800900000,
+      "tag": "0075_telegram-send-time-after-fo-close",
+      "breakpoints": true
     }
   ]
 }

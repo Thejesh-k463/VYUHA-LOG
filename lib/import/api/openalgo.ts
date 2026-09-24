@@ -35,6 +35,32 @@
 // Charges are not in the response and are not invented: the classify → charges
 // → dedup → commit pipeline computes statutory charges as it does for every
 // other source, and brokerage stays excluded from the accuracy claim.
+//
+// ── v4.6.0 W8: the bridge changes under us (LEDGER L-8) ─────────────────────
+//
+// OpenAlgo shipped 27 releases in 2026 with the API still at /api/v1, several
+// changing what `/tradebook` MEANS without changing its shape (research R6,
+// VYUHA/LIVE-DESK-RESEARCH/23-BROKERS-OPENALGO-2026-09-25/R6-OPENALGO-UPSTREAM.md):
+//
+// 3. SANDBOX FILLS. With analyzer mode on, an API tradebook call is routed to
+//    the sandbox and answers `{status: "success", data, mode: "analyze"}` —
+//    the same envelope as a live answer. The whole response is REFUSED
+//    (`sandboxRefusal`); a simulated fill in the journal is a fabricated trade.
+// 4. THE VERSION GATE. Groww prices above ₹100 arrived ÷100 before 2.0.2.4;
+//    Zerodha MCX quantity was contracts before 2.0.2.6 (VYUHA's convention is
+//    UNITS — the Dhan GTR's crude rows reconcile that way); three security
+//    fixes (2.0.0.6, 2.0.1.8, 2.0.2.2). A pull from an instance older than
+//    `OPENALGO_MIN_VERSION` is refused for EVERY broker (owner ruling
+//    2026-09-25). The version comes from `GET /auth/app-info` — documented by
+//    OpenAlgo itself (docs/design/30-upgrade-procedure, docs/userguide/
+//    remote-mcp.md) and present since 2.0.0.0; a 404 there means older than
+//    2.0.0.0, and anything unreadable is refused, never guessed.
+// 5. EXCHANGE CODES VYUHA CANNOT PRICE. `NCO` (NSE commodities) and `NCDEX`
+//    arrived with 2.0.2.2; a stated exchange `exchangeOf` cannot map is
+//    refused with its code named — never filed under NSE or MCX (invariant 6).
+// 6. MCX IS NOT QTY × PRICE. On Zerodha MCX `trade_value` is contracts ×
+//    price multiplier × price, so trap 2's repair (trade_value ÷ price) would
+//    invent a quantity: a zero-quantity MCX row is refused, not repaired.
 
 import { todayIstIso } from "@/lib/domain/trading-day";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
@@ -110,7 +136,10 @@ export const OPENALGO_BROKERS: readonly OpenAlgoBrokerSupport[] = [
     label: "Kotak Securities",
     supported: true,
     note:
-      "OpenAlgo lists this as 'Kotak Securities'. Confirm against a real pull that it is the Neo API and not the legacy one before trusting the product column.",
+      // Answered 2026-09-25 (research R8): OpenAlgo's `kotak` adapter calls the
+      // Neo Trade API (`tradeApiLogin`, `/quick/user/trades`). Still no real
+      // pull through it has been seen, which is what the note keeps saying.
+      "OpenAlgo lists this as 'Kotak Securities'; its adapter is the Kotak Neo Trade API. No real pull through it has been checked yet, so compare the first one against your contract note.",
   },
   {
     broker: "sahi",
@@ -198,6 +227,28 @@ function exchangeOf(exchange: string): Exchange | null {
   if (e === "BSE" || e === "BFO" || e === "BCD" || e === "BSE_INDEX") return "BSE";
   if (e === "MCX") return "MCX";
   return null;
+}
+
+function isMcx(exchange: unknown): boolean {
+  return String(exchange ?? "").trim().toUpperCase() === "MCX";
+}
+
+/**
+ * Why a STATED exchange code is refused (trap 5). Only codes OpenAlgo documents
+ * get a specific sentence; any other unmappable code is named as it arrived.
+ * An ABSENT exchange is not refused here — it keeps a null hint and the
+ * classifier decides, as before W8.
+ */
+const UNPRICEABLE_EXCHANGE: Record<string, string> = {
+  NCO: "NSE's commodity segment (OpenAlgo's code NCO) — Vyuha has no charge rows for commodity contracts on NSE, and filing them under NSE or MCX would price them on the wrong exchange",
+  NCDEX: "NCDEX, the agricultural-commodity exchange — Vyuha has no NCDEX charge rows",
+};
+
+/** The refusal reason for a stated exchange Vyuha cannot price, or null. */
+export function unpriceableExchange(exchange: unknown): string | null {
+  const e = String(exchange ?? "").trim().toUpperCase();
+  if (!e || exchangeOf(e) !== null) return null;
+  return UNPRICEABLE_EXCHANGE[e] ?? `the exchange code ${e}, which Vyuha has no charge rows for`;
 }
 
 /** "13:58:03" or "2026-08-26 12:33:07" → "13:58" / "12:33". Anything else →
@@ -290,6 +341,9 @@ export function underlyingExchangeConflict(underlying: string, exchange: string)
 export function recoverQuantity(row: OpenAlgoTradeRow): { qty: number; repaired: boolean } | null {
   const stated = num(row.quantity);
   if (stated > 0) return { qty: stated, repaired: false };
+  // Trap 6: on MCX trade_value is not quantity × price, so the division below
+  // would invent a size. No repair — the row is refused.
+  if (isMcx(row.exchange)) return null;
 
   const value = num(row.trade_value);
   const price = num(row.average_price);
@@ -329,6 +383,10 @@ export interface OpenAlgoNormalizeResult {
   /** Position-level caveats worth showing before a commit: an F&O symbol that
    *  would not parse, or an underlying that contradicts its exchange. */
   notes: string[];
+  /** W8 trap 5: rows refused per stated exchange code Vyuha cannot price. */
+  refusedByExchange: Record<string, number>;
+  /** W8 trap 6: MCX rows that arrived with no quantity (never repaired). */
+  refusedMcxNoQuantity: number;
 }
 
 /**
@@ -347,10 +405,23 @@ export function normalizeOpenAlgoTrades(
   const groups = new Map<string, Agg>();
   let repaired = 0;
   let refused = 0;
+  const refusedByExchange: Record<string, number> = {};
+  let refusedMcxNoQuantity = 0;
+  /** Symbols whose stated MCX trade value disagrees with qty × price. */
+  const mcxValueNoted = new Set<string>();
 
   for (const row of rows ?? []) {
     if (!row || !row.symbol) {
       refused += 1;
+      continue;
+    }
+    if (unpriceableExchange(row.exchange)) {
+      const code = String(row.exchange).trim().toUpperCase();
+      refusedByExchange[code] = (refusedByExchange[code] ?? 0) + 1;
+      continue;
+    }
+    if (isMcx(row.exchange) && !(num(row.quantity) > 0)) {
+      refusedMcxNoQuantity += 1;
       continue;
     }
     const size = recoverQuantity(row);
@@ -403,6 +474,17 @@ export function normalizeOpenAlgoTrades(
     }
 
     const value = size.qty * price;
+    // Trap 6, the positive-quantity half: the row imports at qty × price (the
+    // same convention as every other source), but when OpenAlgo's own trade
+    // value disagrees the contract is quoted per a different unit than it is
+    // traded in, and the turnover charges will be off — said, not hidden.
+    const statedValue = num(row.trade_value);
+    if (isMcx(row.exchange) && statedValue > 0 && Math.abs(statedValue - value) > Math.max(1, value * 0.005) && !mcxValueNoted.has(row.symbol)) {
+      mcxValueNoted.add(row.symbol);
+      g.notes.push(
+        `${row.symbol} (MCX): OpenAlgo states a trade value of ₹${r2(statedValue)} where quantity × price is ₹${r2(value)} — the contract is priced per a different unit than it trades in. Vyuha values it at quantity × price, so check its turnover charges against the contract note.`,
+      );
+    }
     const at = hhmm(row.timestamp);
     if (String(row.action ?? "").toUpperCase() === "BUY") {
       g.buyQty += size.qty;
@@ -447,7 +529,7 @@ export function normalizeOpenAlgoTrades(
   });
 
   const notes = [...groups.values()].flatMap((g) => g.notes);
-  return { trades, repaired, refused, notes };
+  return { trades, repaired, refused, notes, refusedByExchange, refusedMcxNoQuantity };
 }
 
 /** Normalise a user-typed host into a base URL, or throw with a usable message. */
@@ -464,11 +546,17 @@ export function normalizeHost(host: string): string {
   return `${url.protocol}//${url.host}`;
 }
 
+/** OpenAlgo's success envelope. `mode` is present on a SANDBOX answer (trap 3). */
+interface OpenAlgoEnvelope<T> {
+  data: T;
+  mode?: unknown;
+}
+
 async function openAlgoPost<T>(
   creds: OpenAlgoCredentials,
   path: string,
   extra: Record<string, unknown> = {},
-): Promise<T> {
+): Promise<OpenAlgoEnvelope<T>> {
   const base = normalizeHost(creds.host);
   let res: Response;
   try {
@@ -486,7 +574,7 @@ async function openAlgoPost<T>(
   }
 
   const json = (await res.json().catch(() => null)) as
-    | { status?: string; data?: unknown; message?: string }
+    | { status?: string; data?: unknown; message?: string; mode?: unknown }
     | null;
 
   if (res.status === 429) {
@@ -500,23 +588,165 @@ async function openAlgoPost<T>(
         : "";
     throw new Error(`OpenAlgo /${path}: ${why}${hint}`);
   }
-  return json.data as T;
-}
-
-/** POST /api/v1/tradebook — today's executed trades. */
-export async function fetchOpenAlgoTradebook(creds: OpenAlgoCredentials): Promise<OpenAlgoTradeRow[]> {
-  const data = await openAlgoPost<OpenAlgoTradeRow[]>(creds, "tradebook");
-  return Array.isArray(data) ? data : [];
+  return { data: json.data as T, mode: json.mode };
 }
 
 /**
- * Cheap credential check for the save step — proves the key AND the host in
- * one call, so a typo is caught at save rather than at tomorrow's pull.
+ * Trap 3: the refusal for a tradebook answered from OpenAlgo's SANDBOX, or null
+ * for a live answer. A live answer carries no `mode`; "live" is accepted too.
+ * Any other value — "analyze", or a mode this file has never seen — is refused:
+ * a fill Vyuha cannot prove is real never enters the journal.
  */
-export async function verifyOpenAlgoConnection(creds: OpenAlgoCredentials): Promise<true> {
-  assertOpenAlgoBroker(creds.broker);
-  await openAlgoPost<unknown>(creds, "funds");
-  return true;
+export function sandboxRefusal(mode: unknown): string | null {
+  if (mode == null) return null;
+  const m = String(mode).trim().toLowerCase();
+  if (m === "" || m === "live") return null;
+  if (m === "analyze") {
+    return "OpenAlgo is in Analyzer (sandbox) mode, so its tradebook holds SIMULATED fills, not your broker's — nothing was imported. Switch OpenAlgo back to Live mode (the Analyzer toggle in its dashboard), then pull again.";
+  }
+  return `OpenAlgo answered the tradebook in a mode Vyuha does not recognise ("${String(mode)}"), so nothing was imported — only a live answer is trusted as your broker's fills.`;
+}
+
+/** POST /api/v1/tradebook — today's executed trades. Throws on a sandbox answer. */
+export async function fetchOpenAlgoTradebook(creds: OpenAlgoCredentials): Promise<OpenAlgoTradeRow[]> {
+  const { data, mode } = await openAlgoPost<OpenAlgoTradeRow[]>(creds, "tradebook");
+  const sandbox = sandboxRefusal(mode);
+  if (sandbox) throw new Error(sandbox);
+  return Array.isArray(data) ? data : [];
+}
+
+// ── Trap 4: the version gate ────────────────────────────────────────────────
+
+/** The oldest OpenAlgo Vyuha pulls from (owner rulings B3 + 2026-09-25). */
+export const OPENALGO_MIN_VERSION = "2.0.2.6";
+
+/** The upgrade, as OpenAlgo's own upgrade guide gives it (R6 §2, docs.openalgo.in). */
+export const OPENALGO_UPGRADE_STEPS =
+  "stop OpenAlgo and back up its folder (the db folder and .env), then run git pull, uv sync and uv run upgrade/migrate_all.py in it (on Windows, install\\update.bat does the same), and start it again. Never copy .sample.env over an existing .env";
+
+/** "2.0.2.6" → [2, 0, 2, 6]; anything that is not 2–4 dotted numbers → null. */
+export function parseOpenAlgoVersion(v: unknown): number[] | null {
+  const m = /^\s*v?(\d+(?:\.\d+){1,3})\s*$/i.exec(String(v ?? ""));
+  return m ? m[1]!.split(".").map(Number) : null;
+}
+
+/** Negative when a < b, 0 when equal, positive when a > b (missing parts are 0). */
+export function compareOpenAlgoVersions(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+export type OpenAlgoVersionRead =
+  | { state: "ok"; version: string }
+  /** Nothing answered at all — OpenAlgo stopped, or a wrong host/port. Not a version fact. */
+  | { state: "unreachable"; reason: string }
+  /** `base` answered 404 for `/auth/app-info` — every release since 2.0.0.0 serves it,
+   *  so it is an older OpenAlgo OR not OpenAlgo at all (a port typo). */
+  | { state: "pre-2.0"; base?: string }
+  | { state: "unreadable"; reason: string };
+
+/**
+ * Read the running version from `GET /auth/app-info` — `{status, version,
+ * name}`, no API key, documented by OpenAlgo's own upgrade procedure ("Open
+ * `/auth/app-info` and verify the expected application version"). Never throws.
+ */
+export async function readOpenAlgoVersion(host: string, fetchImpl: typeof fetch = fetch): Promise<OpenAlgoVersionRead> {
+  let base: string;
+  try {
+    base = normalizeHost(host);
+  } catch (e) {
+    return { state: "unreadable", reason: (e as Error).message };
+  }
+  let res: Response;
+  try {
+    res = await fetchImpl(`${base}/auth/app-info`, { method: "GET", cache: "no-store" });
+  } catch (e) {
+    return { state: "unreachable", reason: `Cannot reach OpenAlgo at ${base} (${(e as Error).message})` };
+  }
+  if (res.status === 404) return { state: "pre-2.0", base };
+  if (!res.ok) return { state: "unreadable", reason: `/auth/app-info answered HTTP ${res.status}` };
+  const json = (await res.json().catch(() => null)) as { version?: unknown } | null;
+  if (!parseOpenAlgoVersion(json?.version)) {
+    return { state: "unreadable", reason: "/auth/app-info answered without a version Vyuha can read" };
+  }
+  return { state: "ok", version: String(json!.version).trim().replace(/^v/i, "") };
+}
+
+export interface OpenAlgoVersionVerdict {
+  ok: boolean;
+  /** The version as OpenAlgo stated it, or null when none was read. */
+  version: string | null;
+  /** Why a pull is refused, with the fix — null when `ok`. */
+  message: string | null;
+}
+
+/** Pure: is this instance new enough to pull from? `broker` sharpens the reason. */
+export function openAlgoVersionVerdict(read: OpenAlgoVersionRead, broker?: Broker): OpenAlgoVersionVerdict {
+  const fix = `Upgrade OpenAlgo to ${OPENALGO_MIN_VERSION} or later first: ${OPENALGO_UPGRADE_STEPS}.`;
+  // A stopped instance or a wrong port says nothing about the VERSION — the
+  // same sentence the tradebook call gives when nothing answers, no upgrade advice.
+  if (read.state === "unreachable") {
+    return {
+      ok: false,
+      version: null,
+      message: `${read.reason}. Start your OpenAlgo instance and confirm the host and port in Import → OpenAlgo; nothing was pulled.`,
+    };
+  }
+  if (read.state === "unreadable") {
+    return {
+      ok: false,
+      version: null,
+      message: `Vyuha could not read your OpenAlgo's version (${read.reason}), so nothing was pulled — releases older than ${OPENALGO_MIN_VERSION} import some brokers' fills at the wrong price or size. If OpenAlgo is running, ${fix}`,
+    };
+  }
+  if (read.state === "pre-2.0") {
+    return {
+      ok: false,
+      version: null,
+      message: `The server at ${read.base ?? "the saved host"} does not answer /auth/app-info, which every OpenAlgo release since 2.0.0.0 (January 2026) does — so it is either not OpenAlgo (check the host and port in Import → OpenAlgo) or an OpenAlgo older than ${OPENALGO_MIN_VERSION}. Nothing was pulled. If it is OpenAlgo: ${fix}`,
+    };
+  }
+  const running = parseOpenAlgoVersion(read.version)!;
+  if (compareOpenAlgoVersions(running, parseOpenAlgoVersion(OPENALGO_MIN_VERSION)!) >= 0) {
+    return { ok: true, version: read.version, message: null };
+  }
+  const why =
+    broker === "groww"
+      ? " Before 2.0.2.4 its Groww plugin reported every fill above ₹100 at one hundredth of its price."
+      : broker === "zerodha"
+        ? " Before 2.0.2.6 its Zerodha plugin reported MCX quantity in contracts, not units."
+        : " Older releases carry fixed security holes and tradebook bugs.";
+  return {
+    ok: false,
+    version: read.version,
+    message: `Your OpenAlgo is ${read.version}, older than ${OPENALGO_MIN_VERSION}, so nothing was pulled.${why} ${fix}`,
+  };
+}
+
+/**
+ * The LIVE FEED's reading of the same version (spec W8: "the feed warns"). Prices
+ * keep flowing — the upstream bugs are in the tradebook, not in quotes — but the
+ * user is told the pull will refuse and how to fix it. Null when new enough.
+ */
+export function openAlgoFeedVersionWarning(read: OpenAlgoVersionRead): string | null {
+  if (openAlgoVersionVerdict(read).ok) return null;
+  const which =
+    read.state === "ok"
+      ? `Your OpenAlgo is ${read.version}, older than ${OPENALGO_MIN_VERSION}`
+      : read.state === "pre-2.0"
+        ? `Your OpenAlgo is older than 2.0.0.0 (it does not answer /auth/app-info)`
+        : `Vyuha could not read your OpenAlgo's version (${read.reason})`; // unreachable or unreadable
+  return `${which}: prices still update, but trade pulls are refused until it is upgraded to ${OPENALGO_MIN_VERSION} or later — ${OPENALGO_UPGRADE_STEPS}.`;
+}
+
+/** The pull's gate: resolves to the running version, or throws the refusal. */
+export async function assertOpenAlgoVersion(creds: OpenAlgoCredentials, fetchImpl: typeof fetch = fetch): Promise<string> {
+  const verdict = openAlgoVersionVerdict(await readOpenAlgoVersion(creds.host, fetchImpl), creds.broker);
+  if (!verdict.ok) throw new Error(verdict.message!);
+  return verdict.version!;
 }
 
 export function openAlgoImportSource(creds: OpenAlgoCredentials): ApiImportSource {
@@ -528,6 +758,7 @@ export function openAlgoImportSource(creds: OpenAlgoCredentials): ApiImportSourc
     kind: "api",
     async fetchTrades(opts: { from?: string; to?: string } = {}) {
       const date = opts.to ?? opts.from ?? todayIstIso();
+      await assertOpenAlgoVersion(creds);
       return normalizeOpenAlgoTrades(await fetchOpenAlgoTradebook(creds), creds.broker, date).trades;
     },
   };
@@ -549,6 +780,17 @@ export function toParsedFile(broker: Broker, result: OpenAlgoNormalizeResult): P
   if (result.refused > 0) {
     warnings.push(
       `${result.refused} row${result.refused === 1 ? " was" : "s were"} skipped: no usable quantity or price. Nothing was guessed.`,
+    );
+  }
+  for (const [code, n] of Object.entries(result.refusedByExchange ?? {})) {
+    warnings.push(
+      `REFUSED — ${n} row${n === 1 ? "" : "s"} on ${unpriceableExchange(code)}. Nothing was imported for ${n === 1 ? "it" : "them"}; add these trades from the broker's contract note if you need them in the journal.`,
+    );
+  }
+  if (result.refusedMcxNoQuantity > 0) {
+    const n = result.refusedMcxNoQuantity;
+    warnings.push(
+      `REFUSED — ${n} MCX row${n === 1 ? "" : "s"} arrived with quantity 0. On MCX the trade value is not quantity × price, so the size cannot be recovered from it; nothing was guessed. Import ${n === 1 ? "this trade" : "these trades"} from the broker's own file.`,
     );
   }
   warnings.push(...result.notes);

@@ -1,6 +1,6 @@
 import "server-only";
 import { isAckCurrent, openAlgoGate } from "@/lib/domain/openalgo-disclosure";
-import { normalizeHost } from "@/lib/import/api/openalgo";
+import { normalizeHost, openAlgoFeedVersionWarning, readOpenAlgoVersion } from "@/lib/import/api/openalgo";
 import { createRateGuard } from "./rate-guard";
 import {
   quoteKeyId,
@@ -117,6 +117,12 @@ export interface OpenAlgoHealth extends ProviderHealth {
   state: "disabled" | "no-key" | "unreachable" | "ok";
   /** Round-trip of the reachability probe, in ms. `null` unless state is ok. */
   latencyMs: number | null;
+  /**
+   * v4.6.0 W8: set when the bridge answered but its version is below
+   * `OPENALGO_MIN_VERSION` or unreadable — the feed still works, the pull
+   * refuses, and the card says so beside "Feed OK". Null otherwise.
+   */
+  warning?: string | null;
 }
 
 export interface OpenAlgoProviderOptions {
@@ -451,8 +457,9 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
 
       const started = now();
       try {
-        // `/funds` is the cheapest call that proves BOTH the host and the key,
-        // and it is the same probe the import path's save step uses.
+        // `/funds` is the cheapest call that proves BOTH the host and the key.
+        // Only the feed makes it: saving an import connection makes no network
+        // call (the import adapter's unused `/funds` check was removed in W8).
         await post(gate.creds, "funds", {});
       } catch (e) {
         return {
@@ -463,7 +470,13 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
         };
       }
       const latencyMs = Math.max(0, now() - started);
-      return { ok: true, state: "ok", latencyMs, reason: `OpenAlgo answered in ${latencyMs} ms.` };
+      // W8: one keyless GET /auth/app-info on the same host, AFTER the probe
+      // (so its time is not in latencyMs). Under the rate guard like every
+      // other request; a refused take skips the check rather than failing.
+      const warning = guard.take(now())
+        ? openAlgoFeedVersionWarning(await readOpenAlgoVersion(gate.creds.host, doFetch))
+        : null;
+      return { ok: true, state: "ok", latencyMs, reason: `OpenAlgo answered in ${latencyMs} ms.`, warning };
     },
   };
 }

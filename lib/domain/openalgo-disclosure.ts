@@ -48,6 +48,12 @@
  * stock's official close is struck by 15:35, so the write moved to 15:36 (owner
  * ruling K3) — a sentence already accepted stopped being true about WHEN the
  * app writes to the journal, which is this rule's second arm.
+ *
+ * "4" amended BEFORE release (v4.6.0 W8, 2026-09-25): the version read, the
+ * sandbox / old-release / exchange refusals and the MCX no-repair rule were
+ * written into "4" rather than a "5", because no install has accepted "4" yet
+ * (v4.5.0 ships "3") — a second number would only re-prompt nobody twice.
+ * Once v4.6.0 is published, "4" is frozen and the rule above applies again.
  */
 export const OPENALGO_DISCLOSURE_VERSION = "4";
 
@@ -160,14 +166,18 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       "One request holds your OpenAlgo API key and a list of the trading symbols and exchanges of the positions your book has open — at most 500 of them. Your quantities, entry prices, stops, P&L and account names are not in it: the bridge is told which scrips to price, never how much of them you hold or what you paid.",
   },
   {
-    title: "A /funds request when the feed is checked, and when the desk connects",
+    title: "A /funds request and a version read when the feed is checked, and when the desk connects",
     body:
       // `health()` posts to `/funds` once per call — lib/quotes/openalgo.ts:450
       // (`await post(gate.creds, "funds", {})`) — and reads nothing out of the
       // answer except that it arrived, plus the round-trip in ms (:459-460,
       // `const latencyMs = Math.max(0, now() - started)` and the `{ ok: true,
-      // state: "ok", latencyMs, … }` it returns). The same probe the import
-      // path's save step uses.
+      // state: "ok", latencyMs, … }` it returns). Only the feed makes it —
+      // saving an import connection makes no network call (W8 removed the
+      // import adapter's unused `/funds` check; the old wording said otherwise).
+      // W8 adds ONE keyless GET /auth/app-info after the probe
+      // (`readOpenAlgoVersion` in lib/import/api/openalgo.ts), whose only use is
+      // the "older than 2.0.2.6" warning (`openAlgoFeedVersionWarning`).
       //
       // It is called from THREE places, not one: the connection check
       // (`provider.health()` in app/api/live/feed/route.ts) and the desk's
@@ -179,7 +189,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // OPENALGO_DISCLOSURE_VERSION stays "2": same host, same key, nothing new
       // sent and nothing new kept — a wider statement of WHEN an already-
       // disclosed request is made is not a new risk (see the rule above :25-28).
-      "Checking the connection calls OpenAlgo's /funds endpoint once, and the desk does the same each time it opens and each time its price stream reconnects. It is the cheapest call that proves both the address and the API key are right. It is the same bridge and the same key the prices come from, and nothing further is sent. Vyuha keeps nothing from the answer — no balance is stored or shown — only that the bridge replied, and how many milliseconds it took.",
+      "Checking the connection calls OpenAlgo's /funds endpoint once, and the desk does the same each time it opens and each time its price stream reconnects. It is the cheapest call that proves both the address and the API key are right. Right after it, Vyuha reads OpenAlgo's version from /auth/app-info — a request that carries nothing, not even the key — so it can warn you when the bridge is too old to pull trades from. It is the same bridge the prices come from, and nothing further is sent. Vyuha keeps nothing from either answer — no balance is stored or shown — only that the bridge replied, how many milliseconds it took, and whether its version is new enough.",
   },
   {
     title: "The address is this computer unless you change it",
@@ -265,7 +275,14 @@ export const OPENALGO_RISKS: DisclosureItem[] = [
   {
     title: "Sizes can arrive as zero, and are repaired",
     body:
-      "OpenAlgo's own documented response shows a filled trade with quantity 0. Vyuha recovers the size from trade value ÷ average price, counts every repair and tells you the count — and refuses any row it cannot recover rather than importing a zero-size trade. Check repaired sizes against your contract note before you commit.",
+      "OpenAlgo's own documented response shows a filled trade with quantity 0. Vyuha recovers the size from trade value ÷ average price, counts every repair and tells you the count — and refuses any row it cannot recover rather than importing a zero-size trade. On MCX the trade value is not quantity × price, so a zero-size MCX row is refused, never repaired. Check repaired sizes against your contract note before you commit.",
+  },
+  {
+    // v4.6.0 W8 — added while "4" was still unreleased, so it rides in "4"
+    // (see the version note): every v4.5.0 install re-accepts "4" once anyway.
+    title: "Old OpenAlgo releases, Analyzer mode and unpriceable exchanges are refused",
+    body:
+      "Before each pull Vyuha reads OpenAlgo's version from /auth/app-info — a request that carries nothing, not even your key. A release older than 2.0.2.6 is refused for every broker: older ones reported Groww fills above ₹100 at one hundredth of their price and Zerodha MCX sizes in contracts, and carry security holes since fixed. A tradebook answered from Analyzer (sandbox) mode holds simulated fills and is refused whole. Rows on an exchange Vyuha has no charges for — NSE commodities (NCO), NCDEX — are refused and named, never filed under another exchange.",
   },
   {
     title: "Charges are computed here, not stated by the API",

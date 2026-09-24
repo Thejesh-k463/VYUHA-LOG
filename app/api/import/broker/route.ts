@@ -20,6 +20,7 @@ import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile 
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 import {
   assertOpenAlgoBroker,
+  assertOpenAlgoVersion,
   fetchOpenAlgoTradebook,
   isOpenAlgoConnectionId,
   normalizeHost,
@@ -769,6 +770,11 @@ export async function POST(req: Request) {
         // warnings, and fetchTrades returns only the trades. The quantity
         // repair is the whole reason those warnings exist — see the adapter
         // header — so it must not be dropped on the way to the screen.
+        // W8 (v4.6.0): the version gate runs FIRST — an instance older than
+        // OPENALGO_MIN_VERSION is refused for every broker, with the upgrade
+        // steps (owner ruling 2026-09-25). A sandbox answer throws inside
+        // fetchOpenAlgoTradebook. Both reach the user as the 502's message.
+        await assertOpenAlgoVersion(creds);
         const result = normalizeOpenAlgoTrades(await fetchOpenAlgoTradebook(creds), openAlgoBroker, today);
         parsed = openAlgoToParsedFile(openAlgoBroker, result);
       } else if (broker === "angelone") {

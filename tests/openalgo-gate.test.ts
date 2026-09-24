@@ -237,6 +237,10 @@ describe("with the gate open, a pull reaches the adapter and its warnings reach 
     // repair warning exists for.
     let calledWith = "";
     vi.stubGlobal("fetch", async (url: string) => {
+      // W8: the pull reads the version first — a current one here.
+      if (String(url).endsWith("/auth/app-info")) {
+        return new Response(JSON.stringify({ status: "success", version: "2.0.2.6", name: "OpenAlgo" }), { status: 200 });
+      }
       calledWith = String(url);
       return new Response(
         JSON.stringify({
@@ -257,6 +261,53 @@ describe("with the gate open, a pull reaches the adapter and its warnings reach 
     // what the pull uses, not something re-derived at pull time.
     expect(calledWith).toBe("http://127.0.0.1:5000/api/v1/tradebook");
     expect(json.warnings.some((w) => /quantity 0/i.test(w))).toBe(true);
+  });
+
+  // W8 (v4.6.0), through the REAL route: the version gate runs before the
+  // tradebook is dialled, refuses every broker below 2.0.2.6, and refuses a
+  // sandbox answer whole. Red if the route's `assertOpenAlgoVersion` call or the
+  // adapter's `sandboxRefusal` is removed.
+  it("refuses an OpenAlgo older than 2.0.2.6 and never dials its tradebook", async () => {
+    setGate(true, CURRENT);
+    expect((await post(GOOD_SAVE)).status).toBe(200);
+    const dialled: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      dialled.push(String(url));
+      if (String(url).endsWith("/auth/app-info")) {
+        return new Response(JSON.stringify({ status: "success", version: "2.0.2.3", name: "OpenAlgo" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: "success", data: [] }), { status: 200 });
+    });
+    const res = await post({ action: "pull", broker: "openalgo:groww", mode: "preview" });
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as { ok: boolean; message: string };
+    expect(json.message).toMatch(/2\.0\.2\.3, older than 2\.0\.2\.6/);
+    expect(json.message).toMatch(/one hundredth/); // the Groww reason, since this instance fronts Groww
+    expect(dialled).toEqual(["http://127.0.0.1:5000/auth/app-info"]);
+  });
+
+  it("refuses a tradebook OpenAlgo answered from Analyzer (sandbox) mode", async () => {
+    setGate(true, CURRENT);
+    expect((await post(GOOD_SAVE)).status).toBe(200);
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (String(url).endsWith("/auth/app-info")) {
+        return new Response(JSON.stringify({ status: "success", version: "2.0.2.6", name: "OpenAlgo" }), { status: 200 });
+      }
+      // sandbox/position_manager.py's envelope, verbatim in shape.
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          mode: "analyze",
+          data: [{ action: "BUY", symbol: "RELIANCE", exchange: "NSE", product: "MIS", quantity: 5, average_price: 1400, trade_value: 7000, timestamp: "10:00:00" }],
+        }),
+        { status: 200 },
+      );
+    });
+    const res = await post({ action: "pull", broker: "openalgo:groww", mode: "preview" });
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as { ok: boolean; message: string };
+    expect(json.ok).toBe(false);
+    expect(json.message).toMatch(/Analyzer \(sandbox\) mode/);
   });
 
   it("returns a clean message, not a 500, when the OpenAlgo instance is not running", async () => {

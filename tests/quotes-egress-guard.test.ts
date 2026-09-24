@@ -300,9 +300,11 @@ describe("v4.1's live feed adds no remote host either", () => {
  * asserts the URLs it actually produces, because v4.1 is the release where
  * that sentence stops being a promise about code nobody calls.
  *
- * TWO ENDPOINTS EXIST, and no third: `/api/v1/multiquotes` (every snapshot,
- * and therefore every poll of `subscribe()`) and `/api/v1/funds` (the health
- * probe — the cheapest call that proves both the host and the key). Both are
+ * THREE ENDPOINTS EXIST, and no fourth: `/api/v1/multiquotes` (every snapshot,
+ * and therefore every poll of `subscribe()`), `/api/v1/funds` (the health
+ * probe — the cheapest call that proves both the host and the key) and, since
+ * v4.6.0 W8, a keyless `GET /auth/app-info` after the probe (the version read).
+ * The first two are
  * built from ONE template in ONE place, on the host the user configured, whose
  * default is loopback.
  */
@@ -331,20 +333,27 @@ describe("the OpenAlgo provider's egress, as the code actually makes it", () => 
     return seen;
   }
 
-  it("reaches the loopback default and nowhere else — two endpoints, in that order", async () => {
-    const urls = (await callsFor(OPENALGO_DEFAULT_HOST)).map((c) => c.url);
-    expect(urls).toEqual([
+  // v4.6.0 W8 added a THIRD request on the same host: health()'s keyless
+  // `GET /auth/app-info` version read, made after /funds (lib/import/api/openalgo.ts
+  // `readOpenAlgoVersion`). Same host, no key, no body — pinned below.
+  it("reaches the loopback default and nowhere else — three endpoints, in that order", async () => {
+    const calls = await callsFor(OPENALGO_DEFAULT_HOST);
+    expect(calls.map((c) => c.url)).toEqual([
       `${OPENALGO_DEFAULT_HOST}/api/v1/multiquotes`,
       `${OPENALGO_DEFAULT_HOST}/api/v1/funds`,
+      `${OPENALGO_DEFAULT_HOST}/auth/app-info`,
     ]);
+    const versionRead = calls[2]!.init;
+    expect(versionRead.method).toBe("GET");
+    expect(versionRead.body, "the version read carried a body").toBeUndefined();
   });
 
   it("follows the host the USER configured in Import → OpenAlgo, and adds none of its own", async () => {
     // The non-loopback case the capability sentence says out loud: a bridge on
     // another machine on the user's own network. It is still the ONLY host.
     const urls = (await callsFor("http://192.168.1.9:5000")).map((c) => c.url);
-    expect(urls.map((u) => new URL(u).host)).toEqual(["192.168.1.9:5000", "192.168.1.9:5000"]);
-    expect(urls.map((u) => new URL(u).pathname).sort()).toEqual(["/api/v1/funds", "/api/v1/multiquotes"]);
+    expect(urls.map((u) => new URL(u).host)).toEqual(["192.168.1.9:5000", "192.168.1.9:5000", "192.168.1.9:5000"]);
+    expect(urls.map((u) => new URL(u).pathname).sort()).toEqual(["/api/v1/funds", "/api/v1/multiquotes", "/auth/app-info"]);
   });
 
   it("sends the scrip and the exchange and NOTHING ELSE — no quantity, no P&L, no account id", async () => {

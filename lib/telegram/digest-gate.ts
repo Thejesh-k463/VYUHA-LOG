@@ -45,9 +45,10 @@ export interface DigestGateResult {
  * The FALLBACK send time when the stored one is unreadable — derived from the
  * market calendar (v4.6.0 W1): the F&O close plus its mark margin, 15:45 since
  * the derivatives session runs to 15:40. It was a typed 15:35, which sent the
- * "end of day" digest five minutes before F&O stopped trading (R4 #18). The
- * COLUMN default ('15:35', migration 0053) is untouched — no migration; a
- * stored value is the user's own choice and is honoured as typed.
+ * "end of day" digest five minutes before F&O stopped trading (R4 #18). Since
+ * migration 0075 (owner ruling 2026-09-25) the stored default follows it: rows
+ * still at 0053's '15:35' moved to '15:45' and the schema default is '15:45'.
+ * Any other stored value is the user's own choice and is honoured as typed.
  */
 export const DEFAULT_SEND_TIME: string = hhmmOf(markMinuteInForce("NSE_FO", "derivative") ?? parseSendTime("15:35")!);
 

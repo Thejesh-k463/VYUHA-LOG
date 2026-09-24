@@ -399,7 +399,7 @@ export function feedBlockControl(
  * said about it.
  */
 export function feedHealthText(args: {
-  health?: { ok: boolean; latencyMs: number | null; reason: string } | null;
+  health?: { ok: boolean; latencyMs: number | null; reason: string; warning?: string | null } | null;
   blocked: boolean;
   /**
    * C-6: said INSTEAD of the generic blocked sentence when the block is one the
@@ -416,7 +416,9 @@ export function feedHealthText(args: {
   if (args.blocked) return `${args.blockedReason ?? FEED_BLOCKED_HEALTH}${tail}`;
   const h = args.health;
   if (h == null) return `${FEED_CHECKING}${tail}`;
-  if (h.ok) return `Feed OK${h.latencyMs == null ? "" : ` · ${h.latencyMs} ms`}${tail}`;
+  // W8: an old OpenAlgo still prices the desk, so the line stays "Feed OK" —
+  // with the version warning beside it, never instead of it.
+  if (h.ok) return `Feed OK${h.latencyMs == null ? "" : ` · ${h.latencyMs} ms`}${h.warning ? ` — ${h.warning}` : ""}${tail}`;
   return `Not live — ${h.reason}${tail}`;
 }
 
@@ -530,7 +532,7 @@ export interface FeedResponse {
   angelone?: AngelOneFeedState;
   lastLiveMarkDate?: string | null;
   /** `null` is "not known yet" — see `foldWriteResult` (C-7). */
-  health?: { ok: boolean; state: string; latencyMs: number | null; reason: string } | null;
+  health?: { ok: boolean; state: string; latencyMs: number | null; reason: string; warning?: string | null } | null;
   message?: string;
 }
 

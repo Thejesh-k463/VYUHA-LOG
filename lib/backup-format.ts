@@ -161,7 +161,8 @@ export const SETTINGS_MACHINE_BLANKS: Readonly<Record<string, unknown>> = {
   // off; the send time blanks to its column default, not null.
   telegramEnabled: false,
   autoPullEnabled: false,
-  telegramSendTime: "15:35",
+  // '15:45' since v4.6.0 (migration 0075) — the schema default, past the F&O close.
+  telegramSendTime: "15:45",
 };
 
 /** The value a redacted machine column carries in a dump / after a restore. */

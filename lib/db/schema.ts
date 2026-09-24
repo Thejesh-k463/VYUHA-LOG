@@ -886,7 +886,11 @@ export const settings = sqliteTable("settings", {
   // the migration header records why broker_connections was the wrong home).
   telegramEnabled: integer("telegram_enabled", { mode: "boolean" }).notNull().default(false),
   telegramAckVersion: integer("telegram_ack_version"),
-  telegramSendTime: text("telegram_send_time").notNull().default("15:35"),
+  // '15:45' since v4.6.0 (migration 0075): the F&O close (15:40) plus its mark
+  // margin — equal to `DEFAULT_SEND_TIME` in lib/telegram/digest-gate.ts, pinned by
+  // tests/migration-0075-telegram-send-time.test.ts. The DDL default is still
+  // 0053's '15:35'; drizzle writes THIS value on every insert (the migration header).
+  telegramSendTime: text("telegram_send_time").notNull().default("15:45"),
   lastTelegramSentDate: text("last_telegram_sent_date"),
   telegramTokenEnc: text("telegram_token_enc"),
   telegramChatId: text("telegram_chat_id"),

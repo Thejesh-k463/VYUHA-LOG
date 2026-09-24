@@ -259,13 +259,17 @@ describe("seam 1 — every factual claim in the OpenAlgo disclosure, against the
     expect([...out.values()][0].ltp).toBe(310_050);
   });
 
-  it("health() posts to /funds exactly once — the whole of the probe the disclosure describes", async () => {
+  it("health() posts to /funds exactly once, then ONE keyless version read — the whole of the probe the disclosure describes", async () => {
     claim(/calls OpenAlgo's \/funds endpoint once/);
+    // v4.6.0 W8: "Right after it, Vyuha reads OpenAlgo's version from /auth/app-info
+    // — a request that carries nothing, not even the key".
+    claim(/reads OpenAlgo's version from \/auth\/app-info — a request that carries nothing, not even the key/);
     const { sent, impl } = recorder({ status: "success", data: { availablecash: "99999" } });
     const provider = createOpenAlgoProvider({ readGate: READY_GATE, fetchImpl: impl, now: () => 0 });
     const h = await provider.health();
-    expect(sent.map((s) => s.url)).toEqual([`${OPENALGO_DEFAULT_HOST}/api/v1/funds`]);
+    expect(sent.map((s) => s.url)).toEqual([`${OPENALGO_DEFAULT_HOST}/api/v1/funds`, `${OPENALGO_DEFAULT_HOST}/auth/app-info`]);
     expect(Object.keys(sent[0].body)).toEqual(["apikey"]);
+    expect(sent[1].body, "the version read carried a body (the key?)").toEqual({});
     expect(h.ok).toBe(true);
     // "Vyuha keeps nothing from the answer — no balance is stored or shown."
     expect(JSON.stringify(h).includes("99999"), "the funds balance rode back out of health()").toBe(false);

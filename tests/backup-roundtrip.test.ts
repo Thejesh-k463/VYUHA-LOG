@@ -421,7 +421,7 @@ describe("v3: licence and trial state stay on the machine", () => {
     // token and chat id in particular must never appear anywhere in the file.
     expect(dumped.telegramEnabled).toBe(false);
     expect(dumped.telegramAckVersion).toBeNull();
-    expect(dumped.telegramSendTime).toBe("15:35");
+    expect(dumped.telegramSendTime).toBe("15:45"); // the schema default since migration 0075
     expect(dumped.lastTelegramSentDate).toBeNull();
     expect(dumped.telegramTokenEnc).toBeNull();
     expect(dumped.telegramChatId).toBeNull();
@@ -489,7 +489,7 @@ describe("v3: licence and trial state stay on the machine", () => {
     expect(after.telegramAckVersion).toBeNull();
     expect(after.telegramTokenEnc).toBeNull();
     expect(after.telegramChatId).toBeNull();
-    expect(after.telegramSendTime).toBe("15:35");
+    expect(after.telegramSendTime).toBe("15:45");
     expect(after.lastTelegramSentDate).toBeNull();
     expect(after.autoPullEnabled).toBe(false);
     expect(after.lastAutoPullDate).toBeNull();

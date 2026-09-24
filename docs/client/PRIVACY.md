@@ -69,7 +69,11 @@ Exactly four kinds, and only one of them is automatic:
    quantity, no entry price, no P&L, no account — plus one `/funds` request
    each time you check the connection and each time the desk opens or its price
    stream reconnects, to the same bridge with the same key, keeping nothing from
-   the answer but that it replied and how long it took. It is off until you
+   the answer but that it replied and how long it took — and one version read
+   (`/auth/app-info`, which carries nothing, not even the key) after each of
+   those and before each trade pull, used only to warn, or to refuse the pull,
+   when the bridge is older than the minimum release the OpenAlgo setup guide
+   names. It is off until you
    switch the integration on, accept the disclosure and pick that source, it
    goes to your own machine
    (`http://127.0.0.1:5000`) unless you enter another address, and the prices

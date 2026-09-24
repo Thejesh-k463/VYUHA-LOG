@@ -1,0 +1,24 @@
+-- v4.6.0 — the Telegram digest's stored send time moves past the F&O close
+-- (owner ruling 2026-09-25, the W1 follow-up owed in STATE §0.4 item 4).
+--
+-- Migration 0053 gave `settings.telegram_send_time` the column default
+-- '15:35' — five minutes after the old 15:30 close. Since SEBI's Closing
+-- Auction Session (2026-08-03) equity derivatives trade to 15:40, so an
+-- "end of day" digest at 15:35 goes out while F&O is still trading. W1
+-- derived the FALLBACK (15:45 = the F&O mark minute, `DEFAULT_SEND_TIME` in
+-- lib/telegram/digest-gate.ts) but left every stored value alone.
+--
+-- The ruling: move ONLY rows still equal to the old default. A time the user
+-- typed themselves is theirs and is never touched. A user who deliberately
+-- typed 15:35 cannot be told apart from one who never chose — the owner
+-- accepted that (the ruling names "rows still equal to the default").
+--
+-- The DDL default stays '15:35': SQLite changes a column default only by
+-- rebuilding the table, and nothing inserts a settings row through raw SQL —
+-- every insert (lib/db/seed-core.ts, app/api/settings/route.ts,
+-- lib/queries/wallpaper.ts) goes through drizzle, which writes the SCHEMA's
+-- default ('15:45', lib/db/schema.ts). `tests/migration-0075-telegram-send-time.test.ts`
+-- pins both halves. Idempotent: a second run finds no '15:35' row to move.
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+UPDATE `settings` SET `telegram_send_time` = '15:45' WHERE `telegram_send_time` = '15:35';

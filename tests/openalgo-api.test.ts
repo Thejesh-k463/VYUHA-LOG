@@ -196,7 +196,7 @@ describe("normalizeOpenAlgoTrades", () => {
 
 describe("toParsedFile", () => {
   it("says so when today had no executions", () => {
-    const p = toParsedFile("zerodha", { trades: [], repaired: 0, refused: 0, notes: [] });
+    const p = toParsedFile("zerodha", { trades: [], repaired: 0, refused: 0, notes: [], refusedByExchange: {}, refusedMcxNoQuantity: 0 });
     expect(p.warnings.join(" ")).toMatch(/current trading day/i);
   });
 
@@ -206,6 +206,8 @@ describe("toParsedFile", () => {
       repaired: 3,
       refused: 1,
       notes: [],
+      refusedByExchange: {},
+      refusedMcxNoQuantity: 0,
     });
     expect(p.warnings.some((w) => /quantity 0/i.test(w))).toBe(true);
     expect(p.warnings.some((w) => /skipped/i.test(w))).toBe(true);

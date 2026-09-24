@@ -272,6 +272,8 @@ async function healthLine() {
     state: h.state ?? (h.ok ? "ok" : "disabled"),
     latencyMs: h.latencyMs ?? null,
     reason: h.reason ?? "",
+    // W8: an old or unreadable OpenAlgo version — said beside "Feed OK".
+    warning: h.warning ?? null,
     capabilities: provider.capabilities,
   };
 }

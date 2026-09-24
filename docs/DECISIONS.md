@@ -8974,3 +8974,74 @@ DECISIONS entries, LEDGER, AGENTS.md, BROKER_FORMATS, the OpenAlgo setup docs, t
 the session log. The one CONFIRMED finding — the session-log paste block still said "W2 next" — is fixed by the block
 rewritten at this close (W8 next). Everything else agreed: the wave order in every file, the not-chosen brokers absent
 from all plans, the research folder holding exactly R5–R9, the owner files named as the spec names them.
+
+## 2026-09-25 — v4.6.0 W8 built: OpenAlgo safety (version gate 2.0.2.6, sandbox and exchange refusals, MCX no-repair) + the W1 follow-ups (migration 0075)
+
+Spec: `22-V460-BUILD/00-SPEC-PLAN.md` §2 W8 (ruling B3); evidence: `23-BROKERS-OPENALGO-2026-09-25/R6-OPENALGO-UPSTREAM.md`.
+Built by the session itself (one wave, one owner — the session had already read every call site to write the questions;
+same reason as W1).
+
+**Owner rulings at the wave's start (one question group, 4 answers, all the recommended option):**
+- **W1 follow-up (a) — the stored Telegram send time:** migration **0075** moves `settings.telegram_send_time` from '15:35'
+  to '15:45' ONLY where it still equals 0053's default; any other value is the user's and untouched. The schema default is
+  now '15:45' (drizzle's SQLite insert writes the SCHEMA `.default()` — `sqlite-core/dialect.js`, checked by the review — and
+  the seed runs AFTER migrations, so an UPDATE alone would have missed every fresh install). The DDL default stays '15:35':
+  SQLite changes a default only by rebuilding the table, and no code inserts a settings row through raw SQL. The backup
+  machine-blank follows ('15:45'). A user who deliberately typed 15:35 is indistinguishable and moves — accepted by the ruling.
+  W6's `trades.side` is now 0076+.
+- **W1 follow-up (b) — the analytics band:** the 15:30–15:40 union `auction` band stands; no 15:15 widening.
+- **W8 — below the minimum:** a pull from an OpenAlgo older than **2.0.2.6** (or whose version cannot be read) is refused
+  for **every** broker, not only Groww/Zerodha. Rejected: refusing only where a price/size bug is known (leaves the 2.0.2.2
+  CORS hole, which let any web page place an order through the user's instance) and warn-only (Groww ÷100 would import).
+- **The live test:** not now — W8 ships tested against 2.0.2.6's own source and documented responses; a live pull on 2.0.2.6
+  is OWNER-OWED and goes on the release checklist.
+
+**The version source (the spec required a documented one):** `GET /auth/app-info` → `{status, version, name}`, no API key.
+Documented by OpenAlgo itself — `docs/design/30-upgrade-procedure/README.md` ("Open `/auth/app-info` and verify the expected
+application version") and `docs/userguide/remote-mcp.md`. Present from 2.0.0.0 (release tag `openalgo-react-v2`, 2026-01-22:
+route present, `VERSION = '2.0.0.0'`; tag `openalgo-websocket-pooling`, 1.0.0.41: absent), no `@check_session_validity`.
+So a 404 means "older than 2.0.0.0 or not OpenAlgo at all"; a network failure means "not running / wrong port" and is NOT
+read as a version fact (review finding, fixed below). `/api/v1/ping` was rejected: it names the broker, not the version.
+
+**What W8 does:** (1) a tradebook envelope with `mode` other than absent/"live" is refused whole — `"analyze"` is the
+sandbox (`sandbox/position_manager.py`); `openAlgoPost` used to drop the envelope, so the marker was unreadable. (2) The
+version gate runs before `/tradebook` in the pull route and in `openAlgoImportSource`. (3) A STATED exchange `exchangeOf`
+cannot map is refused and named (NCO, NCDEX, anything else); an ABSENT exchange keeps its old null hint. The spec's "Data
+Quality line" is the preview warning: a refused row never reaches the database the DQ page reads. (4) MCX: VYUHA's
+convention is quantity in UNITS (the Dhan GTR's crude rows reconcile to the paisa that way), which matches OpenAlgo ≥
+2.0.2.6's Zerodha plugin; a zero-quantity MCX row is refused, never repaired from `trade_value ÷ price`, and a positive
+one whose stated trade value disagrees with qty × price gets a note (commodities stay valued at qty × price, like every
+other source — a gold contract's per-10 g price is a known gap, now SAID). (5) The feed's `health()` makes one keyless
+`GET /auth/app-info` after `/funds` and carries a `warning` the Settings card shows beside "Feed OK" — the feed warns,
+it does not refuse. (6) The dead `verifyOpenAlgoConnection` (no caller since it was written) is removed.
+
+**A doc defect found and fixed:** the 2026-09-25 scope commit wrote "saving the connection also makes a read-only
+`/api/v1/funds` check" into `docs/OPENALGO_SETUP.md`, the client guide and in-app Help, and the setup guides already said
+"Saving fires a live check against the instance". Saving makes NO network call (the POST save branch has no fetch; the
+client's `save()` only refreshes the list); `/funds` is the FEED's probe. All three now say so and name Preview pull as the
+live check. Rejected: making save probe the bridge (a save while OpenAlgo is stopped would then fail).
+
+**Disclosure:** `OPENALGO_DISCLOSURE_VERSION` stays **"4"** with its text AMENDED (a new risk item for the version read +
+the refusals; the MCX no-repair sentence; the /funds item names the version read). "4" has never shipped — v4.5.0 carries
+"3" (checked at v4.2.0–v4.5.0) — so a "5" would re-prompt nobody twice; once v4.6.0 is published "4" is frozen. PRIVACY item
+3 names the version read without the number (the item's IPv4 scan reads "2.0.2.6" as an address — caught by
+`tests/seams-v41.test.ts`). The Kotak note in `OPENALGO_BROKERS` now says the adapter IS the Neo API (R8).
+
+**Tests:** `tests/openalgo-w8-safety.test.ts` (new; the spec's four FAIL lines + the version source + the feed warning +
+the disclosure), `tests/migration-0075-telegram-send-time.test.ts` (new; fresh seeded row = 15:45 with the DDL still '15:35',
+the SQL moves only '15:35', idempotent, blank = fallback); route-level cases in `tests/openalgo-gate.test.ts` (old version
+refused and the tradebook never dialled; sandbox refused). Re-pinned, not loosened: the three request-list pins in
+`quotes-egress-guard` / `seams-v41` now name the third endpoint and assert it is a bodiless GET; `seams-v41-fix2`'s item
+title; `backup-roundtrip`'s machine-blank. Red-on-revert: migration 2/2 (schema default; the SQL); W8 6/6 (sandbox check,
+route gate, version compare, exchange refusal, MCX no-repair, feed warning).
+
+**Independent review** (`skeptic`, Opus, 51 tool calls): 0 blocking, 0 refuted claims; drizzle's default behaviour, every
+settings insert path, the upstream envelope and route history, browser safety, "save makes no network call" and the UI's
+display of the 502 all CONFIRMED. Fixed: (medium) a stopped OpenAlgo or a port typo was told to UPGRADE — `unreachable` is
+now its own state ("start OpenAlgo and confirm the host and port"), and a 404 names the server that answered and says it
+may not be OpenAlgo. Recorded, not changed: (low) when VYUHA's own rate guard refuses the version read, that one health
+check shows a plain "Feed OK"; (low) `openAlgoImportSource` has no caller (pre-existing) — its test pins unused code;
+(low) the ~350-character warning renders in the card's muted text, not a warning style; (unverified) the owner's DEV
+database may already hold ack "4" from W1 testing and would not re-prompt — shipped installs hold "3".
+**Gate:** `npm run verify` (vyuha-verifier) EXIT 0 on the final tree — **476 files / 10,967 passed / 35 skipped** (the raw line; 35 = the owner-file cases, `VYUHA_LICENSE_PEM` set), lint 0 errors / 6 warnings (pre-existing unused-vars), `next build` compiled. The first run was red on 5 pins (three request lists, PRIVACY's IPv4 scan, README's file count) — all fixed as above, none loosened.
+**Prose pass: 14 files / 0 findings / 31 tool calls** (doc-auditor on Sonnet; it reported 22 in its text, the harness counted 31) over STATE §0/§3, this entry, LEDGER, both OpenAlgo setup guides, PRIVACY item 3, the Help strings, the disclosure, README, AGENTS.md, CLAUDE.md, the spec and the session log — every hunt item (the save-probe claim, disclosure "4", minimum 2.0.2.6, migration 0075, the 476 / 10,967 counts, the Telegram default, wave order) agreed with the code.

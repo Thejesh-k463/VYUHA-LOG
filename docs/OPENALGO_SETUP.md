@@ -17,11 +17,15 @@ entirely on **your own computer**.
   in between, not a service in the cloud. Keep it on `127.0.0.1` (Vyuha warns
   you before saving any non-local address, because at that moment your trade
   data would leave your computer).
-- **Vyuha's pull is read-only**: it pulls trades only from `/api/v1/tradebook` (saving the connection
-  also makes a read-only `/api/v1/funds` check, which the Live Desk repeats each time it connects),
+- **Vyuha's pull is read-only**: it pulls trades only from `/api/v1/tradebook`, after reading
+  OpenAlgo's version from `/auth/app-info` (a request that carries nothing, not even the key);
+  saving the connection makes no network call at all, and the Live Desk's price feed makes a
+  read-only `/api/v1/funds` check (plus the same version read) each time it connects. It
   imports through the same preview → charges → duplicate-check pipeline as
   every file, and computes charges from your rate card — it never places,
   modifies or cancels an order.
+- **Vyuha needs OpenAlgo 2.0.2.6 or later** and refuses to pull from anything older, for
+  every broker — see Part 4.
 - Because of all of the above, the integration is **off by default**. You
   switch it on yourself in **Settings → Integrations (advanced)**, after an
   in-app disclosure that states exactly this list. Your acceptance is recorded
@@ -83,8 +87,10 @@ multiple instances side by side.
    - **Host** — `http://127.0.0.1:5000` (or your instance's port)
    - **Broker behind OpenAlgo** — the broker this instance is logged into.
      This matters: it stamps the trades and selects the charge profile.
-   - **Add instance.** Saving fires a live check against the instance, so a
-     wrong key or port fails here with a message — not tomorrow at pull time.
+   - **Add instance.** Saving checks the host's FORMAT and the broker, and
+     makes no network call — so it works while OpenAlgo is stopped. The live
+     check is **Preview pull**: press it once after saving, and a wrong key,
+     port or an OpenAlgo older than 2.0.2.6 fails there with a message.
 3. Repeat for a second instance — each appears as its own row with its own
    Preview / Pull & commit buttons.
 
@@ -98,13 +104,52 @@ multiple instances side by side.
   blocks the commit until you decide.
 - The tradebook covers **the current trading day only** — pull after you are
   done trading. Older history still comes in by file.
+- Before every pull Vyuha reads the instance's version; below 2.0.2.6 the
+  pull is refused with the upgrade steps (Part 4). A tradebook answered from
+  OpenAlgo's **Analyzer (sandbox) mode** is refused whole — its fills are
+  simulated. Rows on an exchange Vyuha has no charges for (`NCO` — NSE
+  commodities — and `NCDEX`) are refused and named; add those from the
+  contract note.
+
+## Part 4 — OpenAlgo version and upgrading
+
+**Minimum: OpenAlgo 2.0.2.6** (released 2026-09-22). Vyuha reads the running
+version from `GET /auth/app-info` — the check OpenAlgo's own upgrade procedure
+tells you to make — and refuses to pull from an older release, whichever broker
+sits behind it. Why that exact release: before 2.0.2.4 the Groww plugin reported
+every fill above ₹100 at one hundredth of its price; before 2.0.2.6 the Zerodha
+plugin reported MCX quantity in contracts rather than units (Vyuha counts MCX in
+units); and 2.0.0.6, 2.0.1.8 and 2.0.2.2 fixed security holes (the last one let
+any web page place an order through your instance). A release older than 2.0.0.0
+has no `/auth/app-info` at all, and is refused as older. The Live Desk keeps
+pricing from an old instance but says, beside "Feed OK", that pulls are refused.
+
+**Upgrading** (from OpenAlgo's upgrade guide, docs.openalgo.in → Upgrade):
+
+1. Stop OpenAlgo and back up its folder — at least the `db` folder and `.env`.
+2. In the OpenAlgo folder: `git pull`, then `uv sync`, then
+   `uv run upgrade/migrate_all.py` (2.0.2.6 needs its database migration).
+   On Windows, `install\update.bat` does the same.
+3. **Never** copy `.sample.env` over an existing `.env` — that wipes your broker
+   keys. If a release adds `.env` settings, copy just those lines across.
+4. Start OpenAlgo, open `http://127.0.0.1:<port>/auth/app-info` — it should
+   say `"version": "2.0.2.6"` or later — log into your broker, then Preview
+   pull in Vyuha.
+
+**Tested against:** W8 (v4.6.0) was built and tested against OpenAlgo
+**2.0.2.6's own source and documented responses** (2026-09-25). The last LIVE
+pulls through OpenAlgo were the Dhan and Upstox plugins on 2026-08-26/27, on a
+release nobody recorded; a live pull on 2.0.2.6 is still owed and will be
+recorded here.
 
 ## Troubleshooting (each of these was hit in real testing)
 
 | Symptom | Cause and fix |
 |---|---|
 | "Cannot reach OpenAlgo at …" | The instance is not running, or the port in Vyuha's Host field is not the port in the instance's `.env`. Check the OpenAlgo console banner — it prints its real address. |
-| "wrong API key?" on save | The key is the OTHER instance's, or was regenerated. Copy it again from that instance's API Key page. |
+| "wrong API key?" on Preview pull | The key is the OTHER instance's, or was regenerated. Copy it again from that instance's API Key page. |
+| "Your OpenAlgo is …, older than 2.0.2.6" | Upgrade it (Part 4). Nothing was pulled, so nothing needs undoing. |
+| "OpenAlgo is in Analyzer (sandbox) mode" | OpenAlgo's Analyzer toggle routes the tradebook to simulated fills. Switch it back to Live mode in OpenAlgo's dashboard and pull again. |
 | A pull returns no fills on a trading day | Log into the OpenAlgo web UI first — broker sessions expire daily and the tradebook is empty until the day's login. |
 | A row is REFUSED with "suspect symbol" | OpenAlgo's broker plugin mislabelled a contract (it has happened: a stock option arrived named as a silver option). Vyuha refuses to book a trade under a corrupt identity — import that one trade from the broker's own file or API instead. |
-| A warning says a quantity was "recovered from trade value" | Some OpenAlgo broker plugins report quantity 0 on real fills. Vyuha recovers the size from value ÷ price, tells you, and refuses any row it cannot recover. Check those against your contract note once. |
+| A warning says a quantity was "recovered from trade value" | Some OpenAlgo broker plugins report quantity 0 on real fills. Vyuha recovers the size from value ÷ price, tells you, and refuses any row it cannot recover. Check those against your contract note once. On MCX the value is not quantity × price, so a zero-quantity MCX row is refused instead of repaired. |

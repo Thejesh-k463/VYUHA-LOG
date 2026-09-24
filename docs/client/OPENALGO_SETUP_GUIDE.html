@@ -152,7 +152,7 @@
     <p>OpenAlgo is a program you install and run locally. Your broker credentials live in its
     <span class="mono">.env</span> file on your disk — never in Vyuha, never in any cloud.</p></div>
   <div class="card"><div class="ico">📥</div><h3>Vyuha only reads</h3>
-    <p>Vyuha pulls trades only from <span class="mono">/api/v1/tradebook</span> (saving the connection also makes a read-only <span class="mono">/api/v1/funds</span> check, which the Live Desk repeats each time it connects) and imports through the same
+    <p>Vyuha pulls trades only from <span class="mono">/api/v1/tradebook</span>, after reading OpenAlgo's version from <span class="mono">/auth/app-info</span> (saving the connection makes no network call; the Live Desk's feed makes a read-only <span class="mono">/api/v1/funds</span> check each time it connects) and imports through the same
     preview → charges → duplicate-check pipeline as every file. It never places, modifies or cancels an order.</p></div>
   <div class="card"><div class="ico">🔌</div><h3>Off by default</h3>
     <p>The integration does not exist in the UI until you switch it on in
@@ -169,9 +169,14 @@
     <i>to</i> your machine — OpenAlgo is a medium in between, not a service in the cloud. Keep it on
     <code>127.0.0.1</code> (Vyuha warns you before saving any non-local address, because at that
     moment your trade data would leave your computer).</li>
-  <li><b>Vyuha's pull is read-only</b>: it pulls trades only from <code>/api/v1/tradebook</code> (saving the connection also makes a read-only <code>/api/v1/funds</code> check, which the Live Desk repeats each time it connects),
+  <li><b>Vyuha's pull is read-only</b>: it pulls trades only from <code>/api/v1/tradebook</code>, after reading
+    OpenAlgo's version from <code>/auth/app-info</code> (a request that carries nothing, not even the key);
+    saving the connection makes no network call, and the Live Desk's feed makes a read-only
+    <code>/api/v1/funds</code> check (plus the same version read) each time it connects. It
     imports through the same preview → charges → duplicate-check pipeline as every file, and
     computes charges from your rate card — it never places, modifies or cancels an order.</li>
+  <li><b>Vyuha needs OpenAlgo 2.0.2.6 or later</b> and refuses to pull from anything older, for every
+    broker — see <a href="#version">OpenAlgo version and upgrading</a>.</li>
   <li>Because of all of the above, the integration is <b>off by default</b>. You switch it on
     yourself in <b>Settings → Integrations (advanced)</b>, after an in-app disclosure that states
     exactly this list. Your acceptance is recorded in the Audit Log.</li>
@@ -211,13 +216,30 @@ cd openalgo</code></pre></li>
     OpenAlgo side first.</li>
 </ol>
 
-<h3>Updating OpenAlgo later</h3>
-<ul>
-  <li>Run <code>install\update.bat</code> from the OpenAlgo folder.</li>
-  <li>Some upgrades also need a database migration:
-    <pre class="env"><code>cd upgrade
-uv run migrate_all.py</code></pre></li>
-</ul>
+<h3 id="version">OpenAlgo version and upgrading</h3>
+<p><b>Vyuha needs OpenAlgo 2.0.2.6 or later</b> (released 2026-09-22). Before every pull it reads the
+running version from <code>/auth/app-info</code> — the check OpenAlgo's own upgrade procedure tells you
+to make — and refuses to pull from an older release, whichever broker sits behind it. Why that
+release: before 2.0.2.4 the Groww plugin reported every fill above ₹100 at one hundredth of its
+price; before 2.0.2.6 the Zerodha plugin reported MCX quantity in contracts rather than units; and
+2.0.0.6, 2.0.1.8 and 2.0.2.2 fixed security holes. A release older than 2.0.0.0 has no
+<code>/auth/app-info</code> and is refused as older. The Live Desk keeps pricing from an old instance
+but says, beside “Feed OK”, that pulls are refused.</p>
+<ol class="step-list">
+  <li><b>Stop OpenAlgo and back up its folder</b> — at least the <code>db</code> folder and <code>.env</code>.</li>
+  <li><b>Update:</b> run <code>install\update.bat</code> from the OpenAlgo folder — or by hand:
+    <pre class="env"><code>git pull
+uv sync
+uv run upgrade/migrate_all.py</code></pre>
+    (2.0.2.6 needs its database migration.)</li>
+  <li><b>Never copy <code>.sample.env</code> over an existing <code>.env</code></b> — that wipes your broker
+    keys. If a release adds settings, copy just those lines across.</li>
+  <li><b>Check it:</b> start OpenAlgo and open <code>http://127.0.0.1:&lt;port&gt;/auth/app-info</code> — it
+    should say <code>"version": "2.0.2.6"</code> or later. Log into your broker, then Preview pull in Vyuha.</li>
+</ol>
+<p><b>Tested against:</b> Vyuha 4.6.0's OpenAlgo checks were built against OpenAlgo 2.0.2.6's own source
+and documented responses (25 Sep 2026). The last live pulls through OpenAlgo used its Dhan and Upstox
+plugins (Aug 2026); a live pull on 2.0.2.6 has not been checked yet.</p>
 <div class="strip">Full official documentation for every step:
   <a href="https://docs.openalgo.in">docs.openalgo.in</a> → Getting Started / Connect Brokers.</div>
 
@@ -288,8 +310,10 @@ ZMQ_PORT=5556</code></pre></li>
       <li><b>Broker behind OpenAlgo</b> — the broker this instance is logged into. This matters: it
         stamps the trades and selects the charge profile.</li>
     </ul>
-    Then <b>Add instance</b>. Saving fires a live check against the instance, so a wrong key or
-    port fails here with a message — not tomorrow at pull time.</li>
+    Then <b>Add instance</b>. Saving checks the host's format and the broker and makes no network
+    call, so it works while OpenAlgo is stopped. The live check is <b>Preview pull</b>: press it once
+    after saving, and a wrong key, a wrong port or an OpenAlgo older than 2.0.2.6 fails there with a
+    message.</li>
   <li><b>Repeat for a second instance</b> — each appears as its own row with its own
     Preview / Pull &amp; commit buttons.</li>
 </ol>
@@ -303,6 +327,9 @@ ZMQ_PORT=5556</code></pre></li>
     what matched, and a suspicious overlap blocks the commit until you decide.</li>
   <li>The tradebook covers <b>the current trading day only</b> — pull after you are done trading.
     Older history still comes in by file.</li>
+  <li>A tradebook answered from OpenAlgo's <b>Analyzer (sandbox) mode</b> is refused whole — its fills
+    are simulated. Rows on an exchange Vyuha has no charges for (<code>NCO</code>, NSE commodities, and
+    <code>NCDEX</code>) are refused and named; add those from the contract note.</li>
 </ul>
 
 <!--
@@ -358,8 +385,8 @@ ZMQ_PORT=5556</code></pre></li>
   The stream route's own line numbers are deliberately not cited: that file is
   being changed in the same wave, and an identifier survives what a number does
   not.
-  Disclosure version is "2" (lib/domain/openalgo-disclosure.ts), so an install
-  that accepted v1 re-reads before either path runs.
+  Disclosure version is "4" (lib/domain/openalgo-disclosure.ts), so an install
+  that accepted an earlier one re-reads before either path runs.
 -->
 <h2 id="live">9 · Live prices on the Live Desk</h2>
 <p>From v4.1 the same instance can also <b>price your open positions</b> while you watch them. It is a
@@ -376,8 +403,10 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
     positions you have open — at most 500 of them. Quantity, entry price, stop, P&amp;L and account
     name are not in the request. Checking the connection calls <code>/api/v1/funds</code> once, and
     the desk calls it again each time it opens and each time its price stream reconnects — the same
-    host and the same key, nothing further sent. Vyuha keeps nothing from that answer except that
-    it arrived and how long it took.</li>
+    host and the same key, nothing further sent. Right after it, Vyuha reads OpenAlgo's version from
+    <code>/auth/app-info</code> (a request that carries nothing) so it can warn you when the bridge is too
+    old to pull trades from. Vyuha keeps nothing from those answers except that they arrived, how long
+    the check took, and whether the version is new enough.</li>
   <li><b>Where it goes.</b> <code>http://127.0.0.1:5000</code> by default — your own machine talking
     to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to
     that machine every few seconds while the desk is open.</li>
@@ -536,8 +565,16 @@ of the seven, and Vyuha adds no data subscription of its own.</p>
       <td>The instance is not running, or the port in Vyuha's Host field is not the port in the instance's <code>.env</code>. Check the OpenAlgo console banner — it prints its real address.</td>
     </tr>
     <tr>
-      <td>"wrong API key?" on save</td>
+      <td>"wrong API key?" on Preview pull</td>
       <td>The key is the OTHER instance's, or was regenerated. Copy it again from that instance's API Key page.</td>
+    </tr>
+    <tr>
+      <td>"Your OpenAlgo is …, older than 2.0.2.6"</td>
+      <td>Upgrade it (<a href="#version">OpenAlgo version and upgrading</a>). Nothing was pulled, so nothing needs undoing.</td>
+    </tr>
+    <tr>
+      <td>"OpenAlgo is in Analyzer (sandbox) mode"</td>
+      <td>OpenAlgo's Analyzer toggle routes the tradebook to simulated fills. Switch it back to Live mode in OpenAlgo's dashboard and pull again.</td>
     </tr>
     <tr>
       <td>A pull returns no fills on a trading day</td>
@@ -549,7 +586,7 @@ of the seven, and Vyuha adds no data subscription of its own.</p>
     </tr>
     <tr>
       <td>A warning says a quantity was "recovered from trade value"</td>
-      <td>Some OpenAlgo broker plugins report quantity 0 on real fills. Vyuha recovers the size from value ÷ price, tells you, and refuses any row it cannot recover. Check those against your contract note once.</td>
+      <td>Some OpenAlgo broker plugins report quantity 0 on real fills. Vyuha recovers the size from value ÷ price, tells you, and refuses any row it cannot recover. Check those against your contract note once. On MCX the value is not quantity × price, so a zero-quantity MCX row is refused instead of repaired.</td>
     </tr>
   </tbody>
 </table>
@@ -557,7 +594,7 @@ of the seven, and Vyuha adds no data subscription of its own.</p>
 
 <footer>
   <span>Vyuha — trade journal &amp; analytics · record-keeping, not investment advice</span>
-  <span>OpenAlgo setup guide · As of Aug 2026</span>
+  <span>OpenAlgo setup guide · As of Sep 2026 (OpenAlgo 2.0.2.6)</span>
 </footer>
 
 </div>
