@@ -485,13 +485,14 @@ describe("the stored feed provider is the one that streams (S-X)", () => {
  * so the catch-up runs there — on the snapshot already in hand, with no second
  * network call.
  *
- * Friday 2026-09-04 15:35 IST: after the 15:30 close AND still inside the
- * 09:00–15:40 live window, which is the only clock at which both halves of
- * this feature are live at once.
+ * Friday 2026-09-04 15:37 IST: after the official close of every cash stock
+ * (15:36 for an F&O stock, whose close comes from the closing auction — v4.6.0
+ * W1) AND still inside the 09:00–15:45 live window, which is the only clock at
+ * which both halves of this feature are live at once.
  */
 describe("the day's mark is caught up on connect", () => {
-  /** Friday 2026-09-04, 15:35 IST. */
-  const AFTER_CLOSE = new Date("2026-09-04T10:05:00Z");
+  /** Friday 2026-09-04, 15:37 IST. */
+  const AFTER_CLOSE = new Date("2026-09-04T10:07:00Z");
 
   function marks() {
     return t.db.select().from(t.schema.mtmPrices).all();

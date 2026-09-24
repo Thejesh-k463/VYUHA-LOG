@@ -1,0 +1,1159 @@
+{
+ "_note": "SNAPSHOT — built by scripts/build-market-calendar.mjs from the owner's downloads; never hand-edited. Every session row names its source; the build refuses when an anchor phrase is missing from that source. Read ONLY through lib/domain/market-calendar.ts. A WRONGLY LISTED HOLIDAY SILENTLY SUPPRESSES A REAL SESSION'S AUTOMATIC CLOSE MARK — the desk says the market is shut and nothing on screen looks broken. CLEARING HOLIDAYS ARE NOT TRADING HOLIDAYS and must never be added: the market is OPEN on them (26-Aug-2026 Id-E-Milad, a clearing holiday copied into a trading list, once cancelled a real session). A date past coversThrough is UNKNOWN, never a holiday.",
+ "asOf": "2026-09-24",
+ "capturedAt": "2026-09-25",
+ "coversThrough": "2026-12-31",
+ "timezone": "Asia/Kolkata",
+ "sourcesSha256": "03a00761b4fb821a37b7a05a5caaf4718f03f0d0791df3ec8b6cc0fc7f1b883d",
+ "provenance": [
+  {
+   "id": "sebi-cas-2026",
+   "item": 1,
+   "sourceKind": "primary",
+   "file": "01-sebi-cas-circular-2026-01-16.pdf",
+   "ref": "SEBI/HO/47/11/11(3)2025-MRD-POD2/I/2765/2026",
+   "issued": "2026-01-16",
+   "url": "https://www.sebi.gov.in/legal/circulars/jan-2026/introduction-of-closing-auction-session-cas-in-the-equity-cash-segment-and-certain-modifications-in-the-pre-open-auction-session_99122.html",
+   "sha256": "cdd882291c3e788e1f8dcf478b4284604e9d939e12adf1b103e6a50a9d618571",
+   "bytes": 629060
+  },
+  {
+   "id": "nse-cas-page",
+   "item": 2,
+   "sourceKind": "primary",
+   "file": "02-nse-cas-fno-1540.pdf",
+   "ref": "NSE Closing Auction Session page (lists NSE/CMTR/72394, 73362, 73845, 74466, NSE/FAOP/74467)",
+   "issued": null,
+   "url": "https://www.nseindia.com/",
+   "sha256": "6a6a932e8d656923e813e8539223cfa6dc2b69025d8a772b97c3e8767ee4dcaf",
+   "bytes": 171063
+  },
+  {
+   "id": "nse-preopen-page",
+   "item": 3,
+   "sourceKind": "primary",
+   "file": "03-nse-preopen-revised.pdf",
+   "ref": "NSE pre-open session page (revised timings)",
+   "issued": null,
+   "url": "https://www.nseindia.com/",
+   "sha256": "93df41e7f74cd32f5e93a1934b6d33d9f874dc7e778316c02e0e55f016059d71",
+   "bytes": 145620
+  },
+  {
+   "id": "nse-fo-preopen",
+   "item": 4,
+   "sourceKind": "primary",
+   "file": "04-nse-fno-preopen.pdf",
+   "ref": "NSE/FAOP/71092",
+   "issued": "2025-11-03",
+   "url": "https://www.nseindia.com/resources/exchange-communication-circulars",
+   "sha256": "70ebc9384155235a82da92e50171dc6648cb0d62acef9c1c70c8f10cfd5ea212",
+   "bytes": 236183
+  },
+  {
+   "id": "nse-holidays-2026",
+   "item": 5,
+   "sourceKind": "primary",
+   "file": "05-nse-holidays-2026.pdf",
+   "ref": "NSE trading holidays 2026 — Equities",
+   "issued": null,
+   "url": "https://www.nseindia.com/resources/exchange-communication-holidays",
+   "sha256": "f82ab382878b00080c14dbc08b0c8774295d44495c86879f9b42f48e91e0042b",
+   "bytes": 167062
+  },
+  {
+   "id": "nse-special-2026",
+   "item": 6,
+   "sourceKind": "secondary",
+   "ref": "NSE/CMTR/72349 (Budget-day session, 2026-02-01) — cited, not opened",
+   "url": "https://nsearchives.nseindia.com/content/circulars/CMTR72349.pdf",
+   "research": "VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/research/R4-MARKET-CALENDAR.md §1e"
+  },
+  {
+   "id": "nse-fo-underlyings",
+   "item": 7,
+   "sourceKind": "primary",
+   "file": "fo_mktlots.csv",
+   "ref": "NSE F&O market lots (one row per underlying)",
+   "issued": null,
+   "url": "https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv",
+   "sha256": "bca9d8d06bb61e4e44ebbcacdda64f061d1f4a6b0ebdd0c23c9dad8d5ef88d61",
+   "bytes": 42130
+  },
+  {
+   "id": "bse-cas",
+   "item": 8,
+   "sourceKind": "secondary",
+   "ref": "BSE notice 20260610-41 — cited, not opened",
+   "url": null,
+   "research": "VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/research/R4-MARKET-CALENDAR.md §1a"
+  },
+  {
+   "id": "bse-holidays-2026",
+   "item": 9,
+   "sourceKind": "secondary",
+   "ref": "BSE holidays assumed equal to NSE's Equities list — not opened",
+   "url": null,
+   "research": "VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/research/R4-MARKET-CALENDAR.md §1e"
+  },
+  {
+   "id": "mcx-timings",
+   "item": 10,
+   "sourceKind": "secondary",
+   "ref": "MCX circular 068/2026 (US-DST evening close) — cited, not opened",
+   "url": "https://www.icicidirect.com/ilearn/commodity/articles/mcx-revision-in-trading-hours-from-march-09-2026",
+   "research": "VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/research/R4-MARKET-CALENDAR.md §1d"
+  },
+  {
+   "id": "nse-cas-sop",
+   "item": "s-1",
+   "sourceKind": "supporting",
+   "file": "02-nse-cas-fno-1540-V1.pdf",
+   "ref": "NSE/CMTR/73362",
+   "issued": "2026-03-18",
+   "url": null,
+   "sha256": "c7da4fb3a74954903d9ac2106e16f22679654405774df7abe602f369fd1e8377",
+   "bytes": 210527
+  },
+  {
+   "id": "nse-cas-sop-update",
+   "item": "s-2",
+   "sourceKind": "supporting",
+   "file": "CMTR76170.pdf",
+   "ref": "NSE/CMTR/76170",
+   "issued": "2026-09-03",
+   "url": null,
+   "sha256": "0df3137e0dee76bfbe2dd8afd19e992a2bc84c100b95e5c22af72f7df8c86045",
+   "bytes": 153112
+  },
+  {
+   "id": "nse-expiry-day",
+   "item": "s-3",
+   "sourceKind": "supporting",
+   "file": "FAOP68747.pdf",
+   "ref": "NSE/FAOP/68747",
+   "issued": "2025-06-25",
+   "url": null,
+   "sha256": "e1b56024a511135ffd5c6c3c097881dd0ac2c37b15b5f61e94fe84e51cf66762",
+   "bytes": 181366
+  },
+  {
+   "id": "nse-fo-preopen-faq",
+   "item": "s-4",
+   "sourceKind": "supporting",
+   "file": "Annexure_FAQs for Pre-Open Session in Equity Derivatives (F&O) Segment.pdf",
+   "ref": "NSE member FAQ, pre-open in equity derivatives, v1.0 (Nov 2025)",
+   "issued": null,
+   "url": null,
+   "sha256": "444b7b7a85967af57e8158a30db621db26b82d5044dd8c731e38c695466ec3a5",
+   "bytes": 372157
+  }
+ ],
+ "refused": [],
+ "sessions": [
+  {
+   "market": "NSE_CM",
+   "class": "*",
+   "effectiveFrom": null,
+   "effectiveTo": "2026-08-02",
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "note": "Before CAS: the close was the VWAP of the last 30 minutes of continuous trading. The old post-close window is not in any file supplied, so it is not modelled.",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "vwap-last-30-min"
+  },
+  {
+   "market": "NSE_CM",
+   "class": "cas_stock",
+   "effectiveFrom": "2026-08-03",
+   "effectiveTo": "2026-09-06",
+   "source": "nse-cas-page",
+   "sourceKind": "primary",
+   "preopenSource": "sebi-cas-2026",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:15"
+    },
+    {
+     "key": "cas_reference",
+     "from": "15:15",
+     "to": "15:20"
+    },
+    {
+     "key": "cas_entry",
+     "from": "15:20",
+     "to": "15:30",
+     "randomCloseFrom": "15:28"
+    },
+    {
+     "key": "cas_match",
+     "from": "15:30",
+     "to": "15:35"
+    },
+    {
+     "key": "transition",
+     "from": "15:35",
+     "to": "15:50"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:35",
+   "closeMethod": "cas-equilibrium"
+  },
+  {
+   "market": "NSE_CM",
+   "class": "equity",
+   "effectiveFrom": "2026-08-03",
+   "effectiveTo": "2026-09-06",
+   "source": "nse-cas-page",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "vwap-last-30-min"
+  },
+  {
+   "market": "NSE_CM",
+   "class": "cas_stock",
+   "effectiveFrom": "2026-09-07",
+   "effectiveTo": null,
+   "source": "nse-cas-page",
+   "sourceKind": "primary",
+   "preopenSource": "sebi-cas-2026",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:10"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:15"
+    },
+    {
+     "key": "cas_reference",
+     "from": "15:15",
+     "to": "15:20"
+    },
+    {
+     "key": "cas_entry",
+     "from": "15:20",
+     "to": "15:30",
+     "randomCloseFrom": "15:28"
+    },
+    {
+     "key": "cas_match",
+     "from": "15:30",
+     "to": "15:35"
+    },
+    {
+     "key": "transition",
+     "from": "15:35",
+     "to": "15:50"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:35",
+   "closeMethod": "cas-equilibrium"
+  },
+  {
+   "market": "NSE_CM",
+   "class": "equity",
+   "effectiveFrom": "2026-09-07",
+   "effectiveTo": null,
+   "source": "nse-cas-page",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:10"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "vwap-last-30-min"
+  },
+  {
+   "market": "BSE_CM",
+   "class": "*",
+   "effectiveFrom": null,
+   "effectiveTo": "2026-08-02",
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "note": "Before CAS: the close was the VWAP of the last 30 minutes of continuous trading. The old post-close window is not in any file supplied, so it is not modelled.",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "vwap-last-30-min"
+  },
+  {
+   "market": "BSE_CM",
+   "class": "cas_stock",
+   "effectiveFrom": "2026-08-03",
+   "effectiveTo": "2026-09-06",
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "preopenSource": "sebi-cas-2026",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:15"
+    },
+    {
+     "key": "cas_reference",
+     "from": "15:15",
+     "to": "15:20"
+    },
+    {
+     "key": "cas_entry",
+     "from": "15:20",
+     "to": "15:30",
+     "randomCloseFrom": "15:28"
+    },
+    {
+     "key": "cas_match",
+     "from": "15:30",
+     "to": "15:35"
+    },
+    {
+     "key": "transition",
+     "from": "15:35",
+     "to": "15:50"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:35",
+   "closeMethod": "cas-equilibrium"
+  },
+  {
+   "market": "BSE_CM",
+   "class": "equity",
+   "effectiveFrom": "2026-08-03",
+   "effectiveTo": "2026-09-06",
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "vwap-last-30-min"
+  },
+  {
+   "market": "BSE_CM",
+   "class": "cas_stock",
+   "effectiveFrom": "2026-09-07",
+   "effectiveTo": null,
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "preopenSource": "sebi-cas-2026",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:10"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:15"
+    },
+    {
+     "key": "cas_reference",
+     "from": "15:15",
+     "to": "15:20"
+    },
+    {
+     "key": "cas_entry",
+     "from": "15:20",
+     "to": "15:30",
+     "randomCloseFrom": "15:28"
+    },
+    {
+     "key": "cas_match",
+     "from": "15:30",
+     "to": "15:35"
+    },
+    {
+     "key": "transition",
+     "from": "15:35",
+     "to": "15:50"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:35",
+   "closeMethod": "cas-equilibrium"
+  },
+  {
+   "market": "BSE_CM",
+   "class": "equity",
+   "effectiveFrom": "2026-09-07",
+   "effectiveTo": null,
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:10"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    },
+    {
+     "key": "postclose",
+     "from": "15:50",
+     "to": "16:00"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "vwap-last-30-min"
+  },
+  {
+   "market": "NSE_FO",
+   "class": "derivative",
+   "effectiveFrom": null,
+   "effectiveTo": "2025-12-07",
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "exchange-close-price"
+  },
+  {
+   "market": "NSE_FO",
+   "class": "derivative",
+   "effectiveFrom": "2025-12-08",
+   "effectiveTo": "2026-08-02",
+   "source": "nse-fo-preopen",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08",
+     "appliesTo": "current-month futures (next-month in the last 5 trading days)"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "exchange-close-price"
+  },
+  {
+   "market": "NSE_FO",
+   "class": "derivative",
+   "effectiveFrom": "2026-08-03",
+   "effectiveTo": null,
+   "source": "nse-cas-page",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "preopen",
+     "from": "09:00",
+     "to": "09:15",
+     "orderEntryEnds": "09:08",
+     "appliesTo": "current-month futures (next-month in the last 5 trading days)"
+    },
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    },
+    {
+     "key": "fno_extension",
+     "from": "15:30",
+     "to": "15:40"
+    }
+   ],
+   "officialCloseAt": "15:40",
+   "closeMethod": "exchange-close-price"
+  },
+  {
+   "market": "BSE_FO",
+   "class": "derivative",
+   "effectiveFrom": null,
+   "effectiveTo": "2026-08-02",
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    }
+   ],
+   "officialCloseAt": "15:30",
+   "closeMethod": "exchange-close-price"
+  },
+  {
+   "market": "BSE_FO",
+   "class": "derivative",
+   "effectiveFrom": "2026-08-03",
+   "effectiveTo": null,
+   "source": "sebi-cas-2026",
+   "sourceKind": "primary",
+   "phases": [
+    {
+     "key": "continuous",
+     "from": "09:15",
+     "to": "15:30"
+    },
+    {
+     "key": "fno_extension",
+     "from": "15:30",
+     "to": "15:40"
+    }
+   ],
+   "officialCloseAt": "15:40",
+   "closeMethod": "exchange-close-price"
+  },
+  {
+   "market": "MCX",
+   "class": "commodity",
+   "effectiveFrom": null,
+   "effectiveTo": "2026-03-08",
+   "source": "mcx-timings",
+   "sourceKind": "secondary",
+   "phases": [
+    {
+     "key": "continuous",
+     "from": "09:00",
+     "to": "23:55"
+    }
+   ],
+   "officialCloseAt": "23:55",
+   "closeMethod": "exchange-close-price",
+   "note": "non-agri contracts; agri close earlier and are not modelled"
+  },
+  {
+   "market": "MCX",
+   "class": "commodity",
+   "effectiveFrom": "2026-03-09",
+   "effectiveTo": "2026-10-31",
+   "source": "mcx-timings",
+   "sourceKind": "secondary",
+   "phases": [
+    {
+     "key": "continuous",
+     "from": "09:00",
+     "to": "23:30"
+    }
+   ],
+   "officialCloseAt": "23:30",
+   "closeMethod": "exchange-close-price",
+   "note": "US daylight saving; non-agri"
+  },
+  {
+   "market": "MCX",
+   "class": "commodity",
+   "effectiveFrom": "2026-11-01",
+   "effectiveTo": null,
+   "source": "mcx-timings",
+   "sourceKind": "secondary",
+   "phases": [
+    {
+     "key": "continuous",
+     "from": "09:00",
+     "to": "23:55"
+    }
+   ],
+   "officialCloseAt": "23:55",
+   "closeMethod": "exchange-close-price",
+   "note": "US daylight saving ended 2026-11-01; non-agri"
+  }
+ ],
+ "holidays": [
+  {
+   "date": "2026-01-15",
+   "name": "Municipal Corporation Election - Maharashtra",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-01-26",
+   "name": "Republic Day",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-02-15",
+   "name": "Mahashivratri",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-03-03",
+   "name": "Holi",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-03-21",
+   "name": "Id-Ul-Fitr (Ramadan Eid)",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-03-26",
+   "name": "Shri Ram Navami",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-03-31",
+   "name": "Shri Mahavir Jayanti",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-04-03",
+   "name": "Good Friday",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-04-14",
+   "name": "Dr. Baba Saheb Ambedkar Jayanti",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-05-01",
+   "name": "Maharashtra Day",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-05-28",
+   "name": "Bakri Id",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-06-26",
+   "name": "Muharram",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-08-15",
+   "name": "Independence Day",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-09-14",
+   "name": "Ganesh Chaturthi",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-10-02",
+   "name": "Mahatma Gandhi Jayanti",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-10-20",
+   "name": "Dussehra",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-11-10",
+   "name": "Diwali-Balipratipada",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-11-24",
+   "name": "Prakash Gurpurb Sri Guru Nanak Dev",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  },
+  {
+   "date": "2026-12-25",
+   "name": "Christmas",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "source": "nse-holidays-2026",
+   "bseSourceKind": "secondary"
+  }
+ ],
+ "specialSessions": [
+  {
+   "date": "2026-02-01",
+   "kind": "budget",
+   "name": "Union Budget live session",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO",
+    "MCX"
+   ],
+   "timings": "normal",
+   "settlementHoliday": true,
+   "source": "nse-special-2026",
+   "sourceKind": "secondary"
+  },
+  {
+   "date": "2026-11-08",
+   "kind": "muhurat",
+   "name": "Muhurat trading (Diwali Laxmi Pujan)",
+   "markets": [
+    "NSE_CM",
+    "NSE_FO",
+    "BSE_CM",
+    "BSE_FO"
+   ],
+   "timings": null,
+   "note": "Timings to be notified by an NSE circular — not bundled, so no session hours are known for this day.",
+   "source": "nse-holidays-2026",
+   "sourceKind": "primary"
+  }
+ ],
+ "casMembers": {
+  "asOf": "2026-09-24",
+  "effectiveFrom": "2026-08-03",
+  "source": "nse-fo-underlyings",
+  "count": 210,
+  "symbols": [
+   "360ONE",
+   "ABB",
+   "ABCAPITAL",
+   "ADANIENSOL",
+   "ADANIENT",
+   "ADANIGREEN",
+   "ADANIPORTS",
+   "ADANIPOWER",
+   "ALKEM",
+   "AMBER",
+   "AMBUJACEM",
+   "ANGELONE",
+   "APLAPOLLO",
+   "APOLLOHOSP",
+   "ASHOKLEY",
+   "ASIANPAINT",
+   "ASTRAL",
+   "ATHERENERG",
+   "AUBANK",
+   "AUROPHARMA",
+   "AXISBANK",
+   "BAJAJ-AUTO",
+   "BAJAJFINSV",
+   "BAJAJHLDNG",
+   "BAJFINANCE",
+   "BANDHANBNK",
+   "BANKBARODA",
+   "BANKINDIA",
+   "BDL",
+   "BEL",
+   "BHARATFORG",
+   "BHARTIARTL",
+   "BHEL",
+   "BIOCON",
+   "BLUESTARCO",
+   "BOSCHLTD",
+   "BPCL",
+   "BRITANNIA",
+   "BSE",
+   "CAMS",
+   "CANBK",
+   "CDSL",
+   "CGPOWER",
+   "CHOLAFIN",
+   "CIPLA",
+   "COALINDIA",
+   "COCHINSHIP",
+   "COFORGE",
+   "COLPAL",
+   "CONCOR",
+   "CROMPTON",
+   "CUMMINSIND",
+   "DABUR",
+   "DELHIVERY",
+   "DIVISLAB",
+   "DIXON",
+   "DLF",
+   "DMART",
+   "DRREDDY",
+   "EICHERMOT",
+   "ETERNAL",
+   "FEDERALBNK",
+   "FORCEMOT",
+   "FORTIS",
+   "GAIL",
+   "GLENMARK",
+   "GMRAIRPORT",
+   "GODFRYPHLP",
+   "GODREJCP",
+   "GODREJPROP",
+   "GRASIM",
+   "GVT&D",
+   "HAL",
+   "HAVELLS",
+   "HCLTECH",
+   "HDFCAMC",
+   "HDFCBANK",
+   "HDFCLIFE",
+   "HEROMOTOCO",
+   "HINDALCO",
+   "HINDPETRO",
+   "HINDUNILVR",
+   "HINDZINC",
+   "HYUNDAI",
+   "ICICIBANK",
+   "ICICIGI",
+   "ICICIPRULI",
+   "IDEA",
+   "IDFCFIRSTB",
+   "IEX",
+   "INDHOTEL",
+   "INDIANB",
+   "INDIGO",
+   "INDUSINDBK",
+   "INDUSTOWER",
+   "INFY",
+   "INOXWIND",
+   "IOC",
+   "IREDA",
+   "IRFC",
+   "ITC",
+   "JINDALSTEL",
+   "JIOFIN",
+   "JSWENERGY",
+   "JSWSTEEL",
+   "JUBLFOOD",
+   "KALYANKJIL",
+   "KAYNES",
+   "KEI",
+   "KFINTECH",
+   "KOTAKBANK",
+   "KPITTECH",
+   "LAURUSLABS",
+   "LICHSGFIN",
+   "LICI",
+   "LODHA",
+   "LT",
+   "LTF",
+   "LTM",
+   "LUPIN",
+   "M&M",
+   "MAHABANK",
+   "MANAPPURAM",
+   "MANKIND",
+   "MARICO",
+   "MARUTI",
+   "MAXHEALTH",
+   "MAZDOCK",
+   "MCX",
+   "MFSL",
+   "MOTHERSON",
+   "MOTILALOFS",
+   "MPHASIS",
+   "MUTHOOTFIN",
+   "NAM-INDIA",
+   "NATIONALUM",
+   "NAUKRI",
+   "NBCC",
+   "NESTLEIND",
+   "NHPC",
+   "NMDC",
+   "NTPC",
+   "NYKAA",
+   "OBEROIRLTY",
+   "OFSS",
+   "OIL",
+   "ONGC",
+   "PAGEIND",
+   "PATANJALI",
+   "PAYTM",
+   "PERSISTENT",
+   "PETRONET",
+   "PFC",
+   "PGEL",
+   "PHOENIXLTD",
+   "PIDILITIND",
+   "PIIND",
+   "PNB",
+   "PNBHOUSING",
+   "POLICYBZR",
+   "POLYCAB",
+   "POWERGRID",
+   "POWERINDIA",
+   "PREMIERENE",
+   "PRESTIGE",
+   "RADICO",
+   "RBLBANK",
+   "RECLTD",
+   "RELIANCE",
+   "RVNL",
+   "SAGILITY",
+   "SAIL",
+   "SBICARD",
+   "SBILIFE",
+   "SBIN",
+   "SHREECEM",
+   "SHRIRAMFIN",
+   "SIEMENS",
+   "SOLARINDS",
+   "SONACOMS",
+   "SRF",
+   "SUNPHARMA",
+   "SUPREMEIND",
+   "SUZLON",
+   "SWIGGY",
+   "TATACONSUM",
+   "TATAELXSI",
+   "TATAPOWER",
+   "TATASTEEL",
+   "TCS",
+   "TECHM",
+   "TIINDIA",
+   "TITAN",
+   "TMPV",
+   "TORNTPHARM",
+   "TRENT",
+   "TVSMOTOR",
+   "ULTRACEMCO",
+   "UNIONBANK",
+   "UNITDSPR",
+   "UNOMINDA",
+   "UPL",
+   "VBL",
+   "VEDL",
+   "VMM",
+   "VOLTAS",
+   "WAAREEENER",
+   "WIPRO",
+   "YESBANK",
+   "ZYDUSLIFE"
+  ]
+ }
+}

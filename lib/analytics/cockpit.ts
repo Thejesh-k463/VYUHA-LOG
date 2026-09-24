@@ -21,6 +21,7 @@
  *    winners" is an observation. It is never phrased as "you should".
  */
 
+import { tradingBandsOn } from "@/lib/domain/market-calendar";
 import { runRules } from "@/lib/intelligence/insight";
 import { COCKPIT_RULES, toFinding, type CockpitRuleInput } from "@/lib/intelligence/rules/cockpit";
 
@@ -100,32 +101,93 @@ function bucket(key: string, label: string, rows: CockpitTrade[]): Bucket {
 
 // ── Time of day ────────────────────────────────────────────────────────────
 
-/**
- * Indian market sessions, chosen because they behave differently rather than
- * because they divide the clock evenly.
- */
-export const SESSIONS: { key: string; label: string; from: string; to: string; note: string }[] = [
-  // The band names the FILL time. NSE's pre-open call auction (and an IPO
-  // listing's discovery call) prints fills stamped 09:00–09:14; a pre-open
-  // order that fills at 09:15:00 exactly is indistinguishable from a regular
-  // opening fill and lands in "open". Before this band existed those stamps
-  // fell into `offHours` and read as a misread import.
-  { key: "preopen", label: "Pre-open", from: "09:00", to: "09:15", note: "call-auction and listing fills; a 09:15:00 fill reads as a regular open" },
-  { key: "open", label: "Opening drive", from: "09:15", to: "09:45", note: "overnight gaps resolving" },
-  { key: "morning", label: "Morning trend", from: "09:45", to: "11:30", note: "the cleanest trending window" },
-  { key: "midday", label: "Midday chop", from: "11:30", to: "14:00", note: "lowest volume, widest noise" },
-  { key: "afternoon", label: "Afternoon push", from: "14:00", to: "15:00", note: "positioning for the close" },
-  { key: "close", label: "Closing hour", from: "15:00", to: "15:30", note: "squaring off, MIS auto-exits" },
-];
+/** One analytics session band. `from`/`to` are IST "HH:MM", half-open. */
+export interface SessionBand {
+  key: string;
+  label: string;
+  from: string;
+  to: string;
+  note: string;
+}
 
-/** Which session an HH:MM falls in. Null for anything outside 09:00–15:30. */
-export function sessionOf(time: string | null): string | null {
+/**
+ * Indian market sessions ON A DATE, chosen because they behave differently
+ * rather than because they divide the clock evenly.
+ *
+ * The exchange edges — pre-open, the end of continuous trading, the closing
+ * auction and the post-close — come from the MARKET CALENDAR for that date
+ * (v4.6.0 W1); the behavioural cuts in between (09:45, 11:30, 14:00, 15:00) are
+ * this module's own. Before SEBI's Closing Auction Session (2026-08-03) a fill
+ * after 15:30 was not a market trade; since then the F&O extension to 15:40,
+ * CAS prints and the 15:50–16:00 post-close are real, legal trades, and filing
+ * them as "outside the session … worth checking the import" was wrong (R4
+ * "the worst three", 2).
+ *
+ * `auction` is a UNION band — CAS prints of F&O stocks and the F&O extension —
+ * because a fill row does not always say which it is (R4 rule 2).
+ *
+ * The band names the FILL time. NSE's pre-open call auction (and an IPO
+ * listing's discovery call) prints fills stamped 09:00–09:14; a pre-open order
+ * that fills at 09:15:00 exactly is indistinguishable from a regular opening
+ * fill and lands in "open".
+ */
+export function sessionsOn(date: string | null): SessionBand[] {
+  const b = tradingBandsOn(date);
+  const bands: SessionBand[] = [
+    { key: "preopen", label: "Pre-open", from: b.preopen.from, to: b.preopen.to, note: "call-auction and listing fills; a 09:15:00 fill reads as a regular open" },
+    { key: "open", label: "Opening drive", from: b.preopen.to, to: "09:45", note: "overnight gaps resolving" },
+    { key: "morning", label: "Morning trend", from: "09:45", to: "11:30", note: "the cleanest trending window" },
+    { key: "midday", label: "Midday chop", from: "11:30", to: "14:00", note: "lowest volume, widest noise" },
+    { key: "afternoon", label: "Afternoon push", from: "14:00", to: "15:00", note: "positioning for the close" },
+    { key: "close", label: "Closing hour", from: "15:00", to: b.continuousEnd, note: "squaring off; F&O stocks trade continuously only to 15:15 since the closing auction" },
+  ];
+  if (b.auction) {
+    bands.push({ key: "auction", label: "Closing auction / F&O close", from: b.auction.from, to: b.auction.to, note: "closing-auction prints of F&O stocks and the F&O extension" });
+  }
+  if (b.postclose) {
+    bands.push({ key: "postclose", label: "Post-close", from: b.postclose.from, to: b.postclose.to, note: "trades at the day's closing price" });
+  }
+  return bands;
+}
+
+/** The bands in force NOW — for labels and legends. A fill is bucketed by `sessionOf(time, date)`. */
+export const SESSIONS: SessionBand[] = sessionsOn(null);
+
+/**
+ * Which session an HH:MM falls in, under the rules of `date` (null = the rules
+ * in force now). Null outside every band. The end of continuous trading is
+ * INCLUSIVE — a fill stamped exactly at the close is a closing fill.
+ */
+export function sessionOf(time: string | null, date: string | null = null): string | null {
   if (!time) return null;
-  for (const s of SESSIONS) {
+  const bands = sessionsOn(date);
+  const close = bands.find((s) => s.key === "close");
+  if (close && time === close.to) return "close";
+  for (const s of bands) {
     if (time >= s.from && time < s.to) return s.key;
   }
-  // 15:30 exactly is the close; anything later is not a market trade.
-  return time === "15:30" ? "close" : null;
+  return null;
+}
+
+/** The day a timed ENTRY happened: the earlier of the two stated dates. */
+export function entryDateOf(t: { buyDate: string | null; sellDate: string | null }): string | null {
+  const ds = [t.buyDate, t.sellDate].filter((d): d is string => !!d).sort();
+  return ds[0] ?? null;
+}
+
+/**
+ * The time the bands cover, as the "outside … belongs to no session" copy states
+ * it: contiguous runs joined — "09:00–15:40 or 15:50–16:00" since CAS (the
+ * 15:40–15:50 transition belongs to no band), "09:00–15:30" before it.
+ */
+export function sessionSpanLabel(date: string | null = null): string {
+  const runs: { from: string; to: string }[] = [];
+  for (const b of sessionsOn(date)) {
+    const last = runs[runs.length - 1];
+    if (last && last.to === b.from) last.to = b.to;
+    else runs.push({ from: b.from, to: b.to });
+  }
+  return runs.map((r) => `${r.from}–${r.to}`).join(" or ");
 }
 
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -159,7 +221,7 @@ export function timeEdge(trades: CockpitTrade[]): TimeEdge {
   const timed = closed.filter((t) => !!t.entryTime);
 
   const bySession = SESSIONS.map((s) =>
-    bucket(s.key, s.label, timed.filter((t) => sessionOf(t.entryTime) === s.key)),
+    bucket(s.key, s.label, timed.filter((t) => sessionOf(t.entryTime, entryDateOf(t)) === s.key)),
   ).filter((b) => b.trades > 0);
 
   // Weekday works off the exit date, so it functions even for P&L imports —
@@ -181,7 +243,7 @@ export function timeEdge(trades: CockpitTrade[]): TimeEdge {
     byWeekday,
     withTime: timed.length,
     withoutTime: closed.length - timed.length,
-    offHours: timed.filter((t) => sessionOf(t.entryTime) == null).length,
+    offHours: timed.filter((t) => sessionOf(t.entryTime, entryDateOf(t)) == null).length,
     insufficient: timed.length < MIN_SAMPLE,
   };
 }

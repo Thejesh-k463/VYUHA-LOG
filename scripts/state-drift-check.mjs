@@ -493,6 +493,35 @@ if (closeOut) {
   }
 }
 
+// ── E. every [FIX] row in docs/LEDGER.md names a test file that exists ──────
+// Owner ruling R1 (2026-09-24, v4.6.0 spec W1): a [FIX] is a defect fixed, and
+// it MUST name the test that goes red on revert. The two sides come from
+// different sources: the ledger's own evidence cell, and the tree on disk.
+{
+  const ledgerRel = "docs/LEDGER.md";
+  const ledger = doc(ledgerRel);
+  if (ledger == null) skip("ledger-fix-tests", `${ledgerRel} is absent`);
+  else {
+    const rows = [...ledger.matchAll(/^\|\s*(F-\d+)\s*\|[^|\n]*\|\s*\[FIX\]\s*\|[^|\n]*\|([^\n]*)\|\s*$/gm)];
+    if (rows.length === 0) skip("ledger-fix-tests", "no [FIX] rows yet", ledgerRel);
+    else {
+      const bad = [];
+      for (const m of rows) {
+        const tests = [...m[2].matchAll(/`((?:tests|e2e)\/[^`]+?\.(?:test|spec)\.ts)`/g)].map((x) => x[1]);
+        if (tests.length === 0) bad.push(`${m[1]} names no test file`);
+        for (const tf of tests) if (!existsSync(path.resolve(root, tf))) bad.push(`${m[1]}: ${tf} not on disk`);
+      }
+      // A [FIX] row in any other shape would be skipped by the regex above — count
+      // every line carrying the tag and fail on the difference.
+      const tagged = ledger.split(/\r?\n/).filter((l) => /^\|.*\|\s*\[FIX\]\s*\|/.test(l)).length;
+      if (tagged !== rows.length) bad.push(`${tagged - rows.length} [FIX] row(s) not in the 5-cell form`);
+      const where = `${ledgerRel}:${lineAt(ledger, rows[0].index)}`;
+      if (bad.length) fail("ledger-fix-tests", `${rows.length} [FIX] row(s) each name an existing test`, bad.join("; "), where);
+      else pass("ledger-fix-tests", `${rows.length} [FIX] row(s) each name an existing test`, "all on disk", where);
+    }
+  }
+}
+
 // ── output ──────────────────────────────────────────────────────────────────
 for (const r of results) {
   if (r.status === "SKIP") console.log(`SKIP ${r.name}: ${t(r.actual, 110)} (${r.where})`);

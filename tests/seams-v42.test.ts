@@ -64,7 +64,7 @@ import {
   exchangeHolidayName,
   isExchangeHoliday,
   isTradingDayIst,
-} from "@/lib/domain/trading-day";
+} from "@/lib/domain/market-calendar";
 import { isMarketOpenIst } from "@/lib/live/market-hours";
 import { msUntilCloseReopen } from "@/lib/live/stream-link";
 import { assessDataQuality } from "@/lib/analytics/data-quality";
@@ -72,7 +72,7 @@ import { assessDataQuality } from "@/lib/analytics/data-quality";
 // module (or lib/db behind it) before openTempDb() sets VYUHA_DB_PATH.
 import type { UpstoxGetter, UpstoxHealth } from "@/lib/quotes/upstox";
 import { SETTINGS_MACHINE_COLUMNS, settingsMachineBlank } from "@/lib/backup-format";
-import nseHolidays from "@/lib/data/nse-holidays.json";
+import marketCalendar from "@/lib/data/market-calendar.json";
 
 let t: TempDb;
 let route: typeof import("@/app/api/live/feed/route");
@@ -605,7 +605,7 @@ function evening(isoDate: string, utcTime: string): Date {
 describe("S5 — a listed holiday is shut in every file that has an opinion", () => {
   it("the fixture really is the seam's input", () => {
     expect(NSE_HOLIDAY_YEAR).toBe(2026);
-    expect(nseHolidays.trading_holidays.map((h) => h.date)).toContain(HOLIDAY);
+    expect(marketCalendar.holidays.map((h) => h.date)).toContain(HOLIDAY);
     expect(new Date(`${HOLIDAY}T00:00:00Z`).getUTCDay()).toBe(1); // Monday
     expect(isExchangeHoliday(HOLIDAY)).toBe(true);
     expect(exchangeHolidayName(HOLIDAY)).toBe("Republic Day");

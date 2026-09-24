@@ -5,7 +5,8 @@ import { settings as settingsTable, trades as tradesTable } from "@/lib/db/schem
 import { and, eq } from "drizzle-orm";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { applyBhavcopyMtm, type BhavcopyMtmResult } from "@/lib/import/mtm-bhavcopy";
-import { latestBhavcopyDate, previousTradingDay, toDdmmyyyy } from "@/lib/domain/trading-day";
+import { toDdmmyyyy } from "@/lib/domain/trading-day";
+import { latestBhavcopyDate, previousTradingDay } from "@/lib/domain/market-calendar";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { detectBreaches, type AlertPositionInput, type Breach } from "@/lib/risk/alerts";
 import { storedMarkFor } from "@/lib/analytics/positions";
@@ -216,13 +217,13 @@ export async function runAutoMtm(now = new Date()): Promise<AutoMtmOutcome> {
     return { ...none(`Already applied the ${target} bhavcopy.`), date: target };
   }
 
-  // Walk back past a missing file (max 3). The bundled NSE calendar (v4.2,
-  // `isExchangeHoliday()`) is NOT consulted here on purpose: a bhavcopy can be
-  // absent for reasons no calendar knows — a late publication, a blocked
-  // network, a year the list does not cover — so the walk-back has to handle a
-  // missing file anyway, and one mechanism that always runs beats two that
-  // disagree. Nothing here writes a mark under a date, so the F1 defect
-  // (a mark dated to a non-session day) has no equivalent on this path.
+  // Walk back past a missing file (max 3). Since v4.6.0 W1 `latestBhavcopyDate`
+  // and `previousTradingDay` read the market calendar — a listed holiday is
+  // skipped and a special Sunday session is visited (R4 #11) — but a bhavcopy
+  // can still be absent for reasons no calendar knows (a late publication, a
+  // blocked network, a year the list does not cover), so the missing-file walk
+  // stays. Nothing here writes a mark under a date, so the F1 defect (a mark
+  // dated to a non-session day) has no equivalent on this path.
   let got: BhavcopyFetch | null = null;
   for (let i = 0; i < 3 && !got; i++) {
     got = await fetchBhavcopyForDate(target);

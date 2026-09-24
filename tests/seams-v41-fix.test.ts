@@ -835,12 +835,13 @@ describe("SEAM 7 · the docs describe the code that shipped", () => {
     expect(clientReadme).toContain("closes when you leave it or switch to another tab");
   });
 
-  it("S7b: (b) the catch-up write — 15:30 in the docs is MARK_AFTER_IST_MIN in code", () => {
+  it("S7b: (b) the catch-up write — the v4.1 changelog's 15:30 was the pre-CAS close door", () => {
     const log = changelog();
     const stated = log.match(/after (\d{1,2}):(\d{2}) IST/);
     expect(log.match(/after \d{1,2}:\d{2} IST/g), "the changelog no longer states the close time").toEqual(["after 15:30 IST"]);
-    expect(Number(stated![1]) * 60 + Number(stated![2])).toBe(persist.MARK_AFTER_IST_MIN);
-    expect(persist.MARK_AFTER_IST_MIN).toBe(15 * 60 + 30);
+    // v4.6.0 W1: the door is the market calendar's — on a pre-CAS day it opened one
+    // minute after the 15:30 close the v4.1 entry states (history, kept as written).
+    expect(Number(stated![1]) * 60 + Number(stated![2]) + 1).toBe(persist.markAfterIstMin("2026-07-31"));
 
     // "by the app itself", i.e. a caller that is not the button.
     expect(log).toContain("by the app itself");

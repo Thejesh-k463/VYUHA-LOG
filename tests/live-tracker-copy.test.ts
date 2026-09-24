@@ -773,13 +773,14 @@ describe("the strip's own comment tells the truth about the calendar this build 
     expect(raw, "the comment still claims market-hours models the clock only").not.toMatch(
       /models the clock, not holidays/,
     );
-    expect(raw).toContain("lib/data/nse-holidays.json");
+    expect(raw).toContain("lib/data/market-calendar.json");
   });
 
   it("…and the two files it now names really are what it says they are", () => {
-    expect(fs.existsSync(path.join(ROOT, "lib/data/nse-holidays.json")), "the bundled calendar").toBe(true);
+    expect(fs.existsSync(path.join(ROOT, "lib/data/market-calendar.json")), "the bundled calendar").toBe(true);
     const hours = fs.readFileSync(path.join(ROOT, "lib/live/market-hours.ts"), "utf8");
-    expect(hours, "market-hours does not consult the calendar after all").toMatch(/isTradingDayIst/);
+    expect(hours, "market-hours does not consult the calendar after all").toMatch(/from "@\/lib\/domain\/market-calendar"/);
+    expect(hours).toMatch(/isMarketOpen\(now\)/);
   });
 
   it("the STRING is unchanged: it still claims no reason for a silent stream", () => {

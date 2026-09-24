@@ -7,6 +7,13 @@ import { getInstruments } from "@/lib/queries/instruments";
 import { getPriceHistoryMeta } from "@/lib/queries/price-history";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
 import { ETF_LIST_AS_OF, ETF_LIST_COUNT, ETF_LIST_SHA256 } from "@/lib/engine/etf-class";
+import {
+  CALENDAR_AS_OF,
+  CALENDAR_COVERS_THROUGH,
+  CALENDAR_PROVENANCE,
+  CALENDAR_SOURCES_SHA256,
+  CAS_MEMBER_COUNT,
+} from "@/lib/domain/market-calendar";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +22,8 @@ export default function InstrumentsPage() {
   const rows = getInstruments();
   const withSector = rows.filter((r) => r.sector).length;
   const ph = getPriceHistoryMeta();
+  const calendarPrimary = CALENDAR_PROVENANCE.filter((p) => p.sourceKind === "primary").length;
+  const calendarSecondary = CALENDAR_PROVENANCE.filter((p) => p.sourceKind === "secondary").length;
 
   return (
     <>
@@ -44,6 +53,27 @@ export default function InstrumentsPage() {
               minor release.{" "}
               {ETF_LIST_SHA256 ? (
                 <>sha256 <span className="break-all font-mono">{ETF_LIST_SHA256}</span></>
+              ) : null}
+            </p>
+            {/*
+              v4.6.0 W1 (spec §1, rule 5): the bundled MARKET CALENDAR says how old it
+              is, how far it reaches, which files it was built from and which rows
+              rest on a research citation rather than a file the owner saved.
+            */}
+            <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted-foreground" data-testid="market-calendar-provenance">
+              Bundled <b>market calendar</b>: session hours, the closing auction, holidays and special sessions, as of{" "}
+              <b>{CALENDAR_AS_OF || "—"}</b>, covering through <b>{CALENDAR_COVERS_THROUGH || "—"}</b> ({CAS_MEMBER_COUNT} F&amp;O
+              stocks in the closing auction). Built from {calendarPrimary} exchange/SEBI file{calendarPrimary === 1 ? "" : "s"}
+              {calendarSecondary > 0 ? (
+                <>
+                  ; {calendarSecondary} part{calendarSecondary === 1 ? "" : "s"} (
+                  {CALENDAR_PROVENANCE.filter((p) => p.sourceKind === "secondary").map((p) => p.ref.split(" — ")[0]).join(", ")}) rest on a
+                  cited source, not a saved file
+                </>
+              ) : null}
+              . Refreshed manually, once per minor release.{" "}
+              {CALENDAR_SOURCES_SHA256 ? (
+                <>sources sha256 <span className="break-all font-mono">{CALENDAR_SOURCES_SHA256}</span></>
               ) : null}
             </p>
           </CardContent>

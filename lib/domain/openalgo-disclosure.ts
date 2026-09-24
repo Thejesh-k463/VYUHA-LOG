@@ -38,12 +38,18 @@
  * "exchange holidays are not modelled in this version" — so on a weekday the
  * exchange was shut, the previous session's price was written under the closed
  * day's date. v4.2 refuses that write from the bundled NSE holiday list
- * (`lib/data/nse-holidays.json` → `isExchangeHoliday()`), which the user sees
+ * (since v4.6.0 `lib/data/market-calendar.json` → `isExchangeHoliday()`), which the user sees
  * in their own stored marks. THE RULE, restated for this bump: bump when the
  * risk statement materially changes, OR when a sentence already accepted stops
  * being true about what the app writes. A typo fix is still not a bump.
+ *
+ * "4" (v4.6.0 W1): the accepted item said the desk writes the close-of-session
+ * mark at 15:31 IST. Since SEBI's Closing Auction Session (2026-08-03) an F&O
+ * stock's official close is struck by 15:35, so the write moved to 15:36 (owner
+ * ruling K3) — a sentence already accepted stopped being true about WHEN the
+ * app writes to the journal, which is this rule's second arm.
  */
-export const OPENALGO_DISCLOSURE_VERSION = "3";
+export const OPENALGO_DISCLOSURE_VERSION = "4";
 
 /** Where the user gets OpenAlgo. Shown as text, never auto-opened. */
 export const OPENALGO_SITE = "https://openalgo.in";
@@ -224,7 +230,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // `shouldPersistMark()` refuses it with code "holiday" — and a consent
       // sentence that has become false about what is written to the journal is
       // a new version, not a copy fix (see the constant's own note).
-      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Vyuha writes the close-of-session one itself: the desk reconnects its price stream once at 15:31 IST while it is open and the mark is written then, or the next time you open the desk that day. A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close. Whether a mark already exists is decided per symbol per IST day, so a second account's open positions get their own mark on the same day. On a weekend the button refuses — there is no session to close; on an exchange holiday it refuses for the same reason, from the NSE holiday list bundled with this release, so the previous session's price is never stored under a day the market was shut. Every figure derived from that mark is dated to the day it belongs to.",
+      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Vyuha writes the close-of-session one itself: each position's mark is written once that day's official close is in — from 15:31 IST for most stocks, from 15:36 IST for F&O stocks, whose close is struck in the closing auction — when the desk connects: it reconnects its price stream once at 15:36 IST while it is open, or the mark is written the next time you open the desk that day. A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close. Whether a mark already exists is decided per symbol per IST day, so a second account's open positions get their own mark on the same day. On a weekend the button refuses — there is no session to close (a special weekend session the exchange announces, such as the Budget-day Sunday, is a session); on an exchange holiday it refuses for the same reason, from the NSE holiday list bundled with this release, so the previous session's price is never stored under a day the market was shut. Every figure derived from that mark is dated to the day it belongs to.",
   },
   {
     title: "Your broker's API session expires every day",

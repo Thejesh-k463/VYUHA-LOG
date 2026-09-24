@@ -1,20 +1,10 @@
-// Indian cash-market trading-day helpers (PURE). Used by the auto-MTM job to
-// decide which EOD bhavcopy date to fetch, and — since v4.2 — by the desk and
-// the mark doors to tell a session from a day the exchange was shut.
+// India's clock and the reading of typed dates (PURE).
 //
-// WEEKENDS are known statically. EXCHANGE HOLIDAYS are known for the years the
-// BUNDLED list covers (`lib/data/nse-holidays.json`) and for no others: an
-// uncovered year answers "not a holiday", so the weekday behaviour every caller
-// had before v4.2 survives unchanged rather than the app going silent every
-// January. `tests/nse-holidays.test.ts` carries the YEAR GUARD that stops a
-// release shipping past the end of the list, and the reasoning for the
-// asymmetry (a wrongly LISTED date is far more expensive than a missing one)
-// is in the file's own `_note`.
-//
-// The bhavcopy walk-back still handles a missing file by walking back a
-// weekday: a file can be absent for reasons the calendar knows nothing about.
-
-import nseHolidays from "@/lib/data/nse-holidays.json";
+// `toIst` / `todayIstIso` / `istWallClockIso` are the ONE IST definition in the
+// product (`tests/today-clock.test.ts` fails on a second one). Everything about
+// WHICH days and hours the exchanges trade — holidays, special sessions, the
+// Closing Auction Session, the bhavcopy walk-back, annualisation — lives in
+// `lib/domain/market-calendar.ts` since v4.6.0 W1.
 
 const IST_OFFSET_MIN = 330; // UTC+5:30
 
@@ -43,147 +33,24 @@ export function todayIstIso(d = new Date()): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
-/* ───────────────────────── the exchange calendar (F1) ────────────────────── */
-
 /**
- * The last year `lib/data/nse-holidays.json` covers. A date in any other year
- * is UNKNOWN to this module, and unknown is never reported as a holiday.
+ * An IST wall-clock time on an ISO date, as an instant string:
+ * `istWallClockIso("2026-09-04", "15:35")` → `2026-09-04T15:35:00+05:30`.
+ * The ONE place the offset is spelt as text (v4.6.0 W1 — it used to be typed
+ * inline in `lib/quotes/mapping.ts` and `components/live/desk-format.ts`).
  */
-export const NSE_HOLIDAY_YEAR: number = nseHolidays.year;
-
-/** When the bundled list was last diffed against NSE's own holiday-master. */
-export const NSE_HOLIDAYS_VERIFIED_AT: string = nseHolidays.verified_at;
-
-const HOLIDAY_DATES: ReadonlySet<string> = new Set(nseHolidays.trading_holidays.map((h) => h.date));
-
-/**
- * Is this ISO date a listed NSE cash-market TRADING holiday?
- *
- * TRUE only when the date's year is covered by the bundled list AND the date is
- * on it. An uncovered year answers FALSE — "unknown", not "a holiday" — which
- * is what keeps a stale calendar from silently cancelling real sessions; the
- * cost of that choice is that it must be noticed, which is the year guard's
- * job (`tests/nse-holidays.test.ts`).
- *
- * CLEARING holidays are NOT here and must never be added: NSE publishes them as
- * a separate list, the market is OPEN on them, and only settlement is shut.
- */
-export function isExchangeHoliday(isoDate: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return false;
-  if (Number(isoDate.slice(0, 4)) !== NSE_HOLIDAY_YEAR) return false;
-  return HOLIDAY_DATES.has(isoDate);
+export function istWallClockIso(isoDate: string, hhmm = "00:00"): string {
+  const h = Math.floor(IST_OFFSET_MIN / 60);
+  const m = IST_OFFSET_MIN % 60;
+  return `${isoDate}T${hhmm}:00+${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** The listed holiday's name, for a sentence that says WHICH day it was. */
-export function exchangeHolidayName(isoDate: string): string | null {
-  if (!isExchangeHoliday(isoDate)) return null;
-  return nseHolidays.trading_holidays.find((h) => h.date === isoDate)?.name ?? null;
-}
+/* ─────────────── the exchange calendar — MOVED (v4.6.0 W1) ─────────────── */
 
-/**
- * NSE cash-market sessions in `year`: weekdays minus the listed weekday
- * holidays — ONLY for the year the bundled calendar covers (2026 → 245:
- * 261 weekdays − 16 weekday holidays; 3 of the 19 fall on a weekend).
- * Any other year → null: the count is unknown, not a guess.
- *
- * Special sessions (Muhurat) are not counted — they are not on the list and
- * are not a weekday session the annualisation convention means.
- */
-export function nseTradingDaysInYear(year: number): number | null {
-  if (year !== NSE_HOLIDAY_YEAR) return null;
-  let weekdays = 0;
-  for (let d = new Date(Date.UTC(year, 0, 1)); d.getUTCFullYear() === year; d.setUTCDate(d.getUTCDate() + 1)) {
-    const dow = d.getUTCDay();
-    if (dow !== 0 && dow !== 6) weekdays++;
-  }
-  let weekdayHolidays = 0;
-  for (const iso of HOLIDAY_DATES) {
-    if (Number(iso.slice(0, 4)) !== year) continue;
-    const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
-    if (dow !== 0 && dow !== 6) weekdayHolidays++;
-  }
-  return weekdays - weekdayHolidays;
-}
-
-/** Trading days per year used to ANNUALISE daily figures (Sharpe, Sortino,
- *  volatility, alpha, the Monte Carlo horizon), and where the number came from. */
-export interface AnnualisationBasis {
-  days: number;
-  source: "nse-calendar" | "convention";
-  year: number;
-}
-
-/**
- * The annualisation basis for the year of `iso` (v4.4.0 D4): the bundled NSE
- * calendar's session count when it covers that year, else the 252 convention —
- * LABELLED as such (`annualisationNote`), never silent. Callers pass the
- * series' LAST date (performance, monthly, alpha) or today's IST date (the
- * Monte Carlo horizon). CAGR and Calmar use calendar days ÷ 365 and never
- * read this.
- */
-export function annualisationBasis(iso: string): AnnualisationBasis {
-  const parsed = Number(iso.slice(0, 4));
-  const year = Number.isInteger(parsed) && parsed > 1900 ? parsed : Number(todayIstIso().slice(0, 4));
-  const days = nseTradingDaysInYear(year);
-  return days == null ? { days: 252, source: "convention", year } : { days, source: "nse-calendar", year };
-}
-
-/** The one sentence a page prints beside an annualised figure. */
-export function annualisationNote(b: AnnualisationBasis): string {
-  return b.source === "nse-calendar"
-    ? `${b.days} trading days (NSE ${b.year} calendar)`
-    : `${b.days} trading days (convention — ${b.year} is not in the bundled calendar)`;
-}
-
-/**
- * Is this a day the NSE cash market trades — a weekday that is not a listed
- * holiday?
- *
- * Takes an ISO date (already India's day) or an INSTANT, which is converted
- * through `todayIstIso()` rather than through a second +5:30 constant:
- * 2026-09-04T19:00Z is already Saturday in India, and `tests/today-clock.test.ts`
- * exists to keep that one definition one.
- */
-export function isTradingDayIst(when: Date | string): boolean {
-  const isoDate = typeof when === "string" ? when : todayIstIso(when);
-  const d = new Date(isoDate + "T00:00:00Z");
-  const day = d.getUTCDay();
-  if (Number.isNaN(day) || day === 0 || day === 6) return false;
-  return !isExchangeHoliday(isoDate);
-}
-
-const isWeekend = (d: Date) => d.getUTCDay() === 0 || d.getUTCDay() === 6;
-
-const iso = (d: Date) => d.toISOString().slice(0, 10);
-
-/** Latest weekday ≤ the given IST date. */
-function backToWeekday(d: Date): Date {
-  const x = new Date(d);
-  while (isWeekend(x)) x.setUTCDate(x.getUTCDate() - 1);
-  return x;
-}
-
-/**
- * The bhavcopy date worth fetching "now": today (IST) once the EOD file is
- * reliably published (~7pm IST), else the previous weekday. Exchange holidays
- * can still yield a date with no file — walk back with `previousTradingDay`.
- */
-export function latestBhavcopyDate(now: Date, publishHourIst = 19): string {
-  const ist = toIst(now);
-  if (isWeekend(ist) || ist.getUTCHours() < publishHourIst) {
-    const prev = new Date(ist);
-    prev.setUTCDate(prev.getUTCDate() - 1);
-    return iso(backToWeekday(prev));
-  }
-  return iso(ist);
-}
-
-/** Previous weekday before an ISO date (for walking past holidays/missing files). */
-export function previousTradingDay(isoDate: string): string {
-  const d = new Date(isoDate + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - 1);
-  return iso(backToWeekday(d));
-}
+// Holidays, trading days, the bhavcopy walk-back and annualisation moved to
+// `lib/domain/market-calendar.ts`, which reads the effective-dated
+// `lib/data/market-calendar.json` (the one-year `nse-holidays.json` is retired).
+// This module keeps the ONE IST clock and the date parsing.
 
 /** DDMMYYYY, as used in NSE's sec_bhavdata_full_<DDMMYYYY>.csv archive names. */
 export function toDdmmyyyy(isoDate: string): string {

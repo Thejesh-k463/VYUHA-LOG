@@ -472,7 +472,7 @@ describe("ManualMarkProvider — the marks the user typed", () => {
   it("reads the LATEST mark per symbol out of mtm_prices, with its own as-of date", async () => {
     const q = (await manual.snapshot(KEYS)).get("NSE:TCS")!;
     expect(q.ltp).toBe(312040); // 2026-09-04's 3120.40, not 2026-09-03's 3100
-    expect(q.asOf).toBe("2026-09-04T15:30:00+05:30");
+    expect(q.asOf).toBe("2026-09-04T15:35:00+05:30"); // TCS: the auction close (market calendar, v4.6.0 W1)
     expect(q.staleness).toBe("manual");
   });
 
@@ -552,7 +552,7 @@ describe("EodBhavcopyProvider — the default, and it fetches nothing", () => {
     const q = (await eod.snapshot(KEYS)).get("NSE:TCS")!;
     expect(q.ltp).toBe(302575);
     expect(q.prevClose).toBe(301025);
-    expect(q.asOf).toBe("2026-09-04T15:30:00+05:30");
+    expect(q.asOf).toBe("2026-09-04T15:35:00+05:30"); // TCS: the auction close (market calendar, v4.6.0 W1)
   });
 
   it("leaves prevClose null for a symbol with one stored session", async () => {

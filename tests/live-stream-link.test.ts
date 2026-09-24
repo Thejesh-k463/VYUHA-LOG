@@ -40,8 +40,8 @@ const IST_1600 = "2026-09-07T10:30:00.000Z";
 /** 2026-09-05 is a SATURDAY, 15:29 IST. */
 const SAT_1529 = "2026-09-05T09:59:00.000Z";
 
-/** ms from 15:29:00 to 15:31:00 IST. */
-const TO_CLOSE_REOPEN = 2 * 60_000;
+/** ms from 15:29:00 to 15:36:00 IST — the calendar's latest CASH mark minute since CAS (v4.6.0 W1, K3). */
+const TO_CLOSE_REOPEN = 7 * 60_000;
 
 /** One quote in the shape `app/api/live/stream/route.ts` sends it. */
 const QUOTE = {
@@ -272,9 +272,10 @@ describe("the phase is a claim about the pipe, and it is earned (F6)", () => {
 /* ────────────── F3 — the close-of-session reconnect (owner-ruled) ────────────── */
 
 describe("an open desk re-establishes its stream once, just after the close (F3)", () => {
-  it("says how long until 15:31 IST, and null once it has passed", () => {
+  it("says how long until 15:36 IST, and null once it has passed", () => {
     expect(msUntilCloseReopen(new Date(IST_1529))).toBe(TO_CLOSE_REOPEN);
-    expect(msUntilCloseReopen(new Date("2026-09-07T10:01:00.000Z")), "15:31:00 exactly").toBeNull();
+    expect(msUntilCloseReopen(new Date("2026-09-07T10:06:00.000Z")), "15:36:00 exactly").toBeNull();
+    expect(msUntilCloseReopen(new Date("2026-09-07T10:05:00.000Z")), "15:35 — the auction's close is not in yet").toBe(60_000);
     expect(msUntilCloseReopen(new Date(IST_1600))).toBeNull();
     expect(msUntilCloseReopen(new Date(SAT_1529)), "no session closes on a Saturday").toBeNull();
     // …nor on a listed exchange holiday (F1, v4.2). 2026-10-02 is a FRIDAY —
@@ -287,7 +288,7 @@ describe("an open desk re-establishes its stream once, just after the close (F3)
     // The weekday either side of it is untouched: 2026-10-01 at 15:29 IST.
     expect(msUntilCloseReopen(new Date("2026-10-01T09:59:00.000Z"))).toBe(TO_CLOSE_REOPEN);
     // 09:00 IST — the whole session away.
-    expect(msUntilCloseReopen(new Date("2026-09-07T03:30:00.000Z"))).toBe((15 * 60 + 31 - 9 * 60) * 60_000);
+    expect(msUntilCloseReopen(new Date("2026-09-07T03:30:00.000Z"))).toBe((6 * 60 + 36) * 60_000); // 09:00 → 15:36
   });
 
   it("mounted at 15:29, it closes and re-opens exactly once at 15:31", () => {

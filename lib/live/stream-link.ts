@@ -25,7 +25,8 @@
  * `tests/today-clock.test.ts` exists to prevent.
  */
 
-import { isTradingDayIst, toIst } from "@/lib/domain/trading-day";
+import { toIst, todayIstIso } from "@/lib/domain/trading-day";
+import { cashMarkMinute, isTradingDayIst } from "@/lib/domain/market-calendar";
 import { parseTickFrame, type TickQuote } from "./apply-ticks";
 
 /** What the desk knows about the SSE pipe. Never a claim about the prices. */
@@ -96,14 +97,18 @@ export const SOURCE_CONNECTING = 0;
 
 /**
  * Minutes past IST midnight at which an open desk re-establishes its stream
- * once, so the server's connect door writes the close-of-session mark.
+ * once on `isoDate`, so the server's connect door writes the day's CASH marks —
+ * or null when the day has no known session hours.
  *
- * 15:31, not 15:30: `MARKET_CLOSE_MINUTE` (market-hours.ts) is INCLUSIVE of
- * 15:30, so a reconnect at exactly the close would race the last minute of the
- * session it is trying to close. One minute past it, the session is over by
- * the same definition the rest of the app uses.
+ * FROM THE MARKET CALENDAR (v4.6.0 W1, K3): the LATEST cash mark minute,
+ * `cashMarkMinute()` — 15:36 since the Closing Auction Session, when an F&O
+ * stock's close (struck by 15:35) is in; a non-CAS stock's 15:31 has passed by
+ * then, so one reconnect writes both. It was a typed 15:31 until then, which
+ * wrote an F&O stock's PRE-AUCTION price as its close (R4 #8).
  */
-export const CLOSE_REOPEN_MINUTE = 15 * 60 + 31;
+export function closeReopenMinute(isoDate: string): number | null {
+  return cashMarkMinute(isoDate);
+}
 
 /**
  * Spread, in ms, added to that instant (owner ruling: "15:31:00 IST plus 0–5 s
@@ -185,7 +190,9 @@ export function msUntilCloseReopen(now: Date): number | null {
   if (!isTradingDayIst(now)) return null; // no session to close
   const msPastMidnight =
     ((ist.getUTCHours() * 60 + ist.getUTCMinutes()) * 60 + ist.getUTCSeconds()) * 1_000 + ist.getUTCMilliseconds();
-  const target = CLOSE_REOPEN_MINUTE * 60_000;
+  const minute = closeReopenMinute(todayIstIso(now));
+  if (minute == null) return null; // a session with no bundled hours: no close to time
+  const target = minute * 60_000;
   return msPastMidnight >= target ? null : target - msPastMidnight;
 }
 

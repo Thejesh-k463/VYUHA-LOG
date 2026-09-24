@@ -23,6 +23,7 @@ import { getTrades } from "./trades";
 import { collectIdChunks } from "./delete";
 import { taxPersonKey } from "@/lib/domain/tax-person";
 import { BROKER_LABELS } from "@/lib/domain/constants";
+import { todayIstIso } from "@/lib/domain/trading-day";
 
 /**
  * THE ONE PREDICATE FOR "this account is priced on a plan it never stated"
@@ -275,5 +276,5 @@ export function getDataQualityReport(now = new Date()) {
   const duplicateBfLots = [...lotGroups.values()]
     .filter((g) => g.accounts.size > 1)
     .map((g) => ({ person: g.person, fy: g.fy, head: g.head, accounts: [...g.accounts].sort((a, b) => a - b).map((id) => nameOf.get(id) ?? `#${id}`) }));
-  return assessDataQuality({ trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords(), accountsWithoutPlan, duplicateBfLots });
+  return assessDataQuality({ today: todayIstIso(), trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords(), accountsWithoutPlan, duplicateBfLots });
 }

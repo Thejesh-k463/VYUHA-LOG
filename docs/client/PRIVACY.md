@@ -75,7 +75,7 @@ Exactly four kinds, and only one of them is automatic:
    (`http://127.0.0.1:5000`) unless you enter another address, and the prices
    it shows are never written to your journal as ticks: one mark per position
    per day is saved — written by the app itself once the desk reconnects at
-   15:31 IST while it is open, or the next time you open it that day, and never
+   15:36 IST while it is open, or the next time you open it that day, and never
    at the weekend or on an exchange holiday. A price you type yourself is that day's mark: the automatic close-of-session mark does
    not overwrite it, and typing after the close replaces the
    automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close.
@@ -150,8 +150,8 @@ Exactly four kinds, and only one of them is automatic:
                                   and in components/live/load-desk.ts (every desk render)
     • the close-of-session mark   app/api/live/stream/route.ts writes it through
                                   shouldPersistMark()/persistDailyMarks() when the desk's stream
-                                  connects at or after 15:30 IST; the desk reconnects once
-                                  at 15:31 IST. Already-marked is per symbol per IST day.
+                                  connects after the day's official close; the desk reconnects once
+                                  at 15:36 IST. Already-marked is per symbol per IST day.
     • loopback default            lib/domain/openalgo-disclosure.ts OPENALGO_DEFAULT_HOST,
                                   isLocalOpenAlgoHost(); the poll's only host is
                                   normalizeHost(creds.host), lib/quotes/openalgo.ts:317-320

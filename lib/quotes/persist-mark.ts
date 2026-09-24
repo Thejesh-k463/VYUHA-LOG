@@ -1,5 +1,13 @@
 import "server-only";
-import { exchangeHolidayName, isExchangeHoliday, todayIstIso, toIst } from "@/lib/domain/trading-day";
+import { todayIstIso } from "@/lib/domain/trading-day";
+import {
+  classOf,
+  hhmmOf,
+  istClock,
+  marketOf,
+  officialCloseAvailableAt,
+  tradingDayStatus,
+} from "@/lib/domain/market-calendar";
 import { isCashKey } from "./mapping";
 import { fromPaise, quoteKeyId, type Exchange, type ProviderId, type Quote, type QuoteKey } from "./types";
 
@@ -76,8 +84,30 @@ export async function openPositionKeys(): Promise<QuoteKey[]> {
   return out;
 }
 
-/** 15:30 IST. Before the close there is no "day's last price" to persist. */
-export const MARK_AFTER_IST_MIN = 15 * 60 + 30;
+/**
+ * K3 (owner, 2026-09-24; v4.6.0 W1) — minutes past IST midnight from which a
+ * mark may be persisted, FROM THE MARKET CALENDAR: the official close plus its
+ * margin. Since SEBI's Closing Auction Session (2026-08-03) an F&O stock's
+ * close is struck in an auction that ends 15:35, so its mark waits to 15:36; a
+ * non-CAS stock's close is 15:30, so 15:31. Before the calendar existed this was
+ * one constant, 15:30, and every F&O stock's "day's close" was the PRE-AUCTION
+ * last price (R4 "the worst three", 1).
+ *
+ * With a key: that instrument's own minute (a stock whose membership cannot be
+ * known gets the CAS minute — the later, safe side). Without one: the day's
+ * EARLIEST cash minute, the door the per-key filter in `persistDailyMarks`
+ * then narrows. Null when the day has no known session hours.
+ */
+export function markAfterIstMin(date: string, key?: QuoteKey): number | null {
+  if (key) {
+    const market = marketOf(key.exchange) ?? "NSE_CM";
+    return officialCloseAvailableAt(date, market, classOf(market, key.symbol, date));
+  }
+  const cash = [officialCloseAvailableAt(date, "NSE_CM", "equity"), officialCloseAvailableAt(date, "NSE_CM", "cas_stock")].filter(
+    (n): n is number => n != null,
+  );
+  return cash.length ? Math.min(...cash) : null;
+}
 
 /**
  * The once-a-day refusal, written ONCE because it is said in two places: here,
@@ -108,9 +138,11 @@ export interface PersistMarkDecision {
  * PURE. May the day's mark be written right now?
  *
  * Refuses four cases, each for its own reason: a weekend (no session to
- * close), a LISTED EXCHANGE HOLIDAY, before 15:30 IST (a mid-session price is
- * not the day's close — and persisting one would make "yesterday's close" mean
- * 11:04), and a day that already has its mark.
+ * close — a special Sunday session is NOT a weekend), a LISTED EXCHANGE
+ * HOLIDAY, before the official close is in (`markAfterIstMin`: 15:31, or 15:36
+ * for a CAS stock when `key` is given — a mid-session price is not the day's
+ * close, and persisting one would make "yesterday's close" mean 11:04), and a
+ * day that already has its mark.
  *
  * THE HOLIDAY REFUSAL IS F1 (v4.2), AND IT IS A REAL BUG FIX, not tidying. A
  * holiday is a WEEKDAY, so before v4.2 the catch-up door and the 15:31 close
@@ -119,7 +151,7 @@ export interface PersistMarkDecision {
  * "yesterday's close" read afterwards then resolved to a day the market never
  * traded, and nothing on screen looked wrong. A year the bundled list does not
  * cover answers "not a holiday", so this refusal can only ever fire on a date
- * NSE's own holiday-master put there (`lib/data/nse-holidays.json`).
+ * NSE's own holiday list put there (`lib/data/market-calendar.json`).
  *
  * `lastMarkDate` IS THE CALLER'S OWN FACT, and the signature keeps it because
  * it is still worth asking (the Settings card holds the banner date, and a
@@ -128,27 +160,38 @@ export interface PersistMarkDecision {
  * asks the same question per (symbol, IST date) ROW, because the stamp is one
  * value for a file that holds many accounts (N1).
  */
-export function shouldPersistMark(now: Date, lastMarkDate: string | null | undefined): PersistMarkDecision {
-  const date = todayIstIso(now);
-  const ist = toIst(now); // IST wall-clock lands in the UTC fields
-  const day = ist.getUTCDay();
-  if (day === 0 || day === 6) {
-    return { ok: false, reason: "It is the weekend — there is no session to close.", date, code: "weekend" };
-  }
-  if (isExchangeHoliday(date)) {
-    const name = exchangeHolidayName(date);
+export function shouldPersistMark(now: Date, lastMarkDate: string | null | undefined, key?: QuoteKey): PersistMarkDecision {
+  const { date, minutes } = istClock(now);
+  // The day, from the market calendar (v4.6.0 W1): a special Sunday session
+  // (Budget day 2026-02-01, Muhurat) IS a session; a listed holiday is not.
+  const day = tradingDayStatus(date, "NSE_CM");
+  if (!day.trading && day.reason === "holiday") {
     return {
       ok: false,
-      reason: `The exchange was closed${name ? ` for ${name}` : ""} — there is no session to close.`,
+      reason: `The exchange was closed${day.name ? ` for ${day.name}` : ""} — there is no session to close.`,
       date,
       code: "holiday",
     };
   }
-  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  if (minutes < MARK_AFTER_IST_MIN) {
+  if (!day.trading) {
+    return { ok: false, reason: "It is the weekend — there is no session to close.", date, code: "weekend" };
+  }
+  const after = markAfterIstMin(date, key);
+  if (after == null) {
+    // A special session whose hours are not bundled (Muhurat until NSE's
+    // circular is in the calendar): no official close is known, so the
+    // automatic door refuses. The button still works — it waives the clock.
     return {
       ok: false,
-      reason: "The session has not closed yet. The live mark is written once, from the last price of the day.",
+      reason: `${day.name ?? "Today's session"}: its hours are not in the bundled market calendar, so the day's close cannot be timed. Use "Save today's mark" after the session.`,
+      date,
+      code: "before-close",
+    };
+  }
+  if (minutes < after) {
+    return {
+      ok: false,
+      reason: `The session has not closed yet — the day's mark is saved from ${hhmmOf(after)} IST, once, from the last price after the official close.`,
       date,
       code: "before-close",
     };
@@ -232,9 +275,34 @@ export async function persistDailyMarks(
   // delete-then-insert would take the cash mark of the day with it. A feed
   // that can quote NFO (v4.1) therefore leaves the journal alone until a mark
   // store keyed on the traded contract exists.
-  const usable = [...quotes].filter((q) => q.ltp > 0 && isCashKey(q.key));
-  if (usable.length === 0) {
+  const priced = [...quotes].filter((q) => q.ltp > 0 && isCashKey(q.key));
+  if (priced.length === 0) {
     return { written: false, marked: 0, reason: "The feed had no usable price to save.", date };
+  }
+
+  // K3, PER KEY (v4.6.0 W1). The day's door above opens at the EARLIEST cash
+  // close (15:31); an F&O stock's close is struck in the closing auction and is
+  // not in until 15:35, so its row waits for its own minute (15:36). A key held
+  // back here is written by the next door after its minute — the desk's
+  // reconnect is timed to the LATEST cash minute (`cashMarkMinute`). The button
+  // waives the clock for every key, exactly as it waives the day's clock.
+  const { minutes } = istClock(now);
+  const usable =
+    opts.ignoreClock === true
+      ? priced
+      : priced.filter((q) => {
+          const after = markAfterIstMin(date, q.key);
+          return after != null && minutes >= after;
+        });
+  if (usable.length === 0) {
+    const later = markAfterIstMin(date, priced[0].key);
+    return {
+      written: false,
+      marked: 0,
+      reason: `The closing auction has not finished — these marks are saved from ${later == null ? "the close" : `${hhmmOf(later)} IST`}.`,
+      date,
+      code: "before-close",
+    };
   }
 
   // THE ONCE-A-DAY RULE, ASKED PER ROW (N1). A symbol that already holds
@@ -340,7 +408,7 @@ export function providerMayAutoMark(capabilities: { id: ProviderId; streaming: b
  * whichever runs first writes each open symbol's row for the IST day, and that
  * per-(symbol, day) row makes the other a no-op the same day (the stamp is
  * display-only, never the gate). Neither passes `ignoreClock`: the automatic path
- * IS the 15:30 rule.
+ * IS the close rule (`markAfterIstMin`, from the market calendar).
  *
  * NEVER THROWS. It is called on the path that renders the desk and on the path
  * that opens the stream; a failed write must cost the mark, never the screen.

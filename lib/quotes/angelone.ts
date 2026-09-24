@@ -1,5 +1,6 @@
 import "server-only";
 import { isFeedAckCurrent } from "@/lib/domain/live-feed-disclosure";
+import { toIst } from "@/lib/domain/trading-day";
 import { BASE, angelOneLogin, smartApiHeaders, smartApiJson, type AngelOneCredentials } from "@/lib/import/api/angelone";
 import {
   angelCashKey,
@@ -256,7 +257,6 @@ export const ANGELONE_CAPABILITIES: ProviderCapabilities = {
 
 /* ─────────────────────────── the session, and its clock ─────────────────── */
 
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -268,11 +268,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * clock is an argument so a test can prove both without waiting for a morning.
  */
 export function angelOneSessionExpiresAt(loginAtMs: number): number {
-  const ist = loginAtMs + IST_OFFSET_MS;
+  // IST through the one `toIst()`, not a third +5:30 constant (R4 #15).
+  const offset = toIst(new Date(loginAtMs)).getTime() - loginAtMs;
+  const ist = loginAtMs + offset;
   const dayStart = Math.floor(ist / DAY_MS) * DAY_MS;
   let flush = dayStart + ANGELONE_SESSION_FLUSH_IST_HOUR * 60 * 60 * 1000;
   if (flush <= ist) flush += DAY_MS;
-  return flush - IST_OFFSET_MS;
+  return flush - offset;
 }
 
 /**

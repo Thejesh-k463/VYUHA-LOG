@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
-import { MARK_AFTER_IST_MIN, shouldPersistMark } from "@/lib/quotes/persist-mark";
+import { markAfterIstMin, shouldPersistMark } from "@/lib/quotes/persist-mark";
 import { toPaise, type Quote, type QuoteKey } from "@/lib/quotes/types";
 
 /**
@@ -43,7 +43,7 @@ const MID_SESSION = new Date("2026-09-04T05:34:00Z");
 const WEEKEND = new Date("2026-09-05T10:30:00Z");
 /**
  * FRIDAY 2026-10-02, 16:30 IST — Mahatma Gandhi Jayanti, on NSE's own CM
- * trading list and now on the bundled one (`lib/data/nse-holidays.json`).
+ * trading list and on the bundled one (`lib/data/market-calendar.json` since v4.6.0).
  *
  * A WEEKDAY, which is the whole of the F1 defect: both automatic doors fired
  * here before v4.2 and wrote the bridge's last print — the PREVIOUS session's
@@ -121,8 +121,10 @@ describe("shouldPersistMark — PURE, and refuses three cases for three reasons"
     expect(d.reason).toContain("2026-09-04");
   });
 
-  it("allows it after 15:30 IST on a weekday that has no mark yet", () => {
-    expect(MARK_AFTER_IST_MIN).toBe(15 * 60 + 30);
+  it("allows it after the official close on a weekday that has no mark yet", () => {
+    // v4.6.0 W1 (K3): the day's door opens at the EARLIEST cash close + 1 — 15:31;
+    // an F&O stock's own row waits to 15:36 (tests/market-calendar.test.ts).
+    expect(markAfterIstMin("2026-09-04")).toBe(15 * 60 + 31);
     const d = shouldPersistMark(AFTER_CLOSE, "2026-09-03");
     expect(d.ok).toBe(true);
     expect(d.reason).toBe("");

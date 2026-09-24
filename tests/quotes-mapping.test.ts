@@ -7,7 +7,7 @@ import {
   sessionCloseIso,
   type StoredBar,
 } from "@/lib/quotes/mapping";
-import { NSE_HOLIDAY_YEAR } from "@/lib/domain/trading-day";
+import { NSE_HOLIDAY_YEAR } from "@/lib/domain/market-calendar";
 import { isMarketOpenIst } from "@/lib/live/market-hours";
 import { quoteKeyId, toPaise, type QuoteKey } from "@/lib/quotes/types";
 
@@ -61,7 +61,10 @@ describe("eodQuoteFromBars", () => {
   });
 
   it("stamps asOf with the session the price was true in, not 'now'", () => {
-    expect(eodQuoteFromBars(TCS, bars)!.asOf).toBe("2026-09-04T15:30:00+05:30");
+    // v4.6.0 W1: the close instant of the bar's OWN day and class. 2026-09-04 is
+    // after CAS began and before the F&O snapshot, so TCS's membership is
+    // unknown and the later (auction) close, 15:35, is the honest age.
+    expect(eodQuoteFromBars(TCS, bars)!.asOf).toBe("2026-09-04T15:35:00+05:30");
     expect(sessionCloseIso("2026-01-01")).toBe("2026-01-01T15:30:00+05:30");
   });
 
@@ -131,11 +134,11 @@ describe("manualQuoteFromMark", () => {
     expect(q.staleness).toBe("manual");
     expect(q.source).toBe("manual");
     expect([q.prevClose, q.dayOpen, q.dayHigh, q.dayLow, q.volume]).toEqual([null, null, null, null, null]);
-    expect(q.asOf).toBe("2026-09-04T15:30:00+05:30");
+    expect(q.asOf).toBe("2026-09-04T15:35:00+05:30"); // the auction close (see above)
   });
 });
 
-describe("isWithinLiveWindow — 09:00–15:40 IST, Mon–Fri", () => {
+describe("isWithinLiveWindow — 09:00 to the F&O mark minute (15:45 since CAS), trading days", () => {
   // 2026-09-04 is a Friday; 03:30Z = 09:00 IST.
   const ist = (utc: string) => new Date(utc);
 
@@ -144,9 +147,11 @@ describe("isWithinLiveWindow — 09:00–15:40 IST, Mon–Fri", () => {
     expect(isWithinLiveWindow(ist("2026-09-04T03:30:00Z"))).toBe(true); // 09:00 IST
   });
 
-  it("closes at 15:40 IST and not a minute later", () => {
-    expect(isWithinLiveWindow(ist("2026-09-04T10:10:00Z"))).toBe(true); // 15:40 IST
-    expect(isWithinLiveWindow(ist("2026-09-04T10:11:00Z"))).toBe(false); // 15:41 IST
+  it("closes at 15:45 IST and not a minute later (15:40 before CAS)", () => {
+    expect(isWithinLiveWindow(ist("2026-09-04T10:15:00Z"))).toBe(true); // 15:45 IST
+    expect(isWithinLiveWindow(ist("2026-09-04T10:16:00Z"))).toBe(false); // 15:46 IST
+    expect(isWithinLiveWindow(ist("2026-07-31T10:05:00Z"))).toBe(true); // 15:35 IST, pre-CAS
+    expect(isWithinLiveWindow(ist("2026-07-31T10:06:00Z"))).toBe(false); // 15:36 IST, pre-CAS
   });
 
   it("is closed at night — including after IST midnight, where a UTC date is a day behind", () => {
@@ -176,7 +181,7 @@ describe("isWithinLiveWindow — 09:00–15:40 IST, Mon–Fri", () => {
    * (`tests/today-clock.test.ts` forbids a second +5:30 derivation).
    */
   it("is closed on a LISTED exchange holiday, at an hour that is otherwise inside the window", () => {
-    // 2026-01-26 is a Monday AND Republic Day in lib/data/nse-holidays.json.
+    // 2026-01-26 is a Monday AND Republic Day in lib/data/market-calendar.json.
     expect(isWithinLiveWindow(ist("2026-01-26T04:30:00Z"))).toBe(false); // 10:00 IST
     // …and the calendar door agrees, so the route can no longer poll a feed
     // that the mark door and the desk clock both call shut.

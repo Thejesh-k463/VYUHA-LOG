@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import holidays from "@/lib/data/nse-holidays.json";
+import calendar from "@/lib/data/market-calendar.json";
+import {
+  todayIstIso,
+} from "@/lib/domain/trading-day";
 import {
   NSE_HOLIDAY_YEAR,
   annualisationBasis,
@@ -7,12 +10,14 @@ import {
   nseTradingDaysInYear,
   isExchangeHoliday,
   isTradingDayIst,
-  todayIstIso,
-} from "@/lib/domain/trading-day";
+} from "@/lib/domain/market-calendar";
 
 /**
  * F1 (v4.2) — the BUNDLED NSE trading-holiday list, and the year guard that
- * stops a release shipping a stale one.
+ * stops a release shipping a stale one. Since v4.6.0 W1 the list is the
+ * `holidays` block of `lib/data/market-calendar.json`, PARSED from the owner's
+ * download of NSE's 2026 holiday page (`scripts/build-market-calendar.mjs`);
+ * the one-year `nse-holidays.json` it replaces was retired.
  *
  * WHY A BUNDLED LIST AT ALL. Vyuha is offline-first, so until v4.2 the app
  * modelled the CLOCK and not the exchange calendar: `isMarketOpenIst` said
@@ -35,21 +40,31 @@ import {
  *     that being a quiet, permanent state.
  */
 
-const rows = holidays.trading_holidays;
+const rows = calendar.holidays;
 const dates = rows.map((r) => r.date);
 
 describe("the bundled file's shape is the contract the code reads", () => {
-  it("carries the year, the recorded diff behind it, and its own warning", () => {
-    expect(holidays.year).toBe(2026);
-    expect(holidays.verified_at).toBe("2026-08-27");
-    expect(holidays.verified_against).toBe(
-      "nseindia.com/api/holiday-master (CM segment), fetched live 2026-08-27",
-    );
+  it("carries the year it covers, the hashed source behind it, and its own warning", () => {
+    expect(calendar.coversThrough).toBe("2026-12-31");
+    const src = calendar.provenance.find((p) => p.id === "nse-holidays-2026")!;
+    expect(src.sourceKind).toBe("primary");
+    expect(src.sha256).toMatch(/^[0-9a-f]{64}$/);
     // The header warning travels WITH the data, so a session editing the rows
     // cannot avoid reading why a wrong one is expensive.
-    expect(holidays._note).toContain("SILENTLY SUPPRESSES A REAL SESSION");
-    expect(holidays._note).toContain("CLEARING HOLIDAYS ARE NOT TRADING HOLIDAYS");
-    expect(NSE_HOLIDAY_YEAR).toBe(holidays.year);
+    expect(calendar._note).toContain("SILENTLY SUPPRESSES A REAL SESSION");
+    expect(calendar._note).toContain("CLEARING HOLIDAYS ARE NOT TRADING HOLIDAYS");
+    expect(NSE_HOLIDAY_YEAR).toBe(2026);
+  });
+
+  it("equals, date for date, the list NSE's holiday-master API gave on 2026-08-27 — two sources, one answer", () => {
+    // The pre-v4.6.0 bundle was a live fetch of nseindia.com/api/holiday-master
+    // (CM). The calendar's rows are PARSED from a different artefact — the
+    // holiday page PDF the owner saved on 2026-09-24. They must agree.
+    expect(dates).toEqual([
+      "2026-01-15", "2026-01-26", "2026-02-15", "2026-03-03", "2026-03-21", "2026-03-26", "2026-03-31",
+      "2026-04-03", "2026-04-14", "2026-05-01", "2026-05-28", "2026-06-26", "2026-08-15", "2026-09-14",
+      "2026-10-02", "2026-10-20", "2026-11-10", "2026-11-24", "2026-12-25",
+    ]);
   });
 
   it("holds NSE's 19 CM trading holidays for 2026 — every row an ISO date in that year, with a name", () => {

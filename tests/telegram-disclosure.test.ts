@@ -143,10 +143,10 @@ describe("shouldSendDigest — each precondition blocks on its own", () => {
     expect(shouldSendDigest({ ...OPEN, lastSentDate: "2026-09-01" }, WED_1600_IST).send).toBe(true);
   });
 
-  it("falls back to the 15:35 default on an unparseable send time instead of never sending", () => {
+  it("falls back to the calendar default (F&O close + margin, 15:45) on an unparseable send time instead of never sending", () => {
     expect(parseSendTime("banana")).toBeNull();
     expect(parseSendTime("25:00")).toBeNull();
-    expect(parseSendTime(DEFAULT_SEND_TIME)).toBe(15 * 60 + 35);
+    expect(parseSendTime(DEFAULT_SEND_TIME)).toBe(15 * 60 + 45);
     expect(shouldSendDigest({ ...OPEN, sendTime: "banana" }, WED_1600_IST).send).toBe(true);
     expect(shouldSendDigest({ ...OPEN, sendTime: "banana" }, new Date("2026-09-02T09:30:00Z")).send).toBe(false);
   });

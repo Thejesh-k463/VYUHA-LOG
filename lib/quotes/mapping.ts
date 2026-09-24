@@ -7,7 +7,8 @@
  * `rates-db.ts` (invariant 2). No DB, no React, no `Date.now()`; the clock is
  * always an argument.
  */
-import { isTradingDayIst, toIst } from "@/lib/domain/trading-day";
+import { istWallClockIso } from "@/lib/domain/trading-day";
+import { classOf, closeInstantIso, istClock, liveWindowOn, marketOf } from "@/lib/domain/market-calendar";
 import { toPaise, type Exchange, type Quote, type QuoteKey } from "./types";
 
 /** The two CASH segments. Everything else on `Exchange` is a derivative. */
@@ -55,13 +56,21 @@ export interface StoredMark {
 }
 
 /**
- * The instant an Indian cash session's close price was true. A bar dated
- * 2026-09-04 is a 15:30 IST price and says so — `asOf` is source time, not
- * receipt time (03D §1.2), so the desk can age it honestly at 09:20 the next
- * morning.
+ * The instant an Indian cash session's close price was true — `asOf` is source
+ * time, not receipt time (03D §1.2), so the desk can age it honestly at 09:20
+ * the next morning.
+ *
+ * FROM THE MARKET CALENDAR (v4.6.0 W1): a 2026-09-04 bar of an F&O stock is a
+ * 15:35 price (its close is struck in the closing auction), of any other stock
+ * a 15:30 one, and a 2026-07-31 bar of either a 15:30 one. Without a key the
+ * later (CAS) instant is used — the conservative side for "how old is this".
+ * A day with no known session hours (a special session not yet bundled) ages
+ * from the END of the IST day: the latest the price can have been true.
  */
-export function sessionCloseIso(isoDate: string): string {
-  return `${isoDate}T15:30:00+05:30`;
+export function sessionCloseIso(isoDate: string, key?: QuoteKey): string {
+  const market = (key && marketOf(key.exchange)) || "NSE_CM";
+  const cls = classOf(market, key?.symbol ?? null, isoDate);
+  return closeInstantIso(isoDate, market, cls) ?? istWallClockIso(isoDate, "23:59");
 }
 
 /**
@@ -89,7 +98,7 @@ export function eodQuoteFromBars(key: QuoteKey, bars: readonly StoredBar[]): Quo
     dayHigh: last.high == null ? null : toPaise(last.high),
     dayLow: last.low == null ? null : toPaise(last.low),
     volume: last.volume ?? null,
-    asOf: sessionCloseIso(last.date),
+    asOf: sessionCloseIso(last.date, key),
     staleness: "eod",
     source: "eod",
   };
@@ -109,45 +118,33 @@ export function manualQuoteFromMark(key: QuoteKey, mark: StoredMark): Quote {
     dayHigh: null,
     dayLow: null,
     volume: null,
-    asOf: sessionCloseIso(mark.asOfDate),
+    asOf: sessionCloseIso(mark.asOfDate, key),
     staleness: "manual",
     source: "manual",
   };
 }
 
-/** 09:00 IST — pre-open starts; the earliest a provider may be started. */
-export const LIVE_WINDOW_START_MIN = 9 * 60;
-/** 15:40 IST — ten minutes past the close, enough for the closing print. */
-export const LIVE_WINDOW_END_MIN = 15 * 60 + 40;
-
 /**
- * May a streaming provider be started right now? A TRADING DAY, 09:00–15:40 IST
- * (03D "Outside market hours / offline").
+ * May a streaming provider be started right now? A TRADING DAY, inside the
+ * window the MARKET CALENDAR derives for it (v4.6.0 W1, R4 rule 3): from the
+ * pre-open (09:00) to the day's LAST mark-availability instant — the F&O close
+ * plus its margin, 15:45 since 2026-08-03. It used to be a typed 09:00–15:40,
+ * and since CAS 15:40 is the derivatives CLOSE itself, which left no margin
+ * for its last print (R4 #6).
  *
- * EXCHANGE HOLIDAYS CLOSE THIS WINDOW (v4.2 seam fix). The comment here used to
- * argue the opposite — that a holiday poll was the harmless direction of the
- * error because the value "feeds only `snapshot.marketOpen`". It does not:
- * `app/api/live/stream/route.ts` gates the PROVIDER SUBSCRIPTION on the same
- * value (line ~218), so on Republic Day at 10:00 IST the route subscribed
- * Upstox or Angel One and polled a shut exchange every few seconds for six and
- * a half hours, while the strip printed "Live" over yesterday's close. Worse,
- * `isMarketOpenIst()` (lib/live/market-hours.ts) already answered false on the
- * same instant, so the app held two answers and the polling door had the wrong
- * one.
- *
- * The calendar is asked through `isTradingDayIst()` — weekend AND listed
- * holiday in one call, over the bundled NSE list `lib/data/nse-holidays.json`.
- * It is the single IST source and there is deliberately no second +5:30
- * derivation here (`tests/today-clock.test.ts`). A year the list does not cover
- * answers "not a holiday", so the weekday behaviour survives a stale calendar
- * rather than the desk going silent every January.
+ * EXCHANGE HOLIDAYS CLOSE THIS WINDOW (v4.2 seam fix): `app/api/live/stream/route.ts`
+ * gates the PROVIDER SUBSCRIPTION on this value, so on Republic Day it once
+ * polled a shut exchange for six and a half hours while the strip printed
+ * "Live". A special Sunday session (Budget day) OPENS it; a special session
+ * whose hours are not bundled (Muhurat) has no window — no guessed hours.
+ * Past the bundled year a weekday is an UNVERIFIED session, so the desk keeps
+ * working in January rather than going silent (`tradingDayStatus`).
  *
  * The other doors a holiday changes stay where they were: `shouldPersistMark()`
  * (lib/quotes/persist-mark.ts) refuses with code `"holiday"`.
  */
 export function isWithinLiveWindow(now: Date): boolean {
-  if (!isTradingDayIst(now)) return false;
-  const ist = toIst(now);
-  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-  return minutes >= LIVE_WINDOW_START_MIN && minutes <= LIVE_WINDOW_END_MIN;
+  const { date, minutes } = istClock(now);
+  const w = liveWindowOn(date);
+  return w != null && minutes >= w.startMin && minutes <= w.endMin;
 }

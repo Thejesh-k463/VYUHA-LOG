@@ -5,26 +5,18 @@
  * function that calls `Date.now()` cannot be tested at 09:14:59 and cannot be
  * tested at all on a CI box in another timezone.
  *
- * IST IS COMPUTED, NOT ASSUMED. `toIst()` from `lib/domain/trading-day.ts` is
- * the one definition of "India's clock" in the product and this file reuses it
- * rather than re-deriving the +5:30 offset — a second definition is precisely
- * what `tests/today-clock.test.ts` was written to prevent for "today".
- *
- * EXCHANGE HOLIDAYS ARE MODELLED SINCE v4.2, from the BUNDLED NSE list
- * (`lib/data/nse-holidays.json`, read through `isTradingDayIst()`), and the
- * comment here said the opposite until then. Offline-first is why the list is
- * bundled rather than fetched — it is not a reason to answer "open" on Republic
- * Day. A year the list does not cover is UNKNOWN, so `isTradingDayIst()` falls
- * back to the weekday answer this file used to give on its own.
+ * THE HOURS ARE THE MARKET CALENDAR'S (v4.6.0 W1). This file typed 09:15–15:30
+ * until SEBI's Closing Auction Session (2026-08-03) made it wrong: equity
+ * derivatives now trade to 15:40, and the desk said "closed" for their last ten
+ * minutes (R4 #1). `isMarketOpen()` in `lib/domain/market-calendar.ts` is the
+ * one answer, shared with the sidebar dot, so the two cannot disagree again.
+ * IST is `toIst()`'s — the one definition in the product.
  */
 
 import { sessionOf } from "@/lib/analytics/cockpit";
-import { isTradingDayIst, toIst } from "@/lib/domain/trading-day";
+import { toIst } from "@/lib/domain/trading-day";
+import { isMarketOpen, istClock, tradingDayStatus } from "@/lib/domain/market-calendar";
 import { PPM, type Ppm } from "./types";
-
-/** NSE cash-market session, IST. Pre-open (09:00–09:15) is NOT "open". */
-export const MARKET_OPEN_MINUTE = 9 * 60 + 15; // 09:15
-export const MARKET_CLOSE_MINUTE = 15 * 60 + 30; // 15:30
 
 /** IST wall-clock parts of an instant. `minutes` is minutes past IST midnight. */
 export function istParts(now: Date): { weekday: number; hour: number; minute: number; minutes: number; hhmm: string } {
@@ -41,37 +33,30 @@ export function istParts(now: Date): { weekday: number; hour: number; minute: nu
 }
 
 /**
- * Is the NSE cash market inside its session window right now?
- *
- * Monday–Friday, 09:15–15:30 IST INCLUSIVE of 15:30 — a fill stamped exactly
- * 15:30:00 is a closing-auction fill, not an after-hours one, which is the same
- * boundary `sessionOf()` and the sidebar clock already use.
- *
- * A LISTED HOLIDAY IS CLOSED (F1, v4.2). The SSE route asks this before it
- * subscribes, so on Republic Day the bridge is never polled and the desk clock
- * says the market is shut instead of counting a session nobody had.
+ * Is the market in session right now? NSE continuous trading in cash or in
+ * equity derivatives, from the market calendar: 09:15–15:40 IST since
+ * 2026-08-03 (09:15–15:30 before). Pre-open is NOT "open"; a listed holiday is
+ * closed (F1, v4.2); a special Sunday session is open.
  */
 export function isMarketOpenIst(now: Date): boolean {
-  if (!isTradingDayIst(now)) return false;
-  const { minutes } = istParts(now);
-  return minutes >= MARKET_OPEN_MINUTE && minutes <= MARKET_CLOSE_MINUTE;
+  return isMarketOpen(now);
 }
 
 /**
- * Which named session an instant falls in — `preopen | open | morning | midday
- * | afternoon | close`, or null outside 09:00–15:30 and on weekends.
+ * Which named session an instant falls in — the cockpit's bands (`preopen |
+ * open | morning | midday | afternoon | close`, and since CAS `auction` and
+ * `postclose`), or null outside them and on a day with no session.
  *
  * Delegates to `sessionOf()` in `lib/analytics/cockpit.ts` rather than
  * redefining the bands: the desk's "Morning trend" and the cockpit's must be
  * the same window, or the same trade is filed under two different sessions in
- * two different screens.
+ * two different screens. The DATE is passed so the day's own rules apply.
  */
 export function sessionBucketIst(now: Date): string | null {
-  const { weekday, hhmm } = istParts(now);
-  if (weekday === 0 || weekday === 6) return null;
-  return sessionOf(hhmm);
+  const { date } = istClock(now);
+  if (!tradingDayStatus(date).trading) return null;
+  return sessionOf(istParts(now).hhmm, date);
 }
-
 /** What `anchorSession` publishes. Every count travels with the anchor. */
 export interface AnchorResult {
   /** The latest MODAL session date, or null when there is nothing to anchor to. */

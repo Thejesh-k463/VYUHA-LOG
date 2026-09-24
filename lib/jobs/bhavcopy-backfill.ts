@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { db, sqlite } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { applyBhavcopyMtm } from "@/lib/import/mtm-bhavcopy";
-import { latestBhavcopyDate, previousTradingDay } from "@/lib/domain/trading-day";
+import { latestBhavcopyDate, previousTradingDay } from "@/lib/domain/market-calendar";
 import { fetchBhavcopyForDate, type BhavcopyFetch } from "@/lib/jobs/auto-mtm";
 
 /**

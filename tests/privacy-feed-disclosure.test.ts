@@ -267,7 +267,7 @@ describe("the consent sheet and the privacy sheet agree about the feed", () => {
     // the bundled NSE holiday list makes the close mark refuse a holiday, so
     // the accepted "weekend only" sentence no longer described what the app
     // writes — docs/DECISIONS.md 2026-09-07, v4.2 wave).
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
   });
 });
 

@@ -14,6 +14,7 @@
  */
 
 import { PPM } from "@/lib/live/types";
+import { istWallClockIso } from "@/lib/domain/trading-day";
 import { EM_DASH } from "./desk-copy";
 
 const RUPEES = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -88,7 +89,7 @@ export function qty(n: number | null | undefined): string {
 /** "4 Sep" from an ISO date or an ISO datetime. Never throws on a bad input. */
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return EM_DASH;
-  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00+05:30` : iso);
+  const d = new Date(iso.length <= 10 ? istWallClockIso(iso) : iso);
   if (Number.isNaN(d.getTime())) return iso;
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }).format(d);
 }

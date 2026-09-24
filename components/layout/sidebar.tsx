@@ -22,6 +22,7 @@ import { useStoredValue, writeStored } from "./use-stored-value";
 import { SIDEBAR_MIN_W, useSidebarWidth } from "./use-sidebar-width";
 import { WORKSPACE_LABELS, screenVisible, type Workspace } from "@/lib/domain/workspace";
 import { cn } from "@/lib/utils";
+import { isMarketOpen, istClock } from "@/lib/domain/market-calendar";
 import { AccountSwitcher } from "@/components/system/account-switcher";
 import { Tip } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -39,8 +40,10 @@ const NAV_ORDER_KEY = "vyuha-nav-order";
  */
 const KBD_HINT_MIN_W = 208;
 
-/** C7 — live IST clock + NSE market-hours dot (Mon–Fri 09:15–15:30 IST).
- *  Client-only; renders nothing until mounted to avoid hydration drift. */
+/** C7 — live IST clock + NSE market-hours dot, from the MARKET CALENDAR (v4.6.0 W1):
+ *  the same `isMarketOpen()` the Live Desk reads — holidays, special sessions and the
+ *  15:40 F&O close included. It kept its own Mon–Fri 09:15–15:30 until then and was
+ *  green on Republic Day (R4 #17). Client-only; renders nothing until mounted. */
 function MarketClock() {
   const [now, setNow] = React.useState<Date | null>(null);
   React.useEffect(() => {
@@ -52,12 +55,10 @@ function MarketClock() {
   }, []);
   if (!now) return null;
 
-  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const mins = ist.getHours() * 60 + ist.getMinutes();
-  const weekday = ist.getDay() >= 1 && ist.getDay() <= 5;
-  const open = weekday && mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
-  const hh = String(ist.getHours()).padStart(2, "0");
-  const mm = String(ist.getMinutes()).padStart(2, "0");
+  const { minutes } = istClock(now);
+  const open = isMarketOpen(now);
+  const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+  const mm = String(minutes % 60).padStart(2, "0");
 
   return (
     <span className="flex items-center gap-1.5" title={open ? "NSE market hours" : "Market closed"}>

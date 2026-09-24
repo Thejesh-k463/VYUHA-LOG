@@ -11,7 +11,7 @@ import { getBarsMap } from "@/lib/queries/price-history";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import {
-  cockpitReport, edgeMeasurable, SESSIONS, MIN_SAMPLE,
+  cockpitReport, edgeMeasurable, SESSIONS, MIN_SAMPLE, sessionSpanLabel,
   type CockpitTrade, type Bucket,
 } from "@/lib/analytics/cockpit";
 import { computeMaeMfe, type MaeTradeInput } from "@/lib/analytics/mae-mfe";
@@ -332,7 +332,7 @@ export default function ArjunsEyePage() {
                 {time.offHours > 0 && (
                   <p className="mt-2 text-xs text-warning">
                     {num(time.offHours)} timed trade{time.offHours === 1 ? "" : "s"} fall outside
-                    {SESSIONS[0].from}–{SESSIONS[SESSIONS.length - 1].to} and belong to no session, so they are excluded from the bars
+                    {sessionSpanLabel()} and belong to no session, so they are excluded from the bars
                     above rather than forced into one. Worth checking the import — a broker
                     time column read wrongly looks exactly like this.
                   </p>

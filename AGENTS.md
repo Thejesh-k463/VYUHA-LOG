@@ -356,6 +356,23 @@ It feeds STT/CTT ONLY, through `etf_equity` / `etf_other` rows of `charge_config
 list does not carry, or of a Hybrid underlying, is UNDETERMINED (blank) with a Data Quality warning — never guessed.
 
 
+# Bundled market calendar
+
+`lib/data/market-calendar.json` is a SNAPSHOT of India's exchange sessions (v4.6.0 W1, owner rulings K1–K3): effective-dated
+session rows per market × instrument class (the Closing Auction Session from 2026-08-03, the F&O close at 15:40, the revised
+pre-open from 2026-09-07), the NSE holiday list, special sessions (Budget Sunday, Muhurat) and the F&O underlyings that run
+in the closing auction. Built by `node scripts/build-market-calendar.mjs --src <folder>` from the files the OWNER downloads
+(`VYUHA/LIVE-DESK-RESEARCH/_data/market-calendar-<date>/DOWNLOAD-LIST.md` names them) — never hand-edited, no network in the
+app, refreshed manually once per MINOR release and whenever SEBI/NSE change a session. Rules the code enforces and
+`tests/market-calendar.test.ts` asserts: every timing, holiday and "is it open" answer goes through
+`lib/domain/market-calendar.ts` (a scan fails on a `"15:30"`, `15 * 60`, `330 * 60`, `5.5 * 60` or `+05:30` literal
+anywhere else — `lib/domain/trading-day.ts` keeps the ONE IST clock); every session row names its source and the build
+REFUSES when an anchor phrase is missing from that file; marks wait for the official close (CAS stock 15:36, other equity
+15:31, derivative 15:45); a special session whose hours are not bundled has no session row (callers refuse, never guess);
+past `coversThrough` a weekday is an UNVERIFIED session and Data Quality warns from 60 days before. `/instruments` shows
+`asOf`, `coversThrough` and the sources sha256. The one-year `nse-holidays.json` it replaced is retired.
+
+
 # Desktop build and release
 
 - **Desktop** = Next `output: "standalone"` run as a Node sidecar by the Tauri Rust shell. The DB

@@ -30,9 +30,14 @@ describe("isMarketOpenIst", () => {
     expect(isMarketOpenIst(at("2026-09-04T03:45:00Z"))).toBe(true); // 09:15 IST
   });
 
-  it("is open at 15:30 exactly and closed at 15:31", () => {
-    expect(isMarketOpenIst(at("2026-09-04T10:00:00Z"))).toBe(true); // 15:30 IST
-    expect(isMarketOpenIst(at("2026-09-04T10:01:00Z"))).toBe(false); // 15:31 IST
+  // v4.6.0 W1: since SEBI's Closing Auction Session (2026-08-03) equity
+  // derivatives trade to 15:40 — the market calendar's answer, shared with the
+  // sidebar dot. Before it, 15:30 was the close.
+  it("is open at 15:39 and closed at 15:40 since CAS; closed after 15:30 before it", () => {
+    expect(isMarketOpenIst(at("2026-09-04T10:09:00Z"))).toBe(true); // 15:39 IST
+    expect(isMarketOpenIst(at("2026-09-04T10:10:00Z"))).toBe(false); // 15:40 IST
+    expect(isMarketOpenIst(at("2026-07-31T09:59:00Z"))).toBe(true); // 15:29 IST, pre-CAS
+    expect(isMarketOpenIst(at("2026-07-31T10:01:00Z"))).toBe(false); // 15:31 IST, pre-CAS
   });
 
   it("is closed at the weekend, even inside the session window", () => {

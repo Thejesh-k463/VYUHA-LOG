@@ -5,7 +5,7 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import { type TickQuote } from "@/lib/live/apply-ticks";
 import {
   CLOSE_REOPEN_JITTER_MS,
-  CLOSE_REOPEN_MINUTE,
+  closeReopenMinute,
   LIVE_GRACE_MS,
   RECONNECT_BASE_MS,
   SOURCE_CONNECTING,
@@ -19,7 +19,8 @@ import {
 import { LIVE_STREAM_COPY } from "@/components/live/desk-copy";
 import { OPENALGO_FEED_ITEMS } from "@/lib/domain/openalgo-disclosure";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
-import { exchangeHolidayName, isExchangeHoliday, toIst } from "@/lib/domain/trading-day";
+import { toIst } from "@/lib/domain/trading-day";
+import { exchangeHolidayName, isExchangeHoliday } from "@/lib/domain/market-calendar";
 import { quoteKeyId, type ProviderCapabilities, type Quote, type QuoteKey, type QuoteMap, type QuoteProvider } from "@/lib/quotes/types";
 
 /**
@@ -452,16 +453,20 @@ afterEach(() => {
 describe("SEAM 1 · A's close-of-session reconnect drives B's connect door", () => {
   it("S1a: the instant A schedules is an instant B will WRITE at, and one minute earlier is not", () => {
     const wait = msUntilCloseReopen(FRI_1529);
-    expect(wait, "A must schedule a reconnect from 15:29 on a Friday").toBe(2 * 60_000);
+    expect(wait, "A must schedule a reconnect from 15:29 on a Friday").toBe(7 * 60_000); // → 15:36 (v4.6.0 W1)
 
     const reopenAt = new Date(FRI_1529.getTime() + wait!);
     const ist = toIst(reopenAt);
+    // v4.6.0 W1: the reconnect is the calendar's latest CASH mark minute (15:36 since CAS).
+    const CLOSE_REOPEN_MINUTE = closeReopenMinute("2026-09-04")!;
+    expect(CLOSE_REOPEN_MINUTE).toBe(15 * 60 + 36);
     expect(ist.getUTCHours() * 60 + ist.getUTCMinutes()).toBe(CLOSE_REOPEN_MINUTE);
 
-    // THE CROSSING: A's minute against B's gate. 15:31 IST is past
-    // MARK_AFTER_IST_MIN, so the door B opens at that instant writes.
-    expect(persist.MARK_AFTER_IST_MIN).toBe(15 * 60 + 30);
-    expect(CLOSE_REOPEN_MINUTE).toBeGreaterThan(persist.MARK_AFTER_IST_MIN);
+    // THE CROSSING: A's minute against B's gate (v4.6.0 W1). B's day door opens
+    // at 15:31 and each key's own door at ITS close minute — 15:36 for an F&O
+    // stock — so the door B opens at A's instant writes every cash key.
+    expect(persist.markAfterIstMin("2026-09-04")).toBe(15 * 60 + 31);
+    expect(CLOSE_REOPEN_MINUTE).toBeGreaterThanOrEqual(persist.markAfterIstMin("2026-09-04", { symbol: "RELIANCE", exchange: "NSE" })!);
     expect(persist.shouldPersistMark(reopenAt, null)).toEqual({
       ok: true,
       reason: "",
@@ -471,9 +476,12 @@ describe("SEAM 1 · A's close-of-session reconnect drives B's connect door", () 
     // …and the whole jitter window is still past it, so no desk in a household
     // fires into a refusal.
     expect(persist.shouldPersistMark(new Date(reopenAt.getTime() + CLOSE_REOPEN_JITTER_MS), null).ok).toBe(true);
-    // One minute before A's instant, B refuses — which is what makes 15:31 the
-    // value under test rather than an arbitrary constant.
-    expect(persist.shouldPersistMark(new Date(reopenAt.getTime() - 2 * 60_000), null).code).toBe("before-close");
+    // One minute before A's instant, B refuses the F&O stock A's minute exists
+    // for — which is what makes 15:36 the value under test rather than an
+    // arbitrary constant.
+    const RELIANCE = { symbol: "RELIANCE", exchange: "NSE" as const };
+    expect(persist.shouldPersistMark(new Date(reopenAt.getTime() - 60_000), null, RELIANCE).code).toBe("before-close");
+    expect(persist.shouldPersistMark(reopenAt, null, RELIANCE).ok).toBe(true);
   });
 
   it("S1b: at that instant the real route writes ONE row per open cash symbol, and a second connect writes nothing", async () => {
@@ -882,16 +890,21 @@ describe("SEAM 5 · two accounts, one day — the behaviour C's sentence is pinn
     expect(read("docs", "client", "OPENALGO_SETUP_GUIDE.html")).toContain(
       "decided per symbol per IST day, so\n    a second account's open positions get their own mark on the same day",
     );
-    // The 15:31 reconnect C describes is A's constant, to the minute.
-    expect(CLOSE_REOPEN_MINUTE).toBe(15 * 60 + 31);
+    // The reconnect C describes is A's minute, to the minute (15:36 since v4.6.0 W1).
+    expect(closeReopenMinute("2026-09-04")).toBe(15 * 60 + 36);
     for (const [file, text] of [
       ["docs/client/README.md", read("docs", "client", "README.md")],
-      ["README.md", read("README.md")],
       ["docs/client/PRIVACY.md", read("docs", "client", "PRIVACY.md")],
-      ["CHANGELOG.md", changelogWave2()],
+      ["docs/client/OPENALGO_SETUP_GUIDE.html", read("docs", "client", "OPENALGO_SETUP_GUIDE.html")],
     ] as const) {
-      expect(text, `${file} does not name the reconnect instant`).toContain("15:31 IST");
+      expect(text, `${file} does not name the reconnect instant`).toContain("15:36 IST");
+      expect(text, `${file} still names the pre-CAS reconnect`).not.toContain("15:31 IST");
     }
+    // The v4.1 CHANGELOG entry and README.md's "v4.1.0" block are HISTORY — true of the
+    // release they describe (prose pass, 2026-09-25). The CLIENT README's v4.1.0 row is
+    // kept CURRENT on purpose (S6b: no shipped surface promises a write the app no longer makes).
+    expect(changelogWave2()).toContain("15:31 IST");
+    expect(read("README.md")).toContain("it reconnects its stream at 15:31 IST");
   });
 });
 
@@ -1058,7 +1071,7 @@ describe("SEAM 7 · every place C says /funds is posted, really posts it", () =>
     // in lib/domain/openalgo-disclosure.ts). Pinned as a literal on purpose: a
     // consent version that follows whatever the module says proves nothing.
     const { OPENALGO_DISCLOSURE_VERSION } = await import("@/lib/domain/openalgo-disclosure");
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
   });
 
   it("S7b: the egress sentence sends the reader to a Settings section that exists", () => {

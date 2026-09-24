@@ -117,7 +117,7 @@ export const LIVE_STREAM_COPY = {
    *
    * WHY NO REASON IS CLAIMED (A-13 — this paragraph used to say the app ships no
    * exchange calendar, which stopped being true in v4.2). It DOES ship one:
-   * `lib/data/nse-holidays.json`, read by `lib/live/market-hours.ts` through
+   * `lib/data/market-calendar.json`, read by `lib/live/market-hours.ts` through
    * `isTradingDayIst()`, so "today is a listed holiday" is a fact the app can
    * state. The reason is still not claimed here, and the reason for THAT is the
    * remaining one: this string is a statement about the CONNECTION, and the

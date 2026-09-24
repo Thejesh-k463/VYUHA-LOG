@@ -6,9 +6,9 @@
 // Preconditions, in refusal order (each blocks alone):
 //   1. consent — the telegramGate (enabled AND current ack), never bypassed
 //   2. credentials on file (token + chat id)
-//   3. a market day in IST — weekends are known statically, and since v4.2
-//      exchange holidays ARE knowable offline (`isExchangeHoliday()` in
-//      lib/domain/trading-day.ts, over the bundled `lib/data/nse-holidays.json`).
+//   3. a market day in IST — weekends are known statically (a special Sunday
+//      session is NOT a weekend), and exchange holidays ARE knowable offline
+//      (`isExchangeHoliday()` in lib/domain/market-calendar.ts, since v4.6.0).
 //      This gate still does not ask, on purpose: a holiday digest reports the
 //      user's own recorded data, which is true on any day, and suppressing it
 //      would silently drop a day from a report the user asked for. The doors
@@ -22,6 +22,7 @@
 //      papered over with a night queue or scheduler.
 
 import { toIst } from "@/lib/domain/trading-day";
+import { hhmmOf, markMinuteInForce, sessionFor, tradingDayStatus } from "@/lib/domain/market-calendar";
 import { telegramGate } from "@/lib/domain/telegram-disclosure";
 
 export interface DigestGateState {
@@ -40,7 +41,15 @@ export interface DigestGateResult {
   today: string;
 }
 
-export const DEFAULT_SEND_TIME = "15:35";
+/**
+ * The FALLBACK send time when the stored one is unreadable — derived from the
+ * market calendar (v4.6.0 W1): the F&O close plus its mark margin, 15:45 since
+ * the derivatives session runs to 15:40. It was a typed 15:35, which sent the
+ * "end of day" digest five minutes before F&O stopped trading (R4 #18). The
+ * COLUMN default ('15:35', migration 0053) is untouched — no migration; a
+ * stored value is the user's own choice and is honoured as typed.
+ */
+export const DEFAULT_SEND_TIME: string = hhmmOf(markMinuteInForce("NSE_FO", "derivative") ?? parseSendTime("15:35")!);
 
 /** Minutes since midnight for "HH:MM", or null when unparseable. */
 export function parseSendTime(s: string | null | undefined): number | null {
@@ -58,8 +67,12 @@ export function shouldSendDigest(state: DigestGateState, now: Date): DigestGateR
   if (!state.hasCredentials) {
     return no("No bot token and chat id on file — finish the setup in Settings → Alerts.");
   }
-  const day = ist.getUTCDay();
-  if (day === 0 || day === 6) return no(`No digest on a weekend (${today}).`);
+  // A weekend has no digest; a special weekend session with KNOWN hours (the
+  // Budget-day Sunday) does. Muhurat's hours are not bundled, so a digest at the
+  // usual time would go out before its evening session — none is sent.
+  const weekday = ist.getUTCDay();
+  const specialWithHours = tradingDayStatus(today).reason === "special" && sessionFor(today, "NSE_CM", "equity") != null;
+  if ((weekday === 0 || weekday === 6) && !specialWithHours) return no(`No digest on a weekend (${today}).`);
 
   const sendMinutes = parseSendTime(state.sendTime) ?? parseSendTime(DEFAULT_SEND_TIME)!;
   const nowMinutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();

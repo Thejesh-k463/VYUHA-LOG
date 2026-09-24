@@ -8820,3 +8820,93 @@ Not verifiable in-session: whether the owner meant S1 as "build round 3 as shown
 Bailey/López de Prado formulas (checked against the paper at C1).
 **Prose pass: the independent audit above IS this entry's prose pass — 77 files / 24 findings / 41 tool calls (skeptic on Opus, ~132k subagent tokens), all 24 fixed in this commit.**
 **Also fixed in this commit (found while gating it):** `scripts/state-drift-check.mjs` had the session-log path hard-coded to `21-V450-BUILD`; it now reads the highest-numbered build folder STATE §0 names (LEDGER F-1, `tests/state-drift.test.ts` 3/3). Two checks that the §0 rewrite had silently turned into SKIP (`state-head-ancestor`, `migration-vs-state`) run again. Close-out: 21 PASS / 0 FAIL / 2 SKIP.
+
+
+## 2026-09-25 — v4.6.0 W1 built: the effective-dated market calendar (CAS, F&O to 15:40, special sessions), 18 call sites migrated
+
+The owner's calendar files were in `VYUHA/LIVE-DESK-RESEARCH/_data/market-calendar-2026-09-24/` (all six required items;
+none of the four optional ones), so W1 was built in full, not module-only. Spec: `22-V460-BUILD/00-SPEC-PLAN.md` §2 W1;
+evidence: `research/R4-MARKET-CALENDAR.md`.
+
+**What the primary files say, read this session (text-extracted with `pdf-parse`, each sha256 in the JSON's `provenance`):**
+the SEBI circular (paras 4.2.1–4.2.5, 5, 6) — CAS 15:15–15:35 with a random close 15:28–15:30, equity derivatives to 15:40,
+cash post-close 15:50–16:00, CAS from 2026-08-03, revised pre-open (order entry to 09:10, random close 09:08–09:10) from
+2026-09-07, and the special-session rule; NSE's CAS page adds the 15:35–15:50 transition and states non-CAS continuous
+trading to 15:30; NSE/FAOP/71092 — the F&O pre-open (current-month futures, 09:00–09:08 entry) w.e.f. 2025-12-08; NSE's 2026
+holiday page — 16 weekday + 3 weekend holidays, and 08-Nov (Diwali Laxmi Pujan) listed WITH a Muhurat session whose hours
+"shall be notified subsequently". The PDF-parsed holiday list equals, date for date and name for name, the NSE
+holiday-master API fetch of 2026-08-27 the retired `nse-holidays.json` held — two artefacts, one answer. The SEBI PDF's
+sha256 differs from R4's mirror copy (`b0526ccb…`): the owner's download is a different byte file of the same circular.
+
+**How facts get in:** timings are typed ONCE in `scripts/build-market-calendar.mjs` and each is ANCHORED — the build
+extracts the source PDF's text and refuses to build when a phrase ("3:15 pm to 3:35 pm", "from August 03, 2026") is
+missing (11 anchor checks). Holidays are PARSED (dates extract reliably; tables do not). Rejected: parsing session tables
+out of PDFs (extraction reorders cells), and typing timings with no link to the file (a typo ships silently).
+
+**Decided by the session under the decision policy (the owner may overrule):**
+- The owner saved item 7 under NSE's own name `fo_mktlots.csv`; it is accepted as item 7 (it is the file the list's URL
+  saves). Four more files the owner saved are real NSE circulars (NSE/CMTR/73362 SOP, NSE/CMTR/76170, NSE/FAOP/68747, the
+  F&O pre-open FAQ) and are accepted as SUPPORTING evidence — hashed and anchored, never the only source of a fact. Any
+  other file is refused (listed, not read). Rejected: failing the build on the alias (the owner's download is the right file).
+- CAS membership = the 210 stocks after fo_mktlots' "Derivatives on Individual Securities" header, dated from the folder's
+  date (2026-09-24; the file states none). 2026-08-03..2026-09-23 → UNKNOWN; for marks it takes the later (CAS) minute,
+  for analytics the union band. Marks already stored are not rewritten.
+- ONE union analytics band `auction` ("Closing auction / F&O close", 15:30–15:40) from 2026-08-03 plus `postclose`
+  (15:50–16:00); 15:30 exactly stays "close" on both sides of CAS. Rejected: separate CAS / F&O-extension bands — a fill row
+  does not always say which it is, and the spec forbids claiming one (rule 2). Fills are bucketed by their own date
+  (entry = the earlier stated date, exit = the later).
+- 2026-11-08 is a SPECIAL SESSION, not a holiday (the pre-v4.6.0 ruling "a day with a session is not a holiday" kept):
+  `isTradingDay` true, but with no bundled hours there is no session row, so automatic marks refuse (the button still works).
+  Special sessions stay OUT of the 245-day annualisation count (R4 rule 4 needs an owner ruling to change it).
+- The desk's once-a-day reconnect moved 15:31 → 15:36 (the LATEST cash mark minute); the day's mark door opens at 15:31 and
+  each key waits for its own minute. The live window ends at the F&O mark minute, 15:45 (was a typed 15:40 = the new close).
+  The headline "market open" (desk + sidebar, now one function) runs to 15:40.
+- **`OPENALGO_DISCLOSURE_VERSION` "3" → "4"** — the accepted feed item said the mark is written at 15:31 IST; the file's own
+  recorded rule (bump when an accepted sentence stops being true about what the app writes) applies, so every install
+  re-accepts once. Rejected: rewording without a bump (the rule forbids it) and keeping 15:31 (it writes an F&O stock's
+  pre-auction price — the defect W1 exists to fix).
+- The Telegram digest FALLBACK is derived (F&O close + 5 = 15:45); the stored column default stays '15:35' (no migration,
+  spec W1); a stored value is the user's. A special Sunday session gets a digest; holidays keep getting one (the gate's
+  recorded reason: the digest reports the user's own data).
+- `lib/data/nse-holidays.json` retired: one holiday list, in the calendar. Its readers, tests and comments were repointed;
+  its `_note` warnings travel in the calendar's `_note`.
+- A calendar-coverage Data Quality warning from 60 days before `coversThrough` (2026-11-01) and after it; `/instruments`
+  shows as-of, covers-through, the CAS count, the secondary parts and the sources sha256.
+- MCX rows are SECONDARY (item 10 absent; R4's citation of MCX 068/2026); BSE holidays are assumed equal to NSE's
+  (item 9 absent) and BSE F&O carries no pre-open (no BSE file). Commodity evening fills are still not bucketed — owed.
+- W1 was built by the session itself rather than a builder agent: one wave, one owner of every file, and the session had
+  already read every call site and every primary file (a builder would have re-read ~150k tokens of the same).
+
+**Tests:** `tests/market-calendar.test.ts` (30: shape, provenance, non-overlap, the spec's minute pins on 2026-09-25, 2026-07-31
+vs 2026-08-04 bucketing, special sessions, coverage, and a scan that fails on a `"15:30"`, `15 * 60`, `330 * 60`, `5.5 * 60`
+or `+05:30` literal outside the calendar and `trading-day.ts` — both plants were caught before trusting it). 16 existing test
+files were edited: imports repointed (5), the holiday test ported to the calendar file, and the timing pins re-stated at
+the new minutes (15:36 reconnect, 15:45 window and digest, a CAS stock's 15:35 close, disclosure "4") — none loosened;
+the pre-CAS behaviour is pinned beside the new one where it matters. `scripts/state-drift-check.mjs` gained `ledger-fix-tests` (every [FIX]
+row in `docs/LEDGER.md` names a test on disk) — falsified with two planted rows (missing file; no file) before trusting it.
+
+**Independent review** (`skeptic`, Opus, 39 tool calls): 8 findings, none blocking; the data file rebuilt byte-equal from the
+owner's folder, the K3 minutes, the call-site sweep and client-bundle safety were tried and not broken. Fixed in the same
+commit: the "belongs to no session" copy said 09:00–16:00 while 15:40–15:50 is no band (now `sessionSpanLabel()`:
+"09:00–15:40 or 15:50–16:00"); the v4 disclosure said the mark is "written then" at 15:36 (a non-CAS stock's is written from
+15:31) and "on a weekend the button refuses" (a special Sunday session is a session) — both sentences now state the rule;
+no digest on Muhurat (hours not bundled; the Budget Sunday still gets one); `ledger-fix-tests` now fails on a `[FIX]` row
+in any shape it cannot parse; the module's "absent snapshot never throws" corrected (an absent file fails the build).
+**Recorded, not changed (owner-owed):** (a) the Telegram digest still goes out at the stored 15:35 for every install whose
+value is the column default — the derived 15:45 is only the unreadable-value fallback and the Settings placeholder, because
+the spec kept the column default; moving existing users needs an owner ruling (a migration, or treating '15:35' as "unset").
+(b) The spec's 15:15–15:40 "closing window" for unknown-membership stocks was built as the 15:30–15:40 `auction` band: a
+15:15–15:30 fill is continuous trading for a non-CAS stock or a derivative and stays "close" — the spec's intent (no fill
+after 15:30 reads as outside the session) holds; the owner may ask for the wider band. (c) The 15:45 F&O mark minute has no
+production consumer yet (derivative marks are never persisted); it feeds the live window and the digest fallback.
+**Gate:** `npm run verify` (vyuha-verifier) EXIT 0 before the review fixes — 474 files / 10,930 passed / 35 skipped (35 =
+the owner-file cases; `VYUHA_LICENSE_PEM` was set, so the 5 revocation cases ran), lint 0 errors, `next build` compiled; after
+the fixes: typecheck clean, eslint clean on every touched file, and the full vitest run below.
+Full vitest after the fixes: **474 files / 10,932 passed / 35 skipped**, exit 0.
+
+**Prose pass: 16 files / 2 findings / 58 tool calls** (doc-auditor on Sonnet; over its 40-call cap, stated). (1) CONFIRMED and
+fixed: this session had rewritten README.md's version-attributed "v4.1.0" block to 15:36 and "holidays refused", which
+contradicted its own v4.2.0 block — the block is restored as it shipped (15:31; holidays not modelled). (2) The client README's
+v4.1.0 row claiming holiday refusal is NOT drift: `tests/seams-v41-fix2.test.ts` S6b keeps that shipped row CURRENT on purpose
+(no user-facing surface may promise a write the app no longer makes), so it carries the current 15:36 wording. The seam test
+now reads the current-state docs (client README, PRIVACY, the setup guide) for 15:36 and README.md / CHANGELOG as history.

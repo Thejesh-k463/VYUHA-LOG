@@ -32,7 +32,8 @@ import { connectionModeLabel, saveDisabled, saveTargetLabel } from "@/components
 import { writeStored } from "@/components/layout/use-stored-value";
 // Pure domain, browser-safe (invariant 2): the ONE +5:30 definition and the
 // trading-day walk-back, so the gap line cannot invent a second calendar.
-import { previousTradingDay, todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso } from "@/lib/domain/trading-day";
+import { previousTradingDay } from "@/lib/domain/market-calendar";
 // The toggle's wording, shared with the file preview — one writer for the copy.
 import { KEEP_SELLS_SEPARATE_LABEL } from "@/lib/domain/import-shape";
 import {

@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
 import { TELEGRAM_DISCLOSURE } from "@/lib/domain/telegram-disclosure";
 import { telegramCardView } from "@/lib/telegram/card-state";
+import { DEFAULT_SEND_TIME } from "@/lib/telegram/digest-gate";
 
 export interface TelegramCardProps {
   enabled: boolean;
@@ -192,7 +193,7 @@ export function TelegramCard(props: TelegramCardProps) {
               <div className="space-y-1.5">
                 <Label>Send time (IST, market days)</Label>
                 <div className="flex gap-2">
-                  <Input value={sendTime} onChange={(e) => setSendTime(e.target.value)} placeholder="15:35" className="w-24" />
+                  <Input value={sendTime} onChange={(e) => setSendTime(e.target.value)} placeholder={DEFAULT_SEND_TIME} className="w-24" />
                   <Button
                     type="button"
                     variant="outline"

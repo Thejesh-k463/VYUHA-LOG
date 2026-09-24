@@ -28,6 +28,9 @@
 
 import { SESSIONS, sessionOf } from "./cockpit";
 
+/** The day a timed EXIT happened: the later of the two stated dates. */
+const exitDateOf = (t: ExitTrade): string | null => [t.buyDate, t.sellDate].filter((d): d is string => !!d).sort().pop() ?? null;
+
 export interface ExitTrade {
   netPnl: number;
   grossPnl: number;
@@ -35,6 +38,9 @@ export interface ExitTrade {
   isOpen: boolean;
   entryTime?: string | null;
   exitTime?: string | null;
+  /** The two stated dates; the LATER is the exit's day, whose session rules apply (v4.6.0 W1). */
+  buyDate?: string | null;
+  sellDate?: string | null;
   exitTrigger?: string | null;
   buyOrderCount?: number | null;
   sellOrderCount?: number | null;
@@ -116,10 +122,10 @@ export function exitClock(trades: ExitTrade[]): ExitClockReport {
   // the entry-side and exit-side charts must be directly comparable.
   const bands: BucketStat[] = [];
   for (const s of SESSIONS) {
-    const rows = timed.filter((t) => sessionOf(hhmm(t.exitTime)) === s.key);
+    const rows = timed.filter((t) => sessionOf(hhmm(t.exitTime), exitDateOf(t)) === s.key);
     if (rows.length > 0) bands.push(statOf(s.label, rows));
   }
-  const inSession = timed.filter((t) => sessionOf(hhmm(t.exitTime)) != null).length;
+  const inSession = timed.filter((t) => sessionOf(hhmm(t.exitTime), exitDateOf(t)) != null).length;
   return {
     bands,
     withTime: timed.length,

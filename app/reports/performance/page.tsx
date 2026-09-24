@@ -1,4 +1,5 @@
-import { annualisationBasis, annualisationNote, todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso } from "@/lib/domain/trading-day";
+import { annualisationBasis, annualisationNote } from "@/lib/domain/market-calendar";
 import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

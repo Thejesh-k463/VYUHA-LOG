@@ -1,6 +1,7 @@
 import { DEDUP_ALIAS_PREFIX, STALE_CLOSE_NOTE, lotIdentityHashes } from "@/lib/import/close-open-lots";
-import { normalizeDate } from "@/lib/domain/trading-day";
+import { normalizeDate, todayIstIso } from "@/lib/domain/trading-day";
 import { etfClass } from "@/lib/engine/etf-class";
+import { calendarCoverage } from "@/lib/domain/market-calendar";
 
 export type QualitySeverity = "critical" | "warning" | "info";
 
@@ -284,6 +285,11 @@ export const NO_PLAIN_COPY_NOTE =
   "No copy of this record stands alone: each one also carries an execution that closed a position in its own book, so removing one would delete that record too. The duplicate pull itself ends at Import → Disconnect.";
 
 export interface QualityInputs {
+  /**
+   * Today in IST (`todayIstIso()`), passed by the query layer so this module reads no
+   * clock. Absent → the market-calendar coverage check is not run (v4.6.0 W1).
+   */
+  today?: string;
   trades: QualityTrade[];
   markedTradeIds: Set<number>;
   knownSymbols: Set<string>;
@@ -442,8 +448,6 @@ export const STALE_OPEN_HREF = "/data-quality#stale-open";
  */
 const NO_SHORT_SEGMENTS = new Set(["eq_delivery", "eq_mtf"]);
 
-const IST_OFFSET_MS = 330 * 60_000;
-
 /**
  * The IST calendar day of a stored `created_at` (SQLite `datetime('now')`,
  * which is UTC). A row pulled at 00:30 IST is still the previous day in UTC,
@@ -456,7 +460,25 @@ export function istDayOf(createdAt: string | null | undefined): string | null {
   if (!m[2]) return m[1];
   const ms = Date.parse(`${m[1]}T${m[2]}Z`);
   if (Number.isNaN(ms)) return null;
-  return new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
+  // The one IST (`todayIstIso`), not a second +5:30 constant (R4 #14).
+  return todayIstIso(new Date(ms));
+}
+
+/**
+ * v4.6.0 W1 (R4 rule 5) — the bundled MARKET CALENDAR is running out. From
+ * `COVERAGE_WARN_DAYS` (60) before its `coversThrough`, and after it: past that
+ * date a weekday is treated as a session but NOT VERIFIED — holidays unknown, so a
+ * mark can be written on a day the exchange was shut. The fix is a calendar
+ * refresh in the next release (the owner downloads next year's holiday list).
+ */
+export function calendarCoverageIssue(today: string): QualityIssue | null {
+  const c = calendarCoverage(today);
+  if (c.state === "ok" || c.state === "absent") return null;
+  const detail =
+    c.state === "expired"
+      ? `The bundled market calendar covers through ${c.coversThrough}. Later days are treated as ordinary weekday sessions — exchange holidays are not known, so the automatic close mark can be written on a day the market was shut. Update Vyuha to get the new holiday list.`
+      : `The bundled market calendar covers through ${c.coversThrough} (${c.daysLeft} day${c.daysLeft === 1 ? "" : "s"} left). After that, weekdays are treated as unverified sessions until an update brings the next year's exchange holidays.`;
+  return { code: "calendar_coverage", severity: "warning", title: c.state === "expired" ? "Market calendar has run out" : "Market calendar runs out soon", detail, count: 1, href: "/instruments", ids: [] };
 }
 
 /** One open lot L and the opposite-side row S the book stored beside it. */
@@ -1722,6 +1744,10 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
   // the trades this call was handed, and a caller that resolved none is left
   // with exactly the report it had before.
   for (const issue of crossAccountIssues(i)) issues.push(issue);
+  if (i.today) {
+    const cov = calendarCoverageIssue(i.today);
+    if (cov) issues.push(cov);
+  }
 
   return { score: scoreIssues(issues), issues, affected: new Set(issues.flatMap((x) => x.ids ?? [])).size, checked: i.trades.length };
 }

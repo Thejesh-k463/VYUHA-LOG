@@ -78,7 +78,8 @@ import {
 import { ANGELONE_FEED_ITEMS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { showConnectPrompt } from "@/lib/live/connect-prompt";
-import { latestBhavcopyDate, todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso } from "@/lib/domain/trading-day";
+import { latestBhavcopyDate } from "@/lib/domain/market-calendar";
 import { DEFAULT_SETTLEMENT_RATES, type SettlementSummary } from "@/lib/analytics/settlement";
 import type { AngelOneHealth, AngelQuoteData } from "@/lib/quotes/angelone";
 import type { QuoteKey, QuoteProvider } from "@/lib/quotes/types";

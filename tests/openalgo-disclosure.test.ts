@@ -63,7 +63,7 @@ describe("the gate", () => {
       expect(g.reason).toMatch(/changed since you accepted/i);
       expect(isAckCurrent(stale), "isAckCurrent must agree with the gate").toBe(false);
     }
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
   });
 
   it("allows only when the switch is on AND the acceptance is current", () => {
@@ -225,7 +225,7 @@ describe("the live price feed disclosure (v2)", () => {
     expect(all, "the disclosure still says holidays are not modelled").not.toMatch(/not modelled/i);
     // A changed consent SENTENCE is a new consent VERSION (the constant's own
     // rule). Literal, so it cannot silently follow the module back down.
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
   });
 
   it("attributes the daily re-sign-in to the BROKER and to no regulator", () => {
