@@ -8141,9 +8141,9 @@ decision 6); changing an account's broker nulls both columns. Seed: Upstox **Plu
 `subscriptionMonthly` 0); **D2** Basic delivery / MTF brokerage `pct 0.025 cap 20` (was `0.001 cap 20`; the published
 min(2.5%, ₹20)); **D3** DP 18.50 → 20.00.
 
-**Measured.** The owner's 2026-08-28 option day: engine **156.89 default / 227.56 plus** vs the ledger's 226.57; the test pins
+**Measured.** The owner's 2026-08-28 option day: engine **156.76 default / 227.56 plus** vs the ledger's 226.57; the test pins
 the DIFFERENCE (6 orders × ₹10 × 1.18 = ₹70.80) and "within ₹2 of the ledger", never the absolute — the ~₹1 statutory
-rounding residual was sized (₹0.99 = ₹1.00 of STT rounded once on the contract note instead of per row, less ₹0.01 of SEBI/GST paisa) and ACCEPTED in v4.6.0 W7 (DECISIONS 2026-09-25 W7 entry). **Golden book re-pinned:** the Upstox trade report commit
+rounding residual was sized (₹0.99 = ₹1.00 of STT rounded once on the contract note instead of per row, less ₹0.01 of SEBI/GST paisa) and ACCEPTED in v4.6.0 W7 (DECISIONS 2026-09-26 W7 entry). **Golden book re-pinned:** the Upstox trade report commit
 `{net −355.66, charges 220.21}` → **`{net −443.14, charges 307.69}`**, gross −135.45 UNCHANGED: D2 +83.94 (four delivery legs
 go to the ₹20 cap) + D3 +3.54 (2 × 1.50 × 1.18); the option half stays 156.76. The broker-STATED realised-P&L pin
 (−1.05 / −4.28 / 3.23) did not move. Seed shape: keys 117 → 130, rows 558 → 620 (one broker × 13 combos).
@@ -9574,7 +9574,7 @@ tests. Run 2 (alone): **EXIT 0 in 290 s — 489 files / 11,579 passed / 35 skipp
 
 **Invalidated if:** a broker's tradebook is published where a derivative sale and its later buy in one file are NOT one position (then `OVERNIGHT_SHORT_NOTE`'s other reading becomes the default and the pairing needs a per-broker switch); or SQLite stops storing +Inf as `9e999` (the panel predicate's mark test).
 
-## 2026-09-25 — v4.6.0 W7 built: row 17 tax follow-ups — AIS purchase per entry leg, harvest STT per ladder, the FMV editor per scrip, the Upstox ~₹1 residual accepted (the LAST v4.6.0 wave; no migration)
+## 2026-09-26 — v4.6.0 W7 built: row 17 tax follow-ups — AIS purchase per entry leg, harvest STT per ladder, the FMV editor per scrip, the Upstox ~₹1 residual accepted (the LAST v4.6.0 wave; no migration)
 
 **Owner answers at the wave's start (both the recommended option):** Q1 — `/reports/harvest`'s STT split counts ONE trade per ladder per FY, the fills listed
 beneath each half (not "N realisations", not a bare relabel). Q2 — the ~₹1 Upstox residual, SIZED first: engine Plus **227.56** vs the ledger's **226.57**, gap
@@ -9621,15 +9621,18 @@ value and one-shot `useState` would carry a typed value across a person switch �
   once, so a day with N rows can differ by up to ₹0.50 × N per head"; the new `it` derives the delta from the seed's `sttPct` (never a literal) so it cannot agree
   with itself; DECISIONS 2026-09-22's "227.69 plus" corrected to 227.56.
 - No migration (0078 stays unused); no e2e added (Playwright 141 / 38 unchanged); README's test-file count 495 → 499.
+- **Model per role, recorded IN the repo for the first time (owner ruling 2026-09-25, every project, D101 in the hook proposals): NO Haiku anywhere — Opus for every role (builders, design reviewer, skeptic, gate, doc-auditor), Fable only on an escalation trigger, Sonnet only with a measured D-row.** AGENTS.md's "a cheap model" and `.claude/agents/vyuha-monitor.md` (`haiku`) / `vyuha-verifier.md` (`sonnet`) were still saying otherwise; fixed in the W7 close-out.
 
 **Why not the obvious thing:** trusting the legs on a staged row — two writers leave them contradicting the parent; a byte compare against GRANDFATHER_DATE — the
 tree admits DD-MM-YYYY (L-31); an FMV per account — FMV is a fact about the scrip and the tax person is the unit; a Data Quality warning for the residual — the
 owner chose explain, and a warning on every multi-position day would be noise; note-level rounding — a ₹1 fix with a golden-pin blast radius.
 
-**Gate (vyuha-verifier, alone, second run — the first was FAIL-J: three timeouts in files W7 does not touch while another session ran 14 python processes; the
+**Gate (vyuha-verifier, alone, second run — the first was FAIL-J: three timeouts in files W7 does not touch while another session ran 14–16 python processes; the
 three pass alone in 16 s): `npm run verify` EXIT 0 — **499 files / 11791 passed / 35 skipped**, lint 0 errors (6 pre-existing warnings), `next build` "Compiled successfully in 12.8s", Duration 153 s; `package-lock.json` and `package.json` unchanged; 22 dirty paths before and after.**
 
-**Prose pass:** recorded in the W7 close-out commit (this entry is amended there).
+**Prose pass:** 9 files / 5 CONFIRMED + 3 PLAUSIBLE findings / 39 tool calls (doc-auditor on Opus; the harness billed 41) — all five confirmed FIXED in this commit: the hook-proposal count is THREE (STATE ×3), AGENTS.md's "a cheap model" → Opus by the owner ruling, `.claude/agents/vyuha-monitor.md` haiku → opus and `vyuha-verifier.md` sonnet → opus, DECISIONS 2026-09-22's "156.89 default" → 156.76 (= 227.56 − 70.80, as tests/golden-books.test.ts:1015 pins), the paste block's DECISIONS grep date; the three PLAUSIBLE (spec plan text under the BUILT header, the python-count wording, the two placeholders) also settled
+
+**Close-out:** the W7 build commit `5548d46` on `33fc459`, CI 36181295940 SUCCESS 6/6 first pass; `npm run drift:close-out` 20 PASS / 1 FAIL / 3 SKIP — the one FAIL is `archive-append-only`: the twenty-eighth session's archived block ends WITHOUT a trailing newline (its stated sha256 f9c2c3ea… matches only that way), so ANY later append re-terminates that line and git counts one deletion; content verified byte-for-byte by sha, the check untouched (never the check), self-healing next session because this block ends with a newline.
 
 **Invalidated if:** AIS ever states purchase consideration NET of charges (then `purchaseRows` adds the leg's `chargesTotal`); or a reader starts applying
 `fmv31Jan2018` to a post-2018 lot (then the route's eligibility refusal is wrong, not the reader).

@@ -26,7 +26,7 @@ DOC — never the check** (a self-agreeing README guard is how "9745 tests" outl
 
 **The prose half is NOT optional either (owner, 2026-09-23: "every session, at the end or whenever best suited").**
 The executable check cannot read a sentence, so every session that changes a doc ALSO runs ONE bounded
-`doc-auditor` pass (a cheap model, ≤ 40 tool calls, findings only — it edits nothing) over the files the
+`doc-auditor` pass (on Opus — owner ruling 2026-09-25, no Haiku anywhere, every project; ≤ 40 tool calls, findings only — it edits nothing) over the files the
 session touched plus the four live docs (STATE §0–§3, AGENTS.md, CLAUDE.md, README.md's top) and the
 release copy when a version changed. Hunt list: a superseded version called current; a feature described
 as dormant/off that is on (auto-close); a rate key without `plan`; tax described per account; a stale
