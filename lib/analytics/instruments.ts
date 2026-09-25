@@ -8,12 +8,17 @@
 //
 //   user instruments.sector  →  taxonomy by ISIN  →  index map `industry`
 //
+// v4.6.0 W2: "taxonomy by ISIN" is now `classificationEntries()` — the exchanges'
+// own labels from the bundled stock universe (`lib/analytics/stock-universe.ts`)
+// FIRST, and sector-map.json only for an ISIN the universe cannot classify.
+//
 // with `sectorAliases` applied at every step so the legacy ALL-CAPS labels in
 // NSE's constituent files ("AUTOMOBILE") and the modern ones ("Automobile and
 // Auto Components") land in ONE bucket. The user's own tag still wins — it is
 // re-labelled through the alias table, never replaced.
 
 import sectorMap from "@/lib/data/sector-map.json";
+import { UNIVERSE, universeClassification, universeEntries, type Universe, type UniverseClassification } from "@/lib/analytics/stock-universe";
 
 export interface InstrumentRow {
   symbol: string; // canonical ticker (upper-cased)
@@ -143,6 +148,63 @@ export function* taxonomyEntries(): IterableIterator<TaxonomyEntry> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The company-level classification chain (v4.6.0 W2, owner answer 2026-09-25)
+// ---------------------------------------------------------------------------
+
+const UNIVERSE_SOURCE_TEXT: Record<UniverseClassification["source"], string> = {
+  "nse+bse": "NSE + BSE classification (both exchanges agree)",
+  nse: "NSE classification",
+  bse: "BSE classification",
+};
+
+function fromUniverse(c: UniverseClassification): TaxonomyEntry | null {
+  if (!c.sector) return null;
+  return {
+    isin: c.isin,
+    // The universe carries no symbols of its own — the sector chain re-keys by ISIN through the
+    // listing snapshot it was built from (`symbolByIsin`), so the two can never disagree.
+    symbol: "",
+    bseCode: null,
+    macro: c.macro,
+    sector: c.sector,
+    industry: c.industry,
+    basic: c.basic,
+    code: c.code,
+    // The exchanges' own classification is official — the tier the reconciliation sheet gave its
+    // BSE-filing rows. The universe outranks every sheet tier (owner answer: universe first).
+    confidence: "high",
+    source: UNIVERSE_SOURCE_TEXT[c.source],
+  };
+}
+
+/**
+ * The company-level classification for an ISIN: the exchanges' own label from the bundled stock
+ * universe first, then the older reconciliation sheet (`sector-map.json`) for an ISIN the universe
+ * cannot classify. Null when neither knows it.
+ */
+export function classificationByIsin(isin: string, u: Universe | null = UNIVERSE): TaxonomyEntry | null {
+  const c = universeClassification(isin, u);
+  const e = c ? fromUniverse(c) : null;
+  return e ?? taxonomyByIsin(isin);
+}
+
+/**
+ * Every company-level classification: the universe's, then the sheet's rows for ISINs the universe
+ * leaves blank (owner answer 2026-09-25: "universe first, map as fallback" — DECISIONS records how
+ * many fallback-only rows remain; the sheet is retired when that count is about zero).
+ */
+export function* classificationEntries(u: Universe | null = UNIVERSE): IterableIterator<TaxonomyEntry> {
+  const seen = new Set<string>();
+  for (const c of universeEntries(u)) {
+    const e = fromUniverse(c);
+    if (!e) continue;
+    seen.add(e.isin);
+    yield e;
+  }
+  for (const e of taxonomyEntries()) if (!seen.has(e.isin) && !(u && u.aliases[e.isin] && seen.has(u.aliases[e.isin]))) yield e;
+}
+
 /** Canonical sector labels, in the taxonomy's own spelling. */
 export function taxonomySectors(): string[] {
   return [...new Set(Object.values(TAXONOMY).map((t) => t[1]).filter(Boolean))].sort();
@@ -233,7 +295,14 @@ export function buildSectorResolution(
     byIsin.set(up(e.isin), e);
     const symbol = up(sources.symbolByIsin?.(e.isin) ?? e.symbol);
     const sector = canon(e.sector);
-    if (symbol && sector) out.set(symbol, { sector, tier: e.confidence, source: "taxonomy", raw: e.sector });
+    if (!symbol || !sector) continue;
+    // A ticker is not an identity: a BSE-only company can carry the same ticker as an NSE Emerge one (MAL,
+    // GSTL, SEL, ZEAL, RAJPUTANA on 2026-09-25). The symbol belongs to the company the listing snapshot
+    // ranks first (NSE > Emerge > BSE); another company's entry must not overwrite it, whatever the order.
+    // (If the owner itself is unclassified the ticker stays unclassified — never another company's sector.)
+    const owner = up(sources.isinBySymbol?.(symbol) ?? "");
+    if (owner && owner !== up(e.isin)) continue;
+    out.set(symbol, { sector, tier: e.confidence, source: "taxonomy", raw: e.sector });
   }
 
   // 1. the user's rows: a tag wins outright; an untagged row can still reach

@@ -81,6 +81,8 @@ describe("the loader hands the panel everything it renders", () => {
         "backfillDefaultDays",
         "backfillRateLimitMs",
         "capBands",
+        // v4.6.0 W2 (U2): the Nifty size-index membership lens, beside the AMFI cap band.
+        "indexBands",
         // Q52: the bundled classification maps, each with its sha256 and its
         // own as-of date — the panel prints both beside the rotation table.
         "mapDigests",

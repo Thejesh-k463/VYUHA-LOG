@@ -97,3 +97,5 @@ demo-takes/
 
 # Downloaded exchange listing files for scripts/build-isin-symbols.mjs (regenerable)
 /.isin-lists/
+# Resumable crawl cache for scripts/build-stock-universe.mjs (v4.6.0 W2; regenerable)
+/.universe-cache/

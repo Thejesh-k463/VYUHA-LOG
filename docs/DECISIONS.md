@@ -9047,3 +9047,99 @@ database may already hold ack "4" from W1 testing and would not re-prompt — sh
 **Prose pass: 14 files / 0 findings / 31 tool calls** (doc-auditor on Sonnet; it reported 22 in its text, the harness counted 31) over STATE §0/§3, this entry, LEDGER, both OpenAlgo setup guides, PRIVACY item 3, the Help strings, the disclosure, README, AGENTS.md, CLAUDE.md, the spec and the session log — every hunt item (the save-probe claim, disclosure "4", minimum 2.0.2.6, migration 0075, the 476 / 10,967 counts, the Telegram default, wave order) agreed with the code.
 
 **CI on `023b48f` (run 36061212371): 5/6 — "Lint, typecheck, unit tests, build" red on ONE test** that passed locally: `tests/privacy-feed-disclosure.test.ts` split paragraphs on `\n[ \t]*\n`, which never matches the CRLF Windows checkout, so every local run had judged each client doc as ONE paragraph (vacuous); Linux judged the real paragraphs and found the new card sentence naming the Live Desk's feed without the loopback default. Fixed in the follow-up commit: the split takes `\r?`, which reproduced the CI failure locally before the card was reworded (LEDGER F-12). `tests/help-content.test.ts` splits on `\n\s*\n` and was never affected. A new FAIL signature for STATE §0.3: a doc-copy test green on Windows and red on Linux = a CRLF-blind regex.
+
+## 2026-09-25 — v4.6.0 W2 built: the full stock universe (the exchanges' own classification + AMFI's cap band) and row 10
+
+Spec: `22-V460-BUILD/00-SPEC-PLAN.md` §2 W2 (rulings U1–U4); evidence: `22-V460-BUILD/research/R3-STOCK-UNIVERSE.md`.
+Built by the session itself (one wave, one owner — the crawl, the reconciliation and every reader of the band are one
+chain). Raw inputs + MANIFEST: `VYUHA/LIVE-DESK-RESEARCH/_data/stock-universe-2026-09-25/`.
+
+**Owner answers at the wave's start (one question group, 2 answers, both the recommended option):**
+- **Who runs the crawl:** this session, on the owner's machine, in the background (U1 had approved the crawl; the probe
+  found NSE, BSE-via-Node, AMFI and the structure PDF all answering 200). Rejected: the owner running it later (W2 half-done).
+- **sector-map.json vs the universe:** the universe FIRST, `sector-map.json` only for an ISIN the universe leaves blank;
+  retired once its fallback-only count is about zero. Rejected: retiring it now (a partial crawl would have lost coverage);
+  keeping it first (its 821 Screener-bridged rows would keep outranking the exchanges). **Measured after the build: 8
+  fallback-only ISINs of its 2,229** — the retirement candidate for v4.7.0.
+
+**Measured (the crawl, 2026-09-25 02:01–02:58 UTC):** NSE 6,360 calls over 3,156 symbols (3,120 classified, 36 empty),
+BSE 5,287 calls over 5,045 codes (4,784 classified, 261 empty — partly-paid `IN9…` lines and illiquid groups), **0 refusals
+(no 403/429)**. Universe: 5,745 ISINs (4,378 equity, 1,104 SME, 263 ETF); **5,450 of 5,482 equities classified (99.4%)** —
+nse+bse 2,390, bse only 2,339, nse only 721; **exchange agreement 98.4% over 2,429 dual-classified** (research sampled 28/29),
+39 disagreements (NSE used, listed in `dq`), 9 NSE legacy ALL-CAPS labels (never used), 11 ISINs where NSE's quote metadata
+states an older ISIN than its own daily list (DQ). AMFI (period ended 2026-06-30, sha256 = R3's copy): large 100, mid 147
+(the 3 missing are REITs — out of scope, U4), small 4,521; no band for 571 NSE Emerge (U3), 63 listed after the averaging
+period, 80 not in AMFI; 28 fallback joins (10 by NSE symbol, 18 by BSE symbol) → 28 superseded-ISIN aliases.
+
+**Session decisions (decision policy; the owner may overrule):**
+- **The listing snapshot was refreshed in the same run** (`isin-symbols.json` 5,691 → 5,745, as of 2026-09-25) so the
+  universe and the listing share one as-of; the universe carries NO symbols of its own (keyed on the snapshot's ISINs), so
+  the spec's FAIL line "isin-symbols and the universe disagreeing on a symbol" is impossible by construction. Rejected:
+  crawling the 2026-09-04 snapshot (54 new listings missed, delisted names crawled).
+- **Consequence found by `tests/isin-bundle-coverage.test.ts`:** the refresh dropped `INE887D01016` (scrip 512038, reissued
+  as `INE887D01024`), which the owner's demo book states — the code would have shown as a number again.
+  `bundledSymbolByIsin` now follows a SUPERSEDED ISIN to its successor through the universe's `aliases` (R3 §5). An ISIN is
+  never reissued to another company, so this is not the two-companies merge the module guards against. Limitation: aliases
+  come from the AMFI join, so a reissued NSE Emerge ISIN (not in AMFI) is not covered.
+- **BSE crawled for ALL 5,045 codes**, not only the 2,589 BSE-only — the dual-listed half is the free cross-validation
+  behind the 98.4% (≈20 min more).
+- **Storage:** the deepest structure code per ISIN + the structure's code → label table (dictionary-encoded, 439 KB). Not
+  emitted: `issuedSize` and `avgMcapCr` (R3 decision 7: not needed by the journal, and a market-cap figure invites the
+  guessed denominator invariant 6 forbids).
+- **The structure (12 / 22 / 59 / 197) is extracted by column x-position** from the PDF (plain text cannot tell a wrapped
+  label from its definition), with a page-break continuation rule, table pages only, and ONE asserted repair
+  ("Telecommunic ation" — a mid-word wrap in the PDF, 2 hits or the extraction refuses).
+- **Reconciliation:** ALL-CAPS NSE labels are the legacy scheme and never used; both sides validate but differ → NSE's (the
+  standing NSE-wins rule; R3 said "the label that validates", which does not decide between two valid ones); an ancestor and
+  its descendant agree (the deeper code is kept). **One label is allowlisted:** NSE's "Industrial Equipments" (BATLIBOI,
+  permitted to trade from 2026-04-20) is outside the 2023-07 structure — the build REFUSED on it, as designed; BSE's
+  validating basic is used.
+- **Universe rows sit at the `high` tier** of the sector chain; the confidence sentence says "from official sources" (was
+  "official filings" — exchange classification is not a filing).
+- **The index-map JSON field keeps its name `capBand`**; the code calls it `IndexBand` / `getIndexBandMap()`. Rejected:
+  rebuilding the index-map snapshot to rename a field.
+- **U3's "Data Quality line" is the universe's DQ report on `/instruments`** (no-band counts by reason, disagreements) plus
+  `reasonText` on every blank band — not a scored `/data-quality` issue: holding an SME stock is not a defect in the user's
+  journal and must not lower its score (the W8 precedent read "DQ line" the same way).
+- **Row 10:** `/instruments` shows the universe's and the index map's as-of and the sha256 of their CANONICAL JSON
+  (`getMapDigests()`, the Atlas's figure; now three maps). This discharges Q52's sha256 half for the index map.
+- **The Atlas's cap tab shows two tables:** "Cap bands (AMFI)" and "Index membership (Nifty size indices)"; W5's Atlas v3 may
+  redesign them.
+- Fixed in passing: `/instruments` printed "210F&O" (JSX dropped the space after W1's `{CAS_MEMBER_COUNT}`).
+
+**Tests:** `tests/stock-universe.test.ts` (new: the structure; reconciliation rules on synthetic crawl answers; the reader's
+absent/empty/foreign shapes; the bundled snapshot against the structure and the listing snapshot; the superseded-ISIN path;
+the `/instruments` source; no classification host in app code); `tests/cap-band.test.ts` rewritten (AMFI + the index lens);
+`atlas-query` (both tables), `atlas-map-digest` / `seams-v41` (three digested maps), `atlas-page` (`indexBands`),
+`sector-tier-ui` (the wording). **Red-on-revert 8/8** (legacy exclusion, NSE-wins, Emerge unbanded, unknown label refuses,
+coverage floor, universe outranks the sheet, empty snapshot = none, the extractor's page-break rule) + **4/4** after the
+review (ticker ownership, the issuer guard on fallback joins, the issuer guard on `superseded`, the agreement floor) =
+**12/12**, each with a green control.
+
+**Independent review** (`skeptic`, Opus, 48 tool calls) — every finding fixed BEFORE the commit:
+- **(medium) A ticker is not an identity in the sector chain.** `buildSectorResolution` keyed the universe by ticker, last
+  writer wins, and seven tickers are shared across boards — five NSE Emerge companies (MAL, GSTL, SEL, ZEAL, RAJPUTANA)
+  took a BSE-only company's sector (FOCUS was right by ordering alone). An entry now claims a ticker only if the listing
+  snapshot says its ISIN OWNS it (NSE > Emerge > BSE); an unclassified owner leaves the ticker unclassified. LEDGER F-13.
+- **(medium) No issuer guard on the AMFI fallback joins** (18 of 28 aliases came from a BSE-TICKER join, against the listing
+  module's own rule): a join by NSE symbol or BSE ticker must now stay inside one issuer (ISIN characters 1–7) or it gives
+  neither a band nor an alias. Today's data was clean (28/28 same issuer; `rejected: 0`, digest unchanged) — the builder is
+  now guarded, not only the data.
+- **(low-medium) Reissues outside AMFI were missed** (29 ISINs dropped by the refresh; 23 unresolvable, one a real reissue:
+  REMAGNET `INE519N01014` → `INE519N01022`). `build-isin-symbols.mjs` now compares with the snapshot it replaces and records
+  `superseded` old → new pairs (same issuer, by BSE code or same-board NSE symbol, carried forward): 7 today, TCC and
+  REMAGNET among them; the resolver reads it before the universe's aliases. LEDGER F-14. The snapshot was rebuilt from the
+  same cached lists against the HEAD copy (byIsin unchanged, 5,745).
+- **(low)** the agreement floor and the allowlist had no test (both added); the Atlas's AMFI card never named AMFI's period
+  (its note now ends with the six months it covers, 2026-06-30); two sha256 figures for one file (the file's own `digest`
+  covers taxonomy/byIsin/aliases, `/instruments` shows the whole canonical JSON — documented in AGENTS.md). Recorded, not
+  changed: `stock-universe.ts` carries no `server-only` marker (it is pure and imported by tests; no client imports it —
+  `next build` passed); BSE SME companies (486) DO carry an AMFI band — U3 names NSE Emerge only and AMFI ranks BSE SME
+  (STATE §0.4 item 7 notes it for the owner).
+
+**Gate:** `npm run verify` (vyuha-verifier) run 1 EXIT 1 — README's tests/ file count (476 vs 477; the doc fixed) and a 30 s
+`beforeAll` timeout in `tests/seams-v42-fix5.test.ts` while the skeptic loaded the machine (12/12 in isolation, 14 GB free —
+FAIL-J). Run 2 on the final tree: **EXIT 0 — 477 files / 11,005 passed / 35 skipped**, lint 0 errors / 6 warnings
+(pre-existing), `next build` compiled, `package-lock.json` untouched. Browser (vyuha-dev): `/instruments` shows the universe,
+index-map and calendar paragraphs with their sha256; the Atlas cap tab shows both tables; 0 console errors.
+**Prose pass: 8 files / 1 finding / 40 tool calls** (doc-auditor on Sonnet) over STATE §0/§3, AGENTS.md (the three bundled-data sections), CLAUDE.md, README (counts), this entry, the LEDGER rows, the spec (W2, status, wave order, §4) and the session log — every count re-derived from the JSON files and the tests/ folder agreed; the one finding was timing (the docs called W2 committed before the commit existed), resolved by this commit and the session log's close line.

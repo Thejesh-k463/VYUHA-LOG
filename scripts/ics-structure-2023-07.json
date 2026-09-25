@@ -1,0 +1,1464 @@
+{
+ "name": "NSE Indices Industry Classification Structure",
+ "version": "2023-07",
+ "provenance": {
+  "url": "https://nsearchives.nseindia.com/web/sites/default/files/inline-files/nse-indices_industry-classification-structure-2023-07.pdf",
+  "file": "nse-indices_industry-classification-structure-2023-07.pdf",
+  "sha256": "8ae58cbd10d7dd5184d76cfec6486f91c019026c8de329432b69c54ff7235f8b",
+  "bytes": 452220,
+  "extractedAt": "2026-09-25",
+  "extractedBy": "scripts/extract-ics-structure.mjs"
+ },
+ "counts": {
+  "macro": 12,
+  "sector": 22,
+  "industry": 59,
+  "basic": 197
+ },
+ "macro": [
+  {
+   "code": "IN01",
+   "label": "Commodities"
+  },
+  {
+   "code": "IN02",
+   "label": "Consumer Discretionary"
+  },
+  {
+   "code": "IN03",
+   "label": "Energy"
+  },
+  {
+   "code": "IN04",
+   "label": "Fast Moving Consumer Goods"
+  },
+  {
+   "code": "IN05",
+   "label": "Financial Services"
+  },
+  {
+   "code": "IN06",
+   "label": "Healthcare"
+  },
+  {
+   "code": "IN07",
+   "label": "Industrials"
+  },
+  {
+   "code": "IN08",
+   "label": "Information Technology"
+  },
+  {
+   "code": "IN09",
+   "label": "Services"
+  },
+  {
+   "code": "IN10",
+   "label": "Telecommunication"
+  },
+  {
+   "code": "IN11",
+   "label": "Utilities"
+  },
+  {
+   "code": "IN12",
+   "label": "Diversified"
+  }
+ ],
+ "sector": [
+  {
+   "code": "IN0101",
+   "label": "Chemicals",
+   "parent": "IN01"
+  },
+  {
+   "code": "IN0102",
+   "label": "Construction Materials",
+   "parent": "IN01"
+  },
+  {
+   "code": "IN0103",
+   "label": "Metals & Mining",
+   "parent": "IN01"
+  },
+  {
+   "code": "IN0104",
+   "label": "Forest Materials",
+   "parent": "IN01"
+  },
+  {
+   "code": "IN0201",
+   "label": "Automobile and Auto Components",
+   "parent": "IN02"
+  },
+  {
+   "code": "IN0202",
+   "label": "Consumer Durables",
+   "parent": "IN02"
+  },
+  {
+   "code": "IN0203",
+   "label": "Textiles",
+   "parent": "IN02"
+  },
+  {
+   "code": "IN0204",
+   "label": "Media, Entertainment & Publication",
+   "parent": "IN02"
+  },
+  {
+   "code": "IN0205",
+   "label": "Realty",
+   "parent": "IN02"
+  },
+  {
+   "code": "IN0206",
+   "label": "Consumer Services",
+   "parent": "IN02"
+  },
+  {
+   "code": "IN0301",
+   "label": "Oil, Gas & Consumable Fuels",
+   "parent": "IN03"
+  },
+  {
+   "code": "IN0401",
+   "label": "Fast Moving Consumer Goods",
+   "parent": "IN04"
+  },
+  {
+   "code": "IN0501",
+   "label": "Financial Services",
+   "parent": "IN05"
+  },
+  {
+   "code": "IN0601",
+   "label": "Healthcare",
+   "parent": "IN06"
+  },
+  {
+   "code": "IN0701",
+   "label": "Construction",
+   "parent": "IN07"
+  },
+  {
+   "code": "IN0702",
+   "label": "Capital Goods",
+   "parent": "IN07"
+  },
+  {
+   "code": "IN0801",
+   "label": "Information Technology",
+   "parent": "IN08"
+  },
+  {
+   "code": "IN0901",
+   "label": "Services",
+   "parent": "IN09"
+  },
+  {
+   "code": "IN1001",
+   "label": "Telecommunication",
+   "parent": "IN10"
+  },
+  {
+   "code": "IN1101",
+   "label": "Power",
+   "parent": "IN11"
+  },
+  {
+   "code": "IN1102",
+   "label": "Utilities",
+   "parent": "IN11"
+  },
+  {
+   "code": "IN1201",
+   "label": "Diversified",
+   "parent": "IN12"
+  }
+ ],
+ "industry": [
+  {
+   "code": "IN010101",
+   "label": "Chemicals & Petrochemicals",
+   "parent": "IN0101"
+  },
+  {
+   "code": "IN010102",
+   "label": "Fertilizers & Agrochemicals",
+   "parent": "IN0101"
+  },
+  {
+   "code": "IN010203",
+   "label": "Cement & Cement Products",
+   "parent": "IN0102"
+  },
+  {
+   "code": "IN010204",
+   "label": "Other Construction Materials",
+   "parent": "IN0102"
+  },
+  {
+   "code": "IN010301",
+   "label": "Ferrous Metals",
+   "parent": "IN0103"
+  },
+  {
+   "code": "IN010302",
+   "label": "Non - Ferrous Metals",
+   "parent": "IN0103"
+  },
+  {
+   "code": "IN010303",
+   "label": "Diversified Metals",
+   "parent": "IN0103"
+  },
+  {
+   "code": "IN010304",
+   "label": "Minerals & Mining",
+   "parent": "IN0103"
+  },
+  {
+   "code": "IN010305",
+   "label": "Metals & Minerals Trading",
+   "parent": "IN0103"
+  },
+  {
+   "code": "IN010401",
+   "label": "Paper, Forest & Jute Products",
+   "parent": "IN0104"
+  },
+  {
+   "code": "IN020101",
+   "label": "Automobiles",
+   "parent": "IN0201"
+  },
+  {
+   "code": "IN020102",
+   "label": "Auto Components",
+   "parent": "IN0201"
+  },
+  {
+   "code": "IN020201",
+   "label": "Consumer Durables",
+   "parent": "IN0202"
+  },
+  {
+   "code": "IN020301",
+   "label": "Textiles & Apparels",
+   "parent": "IN0203"
+  },
+  {
+   "code": "IN020401",
+   "label": "Media",
+   "parent": "IN0204"
+  },
+  {
+   "code": "IN020402",
+   "label": "Entertainment",
+   "parent": "IN0204"
+  },
+  {
+   "code": "IN020403",
+   "label": "Printing & Publication",
+   "parent": "IN0204"
+  },
+  {
+   "code": "IN020501",
+   "label": "Realty",
+   "parent": "IN0205"
+  },
+  {
+   "code": "IN020601",
+   "label": "Leisure Services",
+   "parent": "IN0206"
+  },
+  {
+   "code": "IN020602",
+   "label": "Other Consumer Services",
+   "parent": "IN0206"
+  },
+  {
+   "code": "IN020603",
+   "label": "Retailing",
+   "parent": "IN0206"
+  },
+  {
+   "code": "IN030101",
+   "label": "Gas",
+   "parent": "IN0301"
+  },
+  {
+   "code": "IN030102",
+   "label": "Oil",
+   "parent": "IN0301"
+  },
+  {
+   "code": "IN030103",
+   "label": "Petroleum Products",
+   "parent": "IN0301"
+  },
+  {
+   "code": "IN030104",
+   "label": "Consumable Fuels",
+   "parent": "IN0301"
+  },
+  {
+   "code": "IN040101",
+   "label": "Agricultural Food & other Products",
+   "parent": "IN0401"
+  },
+  {
+   "code": "IN040102",
+   "label": "Beverages",
+   "parent": "IN0401"
+  },
+  {
+   "code": "IN040103",
+   "label": "Cigarettes & Tobacco Products",
+   "parent": "IN0401"
+  },
+  {
+   "code": "IN040104",
+   "label": "Food Products",
+   "parent": "IN0401"
+  },
+  {
+   "code": "IN040105",
+   "label": "Personal Products",
+   "parent": "IN0401"
+  },
+  {
+   "code": "IN040106",
+   "label": "Household Products",
+   "parent": "IN0401"
+  },
+  {
+   "code": "IN040107",
+   "label": "Diversified FMCG",
+   "parent": "IN0401"
+  },
+  {
+   "code": "IN050101",
+   "label": "Finance",
+   "parent": "IN0501"
+  },
+  {
+   "code": "IN050102",
+   "label": "Banks",
+   "parent": "IN0501"
+  },
+  {
+   "code": "IN050103",
+   "label": "Capital Markets",
+   "parent": "IN0501"
+  },
+  {
+   "code": "IN050104",
+   "label": "Insurance",
+   "parent": "IN0501"
+  },
+  {
+   "code": "IN050105",
+   "label": "Financial Technology (Fintech)",
+   "parent": "IN0501"
+  },
+  {
+   "code": "IN060101",
+   "label": "Pharmaceuticals & Biotechnology",
+   "parent": "IN0601"
+  },
+  {
+   "code": "IN060102",
+   "label": "Healthcare Equipment & Supplies",
+   "parent": "IN0601"
+  },
+  {
+   "code": "IN060103",
+   "label": "Healthcare Services",
+   "parent": "IN0601"
+  },
+  {
+   "code": "IN070101",
+   "label": "Construction",
+   "parent": "IN0701"
+  },
+  {
+   "code": "IN070201",
+   "label": "Aerospace & Defense",
+   "parent": "IN0702"
+  },
+  {
+   "code": "IN070202",
+   "label": "Agricultural, Commercial & Construction Vehicles",
+   "parent": "IN0702"
+  },
+  {
+   "code": "IN070203",
+   "label": "Electrical Equipment",
+   "parent": "IN0702"
+  },
+  {
+   "code": "IN070204",
+   "label": "Industrial Manufacturing",
+   "parent": "IN0702"
+  },
+  {
+   "code": "IN070205",
+   "label": "Industrial Products",
+   "parent": "IN0702"
+  },
+  {
+   "code": "IN080101",
+   "label": "IT - Software",
+   "parent": "IN0801"
+  },
+  {
+   "code": "IN080102",
+   "label": "IT - Services",
+   "parent": "IN0801"
+  },
+  {
+   "code": "IN080103",
+   "label": "IT - Hardware",
+   "parent": "IN0801"
+  },
+  {
+   "code": "IN090101",
+   "label": "Engineering Services",
+   "parent": "IN0901"
+  },
+  {
+   "code": "IN090102",
+   "label": "Transport Services",
+   "parent": "IN0901"
+  },
+  {
+   "code": "IN090103",
+   "label": "Transport Infrastructure",
+   "parent": "IN0901"
+  },
+  {
+   "code": "IN090104",
+   "label": "Commercial Services & Supplies",
+   "parent": "IN0901"
+  },
+  {
+   "code": "IN090105",
+   "label": "Public Services",
+   "parent": "IN0901"
+  },
+  {
+   "code": "IN100101",
+   "label": "Telecom - Services",
+   "parent": "IN1001"
+  },
+  {
+   "code": "IN100102",
+   "label": "Telecom - Equipment & Accessories",
+   "parent": "IN1001"
+  },
+  {
+   "code": "IN110101",
+   "label": "Power",
+   "parent": "IN1101"
+  },
+  {
+   "code": "IN110201",
+   "label": "Other Utilities",
+   "parent": "IN1102"
+  },
+  {
+   "code": "IN120101",
+   "label": "Diversified",
+   "parent": "IN1201"
+  }
+ ],
+ "basic": [
+  {
+   "code": "IN010101001",
+   "label": "Commodity Chemicals",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101002",
+   "label": "Specialty Chemicals",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101003",
+   "label": "Carbon Black",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101004",
+   "label": "Dyes And Pigments",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101005",
+   "label": "Explosives",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101006",
+   "label": "Petrochemicals",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101007",
+   "label": "Printing Inks",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101008",
+   "label": "Trading - Chemicals",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010101009",
+   "label": "Industrial Gases",
+   "parent": "IN010101"
+  },
+  {
+   "code": "IN010102001",
+   "label": "Fertilizers",
+   "parent": "IN010102"
+  },
+  {
+   "code": "IN010102002",
+   "label": "Pesticides & Agrochemicals",
+   "parent": "IN010102"
+  },
+  {
+   "code": "IN010203001",
+   "label": "Cement & Cement Products",
+   "parent": "IN010203"
+  },
+  {
+   "code": "IN010204001",
+   "label": "Other Construction Materials",
+   "parent": "IN010204"
+  },
+  {
+   "code": "IN010301001",
+   "label": "Ferro & Silica Manganese",
+   "parent": "IN010301"
+  },
+  {
+   "code": "IN010301002",
+   "label": "Pig Iron",
+   "parent": "IN010301"
+  },
+  {
+   "code": "IN010301003",
+   "label": "Sponge Iron",
+   "parent": "IN010301"
+  },
+  {
+   "code": "IN010301004",
+   "label": "Iron & Steel",
+   "parent": "IN010301"
+  },
+  {
+   "code": "IN010302001",
+   "label": "Aluminium",
+   "parent": "IN010302"
+  },
+  {
+   "code": "IN010302002",
+   "label": "Copper",
+   "parent": "IN010302"
+  },
+  {
+   "code": "IN010302003",
+   "label": "Zinc",
+   "parent": "IN010302"
+  },
+  {
+   "code": "IN010302004",
+   "label": "Precious Metals",
+   "parent": "IN010302"
+  },
+  {
+   "code": "IN010303001",
+   "label": "Diversified Metals",
+   "parent": "IN010303"
+  },
+  {
+   "code": "IN010304001",
+   "label": "Industrial Minerals",
+   "parent": "IN010304"
+  },
+  {
+   "code": "IN010305001",
+   "label": "Trading - Metals",
+   "parent": "IN010305"
+  },
+  {
+   "code": "IN010305002",
+   "label": "Trading - Minerals",
+   "parent": "IN010305"
+  },
+  {
+   "code": "IN010401001",
+   "label": "Paper & Paper Products",
+   "parent": "IN010401"
+  },
+  {
+   "code": "IN010401002",
+   "label": "Forest Products",
+   "parent": "IN010401"
+  },
+  {
+   "code": "IN010401003",
+   "label": "Jute & Jute Products",
+   "parent": "IN010401"
+  },
+  {
+   "code": "IN020101001",
+   "label": "Passenger Cars & Utility Vehicles",
+   "parent": "IN020101"
+  },
+  {
+   "code": "IN020101002",
+   "label": "2/3 Wheelers",
+   "parent": "IN020101"
+  },
+  {
+   "code": "IN020101004",
+   "label": "Auto Dealer",
+   "parent": "IN020101"
+  },
+  {
+   "code": "IN020102001",
+   "label": "Auto Components & Equipments",
+   "parent": "IN020102"
+  },
+  {
+   "code": "IN020102006",
+   "label": "Tyres & Rubber Products",
+   "parent": "IN020102"
+  },
+  {
+   "code": "IN020102007",
+   "label": "Trading - Auto Components",
+   "parent": "IN020102"
+  },
+  {
+   "code": "IN020201002",
+   "label": "Cycles",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201003",
+   "label": "Consumer Electronics",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201018",
+   "label": "Furniture, Home Furnishing",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201019",
+   "label": "Ceramics",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201020",
+   "label": "Granites & Marbles",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201005",
+   "label": "Gems, Jewellery And Watches",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201006",
+   "label": "Glass - Consumer",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201007",
+   "label": "Household Appliances",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201008",
+   "label": "Houseware",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201009",
+   "label": "Leather And Leather Products",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201010",
+   "label": "Leisure Products",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201011",
+   "label": "Plastic Products - Consumer",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201012",
+   "label": "Plywood Boards/ Laminates",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201013",
+   "label": "Sanitary Ware",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201015",
+   "label": "Paints",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201016",
+   "label": "Diversified consumer products",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020201017",
+   "label": "Footwear",
+   "parent": "IN020201"
+  },
+  {
+   "code": "IN020301001",
+   "label": "Garments & Apparels",
+   "parent": "IN020301"
+  },
+  {
+   "code": "IN020301002",
+   "label": "Other Textile Products",
+   "parent": "IN020301"
+  },
+  {
+   "code": "IN020301003",
+   "label": "Trading - Textile Products",
+   "parent": "IN020301"
+  },
+  {
+   "code": "IN020401001",
+   "label": "Advertising & Media Agencies",
+   "parent": "IN020401"
+  },
+  {
+   "code": "IN020401002",
+   "label": "Electronic Media",
+   "parent": "IN020401"
+  },
+  {
+   "code": "IN020401003",
+   "label": "Web based media and service",
+   "parent": "IN020401"
+  },
+  {
+   "code": "IN020401004",
+   "label": "Print Media",
+   "parent": "IN020401"
+  },
+  {
+   "code": "IN020402001",
+   "label": "Film Production, Distribution & Exhibition",
+   "parent": "IN020402"
+  },
+  {
+   "code": "IN020402002",
+   "label": "Digital Entertainment",
+   "parent": "IN020402"
+  },
+  {
+   "code": "IN020402003",
+   "label": "Media & Entertainment",
+   "parent": "IN020402"
+  },
+  {
+   "code": "IN020402004",
+   "label": "TV Broadcasting & Software Production",
+   "parent": "IN020402"
+  },
+  {
+   "code": "IN020403001",
+   "label": "Printing & Publication",
+   "parent": "IN020403"
+  },
+  {
+   "code": "IN020501001",
+   "label": "Residential, Commercial Projects",
+   "parent": "IN020501"
+  },
+  {
+   "code": "IN020501002",
+   "label": "Real Estate related services",
+   "parent": "IN020501"
+  },
+  {
+   "code": "IN020501003",
+   "label": "Real Estate Investment Trusts (REITs)",
+   "parent": "IN020501"
+  },
+  {
+   "code": "IN020601001",
+   "label": "Hotels & Resorts",
+   "parent": "IN020601"
+  },
+  {
+   "code": "IN020601002",
+   "label": "Restaurants",
+   "parent": "IN020601"
+  },
+  {
+   "code": "IN020601003",
+   "label": "Amusement Parks/ Other Recreation",
+   "parent": "IN020601"
+  },
+  {
+   "code": "IN020601004",
+   "label": "Wellness",
+   "parent": "IN020601"
+  },
+  {
+   "code": "IN020601005",
+   "label": "Tour, Travel Related Services",
+   "parent": "IN020601"
+  },
+  {
+   "code": "IN020602001",
+   "label": "Education",
+   "parent": "IN020602"
+  },
+  {
+   "code": "IN020602002",
+   "label": "E-Learning",
+   "parent": "IN020602"
+  },
+  {
+   "code": "IN020602003",
+   "label": "Food Storage Facilities",
+   "parent": "IN020602"
+  },
+  {
+   "code": "IN020602004",
+   "label": "Other Consumer Services",
+   "parent": "IN020602"
+  },
+  {
+   "code": "IN020603001",
+   "label": "Speciality Retail",
+   "parent": "IN020603"
+  },
+  {
+   "code": "IN020603002",
+   "label": "Pharmacy Retail",
+   "parent": "IN020603"
+  },
+  {
+   "code": "IN020603003",
+   "label": "Diversified Retail",
+   "parent": "IN020603"
+  },
+  {
+   "code": "IN020603004",
+   "label": "E-Retail/ E- Commerce",
+   "parent": "IN020603"
+  },
+  {
+   "code": "IN020603005",
+   "label": "Internet & Catalogue Retail",
+   "parent": "IN020603"
+  },
+  {
+   "code": "IN020603006",
+   "label": "Distributors",
+   "parent": "IN020603"
+  },
+  {
+   "code": "IN030101001",
+   "label": "Gas Transmission/Mark eting",
+   "parent": "IN030101"
+  },
+  {
+   "code": "IN030101003",
+   "label": "LPG/CNG/PNG/LN G Supplier",
+   "parent": "IN030101"
+  },
+  {
+   "code": "IN030101004",
+   "label": "Trading - Gas",
+   "parent": "IN030101"
+  },
+  {
+   "code": "IN030102001",
+   "label": "Oil Exploration & Production",
+   "parent": "IN030102"
+  },
+  {
+   "code": "IN030102002",
+   "label": "Offshore Support Solution Drilling",
+   "parent": "IN030102"
+  },
+  {
+   "code": "IN030102003",
+   "label": "Oil Storage & Transportation",
+   "parent": "IN030102"
+  },
+  {
+   "code": "IN030102004",
+   "label": "Oil Equipment & Services",
+   "parent": "IN030102"
+  },
+  {
+   "code": "IN030103001",
+   "label": "Refineries & Marketing",
+   "parent": "IN030103"
+  },
+  {
+   "code": "IN030103002",
+   "label": "Lubricants",
+   "parent": "IN030103"
+  },
+  {
+   "code": "IN030104001",
+   "label": "Coal",
+   "parent": "IN030104"
+  },
+  {
+   "code": "IN030104002",
+   "label": "Trading - Coal",
+   "parent": "IN030104"
+  },
+  {
+   "code": "IN040101001",
+   "label": "Edible Oil",
+   "parent": "IN040101"
+  },
+  {
+   "code": "IN040101002",
+   "label": "Sugar",
+   "parent": "IN040101"
+  },
+  {
+   "code": "IN040101003",
+   "label": "Tea & Coffee",
+   "parent": "IN040101"
+  },
+  {
+   "code": "IN040101004",
+   "label": "Other Agricultural Products",
+   "parent": "IN040101"
+  },
+  {
+   "code": "IN040102001",
+   "label": "Breweries & Distilleries",
+   "parent": "IN040102"
+  },
+  {
+   "code": "IN040102002",
+   "label": "Other Beverages",
+   "parent": "IN040102"
+  },
+  {
+   "code": "IN040103001",
+   "label": "Cigarettes & Tobacco Products",
+   "parent": "IN040103"
+  },
+  {
+   "code": "IN040104001",
+   "label": "Animal Feed",
+   "parent": "IN040104"
+  },
+  {
+   "code": "IN040104002",
+   "label": "Dairy Products",
+   "parent": "IN040104"
+  },
+  {
+   "code": "IN040104003",
+   "label": "Other Food Products",
+   "parent": "IN040104"
+  },
+  {
+   "code": "IN040104004",
+   "label": "Packaged Foods",
+   "parent": "IN040104"
+  },
+  {
+   "code": "IN040104005",
+   "label": "Seafood",
+   "parent": "IN040104"
+  },
+  {
+   "code": "IN040104006",
+   "label": "Meat Products including Poultry",
+   "parent": "IN040104"
+  },
+  {
+   "code": "IN040105001",
+   "label": "Personal Care",
+   "parent": "IN040105"
+  },
+  {
+   "code": "IN040106001",
+   "label": "Household Products",
+   "parent": "IN040106"
+  },
+  {
+   "code": "IN040106004",
+   "label": "Stationary",
+   "parent": "IN040106"
+  },
+  {
+   "code": "IN040107001",
+   "label": "Diversified FMCG",
+   "parent": "IN040107"
+  },
+  {
+   "code": "IN050101001",
+   "label": "Financial Institution",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050101002",
+   "label": "Housing Finance Company",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050101003",
+   "label": "Investment Company",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050101004",
+   "label": "Non Banking Financial Company (NBFC)",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050101005",
+   "label": "Other Financial Services",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050101006",
+   "label": "Holding Company",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050101007",
+   "label": "Microfinance Institutions",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050101008",
+   "label": "Securitisation",
+   "parent": "IN050101"
+  },
+  {
+   "code": "IN050102001",
+   "label": "Public Sector Bank",
+   "parent": "IN050102"
+  },
+  {
+   "code": "IN050102002",
+   "label": "Private Sector Bank",
+   "parent": "IN050102"
+  },
+  {
+   "code": "IN050102003",
+   "label": "Other Bank",
+   "parent": "IN050102"
+  },
+  {
+   "code": "IN050103001",
+   "label": "Asset Management Company",
+   "parent": "IN050103"
+  },
+  {
+   "code": "IN050103002",
+   "label": "Depositories, Clearing Houses and Other Intermediaries",
+   "parent": "IN050103"
+  },
+  {
+   "code": "IN050103003",
+   "label": "Financial Products Distributor",
+   "parent": "IN050103"
+  },
+  {
+   "code": "IN050103004",
+   "label": "Ratings",
+   "parent": "IN050103"
+  },
+  {
+   "code": "IN050103005",
+   "label": "Exchange and Data Platform",
+   "parent": "IN050103"
+  },
+  {
+   "code": "IN050103006",
+   "label": "Stockbroking & Allied",
+   "parent": "IN050103"
+  },
+  {
+   "code": "IN050103007",
+   "label": "Other Capital Market related Services",
+   "parent": "IN050103"
+  },
+  {
+   "code": "IN050104001",
+   "label": "General Insurance",
+   "parent": "IN050104"
+  },
+  {
+   "code": "IN050104002",
+   "label": "Life Insurance",
+   "parent": "IN050104"
+  },
+  {
+   "code": "IN050104003",
+   "label": "Other Insurance Companies",
+   "parent": "IN050104"
+  },
+  {
+   "code": "IN050104004",
+   "label": "Insurance Distributors",
+   "parent": "IN050104"
+  },
+  {
+   "code": "IN050105001",
+   "label": "Financial Technology (Fintech)",
+   "parent": "IN050105"
+  },
+  {
+   "code": "IN060101001",
+   "label": "Pharmaceuticals",
+   "parent": "IN060101"
+  },
+  {
+   "code": "IN060101002",
+   "label": "Biotechnology",
+   "parent": "IN060101"
+  },
+  {
+   "code": "IN060102001",
+   "label": "Medical Equipment & Supplies",
+   "parent": "IN060102"
+  },
+  {
+   "code": "IN060103001",
+   "label": "Hospital",
+   "parent": "IN060103"
+  },
+  {
+   "code": "IN060103002",
+   "label": "Healthcare Service Provider",
+   "parent": "IN060103"
+  },
+  {
+   "code": "IN060103003",
+   "label": "Healthcare Research, Analytics & Technology",
+   "parent": "IN060103"
+  },
+  {
+   "code": "IN070101001",
+   "label": "Civil Construction",
+   "parent": "IN070101"
+  },
+  {
+   "code": "IN070201001",
+   "label": "Aerospace & Defense",
+   "parent": "IN070201"
+  },
+  {
+   "code": "IN070202001",
+   "label": "Tractors",
+   "parent": "IN070202"
+  },
+  {
+   "code": "IN070202002",
+   "label": "Commercial Vehicles",
+   "parent": "IN070202"
+  },
+  {
+   "code": "IN070202003",
+   "label": "Construction Vehicles",
+   "parent": "IN070202"
+  },
+  {
+   "code": "IN070202004",
+   "label": "Dealers – Commercial Vehicles, Tractors, Construction Vehicles",
+   "parent": "IN070202"
+  },
+  {
+   "code": "IN070203001",
+   "label": "Heavy Electrical Equipment",
+   "parent": "IN070203"
+  },
+  {
+   "code": "IN070203002",
+   "label": "Other Electrical Equipment",
+   "parent": "IN070203"
+  },
+  {
+   "code": "IN070204005",
+   "label": "Railway Wagons",
+   "parent": "IN070204"
+  },
+  {
+   "code": "IN070204006",
+   "label": "Ship Building & Allied Services",
+   "parent": "IN070204"
+  },
+  {
+   "code": "IN070204008",
+   "label": "Industrial Products",
+   "parent": "IN070204"
+  },
+  {
+   "code": "IN070205003",
+   "label": "Cables - Electricals",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205004",
+   "label": "Castings & Forgings",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205008",
+   "label": "Packaging",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205009",
+   "label": "Plastic Products - Industrial",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205011",
+   "label": "Rubber",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205012",
+   "label": "Other Industrial Products",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205013",
+   "label": "Glass - Industrial",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205014",
+   "label": "Aluminium, Copper & Zinc Products",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205015",
+   "label": "Iron & Steel Products",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205016",
+   "label": "Abrasives & Bearings",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205017",
+   "label": "Compressors, Pumps & Diesel Engines",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN070205018",
+   "label": "Electrodes & Refractories",
+   "parent": "IN070205"
+  },
+  {
+   "code": "IN080101001",
+   "label": "Computers - Software & Consulting",
+   "parent": "IN080101"
+  },
+  {
+   "code": "IN080101002",
+   "label": "Software Products",
+   "parent": "IN080101"
+  },
+  {
+   "code": "IN080102001",
+   "label": "IT Enabled Services",
+   "parent": "IN080102"
+  },
+  {
+   "code": "IN080103001",
+   "label": "Computers Hardware & Equipments",
+   "parent": "IN080103"
+  },
+  {
+   "code": "IN090101001",
+   "label": "Dredging",
+   "parent": "IN090101"
+  },
+  {
+   "code": "IN090102001",
+   "label": "Airline",
+   "parent": "IN090102"
+  },
+  {
+   "code": "IN090102002",
+   "label": "Logistics Solution Provider",
+   "parent": "IN090102"
+  },
+  {
+   "code": "IN090102003",
+   "label": "Railways",
+   "parent": "IN090102"
+  },
+  {
+   "code": "IN090102004",
+   "label": "Road Transport",
+   "parent": "IN090102"
+  },
+  {
+   "code": "IN090102005",
+   "label": "Shipping",
+   "parent": "IN090102"
+  },
+  {
+   "code": "IN090102006",
+   "label": "Transport Related Services",
+   "parent": "IN090102"
+  },
+  {
+   "code": "IN090103001",
+   "label": "Airport & Airport services",
+   "parent": "IN090103"
+  },
+  {
+   "code": "IN090103002",
+   "label": "Port & Port services",
+   "parent": "IN090103"
+  },
+  {
+   "code": "IN090103004",
+   "label": "Road Assets – Toll, Annuity, Hybrid- Annuity",
+   "parent": "IN090103"
+  },
+  {
+   "code": "IN090104001",
+   "label": "Trading & Distributors",
+   "parent": "IN090104"
+  },
+  {
+   "code": "IN090104002",
+   "label": "Consulting Services",
+   "parent": "IN090104"
+  },
+  {
+   "code": "IN090104003",
+   "label": "Data Processing Services",
+   "parent": "IN090104"
+  },
+  {
+   "code": "IN090104004",
+   "label": "Diversified Commercial Services",
+   "parent": "IN090104"
+  },
+  {
+   "code": "IN090104005",
+   "label": "Business Process Outsourcing (BPO)/ Knowledge Process Outsourcing (KPO)",
+   "parent": "IN090104"
+  },
+  {
+   "code": "IN090105001",
+   "label": "Urban Local Bodies",
+   "parent": "IN090105"
+  },
+  {
+   "code": "IN090105002",
+   "label": "Development Authority",
+   "parent": "IN090105"
+  },
+  {
+   "code": "IN100101001",
+   "label": "Telecom - Cellular & Fixed line services",
+   "parent": "IN100101"
+  },
+  {
+   "code": "IN100101002",
+   "label": "Telecom - Infrastructure",
+   "parent": "IN100101"
+  },
+  {
+   "code": "IN100101003",
+   "label": "Other Telecom Services",
+   "parent": "IN100101"
+  },
+  {
+   "code": "IN100102001",
+   "label": "Telecom - Equipment & Accessories",
+   "parent": "IN100102"
+  },
+  {
+   "code": "IN110101004",
+   "label": "Power Generation",
+   "parent": "IN110101"
+  },
+  {
+   "code": "IN110101005",
+   "label": "Integrated Power Utilities",
+   "parent": "IN110101"
+  },
+  {
+   "code": "IN110101002",
+   "label": "Power Trading",
+   "parent": "IN110101"
+  },
+  {
+   "code": "IN110101003",
+   "label": "Power - Transmission",
+   "parent": "IN110101"
+  },
+  {
+   "code": "IN110101006",
+   "label": "Power Distribution",
+   "parent": "IN110101"
+  },
+  {
+   "code": "IN110201001",
+   "label": "Water Supply & Management",
+   "parent": "IN110201"
+  },
+  {
+   "code": "IN110201002",
+   "label": "Waste Management",
+   "parent": "IN110201"
+  },
+  {
+   "code": "IN110201003",
+   "label": "Emergency Services",
+   "parent": "IN110201"
+  },
+  {
+   "code": "IN110201004",
+   "label": "Multi Utilities",
+   "parent": "IN110201"
+  },
+  {
+   "code": "IN110201005",
+   "label": "Other Utilities",
+   "parent": "IN110201"
+  },
+  {
+   "code": "IN120101001",
+   "label": "Diversified",
+   "parent": "IN120101"
+  }
+ ]
+}

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
+import universeJson from "@/lib/data/stock-universe.json";
 import { toSeries } from "@/lib/atlas";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 
@@ -183,19 +184,37 @@ describe("cap bands — the ISIN join, and its two different empties", () => {
     expect(view.classificationNote).toContain("Current classification, not point-in-time");
   });
 
-  it("buckets by NSE's own membership once ISINs can be matched to symbols", () => {
+  it("buckets by AMFI's categorisation once ISINs can be matched to symbols (U2)", () => {
     const insert = t.sqlite.prepare("INSERT INTO instruments (symbol, isin) VALUES (?, ?)");
     for (const u of UNIVERSE) if (u.isin) insert.run(u.symbol, u.isin);
     const view = q.getCapBands(seriesForTest(), SESSION_DATES[29]);
     expect(view.available).toBe(true);
     const large = view.rows.find((r) => r.band === "large")!;
     expect(large.label).toBe("Large cap");
-    expect(large.members).toBe(2); // RELIANCE + TCS
+    expect(large.members).toBe(2); // RELIANCE + TCS, AMFI large
     expect(large.denominator).toBe(2);
     expect(large.advancing).toBe(1); // RELIANCE drifts up, TCS down
     expect(large.advancePpm).toBe(500_000);
+    // The index map's small-cap name takes whatever band AMFI gives it (read from the universe, not assumed):
+    // the two definitions disagree on some names, which is exactly why they are two tables.
+    const smallAmfi = (universeJson as unknown as { byIsin: Record<string, (string | null)[]> }).byIsin[SMALL[1].isin!]?.[4] ?? null;
+    expect(view.rows.map((r) => r.band)).toEqual(smallAmfi && smallAmfi !== "large" ? ["large", smallAmfi] : ["large"]);
+    expect(view.rows.some((r) => r.band === "micro")).toBe(false);
+    // the list names its OWN period — the view's asOf is the price snapshot, a different clock
+    expect(view.classificationNote).toContain("AMFI's list: the six months ended 2026-06-30.");
+    // A name no band claims is counted, and counted NOWHERE else.
+    expect(view.unclassified).toBe(smallAmfi ? 1 : 2);
+  });
+
+  it("the index-membership lens buckets by NSE's own size indices, labelled as membership (Q47)", () => {
+    const view = q.getIndexBands(seriesForTest(), SESSION_DATES[29]);
+    expect(view.available).toBe(true);
+    expect(view.classificationNote).toMatch(/^Index membership, not a cap band/);
+    const large = view.rows.find((r) => r.band === "large")!;
+    expect(large.label).toBe("Nifty 100");
+    expect(large.members).toBe(2);
     expect(view.rows.map((r) => r.band)).toEqual(["large", "small"]);
-    // The name no size index claims is counted, and counted NOWHERE else.
+    expect(view.rows.find((r) => r.band === "small")!.label).toBe("Nifty Smallcap 250");
     expect(view.unclassified).toBe(1);
   });
 });

@@ -15,6 +15,8 @@ import {
   CAS_MEMBER_COUNT,
 } from "@/lib/domain/market-calendar";
 import { EmptyState } from "@/components/ui/empty-state";
+import { UNIVERSE, UNIVERSE_AS_OF } from "@/lib/analytics/stock-universe";
+import { getMapDigests } from "@/lib/queries/atlas";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,14 @@ export default function InstrumentsPage() {
   const ph = getPriceHistoryMeta();
   const calendarPrimary = CALENDAR_PROVENANCE.filter((p) => p.sourceKind === "primary").length;
   const calendarSecondary = CALENDAR_PROVENANCE.filter((p) => p.sourceKind === "secondary").length;
+  // Row 10 (v4.6.0 W2): every classification snapshot says how old it is AND which copy it is. The digest is
+  // the sha256 of the map's canonical JSON as the app loaded it (lib/queries/atlas.ts digestMap), the same
+  // figure the Atlas prints — not of the file on disk, whose line endings differ between checkouts.
+  const digests = new Map(getMapDigests().map((d) => [d.file, d]));
+  const indexDigest = digests.get("lib/data/nse-index-map.json");
+  const universeDigest = digests.get("lib/data/stock-universe.json");
+  const u = UNIVERSE;
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
   return (
     <>
@@ -62,7 +72,7 @@ export default function InstrumentsPage() {
             */}
             <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted-foreground" data-testid="market-calendar-provenance">
               Bundled <b>market calendar</b>: session hours, the closing auction, holidays and special sessions, as of{" "}
-              <b>{CALENDAR_AS_OF || "—"}</b>, covering through <b>{CALENDAR_COVERS_THROUGH || "—"}</b> ({CAS_MEMBER_COUNT} F&amp;O
+              <b>{CALENDAR_AS_OF || "—"}</b>, covering through <b>{CALENDAR_COVERS_THROUGH || "—"}</b> ({CAS_MEMBER_COUNT}{" "}F&amp;O
               stocks in the closing auction). Built from {calendarPrimary} exchange/SEBI file{calendarPrimary === 1 ? "" : "s"}
               {calendarSecondary > 0 ? (
                 <>
@@ -74,6 +84,40 @@ export default function InstrumentsPage() {
               . Refreshed manually, once per minor release.{" "}
               {CALENDAR_SOURCES_SHA256 ? (
                 <>sources sha256 <span className="break-all font-mono">{CALENDAR_SOURCES_SHA256}</span></>
+              ) : null}
+            </p>
+            {/*
+              v4.6.0 W2 (rulings U1-U4, row 10): the bundled STOCK UNIVERSE and the NSE index map, each with its
+              as-of and sha256. The universe paragraph is also its Data Quality report (R3 section 5): what it
+              could not classify, where the exchanges disagree, and why a band is blank (U3).
+            */}
+            <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted-foreground" data-testid="stock-universe-provenance">
+              Bundled <b>stock universe</b>:{" "}
+              {u ? (
+                <>
+                  {u.dq.classified.toLocaleString("en-IN")} of {u.dq.equity.toLocaleString("en-IN")} listed equities
+                  ({pct(u.dq.coverage)}) carry the exchanges&apos; own industry classification (NSE Indices structure,
+                  July 2023), as of <b>{UNIVERSE_AS_OF || "—"}</b>
+                  {u.dq.disagreements > 0 ? <>; NSE and BSE disagree on {u.dq.disagreements}, and NSE&apos;s label is used</> : null}.
+                  Cap band = AMFI&apos;s half-yearly list for the period ended <b>{u.cap.periodEnd ?? "—"}</b> (large{" "}
+                  {u.dq.bands.large}, mid {u.dq.bands.mid}, small {u.dq.bands.small.toLocaleString("en-IN")}); no band for{" "}
+                  {Object.entries(u.dq.capUnmatched)
+                    .map(([reason, count]) => `${count.toLocaleString("en-IN")} (${u.cap.reasons[reason] ?? reason})`)
+                    .join(", ")}
+                  . Your own sector tags always win. Refreshed manually, once per minor release.{" "}
+                  {universeDigest ? (
+                    <>sha256 <span className="break-all font-mono">{universeDigest.sha256}</span></>
+                  ) : null}
+                </>
+              ) : (
+                <>not bundled in this build — sectors come from the older sector map and the NSE index map only.</>
+              )}
+            </p>
+            <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted-foreground" data-testid="index-map-provenance">
+              Bundled <b>NSE index map</b> (sectoral and thematic index membership, and the Nifty size-index lens): as of{" "}
+              <b>{indexDigest?.asOf ?? "—"}</b>. Refreshed manually, once per minor release.{" "}
+              {indexDigest ? (
+                <>sha256 <span className="break-all font-mono">{indexDigest.sha256}</span></>
               ) : null}
             </p>
           </CardContent>

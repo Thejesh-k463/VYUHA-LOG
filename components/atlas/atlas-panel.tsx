@@ -341,51 +341,11 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
         </TabsContent>
 
         {/* ── TAB 3 · CAP BANDS ─────────────────────────────────────────── */}
+        {/* v4.6.0 W2 (ruling U2): AMFI's list is THE cap band; Nifty size-index
+            membership is a second, separately-labelled lens below it. */}
         <TabsContent value="cap" className="space-y-4 pt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Cap bands</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs">
-              {view.capBands.available ? (
-                <>
-                  {/* Q49/Q50: the band is today's membership, and the screen
-                      says so above the table rather than in a tooltip. */}
-                  <p className="rounded-md border border-accent/30 bg-accent/5 p-2 text-muted-foreground">
-                    {view.capBands.classificationNote}
-                  </p>
-                  <table className="w-full text-left tabular-nums">
-                    <thead className="text-muted-foreground">
-                      <tr>
-                        <th className="py-1 pr-3 font-medium">Band</th>
-                        <th className="py-1 pr-3 font-medium">Advancing</th>
-                        <th className="py-1 pr-3 font-medium">Members</th>
-                        <th className="py-1 pr-3 font-medium">Measured</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {view.capBands.rows.map((r) => (
-                        <tr key={r.band} className="border-t border-border/60">
-                          <td className="py-1 pr-3 text-foreground">{r.label}</td>
-                          <td className="py-1 pr-3">{ppmToPct(r.advancePpm, 1)}</td>
-                          <td className="py-1 pr-3">{n(r.members)}</td>
-                          <td className="py-1 pr-3 text-muted-foreground">
-                            {n(r.advancing)} of {n(r.denominator)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p className="text-muted-foreground">
-                    {n(view.capBands.unclassified)} symbols in the stored universe sit in none of the four size
-                    indices and are counted nowhere rather than pushed into the nearest band.
-                  </p>
-                </>
-              ) : (
-                <p className="text-muted-foreground">{view.capBands.reason}</p>
-              )}
-            </CardContent>
-          </Card>
+          <BandCard title="Cap bands (AMFI)" band="Band" view={view.capBands} testId="atlas-cap-bands" />
+          <BandCard title="Index membership (Nifty size indices)" band="Index" view={view.indexBands} testId="atlas-index-bands" />
         </TabsContent>
 
         {/* ── TAB 4 · MY NAMES ──────────────────────────────────────────── */}
@@ -554,6 +514,51 @@ function MapProvenance({ digests }: { digests: AtlasView["mapDigests"] }) {
         </span>
       ))}
     </p>
+  );
+}
+
+/** One band table — the AMFI cap band or the Nifty size-index lens (same shape, different meaning). */
+function BandCard({ title, band, view: v, testId }: { title: string; band: string; view: AtlasView["capBands"]; testId: string }) {
+  return (
+    <Card data-testid={testId}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-xs">
+        {v.available ? (
+          <>
+            {/* Q49/Q50: the band is today's classification, and the screen
+                says so above the table rather than in a tooltip. */}
+            <p className="rounded-md border border-accent/30 bg-accent/5 p-2 text-muted-foreground">{v.classificationNote}</p>
+            <table className="w-full text-left tabular-nums">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">{band}</th>
+                  <th className="py-1 pr-3 font-medium">Advancing</th>
+                  <th className="py-1 pr-3 font-medium">Members</th>
+                  <th className="py-1 pr-3 font-medium">Measured</th>
+                </tr>
+              </thead>
+              <tbody>
+                {v.rows.map((r) => (
+                  <tr key={r.band} className="border-t border-border/60">
+                    <td className="py-1 pr-3 text-foreground">{r.label}</td>
+                    <td className="py-1 pr-3">{ppmToPct(r.advancePpm, 1)}</td>
+                    <td className="py-1 pr-3">{n(r.members)}</td>
+                    <td className="py-1 pr-3 text-muted-foreground">
+                      {n(r.advancing)} of {n(r.denominator)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-muted-foreground">{v.unclassifiedNote}</p>
+          </>
+        ) : (
+          <p className="text-muted-foreground">{v.reason}</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

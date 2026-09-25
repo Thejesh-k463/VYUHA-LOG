@@ -41,8 +41,9 @@ const TABS: { label: string; what: string }[] = [
   {
     label: "Cap bands",
     what:
-      "Large, mid, small and micro, bucketed by NSE's own index membership rather than by a market cap Vyuha " +
-      "would have to guess at. Labelled as the current classification, not a point-in-time one.",
+      "Large, mid and small by AMFI's half-yearly list (SEBI's ranking) rather than by a market cap Vyuha would " +
+      "have to guess at, with Nifty size-index membership (micro included) as a separate table. Labelled as the " +
+      "current classification, not a point-in-time one.",
   },
   {
     label: "My names",

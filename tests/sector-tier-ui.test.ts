@@ -47,7 +47,7 @@ describe("sectorConfidenceSentence — pure, derived from tierPct, never invente
     expect(s.confidence.tierPct.high).toBe(50);
     expect(s.confidence.mediumPct).toBe(30);
     expect(sectorConfidenceSentence(s)).toBe(
-      "Sector labels: 50% from official filings, 30% from the bundled taxonomy (30% medium confidence), 20% unclassified.",
+      "Sector labels: 50% from official sources, 30% from the bundled taxonomy (30% medium confidence), 20% unclassified.",
     );
   });
 
@@ -61,7 +61,7 @@ describe("sectorConfidenceSentence — pure, derived from tierPct, never invente
       capital,
     );
     expect(sectorConfidenceSentence(s)).toBe(
-      "Sector labels: 50% from official filings, 50% from the bundled taxonomy (25% medium confidence), 0% unclassified.",
+      "Sector labels: 50% from official sources, 50% from the bundled taxonomy (25% medium confidence), 0% unclassified.",
     );
   });
 
@@ -75,7 +75,7 @@ describe("sectorConfidenceSentence — pure, derived from tierPct, never invente
     );
     expect(s.classifiedPct).toBe(100);
     expect(sectorConfidenceSentence(s)).toBe(
-      "Sector labels: 100% from official filings, 0% from the bundled taxonomy (0% medium confidence), 0% unclassified.",
+      "Sector labels: 100% from official sources, 0% from the bundled taxonomy (0% medium confidence), 0% unclassified.",
     );
   });
 
@@ -89,7 +89,7 @@ describe("sectorConfidenceSentence — pure, derived from tierPct, never invente
       capital,
     );
     expect(sectorConfidenceSentence(s)).toBe(
-      "Sector labels: 40% your own tags, 0% from official filings, 0% from the bundled taxonomy (0% medium confidence), 30% from the NSE index map, 30% of unstated source, 0% unclassified.",
+      "Sector labels: 40% your own tags, 0% from official sources, 0% from the bundled taxonomy (0% medium confidence), 30% from the NSE index map, 30% of unstated source, 0% unclassified.",
     );
   });
 

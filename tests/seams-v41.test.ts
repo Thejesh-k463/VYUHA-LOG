@@ -73,6 +73,7 @@ import { compareAll, sizePctVolatility, sizeVolatilityUnit } from "@/lib/risk/si
 // Data, not code: importing the JSON binds no database connection.
 import nseIndexMapJson from "@/lib/data/nse-index-map.json";
 import sectorMapJson from "@/lib/data/sector-map.json";
+import stockUniverseJson from "@/lib/data/stock-universe.json";
 
 const ROOT = path.resolve(__dirname, "..");
 const PRIVACY = fs.readFileSync(path.join(ROOT, "docs/client/PRIVACY.md"), "utf8");
@@ -735,9 +736,10 @@ describe("seam 6 — the volatility pair re-reads compareAll rather than re-comp
 describe("seam 6b — the map digests describe the exact JSON the sector chain grouped by", () => {
   const digestOf = (json: unknown) => createHash("sha256").update(JSON.stringify(json), "utf8").digest("hex");
 
-  it("both digested files are the two the resolution reads, byte for byte", () => {
+  it("the digested files are the three the resolution reads, byte for byte", () => {
     const digests = atlas.getMapDigests();
-    expect(digests.map((d) => d.file)).toEqual(["lib/data/sector-map.json", "lib/data/nse-index-map.json"]);
+    expect(digests.map((d) => d.file)).toEqual(["lib/data/stock-universe.json", "lib/data/sector-map.json", "lib/data/nse-index-map.json"]);
+    expect(digests.find((d) => d.file === "lib/data/stock-universe.json")!.sha256).toBe(digestOf(stockUniverseJson));
     expect(digests.find((d) => d.file === "lib/data/sector-map.json")!.sha256).toBe(digestOf(sectorMapJson));
     expect(digests.find((d) => d.file === "lib/data/nse-index-map.json")!.sha256).toBe(digestOf(nseIndexMapJson));
     for (const d of digests) expect(d.sha256).toMatch(/^[0-9a-f]{64}$/);

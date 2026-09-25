@@ -5,12 +5,13 @@ import { asc, inArray } from "drizzle-orm";
 import {
   buildSectorMap,
   buildSectorResolution,
-  taxonomyEntries,
+  classificationEntries,
   type SectorResolution,
   type SectorSources,
 } from "@/lib/analytics/instruments";
 import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
+import { UNIVERSE, universeCapEntries, type AmfiCapBand } from "@/lib/analytics/stock-universe";
 import { INDEX_UNDERLYINGS } from "@/lib/domain/constants";
 import type { InstrumentLotMap } from "@/lib/analytics/per-lot";
 
@@ -100,15 +101,18 @@ export function getIndexLotMap(): InstrumentLotMap {
  * The bundled sources behind the sector chain. Reference data, not account
  * data — a sector is a fact about the market, not about one book.
  *
- *   user instruments.sector → taxonomy by ISIN (sector-map.json) → index map
+ *   user instruments.sector → stock universe by ISIN (the exchanges' own label)
+ *     → sector-map.json by ISIN (only where the universe is blank) → index map
  *
- * The taxonomy's ISINs are re-keyed to the ticker every other surface uses
- * through the listing snapshot (NSE wins a dual listing); an untagged user
- * row reaches the taxonomy through its own ISIN or the snapshot's.
+ * The user's tag is never overwritten (it wins outright in the chain; the
+ * instruments table is written COALESCE). ISINs are re-keyed to the ticker
+ * every other surface uses through the listing snapshot (NSE wins a dual
+ * listing); an untagged user row reaches the taxonomy through its own ISIN or
+ * the snapshot's.
  */
 function sectorSources(): SectorSources {
   return {
-    taxonomy: taxonomyEntries(),
+    taxonomy: classificationEntries(),
     index: (nseIndexMap as { symbols?: SectorSources["index"] }).symbols ?? {},
     symbolByIsin: bundledSymbolByIsin,
     isinBySymbol: bundledIsinBySymbol,
@@ -167,29 +171,65 @@ export function getSymbolsByIsin(isins: string[]): Map<string, string> {
   return out;
 }
 
-/** SEBI-style size bucket, from NSE's own index membership (Q47). */
-export type CapBand = "large" | "mid" | "small" | "micro";
+/**
+ * THE cap band (owner ruling U2, v4.6.0 W2): AMFI's half-yearly categorisation
+ * under SEBI's 6 Oct 2017 circular — large (rank 1–100), mid (101–250), small.
+ * There is no "micro" here: micro exists only as Nifty Microcap 250 membership,
+ * which is the separate index-membership lens (`IndexBand`, below).
+ */
+export type CapBand = AmfiCapBand;
+
+export interface CapBandInfo {
+  band: CapBand;
+  /** AMFI's rank by six-month average market cap, 1 = largest. */
+  rank: number | null;
+  /** AMFI's averaging period end — the list governs the half-year after it. */
+  asOf: string | null;
+}
 
 /**
- * ISIN (upper) → cap band, for every symbol the bundled map can classify.
+ * ISIN (upper) → AMFI cap band, for every ISIN of the bundled stock universe
+ * that AMFI ranks.
  *
  * Reference data, not account data — a company's size bucket is a fact about
  * the market. Read-only: a fresh Map each call, so a caller that mutates the
  * result cannot poison the bundled snapshot for the rest of the process.
  *
  * Keyed by ISIN because a ticker is not an identity (NSE reuses one across a
- * rename) and every caller that wants a cap band — positions, Atlas — already
- * carries the ISIN. "unclassified" symbols (in Nifty 200/500 but in none of the
- * four band-defining lists) are OMITTED rather than shipped as a band: an
- * absent key says "we do not know", which is the truth, and invariant 6 says
- * not to fabricate the alternative.
+ * rename). Unranked ISINs are OMITTED — NSE Emerge (ruling U3: "SME — not
+ * ranked by AMFI"), a listing after AMFI's averaging period, anything AMFI does
+ * not list — because an absent key says "we do not know" and invariant 6 says
+ * not to fabricate the alternative. `lib/analytics/stock-universe.ts`
+ * `universeCap()` says WHY for one ISIN.
  *
- * The bands are effective-dated in the file itself (`sizeIndices[*]
- * .effective_at` / `.captured_at`, Q50) — this is the CURRENT classification,
- * never a point-in-time one, and any UI that shows it must say so.
+ * This is the CURRENT list (one period end for the whole file), never a
+ * point-in-time one, and any UI that shows it must say so.
  */
-export function getCapBandMap(): Map<string, CapBand> {
-  const out = new Map<string, CapBand>();
+export function getCapBandMap(): Map<string, CapBandInfo> {
+  const out = new Map<string, CapBandInfo>();
+  const asOf = UNIVERSE?.cap.periodEnd ?? null;
+  for (const e of universeCapEntries()) out.set(e.isin, { band: e.band, rank: e.rank, asOf });
+  return out;
+}
+
+/**
+ * Nifty SIZE-INDEX membership (Q47) — the "index membership" lens of the Atlas,
+ * NOT the cap band (ruling U2). `large` = Nifty 100, `mid` = Midcap 150,
+ * `small` = Smallcap 250, `micro` = Microcap 250; a name in two lists takes the
+ * larger. Read off the bundled NSE index map's per-symbol `capBand` field,
+ * whose name predates the ruling — the field is index membership.
+ */
+export type IndexBand = "large" | "mid" | "small" | "micro";
+
+/**
+ * ISIN (upper) → Nifty size-index band. "unclassified" symbols (in Nifty
+ * 200/500 but in none of the four band-defining lists) are OMITTED rather than
+ * shipped as a band. The bands are effective-dated in the file itself
+ * (`sizeIndices[*].effective_at` / `.captured_at`, Q50) — the CURRENT
+ * membership, never a point-in-time one.
+ */
+export function getIndexBandMap(): Map<string, IndexBand> {
+  const out = new Map<string, IndexBand>();
   const rows = (nseIndexMap as { symbols?: Record<string, { isin?: string | null; capBand?: string }> }).symbols ?? {};
   for (const v of Object.values(rows)) {
     const isin = String(v.isin ?? "").trim().toUpperCase();

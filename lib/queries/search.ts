@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, sqlite } from "@/lib/db";
 import { advanceTaxChallans, instruments, playbooks, symbolAliases, tradingSessions } from "@/lib/db/schema";
 import { getEntitlement } from "@/lib/queries/license";
-import { taxonomyByIsin } from "@/lib/analytics/instruments";
+import { classificationByIsin } from "@/lib/analytics/instruments";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
 import isinSymbols from "@/lib/data/isin-symbols.json";
@@ -130,7 +130,7 @@ function symbolList(): SymbolCandidate[] {
 }
 
 function sectorLine(isin: string): string | null {
-  const tx = taxonomyByIsin(isin);
+  const tx = classificationByIsin(isin);
   if (!tx) return null;
   return [tx.macro, tx.sector, tx.industry].filter(Boolean).join(" · ") || null;
 }

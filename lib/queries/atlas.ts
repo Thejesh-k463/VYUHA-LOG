@@ -21,9 +21,10 @@ import {
   type SectorRef,
   type Series,
 } from "@/lib/atlas";
-import { getCapBandMap, getSectorResolution, getSymbolsByIsin, type CapBand } from "@/lib/queries/instruments";
+import { getCapBandMap, getIndexBandMap, getSectorResolution, getSymbolsByIsin, type CapBand, type IndexBand } from "@/lib/queries/instruments";
 import nseIndexMapJson from "@/lib/data/nse-index-map.json";
 import sectorMapJson from "@/lib/data/sector-map.json";
+import stockUniverseJson from "@/lib/data/stock-universe.json";
 import { getEntitlement } from "@/lib/queries/license";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import {
@@ -111,12 +112,14 @@ export interface MapDigest {
 }
 
 /**
- * BOTH bundled files, because the sector chain in `getSectorResolution()`
- * reads both: the ISIN taxonomy classifies what it covers and NSE's index map
- * classifies the rest (and defines the cap bands). A digest of one of them
- * would pin half of what the Sectors and Cap bands tabs print.
+ * EVERY bundled file the Sectors and Cap bands tabs read: the sector chain in
+ * `getSectorResolution()` reads the stock universe first (v4.6.0 W2), the ISIN
+ * taxonomy for what the universe leaves blank and NSE's index map for the rest;
+ * the universe also carries AMFI's cap band and the index map the size-index
+ * membership lens. A digest of one of them would pin part of what those tabs print.
  */
 const MAP_SOURCES: readonly { file: string; label: string; json: unknown }[] = [
+  { file: "lib/data/stock-universe.json", label: "Stock universe", json: stockUniverseJson },
   { file: "lib/data/sector-map.json", label: "Sector map", json: sectorMapJson },
   { file: "lib/data/nse-index-map.json", label: "NSE index map", json: nseIndexMapJson },
 ];
@@ -389,39 +392,55 @@ export function refreshAtlasSnapshot(opts: { force?: boolean; now?: Date } = {})
 }
 
 // ---------------------------------------------------------------------------
-// Cap bands (Q47) — SEBI-style buckets from INDEX MEMBERSHIP, or nothing.
+// Cap bands — AMFI's categorisation (ruling U2), and Nifty size-index
+// membership as a SEPARATE lens (Q47). Never one presented as the other.
 // ---------------------------------------------------------------------------
 
 /**
- * The four SEBI-style buckets, in size order, with the label the UI prints.
+ * THE cap band (owner ruling U2, v4.6.0 W2), with the label the UI prints.
  *
- * The band itself is NOT decided here. `getCapBandMap()` reads it off the
- * bundled NSE index map, where it was written by the build-time script from
- * NSE's own Nifty 100 / Midcap 150 / Smallcap 250 / Microcap 250 constituent
- * lists (research answers Q46/Q47). Vyuha does not derive a band from a market
- * cap it computed itself: it has no share-count source, and a bucket built on
- * a guessed denominator is exactly what invariant 6 forbids.
+ * The band is NOT decided here. `getCapBandMap()` reads AMFI's half-yearly
+ * categorisation (SEBI circular 6 Oct 2017: rank 1–100 large, 101–250 mid, the
+ * rest small) off the bundled stock universe. Vyuha does not derive a band from
+ * a market cap it computed itself: a bucket built on a guessed denominator is
+ * exactly what invariant 6 forbids.
  */
 export const CAP_BAND_LABELS: { band: CapBand; label: string }[] = [
   { band: "large", label: "Large cap" },
   { band: "mid", label: "Mid cap" },
   { band: "small", label: "Small cap" },
-  { band: "micro", label: "Micro cap" },
 ];
 
 /**
- * Q49, and the standing rule from Q50. The bundled map carries ONE pair of
- * dates for the whole file, so a band is today's membership applied to today's
- * move. It is never backdated, and the screen has to say so — a bucket that
- * looks point-in-time and is not would quietly rewrite history every time NSE
- * rebalances.
+ * The index-membership lens (Q47): which Nifty SIZE index a name sits in. It
+ * disagreed with AMFI on 37 of 826 names when measured (research R3 §0.6) —
+ * two different definitions — so it is labelled as membership, never as a cap
+ * band, and "micro" lives only here.
+ */
+export const INDEX_BAND_LABELS: { band: IndexBand; label: string }[] = [
+  { band: "large", label: "Nifty 100" },
+  { band: "mid", label: "Nifty Midcap 150" },
+  { band: "small", label: "Nifty Smallcap 250" },
+  { band: "micro", label: "Nifty Microcap 250" },
+];
+
+/**
+ * Q49, and the standing rule from Q50. The bundled list carries ONE period for
+ * the whole file, so a band is today's classification applied to today's move.
+ * It is never backdated, and the screen has to say so — a bucket that looks
+ * point-in-time and is not would quietly rewrite history every time AMFI
+ * re-ranks or NSE rebalances.
  */
 export const CAP_BAND_CLASSIFICATION_NOTE =
-  "Current classification, not point-in-time: each name sits in the band its index membership puts it in today, " +
-  "and the band is not backdated to the session being measured.";
+  "Current classification, not point-in-time: each name sits in the band AMFI's latest half-yearly list puts it in " +
+  "(SEBI's large / mid / small cap ranking), and the band is not backdated to the session being measured.";
+
+export const INDEX_BAND_CLASSIFICATION_NOTE =
+  "Index membership, not a cap band: each name sits in the Nifty size index that lists it today (a name in two " +
+  "takes the larger), and the membership is not backdated to the session being measured.";
 
 export interface CapBandRow {
-  band: CapBand;
+  band: string;
   label: string;
   members: number;
   advancing: number | null;
@@ -432,7 +451,7 @@ export interface CapBandRow {
 
 export interface CapBandView {
   available: boolean;
-  /** Why the tab is empty, in the user's words. Never a bare zero. */
+  /** Why the table is empty, in the user's words. Never a bare zero. */
   reason: string;
   rows: CapBandRow[];
   asOf: IsoDate | null;
@@ -440,26 +459,33 @@ export interface CapBandView {
   classificationNote: string;
   /** Symbols in the universe that no band claims — stated, never bucketed. */
   unclassified: number;
+  /** The sentence under the table that says what `unclassified` counts. */
+  unclassifiedNote: string;
 }
 
 /**
- * Cap bands for the stored universe, from the bundled size-index membership.
+ * One band table over the stored universe.
  *
  * TWO DIFFERENT EMPTIES, SAID DIFFERENTLY. "No rows" is a fact about a table
  * and it has two causes here, which are not the same problem for the user:
- * the bundled map may carry no `capBand` at all (it did until the map rebuild
- * of Q46 landed), or the map may classify companies this database cannot name
- * because no instrument dump has been imported yet. Collapsing both into one
- * "no data" line would send the user to fix the wrong thing.
+ * the bundled source may carry no bands at all, or it may classify companies
+ * this database cannot name because no instrument dump has been imported yet.
+ * Collapsing both into one "no data" line would send the user to fix the wrong
+ * thing.
  *
- * The join is by ISIN because `getCapBandMap()` is keyed by ISIN — a ticker is
- * not an identity, NSE reuses one across a rename — and `instruments` is what
- * turns an ISIN back into the symbol `price_history` stores.
+ * The join is by ISIN — a ticker is not an identity, NSE reuses one across a
+ * rename — and `instruments` is what turns an ISIN back into the symbol
+ * `price_history` stores.
  */
-export function getCapBands(series: Series[], asOf: IsoDate | null): CapBandView {
-  const bandByIsin = getCapBandMap();
+function bandView(
+  series: Series[],
+  asOf: IsoDate | null,
+  bandByIsin: Map<string, string>,
+  labels: { band: string; label: string }[],
+  text: { note: string; noSource: string; noun: string; unclassified: (n: string) => string },
+): CapBandView {
   const symbolByIsin = getSymbolsByIsin([...bandByIsin.keys()]);
-  const bandOf = new Map<string, CapBand>();
+  const bandOf = new Map<string, string>();
   for (const [isin, band] of bandByIsin) {
     const symbol = symbolByIsin.get(isin);
     if (symbol) bandOf.set(symbol.toUpperCase(), band);
@@ -470,27 +496,21 @@ export function getCapBands(series: Series[], asOf: IsoDate | null): CapBandView
     reason,
     rows: [],
     asOf,
-    classificationNote: CAP_BAND_CLASSIFICATION_NOTE,
+    classificationNote: text.note,
     unclassified: series.length,
+    unclassifiedNote: "",
   });
 
-  if (bandByIsin.size === 0) {
-    return empty(
-      "No size-index data yet. The bundled NSE index map carries the sectoral and thematic indices but no " +
-        "size index (Nifty 100 / Midcap 150 / Smallcap 250 / Microcap 250), so there is nothing to bucket by. " +
-        "Size-index data arrives with the map rebuild; Vyuha will not guess a cap band from a market cap it " +
-        "cannot compute.",
-    );
-  }
+  if (bandByIsin.size === 0) return empty(text.noSource);
   if (bandOf.size === 0) {
     return empty(
-      `The bundled map classifies ${bandByIsin.size.toLocaleString("en-IN")} companies by size, but this ` +
+      `The bundled ${text.noun} classifies ${bandByIsin.size.toLocaleString("en-IN")} companies by size, but this ` +
         "database holds no instrument list to match those ISINs to ticker symbols — import an instrument file " +
         "and the bands appear.",
     );
   }
 
-  const rows = new Map<CapBand, { members: number; adv: number; dec: number; unch: number }>();
+  const rows = new Map<string, { members: number; adv: number; dec: number; unch: number }>();
   let unclassified = 0;
   for (const s of series) {
     const band = bandOf.get(s.symbol);
@@ -514,9 +534,10 @@ export function getCapBands(series: Series[], asOf: IsoDate | null): CapBandView
     available: true,
     reason: "",
     asOf,
-    classificationNote: CAP_BAND_CLASSIFICATION_NOTE,
+    classificationNote: text.note,
     unclassified,
-    rows: CAP_BAND_LABELS.map(({ band, label }) => {
+    unclassifiedNote: text.unclassified(unclassified.toLocaleString("en-IN")),
+    rows: labels.map(({ band, label }) => {
       const r = rows.get(band) ?? { members: 0, adv: 0, dec: 0, unch: 0 };
       const denominator = r.adv + r.dec + r.unch;
       return {
@@ -530,6 +551,42 @@ export function getCapBands(series: Series[], asOf: IsoDate | null): CapBandView
       };
     }).filter((r) => r.members > 0),
   };
+}
+
+/** Cap bands for the stored universe — AMFI's (ruling U2). */
+export function getCapBands(series: Series[], asOf: IsoDate | null): CapBandView {
+  const bands = new Map<string, string>();
+  let periodEnd: string | null = null;
+  for (const [isin, info] of getCapBandMap()) {
+    bands.set(isin, info.band);
+    periodEnd ??= info.asOf;
+  }
+  return bandView(series, asOf, bands, CAP_BAND_LABELS, {
+    // The view's asOf is the PRICE snapshot's date; the list's own period is a different clock and is named here.
+    note: periodEnd ? `${CAP_BAND_CLASSIFICATION_NOTE} AMFI's list: the six months ended ${periodEnd}.` : CAP_BAND_CLASSIFICATION_NOTE,
+    noun: "stock universe",
+    noSource:
+      "No cap-band data yet. The bundled stock universe carries no AMFI categorisation, so there is nothing to " +
+      "bucket by. Vyuha will not guess a cap band from a market cap it cannot compute.",
+    unclassified: (n) =>
+      `${n} symbols in the stored universe carry no AMFI band — NSE Emerge (SME — not ranked by AMFI), listings ` +
+      "after AMFI's averaging period, ETFs and anything AMFI does not list — and are counted nowhere rather than " +
+      "pushed into the nearest band.",
+  });
+}
+
+/** Nifty size-index membership for the stored universe — the separate lens (Q47). */
+export function getIndexBands(series: Series[], asOf: IsoDate | null): CapBandView {
+  return bandView(series, asOf, getIndexBandMap(), INDEX_BAND_LABELS, {
+    note: INDEX_BAND_CLASSIFICATION_NOTE,
+    noun: "NSE index map",
+    noSource:
+      "No size-index data yet. The bundled NSE index map carries the sectoral and thematic indices but no size " +
+      "index (Nifty 100 / Midcap 150 / Smallcap 250 / Microcap 250), so there is no membership to show.",
+    unclassified: (n) =>
+      `${n} symbols in the stored universe sit in none of the four size indices and are counted nowhere rather ` +
+      "than pushed into the nearest one.",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +724,8 @@ export interface AtlasView {
   payload: AtlasPayload | null;
   sessions: number;
   capBands: CapBandView;
+  /** The Nifty size-index membership lens (Q47) — never labelled a cap band (U2). */
+  indexBands: CapBandView;
   myNames: MyNamesView;
   volumeLeaders: VolumeLeader[];
   backfill: BackfillProgress;
@@ -700,6 +759,7 @@ export function getAtlasView(): AtlasView {
     payload: snapshot?.payload ?? null,
     sessions,
     capBands: getCapBands(series, snapshot?.asOf ?? null),
+    indexBands: getIndexBands(series, snapshot?.asOf ?? null),
     myNames: getMyNames(series, grouping, sessions),
     volumeLeaders: getVolumeLeaders(series),
     backfill: readBackfillProgress(),

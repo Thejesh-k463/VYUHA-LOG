@@ -56,6 +56,7 @@
 
 import nseIndexMap from "@/lib/data/nse-index-map.json";
 import isinSymbols from "@/lib/data/isin-symbols.json";
+import { UNIVERSE } from "@/lib/analytics/stock-universe";
 import type { NormalizedTrade } from "@/lib/engine/types";
 
 /**
@@ -225,7 +226,25 @@ function bundled(): Map<string, string> {
 export function bundledSymbolByIsin(isin: string): string | null {
   const key = String(isin ?? "").trim().toUpperCase();
   if (!key) return null;
-  return listing.symbolByIsin(key) ?? bundled().get(key) ?? null;
+  return listing.symbolByIsin(key) ?? successorSymbol(key) ?? bundled().get(key) ?? null;
+}
+
+/**
+ * v4.6.0 W2 — an ISIN SUPERSEDED by a face-value split or a reissue resolves
+ * through its successor. The listing snapshot carries only live ISINs, so the
+ * 2026-09-25 refresh dropped INE887D01016 (scrip 512038, reissued as
+ * INE887D01024) while the journal still holds trades stated under it — the
+ * code would show as a number again. The stock universe records
+ * old → new pairs where AMFI's ISIN and the listing's differ for the same
+ * symbol (research R3 §5), and an ISIN is never reissued to ANOTHER company,
+ * so following one is not the two-companies merge this module guards against.
+ */
+function successorSymbol(isin: string): string | null {
+  // The listing snapshot's own record first (built by comparing each refresh with the one it replaced — covers
+  // BSE-only and SME reissues AMFI never lists), then the universe's AMFI-derived pairs. Both are same-issuer only.
+  const superseded = (isinSymbols as { superseded?: Record<string, string> }).superseded ?? {};
+  const next = superseded[isin] ?? UNIVERSE?.aliases[isin];
+  return next ? listing.symbolByIsin(next) : null;
 }
 
 /** The reverse of `bundledSymbolByIsin`: SYMBOL → ISIN, listing first (NSE

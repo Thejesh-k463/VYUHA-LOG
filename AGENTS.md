@@ -295,8 +295,10 @@ node scripts/build-nse-index-map.mjs \
 `--src` (required) holds the sectoral/thematic `ind_*_list.csv` downloads and feeds
 `symbols[SYM].indices[]`. `--size-src` (optional) holds the eight SIZE lists (Nifty 50, Next 50,
 100, 200, 500, Midcap 150, Smallcap 250, Microcap 250) and feeds the `sizeIndices` block plus the
-per-symbol `capBand` read by `getCapBandMap()` in `lib/queries/instruments.ts` (keyed by ISIN, used
-by the Atlas). `--as-of` dates the SECTORAL snapshot only; `--captured-at` is the build date. A size
+per-symbol `capBand` read by `getIndexBandMap()` in `lib/queries/instruments.ts` (keyed by ISIN, the
+Atlas's "index membership" lens). **Since v4.6.0 W2 that field is index MEMBERSHIP, not the cap band**
+(owner ruling U2): the cap band is AMFI's, from the bundled stock universe (below), and "micro" lives
+only in this lens. The JSON field keeps its old name; the code calls it `IndexBand`. `--as-of` dates the SECTORAL snapshot only; `--captured-at` is the build date. A size
 list is refused by the sectoral pass even when it sits in `--src` — a 500-name "theme" would swamp
 every real one in edge analytics — and Nifty Midsmallcap 400 is ignored outright (it is Midcap 150
 + Smallcap 250 restated). A symbol in two bands takes the LARGER one. Current file: 62 indices
@@ -312,8 +314,9 @@ not shipped assets: `T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/_data/index
 (per-file source URL, fetch date, SHA-256 and row count). **Refresh is MANUAL, once per minor
 release** (Q52): re-download the lists on the owner's machine and re-run the script.
 **The app never contacts niftyindices.com** (Q59) — the fetch is build-time, on the owner's machine,
-and v4.0 adds no network host of any kind. Q52 also asks for the file's sha256 beside its `asOf` in
-the UI; only `asOf` is surfaced today, so the digest half of that ruling is still open.
+and v4.0 adds no network host of any kind. Q52's sha256 half is DISCHARGED (v4.6.0 W2, row 10):
+`/instruments` shows this map's `asOf` and the sha256 of its canonical JSON (`getMapDigests()` in
+`lib/queries/atlas.ts`, the same figure the Atlas prints).
 
 
 # Bundled ISIN → symbol map
@@ -330,10 +333,57 @@ Rules the code enforces and tests assert: **NSE wins a collision** (one ISIN, tw
 every other surface is keyed on the NSE symbol), so NSE files load first and first writer
 wins; **active equities only** (a delisted code REISSUED to another company is the silent
 two-companies-in-one-position merge this module exists to prevent); the resolution chain is
-user instruments → this snapshot → bundled index map → keep the code; the index map stays in
+user instruments → this snapshot → (for a SUPERSEDED ISIN) its successor — the snapshot's own `superseded` map, then the stock universe's `aliases` → bundled index map → keep the code; the index map stays in
 the chain as an independent second source; and an EMPTY snapshot must never fail anything —
 `tests/isin-bundle-coverage.test.ts` skips rather than reddens when it or the private
-fixtures are absent.
+fixtures are absent. **`superseded`** (v4.6.0 W2): before overwriting, the build compares with the snapshot it
+replaces — an ISIN that vanished while its BSE code (or NSE symbol on the same board) now sits under a new ISIN
+of the SAME issuer (ISIN characters 1–7) is recorded old → new and carried forward, because a face-value split
+drops the old ISIN while the journal still holds trades under it. A different issuer is never linked.
+
+# Bundled stock universe
+
+`lib/data/stock-universe.json` is a SNAPSHOT of every ISIN in `lib/data/isin-symbols.json` with the
+exchanges' own 4-level industry classification and AMFI's cap band (v4.6.0 W2, owner rulings U1–U4) —
+never hand-edited, and the app contacts none of its sources. Refresh is MANUAL, once per minor release,
+on the owner's machine, in this order (one as-of for both snapshots):
+
+```
+node scripts/build-isin-symbols.mjs --fetch --src .isin-lists
+node scripts/build-stock-universe.mjs --crawl        # ~60 min, resumable; .universe-cache/ is gitignored
+node scripts/build-stock-universe.mjs [--amfi <file.xlsx>]
+```
+
+The crawl is polite (0.5 s per host, NSE and BSE in parallel, retry-on-empty, stops on a 403 burst):
+NSE `getMetaData` + `getSymbolData` (the SERIES must be right — a wrong one answers 200 with no labels)
+and BSE `ComHeadernew` (Node `fetch` only; curl gets an Akamai 403). AMFI's newest
+`AverageMarketCapitalization*.xlsx` link is scraped from its categorisation page. Every label is validated
+against `scripts/ics-structure-2023-07.json` (12 / 22 / 59 / 197), extracted once from NSE Indices'
+structure PDF by `scripts/extract-ics-structure.mjs`; the raw PDF and workbook live OUTSIDE the repo in
+`T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/_data/stock-universe-<date>/`. Evidence: research
+`VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/research/R3-STOCK-UNIVERSE.md`.
+
+Rules the build enforces and `tests/stock-universe.test.ts` asserts: labels are stored as the
+STRUCTURE's code (its spelling, after folding punctuation); NSE's ALL-CAPS legacy labels are never used;
+the exchanges agree → `nse+bse`, disagree → NSE's label plus a DQ line; **a mixed-case label outside the
+structure FAILS the build** (`LABEL_ALLOWLIST` with a reason is the only way past); coverage ≥ 95% of equity
+ISINs, exchange agreement ≥ 90%, an AMFI period no older than 7 months — below any floor the build refuses
+and the previous snapshot stays. **AMFI's band is THE cap band** (`getCapBandMap()`); NSE Emerge is never
+banded (U3: blank + "SME — not ranked by AMFI"); ETFs carry neither (U4 — `etf-list.json` owns them);
+REIT/InvIT/SGB/G-sec are out of scope. A changed classification or band becomes a `history` row dated at the
+capture that saw it (exchanges publish no reclassification date). `aliases` maps a SUPERSEDED ISIN (a
+face-value split) to its successor, and `bundledSymbolByIsin` follows it; every fallback join (by NSE symbol or BSE
+ticker) must stay inside ONE issuer or it gives neither a band nor an alias — a ticker is not an identity. The sector chain is: user tag
+(never overwritten) → this universe → `sector-map.json` (only where the universe is blank; owner answer
+2026-09-25 — retired once DECISIONS records the fallback-only count at about zero) → index map → blank; a ticker takes ONLY its owner's classification (the listing's NSE > Emerge > BSE ranking —
+MAL, GSTL, SEL, ZEAL, RAJPUTANA and FOCUS are shared across boards). `/instruments` shows the as-of, the
+coverage, the DQ counts and the sha256 of the whole canonical JSON as loaded (`getMapDigests()`, the Atlas's
+figure); the file's own `digest` field covers only `taxonomy` / `byIsin` / `aliases`, so the two differ by design.
+An absent or empty snapshot is NO universe (`readUniverse` returns null) and never throws.
+Current file (as of 2026-09-25; crawl 11,647 calls, 0 refusals): 5,745 ISINs = 4,378 equity + 1,104 SME + 263 ETF;
+5,450 of 5,482 equities classified (99.4%: nse+bse 2,390 / bse 2,339 / nse 721); NSE and BSE agree on 98.4% of 2,429
+dual-classified (39 disagreements, NSE used; 9 legacy labels); AMFI 30 Jun 2026: large 100 / mid 147 / small 4,521,
+no band 571 Emerge / 63 post-period listings / 80 not in AMFI; 28 aliases; sector-map.json fallback-only for 8 ISINs.
 
 # Bundled MTF margins
 

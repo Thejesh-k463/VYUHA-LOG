@@ -285,6 +285,46 @@ if (byIsin.size === 0) {
   process.exit(1);
 }
 
+// ── Superseded ISINs (v4.6.0 W2) ──────────────────────────────────────────
+// The lists carry only LIVE ISINs, so a face-value split or a reissue drops
+// the old ISIN while the journal still holds trades stated under it (the
+// 2026-09-25 refresh dropped INE887D01016 and INE519N01014 this way). Before
+// overwriting, compare with the snapshot being replaced: an ISIN that vanished
+// and whose BSE code — or NSE symbol on the same board — now sits under a NEW
+// ISIN of the SAME issuer (ISIN characters 1–7) is recorded old → new, and
+// earlier records are carried forward (re-pointed when their target moved
+// again). A different issuer is another company and is never linked.
+const sameIssuer = (a, b) => a.length === 12 && b.length === 12 && a.slice(0, 7) === b.slice(0, 7);
+const superseded = {};
+{
+  const prevPath = path.resolve(outPath);
+  const prev = fs.existsSync(prevPath) ? JSON.parse(fs.readFileSync(prevPath, "utf8")) : null;
+  const newBySymbol = new Map();
+  for (const [isin, [sym, , board]] of byIsin) if (sym) newBySymbol.set(`${board}:${sym}`, isin);
+  const follow = (isin) => {
+    for (let i = 0; i < 10 && isin && !byIsin.has(isin); i++) isin = superseded[isin] ?? null;
+    return isin && byIsin.has(isin) ? isin : null;
+  };
+  if (prev?.byIsin) {
+    for (const [old, row] of Object.entries(prev.byIsin)) {
+      if (byIsin.has(old)) continue;
+      const [sym, , board, bseCode] = row;
+      const next = (bseCode && seenBseCodes.get(bseCode)) || (sym && newBySymbol.get(`${board}:${sym}`)) || null;
+      if (next && next !== old && sameIssuer(old, next)) superseded[old] = next;
+    }
+  }
+  for (const [old, target] of Object.entries(prev?.superseded ?? {})) {
+    if (byIsin.has(old) || superseded[old]) continue;
+    const t = follow(target);
+    if (t && sameIssuer(old, t)) superseded[old] = t;
+  }
+  for (const old of Object.keys(superseded)) {
+    const t = follow(superseded[old]);
+    if (t) superseded[old] = t;
+    else delete superseded[old];
+  }
+}
+
 const out = {
   asOf,
   source: "Exchange listed-security lists (NSE EQUITY_L / SME_EQUITY_L, BSE ListOfScrips)",
@@ -293,6 +333,8 @@ const out = {
   bseCodes: seenBseCodes.size,
   /** Positions in each byIsin tuple. Readers key on this, not on memory. */
   fields: ["symbol", "name", "board", "bseCode", "series"],
+  /** old ISIN -> its live successor (same issuer), for trades stated under a superseded ISIN. */
+  superseded: Object.fromEntries(Object.entries(superseded).sort(([a], [b]) => a.localeCompare(b))),
   // Sorted so a refresh produces a minimal, reviewable diff.
   byIsin: Object.fromEntries([...byIsin.entries()].sort(([a], [b]) => a.localeCompare(b))),
 };
@@ -302,5 +344,6 @@ fs.mkdirSync(path.dirname(dest), { recursive: true });
 fs.writeFileSync(dest, JSON.stringify(out, null, 0) + "\n");
 console.log(`✓ ${dest}`);
 console.log(`  ${byIsin.size} ISINs from ${provenance.length} file(s) · as of ${asOf}`);
+console.log(`  ${Object.keys(superseded).length} superseded ISIN(s) linked to a live successor`);
 console.log(`  ${seenBseCodes.size} BSE codes (${bseCodesAttached} attached to an ISIN NSE had already won)`);
 console.log(`  skipped: ${skippedInactive} inactive, ${skippedNonEquity} non-equity, ${skippedNoIsin} without a usable ISIN/ticker/code`);

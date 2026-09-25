@@ -26,6 +26,7 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 // Data, not code: importing the JSON binds no database connection.
 import nseIndexMapJson from "@/lib/data/nse-index-map.json";
 import sectorMapJson from "@/lib/data/sector-map.json";
+import stockUniverseJson from "@/lib/data/stock-universe.json";
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -45,8 +46,9 @@ beforeAll(async () => {
 afterAll(() => t?.cleanup());
 
 describe("both bundled maps are digested, and the digest is of the bytes the runtime reads", () => {
-  it("covers the sector taxonomy AND the NSE index map — the two files the sector chain reads", () => {
+  it("covers the stock universe, the sector taxonomy AND the NSE index map — the files the sector chain reads", () => {
     expect(q.getMapDigests().map((d) => d.file)).toEqual([
+      "lib/data/stock-universe.json",
       "lib/data/sector-map.json",
       "lib/data/nse-index-map.json",
     ]);
@@ -82,6 +84,7 @@ describe("both bundled maps are digested, and the digest is of the bytes the run
     //    module that hashed one and stubbed the other cannot pass.
     const digests = Object.fromEntries(q.getMapDigests().map((d) => [d.file, d.sha256]));
     expect(digests).toEqual({
+      "lib/data/stock-universe.json": digestOf(stockUniverseJson),
       "lib/data/sector-map.json": digestOf(sectorMapJson),
       "lib/data/nse-index-map.json": digestOf(nseIndexMapJson),
     });
@@ -109,8 +112,9 @@ describe("both bundled maps are digested, and the digest is of the bytes the run
 
   it("is computed once and cannot be poisoned by a caller that mutates the result", () => {
     const first = q.getMapDigests();
-    first[0].sha256 = "tampered";
-    expect(q.getMapDigests()[0].sha256).toBe(digestOf(sectorMapJson));
+    const sectorAt = first.findIndex((d) => d.file === "lib/data/sector-map.json");
+    first[sectorAt].sha256 = "tampered";
+    expect(q.getMapDigests()[sectorAt].sha256).toBe(digestOf(sectorMapJson));
   });
 });
 

@@ -205,9 +205,10 @@ export function sectorConcentration(
 // straight out of sectorConcentration; nothing here is estimated, and when
 // nothing is classified the line says so instead of printing 0% three times.
 //
-// The taxonomy's tiers map to sources like this (sector-map.json provenance
-// legend): `high` = BSE shareholding filings (official); `medium_high` and
-// `medium` = Screener-bridged. The index map's `industry` is a constituent
+// The taxonomy's tiers map to sources like this: `high` = official — the
+// exchanges' own classification from the bundled stock universe (v4.6.0 W2)
+// or, for an ISIN the universe leaves blank, sector-map.json's BSE-filing rows;
+// `medium_high` and `medium` = sector-map.json's Screener-bridged rows. The index map's `industry` is a constituent
 // list's label, and `unknown` is a caller that stated a sector but no tier.
 // ---------------------------------------------------------------------------
 
@@ -218,7 +219,7 @@ export const SECTOR_CONFIDENCE_PREFIX = "Sector labels:";
 const wholePct = (n: number): string => (n > 0 && n < 0.5 ? "<1%" : `${Math.round(n)}%`);
 
 /**
- * "Sector labels: N% from official filings, M% from the bundled taxonomy
+ * "Sector labels: N% from official sources, M% from the bundled taxonomy
  * (m% medium confidence), K% unclassified" — plus a clause each for the
  * user's own tags, the index map and unstated tiers when they carry capital.
  */
@@ -230,7 +231,7 @@ export function sectorConfidenceSentence(
   const t = s.confidence.tierPct;
   const parts: string[] = [];
   if (t.user > 0) parts.push(`${wholePct(t.user)} your own tags`);
-  parts.push(`${wholePct(t.high)} from official filings`);
+  parts.push(`${wholePct(t.high)} from official sources`);
   parts.push(`${wholePct(t.medium_high + t.medium)} from the bundled taxonomy (${wholePct(t.medium)} medium confidence)`);
   if (t.index > 0) parts.push(`${wholePct(t.index)} from the NSE index map`);
   if (t.unknown > 0) parts.push(`${wholePct(t.unknown)} of unstated source`);
