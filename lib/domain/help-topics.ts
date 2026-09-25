@@ -375,7 +375,7 @@ export const HELP_TASKS: Record<string, HelpTask> = {
       "Compare free and paid plans, listed separately with subscriptions amortised.",
       "Read the charges actually recorded against the cheapest broker and the headroom.",
     ],
-    watchOut: "A broker that priced only some trades is marked Partial, listed last with an asterisk and never called cheapest, because a partial total always flatters.",
+    watchOut: "A broker that priced only some trades is marked Partial, listed last with an asterisk and never called cheapest, because a partial total always flatters. STT and stamp round per trade row here, once per contract note: up to ₹0.50 per row per head.",
     related: [CHARGES, "/calculator", "/settings"],
   },
   "/reports/advance-tax": {
@@ -452,7 +452,7 @@ export const HELP_TASKS: Record<string, HelpTask> = {
     steps: [
       "Choose the tax person when the All-accounts view holds more than one.",
       "Read realised results by head and by month, at the rate for each sell date.",
-      "Enter per-share FMV for grandfathering, and any brought-forward losses from before the journal.",
+      "Enter one per-share FMV per scrip for grandfathering, and any brought-forward losses from before the journal.",
       "Read the loss ledger's carry-forward vintages and dividend TDS by company.",
     ],
     watchOut: "The scope is one tax person across every account carrying that identity, not the selected account alone.",

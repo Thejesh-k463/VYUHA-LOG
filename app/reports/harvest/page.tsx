@@ -17,9 +17,10 @@ import {
   setOffAsymmetry,
   LIABILITY_CAVEAT,
   NO_WASH_SALE_CAVEAT,
+  type SttLadder,
 } from "@/lib/analytics/tax-levers";
 import { FNO_SEGMENTS } from "@/lib/analytics/turnover";
-import { inr } from "@/lib/format";
+import { inr, num } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
 import { HarvestSim } from "@/components/reports/harvest-sim";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
@@ -127,10 +128,13 @@ export default async function HarvestPage({
   // recommends a transaction. See lib/analytics/tax-levers.ts.
   const fyClosed = realised.filter((t) => !t.isOpen && t.sellDate != null && t.sellDate >= fyStart);
 
+  // v4.6.0 W7 (D2) — the parent id, symbol and fill leg ride along so a
+  // staged ladder's realised rows count as ONE trade, its fills listed beneath.
   const stt = sttSplit(
     fyClosed.map((t) => ({
       segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
       netPnl: t.netPnl, chargesTotal: t.chargesTotal, sttCtt: t.sttCtt, isOpen: t.isOpen,
+      id: t.id, symbol: t.symbol, fillLegId: t.fillLegId, realisedQty: t.realisedQty,
     })),
     currentFy,
   );
@@ -251,6 +255,8 @@ export default async function HarvestPage({
                     {" "}{stt.forfeitedTrades} delivery trades, where it is expressly not deductible
                     ({stt.forfeitedSection}).
                   </p>
+                  <SttLadders label="Business head" ladders={stt.deductibleLadders} />
+                  <SttLadders label="Delivery" ladders={stt.forfeitedLadders} />
                   <p>The same levy, two treatments. Only the head decides which you get.</p>
                 </>
               ) : (
@@ -281,5 +287,32 @@ export default async function HarvestPage({
       </ProGate>
       </div>
     </>
+  );
+}
+
+/**
+ * v4.6.0 W7 (D2) — a staged ladder counted once above, its exit fills listed
+ * here: one native <details> per ladder (no client JS), a fill per exit leg.
+ */
+function SttLadders({ label, ladders }: { label: string; ladders: SttLadder[] }) {
+  if (ladders.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <p>{label} — staged positions, one trade each:</p>
+      {ladders.map((l) => (
+        <details key={l.id}>
+          <summary className="cursor-pointer">
+            <span className="font-medium text-foreground">{l.symbol}</span> · {l.fills.length} fill{l.fills.length === 1 ? "" : "s"} · {inr(l.sttCtt)}
+          </summary>
+          <ul className="mt-1 space-y-0.5 pl-4">
+            {l.fills.map((f, i) => (
+              <li key={`${f.fillLegId ?? `row-${i}`}|${f.sellDate ?? ""}`} className="tabular-nums">
+                {f.sellDate ?? "—"} · {num(f.qty, Number.isInteger(f.qty) ? 0 : 4)} · {inr(f.sttCtt)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))}
+    </div>
   );
 }

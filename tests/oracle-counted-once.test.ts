@@ -573,6 +573,7 @@ const OPS: Op[] = [
           deliveryConsideration: 30200, // 29200 + 1000
           deliveryCost: 23800, //          23000 + 800
           fyRealised: { [ORACLE_FY]: r2(5848.92 + b.ipoNet.legacy) }, // 5652.25 + 196.67
+          // v4.6.0 W7 (D1) splits the AIS purchase per entry leg; A1STG's two entries share ORACLE_BUY_DATE, so this pin does not move.
           ais: { [`${ORACLE_FY} purchase`]: 49000, [`${ORACLE_FY} sale`]: 30200 },
         },
         a2: EMPTY_VIEW,

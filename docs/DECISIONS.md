@@ -8141,9 +8141,9 @@ decision 6); changing an account's broker nulls both columns. Seed: Upstox **Plu
 `subscriptionMonthly` 0); **D2** Basic delivery / MTF brokerage `pct 0.025 cap 20` (was `0.001 cap 20`; the published
 min(2.5%, ₹20)); **D3** DP 18.50 → 20.00.
 
-**Measured.** The owner's 2026-08-28 option day: engine **156.89 default / 227.69 plus** vs the ledger's 226.57; the test pins
+**Measured.** The owner's 2026-08-28 option day: engine **156.89 default / 227.56 plus** vs the ledger's 226.57; the test pins
 the DIFFERENCE (6 orders × ₹10 × 1.18 = ₹70.80) and "within ₹2 of the ledger", never the absolute — the ~₹1 statutory
-rounding residual is a separate, open finding. **Golden book re-pinned:** the Upstox trade report commit
+rounding residual was sized (₹0.99 = ₹1.00 of STT rounded once on the contract note instead of per row, less ₹0.01 of SEBI/GST paisa) and ACCEPTED in v4.6.0 W7 (DECISIONS 2026-09-25 W7 entry). **Golden book re-pinned:** the Upstox trade report commit
 `{net −355.66, charges 220.21}` → **`{net −443.14, charges 307.69}`**, gross −135.45 UNCHANGED: D2 +83.94 (four delivery legs
 go to the ₹20 cap) + D3 +3.54 (2 × 1.50 × 1.18); the option half stays 156.76. The broker-STATED realised-P&L pin
 (−1.05 / −4.28 / 3.23) did not move. Seed shape: keys 117 → 130, rows 558 → 620 (one broker × 13 combos).
@@ -9573,3 +9573,63 @@ tests. Run 2 (alone): **EXIT 0 in 290 s — 489 files / 11,579 passed / 35 skipp
 **Prose pass: 9 files / 1 finding (this line itself, as in W5) / 34 tool calls (doc-auditor on Haiku; the harness billed 52)** — the gate counts, migration 0077, every W6 path cited in LEDGER and here, the W7-is-next rows, the macOS scan and the rate-key/tax-scope hunts all re-derived clean.
 
 **Invalidated if:** a broker's tradebook is published where a derivative sale and its later buy in one file are NOT one position (then `OVERNIGHT_SHORT_NOTE`'s other reading becomes the default and the pairing needs a per-broker switch); or SQLite stops storing +Inf as `9e999` (the panel predicate's mark test).
+
+## 2026-09-25 — v4.6.0 W7 built: row 17 tax follow-ups — AIS purchase per entry leg, harvest STT per ladder, the FMV editor per scrip, the Upstox ~₹1 residual accepted (the LAST v4.6.0 wave; no migration)
+
+**Owner answers at the wave's start (both the recommended option):** Q1 — `/reports/harvest`'s STT split counts ONE trade per ladder per FY, the fills listed
+beneath each half (not "N realisations", not a bare relabel). Q2 — the ~₹1 Upstox residual, SIZED first: engine Plus **227.56** vs the ledger's **226.57**, gap
+₹0.99 = ₹1.00 of STT rounded to the rupee PER ROW (4 + 3 + 3 = 10) where the contract note rounds the day's STT once (6242.5 × 0.15% = 9.36 → 9), less ₹0.01 of
+SEBI/GST paisa → **ACCEPTED + EXPLAINED**: no engine change, the bound stated where the figure is read, the ≤ ₹2 test kept (not "accept silently", not a
+note-level rounding mode — that moves every multi-position day, the golden pins and preview-equals-save for ₹1).
+
+**Found (scout + the session's own reads):** the AIS PURCHASE side bumped the parent's whole `buyValue` at the parent `buyDate` (app/api/ais/route.ts:89-104, the
+3b-ii decision-7 follow-up); `sttSplit` counted per input row, so a ladder sold in 3 fills counted 3 (tax-levers.ts:97; harvest/page.tsx:130); the FMV editor listed
+one row per TRADE id from `closedTrades` by a BYTE compare against GRANDFATHER_DATE (tax/page.tsx:117-119); `splitStagedRow` prices a fill's buy side at
+`avgCostAtExit` — right for P&L, wrong for consideration; the oracle ladder A1STG's two entry legs share one date, so the AIS purchase pins are blind to the split
+and serve as the conservation check.
+
+**Design review (Opus `vyuha-design-reviewer`, 86 calls, over the DECIDED contract, before the builder): REVISE, R-1…R-9.** R-1 (CONFIRMED) `setAcquisitionAction`
+has no `hasLadder` guard: a basis write on a staged row rewrites buyQty/buyValue/buyDate/side and leaves the legs (sell executions stored as entries) — the naive
+split settles [15,000, −5,000] and states a purchase in the SALE's FY; a corporate-action split rescales the parent without the legs → split only while the legs
+state the parent. R-2 the only route test had both entries in one FY (green either way) → a new temp-DB file. R-3 "N fills" would have counted FIFO tranches, not
+exits. R-4 the byte compare (L-31 again) lists a `15-06-2019` legacy row and hides `31-12-2017`. R-5 `closedTrades` leaves out a partly-sold pre-2018 ladder the
+readers already price with the FMV. R-6 one key function for page and route; scope the write to the person. R-7 the describe comment stated the reverse of the
+truth and DECISIONS said "227.69". R-8 the right help card (broker-compare, 74 → ~94 words), "grandfathering" must survive. R-9 `dayOf` returns an unreadable date raw.
+All nine folded into revision 2; ONE Opus builder (144 calls; 17 files +538/−106, 5 new) built D1–D4 with six red-on-revert proofs.
+
+**Skeptic (Opus, 76 calls, no writes — probes run inline through tsx): 14 claims, 14 CONFIRMED, 4 defects.** The R-1 guard passed BY COINCIDENCE at break-even
+(qty and value match, dates do not) → the guard also requires the parent's buyDate to be the aggregate's own leg date (first entry long / last cover short); an
+unreadable leg date dropped its rupees (the `?? parent.buyDate` fallback could never fire) → guard failure, parent whole; a short cover's fill line grouped by
+`fillLegId` alone showed the first tranche's date at the whole quantity → (fillLegId, sellDate); a blank Save over a MIXED FMV group would have WIPED every lot's
+value and one-shot `useState` would carry a typed value across a person switch → Save disabled on blank+mixed, values derived, editor keyed by person. Plus:
+`grandfatherKey` now trims/upper-cases the ISIN; the page's lot selection is the pure `grandfatherLotsOf(parents, realised)` with its own test (a revert to
+`closedTrades` or a byte compare goes red). Fix wave: a fresh Opus builder, 8 items, each red-on-revert.
+
+**Decisions (session, under the decision policy; the owner may overrule):**
+- Purchase consideration per leg = qty × the leg's own price, no charges, no average cost (AIS SFT-18 is per transaction), settled to the parent's `buyValue`;
+  open ladders state purchases too; the IPO-link dedup key stays the PARENT id; `getRealisedAndPurchaseRows()` is one staged-views batch.
+- The split is REFUSED (parent row whole) unless Σ leg qty = parent.buyQty (4 dp), |Σ r2(qty×price) − buyValue| ≤ 0.01·(n+1), the parent's buyDate equals the date
+  `parentAggregate` writes (staged.ts:698), and every purchase-leg date is readable. `setAcquisitionAction`'s missing `hasLadder` guard is RECORDED, not built
+  (LEDGER D-14) — a candidate for the post-W7 audit fix wave.
+- Harvest: distinct parent ids per half; only ladders are listed (a flat trade is one row); a fill line is (fillLegId, sellDate); a native `<details>` (server
+  component, no client JS, no new dependency).
+- FMV: one row per scrip per TAX PERSON (`grandfatherKey` = SYMBOL|ISIN, the one function for page and route); the lots are the parents behind the REALISED rows;
+  `POST /api/trades/fmv {ids, fmv, person}` (legacy `{id}` accepted) is ONE transaction, one audit row per trade, refused whole on a missing id, an account outside
+  `resolveTaxScope(person)`, a second scrip, an ineligible lot (a value no reader applies is a misstatement), or a bad value; `!isOpen` is NOT required; "Trade not
+  found" is now 400 (was 404 — the editor is the only caller); a blank over a mixed group is refused.
+- D4: copy in broker-compare, the tax footnotes and the broker-compare help card reads "per trade row (per fill on a staged ladder); a contract note rounds each head
+  once, so a day with N rows can differ by up to ₹0.50 × N per head"; the new `it` derives the delta from the seed's `sttPct` (never a literal) so it cannot agree
+  with itself; DECISIONS 2026-09-22's "227.69 plus" corrected to 227.56.
+- No migration (0078 stays unused); no e2e added (Playwright 141 / 38 unchanged); README's test-file count 495 → 499.
+
+**Why not the obvious thing:** trusting the legs on a staged row — two writers leave them contradicting the parent; a byte compare against GRANDFATHER_DATE — the
+tree admits DD-MM-YYYY (L-31); an FMV per account — FMV is a fact about the scrip and the tax person is the unit; a Data Quality warning for the residual — the
+owner chose explain, and a warning on every multi-position day would be noise; note-level rounding — a ₹1 fix with a golden-pin blast radius.
+
+**Gate (vyuha-verifier, alone, second run — the first was FAIL-J: three timeouts in files W7 does not touch while another session ran 14 python processes; the
+three pass alone in 16 s): `npm run verify` EXIT 0 — **499 files / 11791 passed / 35 skipped**, lint 0 errors (6 pre-existing warnings), `next build` "Compiled successfully in 12.8s", Duration 153 s; `package-lock.json` and `package.json` unchanged; 22 dirty paths before and after.**
+
+**Prose pass:** recorded in the W7 close-out commit (this entry is amended there).
+
+**Invalidated if:** AIS ever states purchase consideration NET of charges (then `purchaseRows` adds the leg's `chargesTotal`); or a reader starts applying
+`fmv31Jan2018` to a post-2018 lot (then the route's eligibility refusal is wrong, not the reader).

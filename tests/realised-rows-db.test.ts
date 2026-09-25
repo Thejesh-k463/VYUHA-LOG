@@ -217,10 +217,11 @@ describe("each fill is taxed in the FY of its OWN exit date", () => {
     const totals = await aisTotals();
     expect(totals["2024-25 sale"], "the February fill, in the year it was sold").toBe(4000);
     expect(totals["2025-26 sale"], "the June fill, in the next one").toBe(5000);
-    // DELIBERATELY unchanged (app/api/ais/route.ts): the purchase side is the
-    // parent's whole buyValue at the parent's buyDate — the FIRST entry — for
-    // open and closed rows alike. Splitting it per entry leg is a recorded
-    // follow-up, so e2's 3000 is stated in 2024-25 with e1's 2000.
+    // Since v4.6.0 W7 (D1) the purchase side IS split per entry leg
+    // (app/api/ais/route.ts, `purchaseRows`), each in the FY of its own leg
+    // date. Both of THIS ladder's entries (2024-06-10 and 2024-08-12) fall in
+    // 2024-25, so e1's 2000 and e2's 3000 still state 5000 there; the
+    // cross-FY split is pinned in tests/ais-purchase-legs-db.test.ts.
     expect(totals["2024-25 purchase"]).toBe(5000);
     expect(totals["2025-26 purchase"], "no purchase in the second year").toBeUndefined();
   });

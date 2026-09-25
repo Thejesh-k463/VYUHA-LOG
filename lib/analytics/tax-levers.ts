@@ -74,6 +74,35 @@ export interface LeverTrade {
   /** STT/CTT component of chargesTotal. */
   sttCtt: number;
   isOpen: boolean;
+  /**
+   * v4.6.0 W7 (D2) — the PARENT trade id. A staged ladder reaches this module
+   * as one realised row per (fill × tranche), all carrying the parent's id;
+   * when present, the trade counts are DISTINCT ids, so a ladder is one trade.
+   * Absent → every row counts as one trade (the pre-W7 meaning).
+   */
+  id?: number;
+  symbol?: string;
+  /** The exit leg a realised row was booked from; null on a flat row. */
+  fillLegId?: number | null;
+  /** The quantity the realised row realises. */
+  realisedQty?: number;
+}
+
+/** One exit fill of a ladder: the realised rows of ONE exit leg, summed. */
+export interface SttLadderFill {
+  fillLegId: number | null;
+  sellDate: string | null;
+  qty: number;
+  sttCtt: number;
+}
+
+/** A ladder (a parent with several realised rows this FY) and its fills. */
+export interface SttLadder {
+  id: number;
+  symbol: string;
+  /** Σ STT/CTT of THIS FY's rows of the ladder. */
+  sttCtt: number;
+  fills: SttLadderFill[];
 }
 
 export interface SttSplit {
@@ -87,6 +116,49 @@ export interface SttSplit {
   /** Citations for the year, so the two halves can be checked. */
   deductibleSection: string;
   forfeitedSection: string;
+  /** The ladders behind each half, their fills listed beneath (W7, D2). */
+  deductibleLadders: SttLadder[];
+  forfeitedLadders: SttLadder[];
+}
+
+/**
+ * Group one half's rows into ladders: parents by first appearance, fills by
+ * first appearance, fills grouped by (`fillLegId`, `sellDate`) — one exit of a
+ * LONG that consumed two FIFO tranches is TWO realised rows and ONE fill; one
+ * cover of a SHORT is one fill line per entry date its rows carry (a short's
+ * sale is its entry, realised-rows.ts). "N fills" = the number of lines. Only a parent with two or
+ * more rows, or any row naming a fill leg, is a ladder — a flat trade is one
+ * row and is not listed.
+ */
+function laddersOf(rows: LeverTrade[]): SttLadder[] {
+  const byId = new Map<number, LeverTrade[]>();
+  for (const r of rows) {
+    if (r.id == null) continue;
+    const arr = byId.get(r.id) ?? [];
+    arr.push(r);
+    byId.set(r.id, arr);
+  }
+  const out: SttLadder[] = [];
+  for (const [id, rs] of byId) {
+    if (rs.length < 2 && !rs.some((r) => r.fillLegId != null)) continue;
+    const fills = new Map<string, SttLadderFill>();
+    for (const r of rs) {
+      // (fillLegId, sellDate): on a SHORT ladder one cover's rows carry the
+      // ENTRY tranches' dates as sellDate, so one exit leg is one line per date.
+      const key = `${r.fillLegId == null ? "null" : String(r.fillLegId)}|${r.sellDate ?? ""}`;
+      const f = fills.get(key) ?? { fillLegId: r.fillLegId ?? null, sellDate: r.sellDate, qty: 0, sttCtt: 0 };
+      f.qty += r.realisedQty ?? 0;
+      f.sttCtt += r.sttCtt;
+      fills.set(key, f);
+    }
+    out.push({
+      id,
+      symbol: rs[0].symbol ?? "",
+      sttCtt: r2(rs.reduce((s, r) => s + r.sttCtt, 0)),
+      fills: [...fills.values()].map((f) => ({ ...f, qty: Math.round(f.qty * 1e4) / 1e4, sttCtt: r2(f.sttCtt) })),
+    });
+  }
+  return out;
 }
 
 /**
@@ -97,29 +169,44 @@ export interface SttSplit {
 export function sttSplit(trades: LeverTrade[], fy: string): SttSplit {
   let deductible = 0;
   let forfeited = 0;
-  let deductibleTrades = 0;
-  let forfeitedTrades = 0;
+  const deductibleRows: LeverTrade[] = [];
+  const forfeitedRows: LeverTrade[] = [];
 
   for (const t of trades) {
     if (t.isOpen) continue;
     const isBusiness = t.segment === SPECULATIVE_SEGMENT || FNO_SEGMENTS.has(t.segment);
     if (isBusiness) {
       deductible += t.sttCtt;
-      deductibleTrades++;
+      deductibleRows.push(t);
     } else if (DELIVERY_SEGMENTS.has(t.segment)) {
       forfeited += t.sttCtt;
-      forfeitedTrades++;
+      forfeitedRows.push(t);
     }
   }
+
+  // W7 (D2) — ONE count per trade: rows carrying the parent `id` count once per
+  // distinct id (a ladder's fills are one trade); a row without an id counts
+  // as itself, the pre-W7 meaning.
+  const tradesIn = (rows: LeverTrade[]): number => {
+    const ids = new Set<number>();
+    let anonymous = 0;
+    for (const r of rows) {
+      if (r.id == null) anonymous++;
+      else ids.add(r.id);
+    }
+    return ids.size + anonymous;
+  };
 
   return {
     deductible: r2(deductible),
     forfeited: r2(forfeited),
     total: r2(deductible + forfeited),
-    deductibleTrades,
-    forfeitedTrades,
+    deductibleTrades: tradesIn(deductibleRows),
+    forfeitedTrades: tradesIn(forfeitedRows),
     deductibleSection: section(fy, "sttBusinessExpense" as SectionKey),
     forfeitedSection: section(fy, "sttNotDeductibleCg" as SectionKey),
+    deductibleLadders: laddersOf(deductibleRows),
+    forfeitedLadders: laddersOf(forfeitedRows),
   };
 }
 

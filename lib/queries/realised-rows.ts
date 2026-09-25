@@ -1,8 +1,10 @@
 import "server-only";
 import { getStagedViews, toDomainLegs } from "./staged";
 import {
+  purchaseRows,
   realisedRows,
   type LadderInput,
+  type PurchaseRow,
   type RealisedParent,
   type RealisedRow,
 } from "@/lib/analytics/realised-rows";
@@ -27,7 +29,7 @@ import {
  * NOT wrapped in React `cache`: it is generic, and every caller already reads
  * its `trades` from a `cache`d projection and calls this once per render.
  */
-export function getRealisedRows<T extends RealisedParent>(trades: readonly T[]): RealisedRow<T>[] {
+function laddersOf(trades: readonly RealisedParent[]): Map<number, LadderInput> {
   const stagedIds = trades.filter((t) => t.staged).map((t) => t.id);
   const ladders = new Map<number, LadderInput>();
   if (stagedIds.length > 0) {
@@ -35,5 +37,24 @@ export function getRealisedRows<T extends RealisedParent>(trades: readonly T[]):
       ladders.set(id, { legs: toDomainLegs(view.legs), position: view.position });
     }
   }
-  return realisedRows(trades, ladders);
+  return ladders;
+}
+
+export function getRealisedRows<T extends RealisedParent>(trades: readonly T[]): RealisedRow<T>[] {
+  return realisedRows(trades, laddersOf(trades));
+}
+
+/** v4.6.0 W7 (D1) — the purchase book: one row per purchase leg of a staged
+ *  ladder whose legs still state its parent, the parent row otherwise. */
+export function getPurchaseRows<T extends RealisedParent>(trades: readonly T[]): PurchaseRow<T>[] {
+  return purchaseRows(trades, laddersOf(trades));
+}
+
+/** Both books over ONE batched ladder read — the AIS route states the sale and
+ *  the purchase side of the same trades, so it fetches the ladders once. */
+export function getRealisedAndPurchaseRows<T extends RealisedParent>(
+  trades: readonly T[],
+): { realised: RealisedRow<T>[]; purchases: PurchaseRow<T>[] } {
+  const ladders = laddersOf(trades);
+  return { realised: realisedRows(trades, ladders), purchases: purchaseRows(trades, ladders) };
 }

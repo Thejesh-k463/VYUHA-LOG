@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTrades } from "@/lib/queries/trades";
-import { getRealisedRows } from "@/lib/queries/realised-rows";
+import { getRealisedAndPurchaseRows } from "@/lib/queries/realised-rows";
 // The counted-once rule has ONE home, beside the IPO reads it is about (wave 2L).
 import { getIposComputed, ipoIdsCountedThroughTrades } from "@/lib/queries/ipos";
 import { isPriceableExitDate } from "@/lib/analytics/ipo";
@@ -86,21 +86,34 @@ export async function POST(req: Request) {
   // figure. `getRealisedRows` returns the parent row unchanged for every
   // non-staged trade, so nothing else here changes.
   //
-  // The PURCHASE side is deliberately UNCHANGED: it is the parent's whole
-  // `buyValue` at the parent's `buyDate` (the FIRST entry), for open and
-  // closed rows alike. Splitting it per ENTRY leg — so a ladder built across
-  // two financial years states its purchases in both — is a RECORDED
-  // FOLLOW-UP, not this wave: it changes the purchase figure for every open
-  // staged position on the page, including ones nothing has been sold from.
+  // v4.6.0 W7 (D1) — the PURCHASE side is split per PURCHASE LEG the same way:
+  // a staged ladder built across two financial years states each purchase in
+  // the FY of its own leg date, at the leg's own consideration (qty × price,
+  // charges excluded), open and closed ladders alike; the rows settle to the
+  // parent's stored buyValue, so the years sum to the parent to the paisa.
+  // A ladder whose legs no longer state its parent (a basis write or a
+  // corporate-action split rewrote the parent alone) keeps the parent's whole
+  // buyValue at the parent's buyDate — see `purchaseRows` in
+  // lib/analytics/realised-rows.ts. `purchaseCounted` still carries the
+  // PARENT id: TAX-IPO-LINK keys the counted-once rule on the trade.
   const deliveryTrades = getTrades(scope.accountIds).filter((t) => DELIVERY.has(t.segment));
+  const { realised, purchases } = getRealisedAndPurchaseRows(deliveryTrades);
   const realisedByTrade = new Map<number, { sellDate: string | null; sellValue: number }[]>();
-  for (const r of getRealisedRows(deliveryTrades)) {
+  for (const r of realised) {
     const arr = realisedByTrade.get(r.id) ?? [];
     arr.push({ sellDate: r.sellDate, sellValue: r.sellValue });
     realisedByTrade.set(r.id, arr);
   }
+  const purchasesByTrade = new Map<number, { buyDate: string | null; buyValue: number }[]>();
+  for (const p of purchases) {
+    const arr = purchasesByTrade.get(p.id) ?? [];
+    arr.push({ buyDate: p.buyDate, buyValue: p.buyValue });
+    purchasesByTrade.set(p.id, arr);
+  }
   for (const t of deliveryTrades) {
-    if (bump(fyOf(t.buyDate), "purchase", t.buyValue)) purchaseCounted.add(t.id);
+    for (const p of purchasesByTrade.get(t.id) ?? []) {
+      if (bump(fyOf(p.buyDate), "purchase", p.buyValue)) purchaseCounted.add(t.id);
+    }
     for (const r of realisedByTrade.get(t.id) ?? []) {
       // `saleCounted` still carries the PARENT id — TAX-IPO-LINK keys the
       // counted-once rule on the trade, not on a fill.

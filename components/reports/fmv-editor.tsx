@@ -7,76 +7,111 @@ import { Input } from "@/components/ui/input";
 import { num } from "@/lib/format";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import type { FmvGroup } from "@/lib/analytics/grandfather-groups";
 
-export interface FmvRow {
-  id: number;
-  symbol: string;
-  buyDate: string;
-  sellDate: string | null;
-  buyQty: number;
-  avgBuyPrice: number;
-  fmv31Jan2018: number | null;
-}
+/**
+ * FMV @ 31-Jan-2018 entry for LTCG grandfathering — ONE row per scrip
+ * (symbol + ISIN, `grandfatherKey`), v4.6.0 W7 (D3). The FMV is a fact about
+ * the scrip, so one Save writes it onto every lot of the group
+ * (`POST /api/trades/fmv { ids, fmv, person }`); the lots are listed under a
+ * native <details>.
+ *
+ * The shown value is DERIVED — `edits[g.key] ?? initial(g)` — never a state
+ * initialised once from `groups`: router.refresh() keeps client state, so an
+ * init-once copy would go stale, and the page keys this editor by person so
+ * one person's typed value never lands on another person's same-scrip group.
+ * A MIXED group with a blank input cannot Save: a blank Save clears the whole
+ * group, and it must never wipe values that exist.
+ */
+const initial = (g: FmvGroup): string => (typeof g.fmv === "number" ? String(g.fmv) : "");
 
-/** Per-lot FMV @ 31-Jan-2018 entry for LTCG grandfathering (pre-2018 closed equity lots). */
-export function FmvEditor({ rows }: { rows: FmvRow[] }) {
+export function FmvEditor({ groups, person }: { groups: FmvGroup[]; person?: string }) {
   const router = useRouter();
-  const [values, setValues] = React.useState<Record<number, string>>(
-    Object.fromEntries(rows.map((r) => [r.id, r.fmv31Jan2018 == null ? "" : String(r.fmv31Jan2018)])),
-  );
-  const [busy, setBusy] = React.useState<number | null>(null);
+  const [edits, setEdits] = React.useState<Record<string, string>>({});
+  const [busy, setBusy] = React.useState<string | null>(null);
   const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
 
-  async function save(id: number) {
-    setBusy(id);
+  const shown = (g: FmvGroup): string => edits[g.key] ?? initial(g);
+  const blankOverMixed = (g: FmvGroup): boolean => g.fmv === "mixed" && shown(g).trim() === "";
+
+  async function save(g: FmvGroup) {
+    if (blankOverMixed(g)) return;
+    setBusy(g.key);
     setMsg(null);
     const res = await fetch("/api/trades/fmv", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, fmv: values[id] ?? "" }),
+      body: JSON.stringify({ ids: g.ids, fmv: shown(g), ...(person ? { person } : {}) }),
     });
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
     setBusy(null);
-    setMsg({ ok: !!data.ok, text: data.message ?? "" });
+    setMsg({ ok: !!data.ok, text: `${g.symbol}: ${data.message ?? ""}` });
     if (data.ok) router.refresh();
   }
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Enter the scrip&apos;s <b>closing price on 31-Jan-2018</b> (per share). Grandfathered cost = higher of your
-        actual cost or this FMV (capped at the sale price) — it only ever lowers the taxable LTCG. Leave blank to
-        use actual cost.
+        Enter the scrip&apos;s <b>closing price on 31-Jan-2018</b> (per share) — once per scrip; it applies to every
+        pre-2018 lot of it. Grandfathered cost = higher of your actual cost or this FMV (capped at the sale price) — it
+        only ever lowers the taxable LTCG. Leave blank to use actual cost.
       </p>
       <ReportTable>
         <ReportThead>
           <ReportTh>Symbol</ReportTh>
+          <ReportTh>ISIN</ReportTh>
+          <ReportTh align="right">Lots</ReportTh>
+          <ReportTh align="right">Total qty</ReportTh>
           <ReportTh align="right">Bought</ReportTh>
-          <ReportTh align="right">Qty</ReportTh>
-          <ReportTh align="right">Avg cost</ReportTh>
           <ReportTh align="right">FMV @ 31-Jan-2018 (₹/sh)</ReportTh>
           <ReportTh></ReportTh>
         </ReportThead>
         <tbody>
-          {rows.map((r) => (
-            <ReportTr key={r.id}>
-              <ReportTd className="font-medium">{r.symbol}</ReportTd>
-              <ReportTd align="right">{r.buyDate}</ReportTd>
-              <ReportTd align="right">{num(r.buyQty, 0)}</ReportTd>
-              <ReportTd align="right">{num(r.avgBuyPrice, 2)}</ReportTd>
-              <ReportTd className="text-right">
+          {groups.map((g) => (
+            <ReportTr key={g.key}>
+              <ReportTd className="align-top font-medium">
+                {g.symbol}
+                <details className="mt-1 text-xs font-normal text-muted-foreground">
+                  <summary className="cursor-pointer">{g.lots.length === 1 ? "the lot" : `the ${g.lots.length} lots`}</summary>
+                  <ul className="mt-1 space-y-0.5 tabular-nums">
+                    {g.lots.map((l) => (
+                      <li key={l.id}>
+                        bought {l.buyDate ?? "—"} · {l.isOpen ? "open" : `sold ${l.sellDate ?? "—"}`} · {num(l.buyQty, 0)} @{" "}
+                        {num(l.avgBuyPrice, 2)} · FMV {l.fmv31Jan2018 == null ? "—" : num(l.fmv31Jan2018, 2)}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </ReportTd>
+              <ReportTd muted className="align-top">{g.isin ?? "no ISIN"}</ReportTd>
+              <ReportTd align="right" className="align-top">{g.lots.length}</ReportTd>
+              <ReportTd align="right" className="align-top">{num(g.totalQty, 0)}</ReportTd>
+              <ReportTd align="right" className="align-top">
+                {g.firstBuyDate === g.lastBuyDate ? g.firstBuyDate : `${g.firstBuyDate} → ${g.lastBuyDate}`}
+              </ReportTd>
+              <ReportTd className="text-right align-top">
                 <Input
                   type="number"
                   step="any"
-                  value={values[r.id] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [r.id]: e.target.value }))}
-                  placeholder="blank = actual cost"
-                  className="h-7 w-36 text-right tabular-nums"
+                  value={shown(g)}
+                  onChange={(e) => setEdits((v) => ({ ...v, [g.key]: e.target.value }))}
+                  placeholder={g.fmv === "mixed" ? `mixed — saving sets all ${g.lots.length} lots` : "blank = actual cost"}
+                  className="h-7 w-52 text-right tabular-nums"
                 />
+                {blankOverMixed(g) && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Enter a value to set all {g.lots.length} lots, or clear one lot at a time
+                  </p>
+                )}
               </ReportTd>
-              <ReportTd className="text-right">
-                <Button size="sm" variant="outline" disabled={busy === r.id} onClick={() => save(r.id)}>
-                  {busy === r.id ? "Saving…" : "Save"}
+              <ReportTd className="text-right align-top">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy === g.key || blankOverMixed(g)}
+                  onClick={() => save(g)}
+                >
+                  {busy === g.key ? "Saving…" : "Save"}
                 </Button>
               </ReportTd>
             </ReportTr>

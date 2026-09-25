@@ -318,11 +318,13 @@ describe("16 · the owner's 2026-08-28 option day: Plus costs exactly ₹10 an o
    * What is asserted is the DIFFERENCE — 6 orders × ₹10 × 1.18 GST — because
    * that is what the plan is: Upstox's own Plus page says the flat fee per order
    * goes ₹20 → ₹30 and nothing else moves. The ABSOLUTE engine figure is NOT
-   * pinned to the owner's ledger: DECISIONS 2026-09-18/2026-09-22 records a
-   * residual of about ₹1 from statutory per-order rounding (the ledger rounds
-   * each head per ORDER, the engine once per position), which is a separate and
-   * still-open finding. Pinning the absolute would fold that defect into this
-   * test and make the plan look wrong when it is right.
+   * pinned to the owner's ledger: there is a residual of about ₹1 from
+   * statutory rounding. Each position here has ONE sell order, so per-order and
+   * per-position are the same thing: the engine rounds STT once per position
+   * (4 + 3 + 3 = ₹10), while the ledger's ₹9 is ONE rounding for the whole
+   * contract note. Sized and ACCEPTED in v4.6.0 W7 (owner answer Q2; DECISIONS
+   * 2026-09-25) and pinned to that cause by the last case below — never folded
+   * into the plan difference, which would make the plan look wrong when it is right.
    */
   const CONTRACTS = [
     { segment: "index_option" as Segment, exchange: "NSE" as Exchange, buyQty: 65, buyValue: 65 * 38, sellQty: 65, sellValue: 65 * 36.7 },
@@ -359,6 +361,23 @@ describe("16 · the owner's 2026-08-28 option day: Plus costs exactly ₹10 an o
     const basic = bill("default");
     expect(Math.abs(plus - 226.57), `plus billed ${plus}`).toBeLessThanOrEqual(2);
     expect(Math.abs(basic - 226.57), `basic billed ${basic}`).toBeGreaterThan(2);
+  });
+
+  it("…and the ~₹1 residual IS the day's STT rounded once on the contract note vs per row (v4.6.0 W7, accepted)", () => {
+    // From the rate card, never a literal: each contract's STT unrounded, then
+    // rounded per row (what the engine books) and once for the day (the note).
+    const raw = CONTRACTS.map((c) => {
+      const r = findRates(map, "upstox", c.segment, c.exchange, ON, "plus");
+      const base = r.sttSide === "both" ? c.buyValue + c.sellValue : r.sttSide === "buy" ? c.buyValue : r.sttSide === "sell" ? c.sellValue : 0;
+      return r.sttPct * base;
+    });
+    const perRow = raw.reduce((s, v) => s + Math.round(v), 0);
+    const once = Math.round(raw.reduce((s, v) => s + v, 0));
+    const delta = perRow - once;
+    expect(delta, `per row ${perRow} vs once ${once}`).toBe(1);
+    // What is left after the STT rounding is SEBI/GST paisa, nothing more.
+    const plus = bill("plus");
+    expect(Math.abs(plus - 226.57 - delta), `plus billed ${plus}`).toBeLessThanOrEqual(0.02);
   });
 });
 

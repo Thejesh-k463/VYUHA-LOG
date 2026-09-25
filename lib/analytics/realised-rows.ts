@@ -50,8 +50,8 @@
  *   pushed onto the last row, so invariant 5 still holds after the split.
  */
 
-import { dayOf } from "@/lib/domain/trading-day";
-import type { Leg, StagedPosition } from "@/lib/domain/staged";
+import { dayOf, normalizeDate } from "@/lib/domain/trading-day";
+import { sortLegs, type Leg, type StagedPosition } from "@/lib/domain/staged";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -278,6 +278,113 @@ export function realisedRows<T extends RealisedParent>(
     if (!t.isOpen) {
       out.push({ ...t, fillLegId: null, entryLegId: null, realisedQty: t.sellQty ?? t.buyQty ?? 0 });
     }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE PURCHASE SIDE (v4.6.0 W7, D1) — one row per purchase LEG
+// ---------------------------------------------------------------------------
+
+/**
+ * A purchase row: the parent's fields with `buyDate` / `buyQty` / `buyValue`
+ * restated as ONE purchase leg's own. `entryLegId` names that leg (on a SHORT
+ * ladder it is the covering EXIT leg — the leg that bought), null on an
+ * unsplit parent row; `purchaseQty` is the quantity the row buys.
+ */
+export type PurchaseRow<T> = T & { entryLegId: number | null; purchaseQty: number };
+
+/**
+ * The AIS purchase side (SFT-18 is per TRANSACTION): a staged ladder built
+ * across two financial years states its purchases in both, each at the leg's
+ * OWN consideration (`qty × price`, charges EXCLUDED — never the moving
+ * average, which is right for P&L and wrong for a purchase statement).
+ *
+ * Purchase legs = the ENTRY legs of a long ladder, the covering EXIT legs of a
+ * short one — exactly how `parentAggregate` assigns buy/sell by direction.
+ * The rupees settle to the parent's stored `buyValue` (the rounding remainder
+ * on the last row), so Σ rows = parent.buyValue to the paisa, open or closed.
+ *
+ * ── THE GUARD: split only while the legs still STATE the parent ─────────────
+ * Two writers can leave a ladder's legs contradicting its parent row:
+ * `setAcquisitionAction` (app/trades/actions.ts) rewrites buyQty / buyValue /
+ * buyDate / side on a staged row without touching its legs — and an imported
+ * sell-side ladder's legs are all SELL executions written as entries — and a
+ * corporate-action split (lib/corporate-actions-apply.ts) rescales the parent
+ * without the legs. Splitting such a row would state a purchase in a SALE's
+ * FY (basis ₹100×100 sold 50@300 + 50@310 settles to [15,000, −5,000]). So a
+ * ladder splits ONLY when Σ purchase-leg qty == parent.buyQty (to 4 dp) AND
+ * |Σ r2(qty×price) − parent.buyValue| ≤ ₹0.01 × (n+1) AND the parent's buyDate
+ * is the day `parentAggregate` would write from these legs (the first entry of
+ * a long, the last exit of a short — a basis write can match qty and value and
+ * still date the parent a year before the legs); otherwise — including no
+ * purchase legs, no ladder, or a parent with no buyQty/buyValue — the parent
+ * row is returned whole (its own buyDate and buyValue). A purchase never
+ * disappears.
+ *
+ * DATES: `normalizeDate(leg.tradeDate)` reads a DD-MM-YYYY leg as its ISO day.
+ * A purchase leg whose date is UNREADABLE (normalizeDate → null) is a GUARD
+ * FAILURE: the parent row is returned whole, so the purchase is never filed
+ * under a year `fyOfDate` invented from raw bytes. (`dayOf` is not used here —
+ * it hands an unreadable date back raw.) The UI leg writers refuse such dates
+ * (`validateLegs`); a blank or legacy stored leg date is what this catches.
+ *
+ * Never throws.
+ */
+function splitPurchases<T extends RealisedParent>(
+  parent: T,
+  legs: Leg[],
+  position: StagedPosition,
+): PurchaseRow<T>[] {
+  if (parent.buyValue == null || parent.buyQty == null) return [];
+  const buyKind = position.direction === "long" ? "entry" : "exit";
+  const bought = sortLegs(legs).filter((l) => l.kind === buyKind && l.qty > 0);
+  if (bought.length === 0) return [];
+
+  const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
+  const qty = bought.reduce((s, l) => s + l.qty, 0);
+  if (r4(qty) !== r4(parent.buyQty)) return [];
+  const raw = bought.map((l) => l.qty * l.price);
+  const stated = raw.reduce((s, v) => s + r2(v), 0);
+  if (Math.abs(stated - parent.buyValue) > 0.01 * (bought.length + 1) + 1e-9) return [];
+
+  // Every purchase leg must state a READABLE day, or the ladder is not split.
+  const days = bought.map((l) => normalizeDate(l.tradeDate ?? null));
+  if (days.some((d) => d == null)) return [];
+  // The DATE condition: the parent's buyDate is the one `parentAggregate` would
+  // write from these legs — the FIRST entry of a long, the LAST exit of a short.
+  const buySide = sortLegs(legs).filter((l) => l.kind === buyKind);
+  const anchor = position.direction === "long" ? buySide[0] : buySide[buySide.length - 1];
+  const anchorDay = normalizeDate(anchor?.tradeDate ?? null);
+  if (anchorDay == null || normalizeDate(parent.buyDate ?? null) !== anchorDay) return [];
+
+  const values = settle(raw, parent.buyValue);
+  return bought.map((l, i) => {
+    const row = { ...parent } as unknown as Record<string, unknown>;
+    if ("buyDate" in parent) row.buyDate = days[i];
+    row.buyQty = l.qty;
+    row.buyValue = values[i];
+    row.entryLegId = l.id;
+    row.purchaseQty = l.qty;
+    return row as unknown as PurchaseRow<T>;
+  });
+}
+
+/**
+ * The purchase book: one row per purchase leg for every staged ladder whose
+ * legs still state its parent, the parent row (open or closed) for everything
+ * else. Row order follows the input order, then the ladder's execution order.
+ */
+export function purchaseRows<T extends RealisedParent>(
+  trades: readonly T[],
+  ladders: ReadonlyMap<number, LadderInput>,
+): PurchaseRow<T>[] {
+  const out: PurchaseRow<T>[] = [];
+  for (const t of trades) {
+    const ladder = t.staged ? ladders.get(t.id) : undefined;
+    const rows = ladder ? splitPurchases(t, ladder.legs, ladder.position) : [];
+    if (rows.length > 0) out.push(...rows);
+    else out.push({ ...t, entryLegId: null, purchaseQty: t.buyQty ?? 0 });
   }
   return out;
 }

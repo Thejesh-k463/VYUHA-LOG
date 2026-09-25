@@ -29,6 +29,8 @@ import { inr } from "@/lib/format";
 import { Info } from "lucide-react";
 import { ProGate } from "@/components/system/pro-gate";
 import { FmvEditor } from "@/components/reports/fmv-editor";
+import { grandfatherLotsOf, groupGrandfatherLots } from "@/lib/analytics/grandfather-groups";
+import { isGrandfatherEligible } from "@/lib/analytics/cg-heads";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -102,21 +104,28 @@ export default async function TaxReportPage({
   // never-read columns stopped being fetched.
   // `taxRows` carries the RESOLVED asset class and the three non-deductible
   // charge lines — the page never re-derives a head from a segment (v4.5.0).
-  // `trades` (the raw projection, open rows included) is deliberately NOT read
-  // here any more: every figure on this page comes from `taxRows`, which
-  // carries the resolved asset class.
-  const { closedTrades, ipoTaxRows, cgTrades, taxRows } = getTaxBase(person);
+  // `trades` (the raw projection, open rows included) is read ONLY to list the
+  // FMV editor's lots (the parent rows behind the realised book, v4.6.0 W7):
+  // every FIGURE on this page comes from `taxRows`, which carries the resolved
+  // asset class.
+  const { trades, realisedTrades, ipoTaxRows, cgTrades, taxRows } = getTaxBase(person);
   // Undated closed trades bucket under TODAY'S FY — passed explicitly so this
   // page and the analytics module can never disagree on the fallback year.
   const currentFy = deriveCurrentFy(fyStartMonth);
   const rows = taxByFy([...taxRows, ...ipoTaxRows], fyStartMonth, currentFy);
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
-  const hasPreGrandfatherLot = cgTrades.some((t) => t.buyDate != null && t.buyDate < GRANDFATHER_DATE);
-  // Pre-2018 closed equity lots — the rows the FMV editor targets.
-  const grandfatherRows = closedTrades
-    .filter((t) => (t.segment === "eq_delivery" || t.segment === "eq_mtf") && t.buyDate != null && t.buyDate < GRANDFATHER_DATE)
-    .map((t) => ({ id: t.id, symbol: t.symbol, buyDate: t.buyDate!, sellDate: t.sellDate, buyQty: t.buyQty, avgBuyPrice: t.avgBuyPrice, fmv31Jan2018: t.fmv31Jan2018 ?? null }));
+  // v4.6.0 W7 (D3) — eligibility through the DATE (`isGrandfatherEligible`),
+  // never a byte compare against GRANDFATHER_DATE: a DD-MM-YYYY legacy row
+  // '15-06-2019' sorts below '2018-02-01' bytewise and '31-12-2017' above it.
+  const hasPreGrandfatherLot = cgTrades.some((t) => isGrandfatherEligible(t.buyDate));
+  // The lots the FMV editor targets: the DISTINCT PARENTS behind the realised
+  // book (not the closed rows) — a partly-sold pre-2018 staged ladder is open,
+  // yet its realised rows already carry its FMV into the tax readers, so it
+  // must be editable. Grouped per scrip (symbol + ISIN): one FMV, one Save.
+  // The selection is the pure `grandfatherLotsOf` (tests/grandfather-groups.test.ts).
+  const grandfatherGroups = groupGrandfatherLots(grandfatherLotsOf(trades, realisedTrades));
+  const grandfatherLotCount = grandfatherGroups.reduce((n, g) => n + g.lots.length, 0);
 
   // ITR-schedule export rows are fetched by /api/tax-itr when Export is
   // clicked — shipping all of them as client props serialised ~4.8 MB of
@@ -511,14 +520,19 @@ export default async function TaxReportPage({
           </CardContent>
         </Card>
 
-        {grandfatherRows.length > 0 && (
+        {grandfatherGroups.length > 0 && (
           <Card className="p-0">
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle>LTCG grandfathering — FMV @ {GRANDFATHER_DATE}</CardTitle>
-              <Badge variant="warning">{grandfatherRows.length} pre-2018 lot{grandfatherRows.length === 1 ? "" : "s"}</Badge>
+              <Badge variant="warning">
+                {grandfatherLotCount} pre-2018 lot{grandfatherLotCount === 1 ? "" : "s"} · {grandfatherGroups.length} scrip
+                {grandfatherGroups.length === 1 ? "" : "s"}
+              </Badge>
             </CardHeader>
             <CardContent>
-              <FmvEditor rows={grandfatherRows} />
+              {/* Keyed by person: router.refresh() keeps client state, and one
+                  person's typed FMV must never sit on another's same scrip. */}
+              <FmvEditor key={person ?? "all"} groups={grandfatherGroups} person={person} />
             </CardContent>
           </Card>
         )}
@@ -577,8 +591,11 @@ export default async function TaxReportPage({
           {hasPreGrandfatherLot && (
             <> <strong className="text-warning">Note:</strong> holdings bought before {GRANDFATHER_DATE} qualify for
             LTCG grandfathering (cost = higher of actual cost or 31-Jan-2018 fair value, capped at sale price) —
-            enter each lot&apos;s FMV in the card above; lots without an FMV fall back to actual cost.</>
+            enter each scrip&apos;s FMV in the card above; lots without an FMV fall back to actual cost.</>
           )}{" "}
+          <strong>Charges:</strong> STT/CTT and stamp duty are rounded to the rupee per trade row here (per fill on a
+          staged ladder); a contract note rounds each head once, so a day with N rows can differ from your bill by up to
+          ₹0.50 × N per head.{" "}
           <strong>Exited IPOs</strong> are included as equity-delivery capital gains (acquisition = allotment date).{" "}
           Informational only, not filing advice — verify with a qualified tax professional.
         </p>

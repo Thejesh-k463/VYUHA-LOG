@@ -13,6 +13,8 @@ import {
 // A11 (v4.5.0 fix list): the OTHER side of the 12-month line — the rule a
 // realised sale is classified by. The countdown must agree with it to the day.
 import { heldMoreThanMonths } from "@/lib/analytics/cg-heads";
+import { realisedRows, type LadderInput } from "@/lib/analytics/realised-rows";
+import { parentAggregate, summarise, type Leg } from "@/lib/domain/staged";
 
 const t = (over: Partial<LeverTrade> = {}): LeverTrade => ({
   segment: "eq_delivery",
@@ -56,6 +58,93 @@ describe("sttSplit — the same rupee, two treatments", () => {
   it("ignores open positions — nothing is deductible until realised", () => {
     const s = sttSplit([t({ segment: "index_option", sttCtt: 999, isOpen: true })], "2026-27");
     expect(s.total).toBe(0);
+  });
+
+  // v4.6.0 W7 (D2) — owner answer Q1: ONE count per ladder per FY, the fills
+  // listed beneath each half. A staged ladder reaches sttSplit as one realised
+  // row per (fill × FIFO tranche), all carrying the parent id.
+  it("a ladder of three realised rows counts ONCE and lists its fills grouped by exit leg", () => {
+    const s = sttSplit(
+      [
+        // Exit leg 11 consumed two tranches → two rows, ONE fill.
+        t({ id: 5, symbol: "NIFTY24JUN", segment: "index_option", fillLegId: 11, sellDate: "2026-05-02", realisedQty: 25, sttCtt: 3.25 }),
+        t({ id: 5, symbol: "NIFTY24JUN", segment: "index_option", fillLegId: 11, sellDate: "2026-05-02", realisedQty: 50, sttCtt: 6.5 }),
+        t({ id: 5, symbol: "NIFTY24JUN", segment: "index_option", fillLegId: 12, sellDate: "2026-06-09", realisedQty: 25, sttCtt: 4.1 }),
+      ],
+      "2026-27",
+    );
+    expect(s.deductibleTrades, "one ladder is one trade").toBe(1);
+    expect(s.deductible, "the rupees are the three rows' sum, unchanged").toBe(13.85);
+    expect(s.deductibleLadders).toEqual([
+      {
+        id: 5,
+        symbol: "NIFTY24JUN",
+        sttCtt: 13.85,
+        fills: [
+          { fillLegId: 11, sellDate: "2026-05-02", qty: 75, sttCtt: 9.75 },
+          { fillLegId: 12, sellDate: "2026-06-09", qty: 25, sttCtt: 4.1 },
+        ],
+      },
+    ]);
+    expect(s.forfeitedLadders).toEqual([]);
+  });
+
+  it("two ladders and one flat trade count THREE; the flat trade is not listed as a ladder", () => {
+    const s = sttSplit(
+      [
+        t({ id: 1, symbol: "INFY", fillLegId: 3, realisedQty: 10, sttCtt: 2 }),
+        t({ id: 1, symbol: "INFY", fillLegId: 4, realisedQty: 10, sttCtt: 2 }),
+        t({ id: 2, symbol: "TCS", fillLegId: 7, realisedQty: 5, sttCtt: 3 }),
+        t({ id: 2, symbol: "TCS", fillLegId: 7, realisedQty: 5, sttCtt: 3 }),
+        t({ id: 3, symbol: "HDFC", fillLegId: null, realisedQty: 8, sttCtt: 5 }),
+      ],
+      "2026-27",
+    );
+    expect(s.forfeitedTrades).toBe(3);
+    expect(s.forfeited).toBe(15);
+    expect(s.forfeitedLadders.map((l) => [l.symbol, l.fills.length, l.sttCtt])).toEqual([
+      ["INFY", 2, 4],
+      ["TCS", 1, 6],
+    ]);
+  });
+
+  it("a SHORT ladder's one cover lists one fill line per ENTRY date its rows carry (fillLegId × sellDate)", () => {
+    // On a short the realised rows of one cover carry the ENTRY tranches' dates
+    // as sellDate (realised-rows.ts: a short sells at entry). Grouping by
+    // fillLegId alone showed one "05-01 · 10" line — a date the other 5 were
+    // not sold on. Rows come from the product's own splitter, not hand-typed.
+    const legs: Leg[] = [
+      { id: 1, seq: 1, kind: "entry", qty: 5, price: 100, tradeDate: "2026-05-01", chargesTotal: 0 },
+      { id: 2, seq: 2, kind: "entry", qty: 5, price: 102, tradeDate: "2026-05-05", chargesTotal: 0 },
+      { id: 3, seq: 3, kind: "exit", qty: 10, price: 90, tradeDate: "2026-05-10", chargesTotal: 0 },
+    ];
+    const agg = parentAggregate(legs, "short");
+    const parent = { ...t({ segment: "index_option", sttCtt: 10 }), ...agg, id: 9, symbol: "NIFTYSHORT", staged: true, netPnl: 0, chargesTotal: 0 };
+    const ladders = new Map<number, LadderInput>([[9, { legs, position: summarise(legs, "short") }]]);
+    const rows = realisedRows([parent], ladders);
+    expect(rows.map((r) => [r.fillLegId, r.sellDate, r.realisedQty]), "the splitter's rows").toEqual([
+      [3, "2026-05-01", 5],
+      [3, "2026-05-05", 5],
+    ]);
+    const s = sttSplit(rows, "2026-27");
+    expect(s.deductibleTrades, "one ladder is one trade").toBe(1);
+    expect(s.deductibleLadders).toEqual([
+      {
+        id: 9,
+        symbol: "NIFTYSHORT",
+        sttCtt: 10,
+        fills: [
+          { fillLegId: 3, sellDate: "2026-05-01", qty: 5, sttCtt: 5 },
+          { fillLegId: 3, sellDate: "2026-05-05", qty: 5, sttCtt: 5 },
+        ],
+      },
+    ]);
+  });
+
+  it("rows WITHOUT an id still count one trade per row", () => {
+    const s = sttSplit([t({ sttCtt: 1 }), t({ sttCtt: 2 })], "2026-27");
+    expect(s.forfeitedTrades).toBe(2);
+    expect(s.forfeitedLadders).toEqual([]);
   });
 });
 

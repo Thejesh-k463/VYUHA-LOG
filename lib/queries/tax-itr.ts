@@ -54,9 +54,11 @@ export const getTaxBase = cache((personParam?: string | null) => {
   // BOTH built from it, so the scaffold table and the set-off engine can never
   // read two different books.
   const realisedTrades = getRealisedRows(trades);
-  // The FMV (grandfathering) editor on /reports/tax lists one row per TRADE —
-  // it writes `fmv_31_jan_2018` onto a trade id — so it keeps the per-trade
-  // set. It is not a money figure and is not summed anywhere.
+  // The closed parent rows. Since v4.6.0 W7 (D3) the /reports/tax FMV editor
+  // no longer reads this: it lists the DISTINCT PARENTS behind
+  // `realisedTrades` (so a partly-sold, still-open pre-2018 ladder is
+  // editable), grouped per scrip. Kept for the test harness
+  // (tests/helpers/book-ops.ts). Not a money figure; summed nowhere.
   const closedTrades = trades.filter((t) => !t.isOpen);
 
   // Exited IPOs are equity-delivery capital gains but live OUTSIDE the trades
