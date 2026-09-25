@@ -10,6 +10,30 @@
 // something, because those refusals are design, not gaps.
 
 import { OPTIONS_HELP, searchOptionsHelp, type OptionsHelpEntry } from "@/lib/domain/options-help";
+import { hubForHref, hubTabHref, type Hub } from "@/lib/domain/hubs";
+
+/**
+ * v4.6.0 W3 — seven screens became TABS of three analytics hubs. Each keeps its
+ * own entry, keyed by its tab URL (the one spelling, `hubTabHref`); a typo in
+ * the hub path or tab id throws at load rather than keying help to nothing.
+ */
+function tabHref(hubPath: string, tabId: string): string {
+  const hub = hubForHref(hubPath);
+  if (!hub || !hub.tabs.some((t) => t.id === tabId)) throw new Error(`help-content: no hub tab ${hubPath}?tab=${tabId}`);
+  return hubTabHref(hub, tabId);
+}
+
+/** A hub's own search words, derived: the words of its label plus every tab label. */
+function hubKeywords(hub: Hub): string[] {
+  const words = hub.label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return [...new Set([...words, ...hub.tabs.map((t) => t.label.toLowerCase())])];
+}
+
+const hubEntry = (hubPath: string, answers: string, body: string): HelpEntry => {
+  const hub = hubForHref(hubPath);
+  if (!hub) throw new Error(`help-content: no hub ${hubPath}`);
+  return { href: hub.href, title: hub.label, answers, body: [body], keywords: hubKeywords(hub) };
+};
 
 export interface HelpEntry {
   href: string;
@@ -342,15 +366,30 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: ["Scorecard, equity curve, monthly matrix, top playbooks and mistake economics, print-styled — use the Print button and save as PDF."],
     keywords: ["pdf", "print", "monthly report"],
   },
+  hubEntry(
+    "/reports/edge-clinic",
+    "Where does my edge come from, and what is leaking it?",
+    "One screen, three tabs: Setups (expectancy by setup, segment and NSE theme, with stop tuning and MAE/MFE), Discipline (the weekly Process Score and what broken rules cost) and Scaling & Replay (whether adding to a position helped, with an EOD replay of each ladder).",
+  ),
+  hubEntry(
+    "/reports/capital",
+    "What does the capital I tie up earn, and how do I trade around expiry?",
+    "One screen, two tabs: Return on Margin (P&L over the capital the market actually blocked) and Expiry (expiry-day P&L against other days, and what expires next). An equity-only workspace leaves the Expiry tab off the strip; a link to it still opens.",
+  ),
+  hubEntry(
+    "/reports/costs",
+    "What does trading cost me, and would another broker have cost less?",
+    "One screen, two tabs: Charges & MTF Leak (every charge head over time, MTF interest and the peak-margin penalty tracker) and Broker Costs (your whole book re-priced on every broker's rate card).",
+  ),
   {
-    href: "/reports/charges",
+    href: tabHref("/reports/costs", "charges"),
     title: "Charges & MTF Leak",
     answers: "Where does my gross P&L actually go?",
     body: ["Every charge head over time, MTF interest as its own leak, and the peak-margin penalty tracker."],
     keywords: ["charges", "leak", "stt", "brokerage", "penalty"],
   },
   {
-    href: "/reports/broker-compare",
+    href: tabHref("/reports/costs", "broker-compare"),
     title: "Broker Costs",
     answers: "Would my history have been cheaper on another broker?",
     body: ["Your entire book re-priced on every broker's rate card, free and paid plans listed separately with subscriptions amortised. Only a broker that priced every trade can be called cheapest — a partial total always flatters, so it is marked and excluded from the ranking."],
@@ -381,14 +420,14 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["harvesting", "ltcg", "stcg", "losses", "set-off", "stt", "holding period"],
   },
   {
-    href: "/reports/expiry",
+    href: tabHref("/reports/capital", "expiry"),
     title: "Expiry Analytics",
     answers: "How do I trade expiry day, and what expires next?",
     body: ["Expiry-day P&L split against ordinary days, and the calendar of upcoming expiries from open positions."],
     keywords: ["expiry", "weekly", "calendar"],
   },
   {
-    href: "/reports/rom",
+    href: tabHref("/reports/capital", "rom"),
     title: "Return on Margin",
     answers: "What did the capital actually blocked earn?",
     body: [
@@ -398,21 +437,21 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["rom", "margin", "capital", "return"],
   },
   {
-    href: "/reports/edge",
+    href: tabHref("/reports/edge-clinic", "setups"),
     title: "Edge / Setups",
     answers: "Which setups make money, and are my stops in the right place?",
     body: ["Expectancy by setup tag and segment, MAE/MFE excursions from your own EOD history, and a stop-tuning report in R — explicitly descriptive, not prescriptive."],
     keywords: ["expectancy", "mae", "mfe", "stops", "setup"],
   },
   {
-    href: "/reports/scaling",
+    href: tabHref("/reports/edge-clinic", "scaling"),
     title: "Scaling & Replay",
     answers: "Did adding to positions help, and what did the trade look like day by day?",
     body: ["Staged positions against a clearly-labelled first-entry-only counterfactual, and an EOD replay of any trade with entries, exits and stops marked."],
     keywords: ["scaling", "pyramid", "replay", "average down"],
   },
   {
-    href: "/reports/discipline",
+    href: tabHref("/reports/edge-clinic", "discipline"),
     title: "Discipline",
     answers: "What are my broken rules costing me, in rupees?",
     body: [

@@ -231,7 +231,7 @@ export async function POST(req: Request) {
       }
       repriced = repriceCapTrades(sqlite);
     });
-    for (const p of ["/", "/trades", "/targets/equity", "/targets/active", "/reports/discipline", "/risk"]) revalidatePath(p);
+    for (const p of ["/", "/trades", "/targets/equity", "/targets/active", "/reports/edge-clinic", "/risk"]) revalidatePath(p);
     recordAudit({
       entity: "risk_config",
       action: "update",

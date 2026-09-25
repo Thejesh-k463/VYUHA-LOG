@@ -102,7 +102,7 @@ export async function removeDuplicateCopy(input: {
   );
   if (!res.ok) return { ok: false, message: res.message, removed: 0 };
 
-  for (const p of ["/data-quality", "/trades", "/risk", "/equity", "/active", "/", "/reports/broker-compare"]) {
+  for (const p of ["/data-quality", "/trades", "/risk", "/equity", "/active", "/", "/reports/costs"]) {
     revalidatePath(p);
   }
   return { ok: true, message: res.message, removed: res.deleted };

@@ -21,7 +21,8 @@ import {
 
 const PAGES = [
   join(process.cwd(), "app/reports/performance/page.tsx"),
-  join(process.cwd(), "app/reports/scaling/page.tsx"),
+  // v4.6.0 W3: the Scaling & Replay screen is the Edge Clinic's tab body now.
+  join(process.cwd(), "app/reports/edge-clinic/_tabs/scaling.tsx"),
   // v3.7 — the Trade Review Desk: the Process Score card carries a
   // `metricDetail` drill-down and each of the five component rows a
   // `metricCaveatLine`, so all six ids are literal in this page.

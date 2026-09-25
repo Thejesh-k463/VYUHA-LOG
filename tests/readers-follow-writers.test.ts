@@ -81,8 +81,13 @@ describe("G3 — the scanner reproduces the class it guards (over the real pre-f
     expect(hits.every((h) => h.rule === "mtf-funded-0" && h.why.length > 0)).toBe(true);
 
     // The same three files at HEAD read the rule's way, so it is the FIX that
-    // makes the scan quiet, not a scanner that cannot see them.
-    expect(files.flatMap((f) => scanSource(f, git(`HEAD:${f}`), ["mtf-funded-0"]))).toEqual([]);
+    // makes the scan quiet, not a scanner that cannot see them. v4.6.0 W3: the
+    // broker-compare reader's body moved to the Costs hub's tab, so HEAD is read
+    // where the reader LIVES now (the old page.tsx is a redirect with no reader).
+    const MOVED: Record<string, string> = { "app/reports/broker-compare/page.tsx": "app/reports/costs/_tabs/broker-compare.tsx" };
+    const now = files.map((f) => MOVED[f] ?? f);
+    expect(now.every((f) => git(`HEAD:${f}`).includes("mtfFundedAmount")), "every reader is still a reader at HEAD").toBe(true);
+    expect(now.flatMap((f) => scanSource(f, git(`HEAD:${f}`), ["mtf-funded-0"]))).toEqual([]);
   });
 
   it("the pre-fix close dialog's raw exit date is reported by the date rule (the daysHeld NaN class)", () => {
@@ -505,7 +510,7 @@ export function reads(p: P, list: P[]) {
       "lib/import/commit.ts",
       "lib/jobs/mtf-accrual.ts",
       "lib/queries/ipos.ts",
-      "app/reports/broker-compare/page.tsx",
+      "app/reports/costs/_tabs/broker-compare.tsx", // v4.6.0 W3: the old /reports/broker-compare body
       "components/trades/close-trade-dialog.tsx",
       "components/trades/edit-trade-dialog.tsx",
       "components/live/load-desk.ts",

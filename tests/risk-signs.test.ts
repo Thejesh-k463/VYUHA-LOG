@@ -181,7 +181,7 @@ describe("signedNumber — one sign, zero unsigned, the caller's own rounding", 
  * helper left in place grows the independent sign straight back.
  */
 const SIGN_SITES: { rel: string; imports: RegExp }[] = [
-  { rel: "app/reports/rom/page.tsx", imports: /signedPct/ },
+  { rel: "app/reports/capital/_tabs/rom.tsx", imports: /signedPct/ }, // v4.6.0 W3: the old /reports/rom body
   { rel: "app/reports/monthly/page.tsx", imports: /signedNumber/ },
   { rel: "app/reports/performance/page.tsx", imports: /signedNumber/ },
   { rel: "components/cash/ledger-import.tsx", imports: /signedNumber/ },
@@ -191,7 +191,7 @@ const SIGN_SITES: { rel: string; imports: RegExp }[] = [
   // v4.3.0 fix wave 1 (R28) — five more hand-rolled `>= 0 ? "+"` sites the
   // wave-2 list above did not reach. Each printed "+₹0" / "+0R" for a zero.
   { rel: "components/settings/capital-card.tsx", imports: /signOf/ },
-  { rel: "app/reports/expiry/page.tsx", imports: /signOf/ },
+  { rel: "app/reports/capital/_tabs/expiry.tsx", imports: /signOf/ }, // v4.6.0 W3: the old /reports/expiry body
   { rel: "components/cash/ledger-table.tsx", imports: /signOf/ },
   { rel: "components/trades/staged-panel.tsx", imports: /signedNumber/ },
   { rel: "lib/queries/capital.ts", imports: /signOf/ },

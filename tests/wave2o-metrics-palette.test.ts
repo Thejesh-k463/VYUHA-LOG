@@ -28,7 +28,7 @@ const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "ut
 const stripComments = (src: string) =>
   src.replace(/(?<![\w,*])\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 const code = (rel: string) => stripComments(read(rel));
-const EDGE = "app/reports/edge/page.tsx";
+const EDGE = "app/reports/edge-clinic/_tabs/setups.tsx"; // v4.6.0 W3: the old /reports/edge body
 const CHARTS = "components/dashboard/charts.tsx";
 const DASH = "components/dashboard/dashboard-client.tsx";
 const LENSES = "components/lenses/lenses-client.tsx";

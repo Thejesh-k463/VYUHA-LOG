@@ -18,6 +18,7 @@ import { verify as edVerify, createHash } from "node:crypto";
 import { machineMatches } from "@/lib/machine-id";
 import { buyMessageFor, skuById, type PricingSkuId } from "@/lib/domain/pricing";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
+import { hubForHref, hubTabHref } from "@/lib/domain/hubs";
 
 export type LicenseSku = "toolkit" | "app" | "indicators";
 export type LicenseEnforcement = "banner" | "block";
@@ -249,6 +250,10 @@ export function formatWhatsAppNumber(digits: string = WHATSAPP_NUMBER): string {
  * journal-side exception is ADDING AN OPEN TRADE: tracking a live position
  * with SL/target/risk is forward-looking tooling, not record-keeping.
  */
+const EDGE_CLINIC = hubForHref("/reports/edge-clinic")!;
+const CAPITAL = hubForHref("/reports/capital")!;
+const COSTS = hubForHref("/reports/costs")!;
+
 export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // Positions & risk
   { href: "/risk", label: "Portfolio Risk cockpit (VaR, Greeks, margin, settlement radar, breach alerts)" },
@@ -270,10 +275,14 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   { href: "/atlas", label: "Market Atlas — breadth, rotation and market context computed on your own machine" },
   // Deep analytics
   { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
-  { href: "/reports/edge", label: "Edge / Setups — expectancy by setup, segment and NSE theme" },
-  { href: "/reports/discipline", label: "Discipline — which broken rule costs you the most" },
+  // v4.6.0 W3 (owner ruling T1): seven analytics screens are TABS of three
+  // hubs now, so their entries are keyed by the tab URL (`hubTabHref`, the one
+  // spelling of it). Each tab is still its own sold line; the hub page carries
+  // the <ProGate>, and `lockFor` / ENTITLEMENT_PATHS read the PATH.
+  { href: hubTabHref(EDGE_CLINIC, "setups"), label: "Edge / Setups — expectancy by setup, segment and NSE theme" },
+  { href: hubTabHref(EDGE_CLINIC, "discipline"), label: "Discipline — which broken rule costs you the most" },
   { href: "/review", label: "Trade Review Desk" },
-  { href: "/reports/scaling", label: "Scaling Quality & Trade Replay" },
+  { href: hubTabHref(EDGE_CLINIC, "scaling"), label: "Scaling Quality & Trade Replay" },
   // Options seller
   // v4.3 — the 40-shape catalogue (owner ruling, wave 2). `partial` for the
   // same reason /live is: the sixteen shapes the pre-v4.3 if-chain already
@@ -294,8 +303,8 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // wherever the legs still form one of them.
   { href: "/strategies", label: "Option Strategies — 40-shape catalogue, strategy shelf and picker; Signal book — rule adherence, edge and ladder analytics", partial: true },
   { href: "/options-journal", label: "Options Seller Journal — IV, DTE, hedge and expiry outcomes" },
-  { href: "/reports/expiry", label: "Expiry Analytics — expiry-day vs other-day edge" },
-  { href: "/reports/rom", label: "Return on Margin — what your capital actually earned" },
+  { href: hubTabHref(CAPITAL, "expiry"), label: "Expiry Analytics — expiry-day vs other-day edge" },
+  { href: hubTabHref(CAPITAL, "rom"), label: "Return on Margin — what your capital actually earned" },
   // Tax
   { href: "/reports/tax", label: "Tax Summary (grandfathering, dividend TDS, set-off)" },
   { href: "/reports/itr", label: "ITR Pack — 44AB/44AD audit read + CA export" },
@@ -304,8 +313,8 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   { href: "/reports/ais", label: "AIS Reconcile — the portal's JSON against your journal" },
   { href: "/reports/reconcile", label: "Broker Truth — your broker's own stated figures against your journal, with the reasons they differ" },
   // Costs, data & exports
-  { href: "/reports/broker-compare", label: "Broker cost comparison + cross-broker MTF margins" },
-  { href: "/reports/charges", label: "Charges & MTF Leak — where the money actually goes" },
+  { href: hubTabHref(COSTS, "broker-compare"), label: "Broker cost comparison + cross-broker MTF margins" },
+  { href: hubTabHref(COSTS, "charges"), label: "Charges & MTF Leak — where the money actually goes" },
   { href: "/reports/monthly", label: "PDF reports — monthly, per broker and financial year" },
   // Gated since the print rework but never advertised here — a user was
   // blocked by something the upsell card never told them they would get.

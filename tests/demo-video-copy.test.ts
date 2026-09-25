@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { NAV_ITEMS } from "@/components/layout/nav-config";
 
 /**
  * The demo video's narration and publish copy are the most-watched words the
@@ -92,8 +93,10 @@ describe("demo video copy makes no outcome claims and no retired claims", () => 
 });
 
 describe("the shot list names real sidebar labels", () => {
-  const nav = read("components/layout/nav-config.ts");
-  const labels = new Set([...nav.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]));
+  // v4.6.0 W3: the three analytics hubs' labels are DERIVED from
+  // lib/domain/hubs.ts, so they are not `label: "…"` literals in nav-config.ts
+  // any more — read the registry itself, not its source text.
+  const labels = new Set(NAV_ITEMS.map((n) => n.label));
 
   it("nav-config exposes labels (sanity)", () => {
     expect(labels.size).toBeGreaterThan(30);

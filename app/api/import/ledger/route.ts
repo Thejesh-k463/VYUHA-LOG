@@ -337,7 +337,7 @@ export async function POST(req: Request) {
     });
   }
 
-  for (const p of ["/cash", "/reports/charges", "/"]) revalidatePath(p);
+  for (const p of ["/cash", "/reports/costs", "/"]) revalidatePath(p);
 
   return NextResponse.json({
     ok: true,

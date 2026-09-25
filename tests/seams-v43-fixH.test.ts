@@ -385,7 +385,8 @@ const renderElem = (e: Elem) => renderToStaticMarkup(React.createElement(e.type 
 describe("H1 · one win-rate rule over one book (groupBy's pricedCount → /reports/edge's book rate, its p-values, its interval and its expectancy ≡ computeKpis)", () => {
   beforeAll(async () => {
     await fixHModules();
-    edgePage = (await import("@/app/reports/edge/page")).default as () => unknown;
+    // v4.6.0 W3: the page body is the Edge Clinic's Setups tab now.
+    edgePage = (await import("@/app/reports/edge-clinic/_tabs/setups")).SetupsTab as () => unknown;
   }, 60_000);
 
   /** A closed round trip with a known basis — a priced trade. */
@@ -476,7 +477,7 @@ describe("H1 · one win-rate rule over one book (groupBy's pricedCount → /repo
 
     // The five sites' own source: the page reads pricedCount, never count, for
     // every statistic (the class TypeScript cannot see — a `count` here type-checks).
-    const src = stripComments(readSource("app/reports/edge/page.tsx"));
+    const src = stripComments(readSource("app/reports/edge-clinic/_tabs/setups.tsx"));
     const edgeTable = src.slice(src.indexOf("function EdgeTable"));
     expect(edgeTable, "the book reference rate sums pricedCount").toContain("rows.reduce((s, r) => s + r.pricedCount, 0)");
     expect(edgeTable, "the p-value's denominator").toContain("proportionPValue(r.wins, r.pricedCount, bookRate)");
@@ -1465,7 +1466,8 @@ describe("H9 · a margin_config edit moves nothing on /reports/broker-compare fo
   beforeAll(async () => {
     await fixHModules();
     marginRoute = await import("@/app/api/margin/route");
-    brokerComparePage = (await import("@/app/reports/broker-compare/page")).default as () => unknown;
+    // v4.6.0 W3: the page body is the Costs hub's Broker Costs tab now.
+    brokerComparePage = (await import("@/app/reports/costs/_tabs/broker-compare")).BrokerCompareTab as () => unknown;
   }, 60_000);
 
   it("every printed string on the report is byte-identical at 20% and at 50% own margin, and the omission is stated once", async () => {

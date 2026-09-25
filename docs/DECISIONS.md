@@ -9218,3 +9218,73 @@ EXIT 0 — 477 files / 11,328 passed / 35 skipped, lint 0 errors, `next build` c
 (README's test count was the one FAIL, fixed in the doc). **Prose pass: 15 files / 5 findings / 27 tool calls** (doc-auditor on
 Sonnet) — two fixed (this entry had the Fyers client id in a filename; the spec's status line still said "W9 next"), one is the
 session log rewritten at this close, two were the commit itself (STATE names the W9 sha's parent, written before the commit landed).
+
+## 2026-09-25 — v4.6.0 W3 built: three analytics hubs (Edge Clinic · Capital & Expiry · Costs) — nav, routes, redirects; no maths
+
+**What the scout measured before the contract (twenty-fifth session):** the seven routes ruling T1 folds ALL live under
+`/reports/` (`/reports/edge`, `/reports/scaling`, `/reports/discipline`, `/reports/rom`, `/reports/expiry`, `/reports/charges`,
+`/reports/broker-compare`) — the spec's `/scaling` shorthand is loose and the code wins; each old page was `force-dynamic`, its
+body INLINE, wrapped in `<ProGate>` with its own `PageHeader`; the repo had NO `redirect(` anywhere and NO page reading `?tab=`
+(`strategies-tabs.tsx` refuses a URL parameter on purpose — untouched); five registries keyed screens by href with pinned tests
+(nav, `PRO_FEATURES`, help entries, the palette, `SCREEN_DOMAIN`), and two of them would have LOST their guard on a `?tab=` href:
+`tests/pro-gating.test.ts`'s `pageFileFor` returned null for any href with a `?` (so a tab-level Pro entry was never checked for
+`<ProGate>`), and `lockFor` compared the raw feature href against a query-stripped path (so the palette padlock would vanish on a
+tab URL). The workspace is read server-side in `app/layout.tsx` (`asWorkspace(getSettings()?.workspace)`), so a hub can decide
+its strip on the server.
+
+**Measured on the dev server after the build:** (1) a page `redirect()` under the root `app/loading.tsx` boundary is NOT a 307 on
+the wire — the shell streams first and the redirect arrives as an RSC `NEXT_REDIRECT;replace;/reports/edge-clinic?tab=setups`
+payload over a **200** with no `<meta http-equiv="refresh">` (curl); only client JS follows it. `next.config.ts redirects()`
+answers a real **307** with `Location` (curl, all seven). (2) A stale Turbopack cache (`.next/dev`) answered **404 for existing,
+UNCHANGED routes** (`/reports/performance`, `/reports/tax`, `/api/license`) with nothing in the log while `/`, `/trades`,
+`/settings`, `/help` were 200 — an hour of wave-blaming avoided by probing an unchanged sibling first; stop, delete `.next/dev`,
+restart fixed it (LEDGER L-18). (3) `readme-claims`' screen derivation counted 52 `page.tsx` on the W3 tree, 7 of them redirect
+stubs; `playwright --list` = 128 tests in 36 files (z-hubs 8). (4) Radix `TabsTrigger` always emits `aria-controls=<content id>`;
+with no `TabsContent` (the server renders the tab) the reference dangled — Radix spreads the trigger's own props AFTER, so
+`aria-controls={undefined}` removes it (verified in the rendered HTML).
+
+**Decided by the session under the decision policy (W3 owed no question group — spec §4; the owner may overrule):**
+- **One registry:** `lib/domain/hubs.ts` (pure) — 3 hubs × tabs {id, label, description = the old page's own header line,
+  legacyHref, domain?}; nav items, `PRO_FEATURES` (7 tab-URL entries, labels unchanged), help entries (7 re-keyed to tab URLs + 3
+  short hub entries), the palette (screens + one "Hub › Tab" row per tab), the saved nav-order migration, the workspace tab
+  rule and BOTH redirect layers derive from it. Edge Clinic's default tab is Setups in 4.6.0 (Clinic lands in 4.7.0 — no
+  placeholder tab).
+- **Routes:** each hub page reads `searchParams` (a Promise in this Next), `resolveTab` (missing / unknown / repeated → the
+  default), renders `PageHeader` (hub title + the active tab's description) → a link-based Radix strip (`hub-tabs.tsx`,
+  `TabsTrigger asChild` → `next/link`, no `TabsContent`) → ONLY the active tab's body inside ONE `<ProGate>` — so a tab's
+  queries run only when it is opened. Bodies moved byte-identical into `app/reports/<hub>/_tabs/*.tsx` (imports, wrapper and
+  export name aside; the skeptic diffed all seven); two data badges that lived in the old headers ("N expiry days seen", "N
+  trades") moved into the first row of their tab bodies, which also puts them behind the gate.
+- **Redirects, both layers:** `next.config.ts redirects()` (the real 307, derived from HUBS) AND the seven page stubs
+  (`redirect(legacyRedirect(...))`, `force-dynamic`, no gate, `loading.tsx` deleted). **307, never 308:** 4.7.0 re-maps the Edge
+  Clinic default and a browser-cached 308 would outlive it. e2e specs that visited old URLs keep their gotos (they now prove the
+  redirect); `e2e/z-hubs.spec.ts` asserts the wire status with `page.request.get(…, {maxRedirects: 0})` before the page load.
+- **Workspace:** `"/reports/expiry"` leaves `SCREEN_DOMAIN`; `tabVisible(hub, tab, ws)` hides the Expiry TAB for an equity-only
+  workspace while `/reports/capital` stays visible everywhere; `hubStripTabs` keeps a hidden tab in the strip when it is the one
+  being viewed (the sidebar's `isCurrent` rule — a deep link still opens); the palette's tab rows apply `screenVisible && tabVisible`.
+- **Saved nav order:** `migrateNavHrefs` on the read path (`parseNavOrder`, before `mergeOrder`/`mergeShown`): a legacy href
+  becomes its hub at the FIRST legacy member's position, no duplicates; the hub is fold-visible if ANY legacy member was;
+  idempotent; the un-versioned legacy envelope is migrated too. (Skeptic executed it on a hand-built envelope.)
+- **Help Desk:** `/help` grouped entries by bare nav hrefs and would have shown SEVEN FEWER cards with every registry test
+  green (the builder found it; no test existed) — `navGroupHrefs(group)` in nav-config now owns "the hrefs a group owns"
+  (screens + a hub's tab URLs) and `tests/hubs.test.ts` pins that every `HELP_ENTRIES` href is owned exactly once and the page
+  uses it (LEDGER L-17).
+- **Pro-gate guard widened** (LEDGER F-17): `pageFileFor` maps a `?tab=` href to its path's `page.tsx`; a non-partial entry
+  pointing nowhere fails; `lockFor` matches the exact tab URL first, then the path, partial entries untouched (`/trades?add=open`
+  still never locks `/trades`). `tests/hubs.test.ts` also pins ONE `<ProGate>` per hub page wrapping `BODIES[tab.id]()` — the
+  per-file `includes("<ProGate>")` scan cannot tell one gated tab from all of them (skeptic finding).
+- **`readme-claims` screen count:** a `page.tsx` whose body is a `redirect(` is a forwarding address, not a screen — the
+  derivation now excludes it (45, not 52) and README says 45. This refines what the check MEASURES (the D-2 rule said "a screen
+  a user can be on"); it is not a check bent to agree with a doc.
+- Palette tab rows are labelled "Hub › Tab"; `buildCommands` / `commandsFor` exported for the tests; `revalidatePath` callers
+  (7) and `scripts/retake-screenshots.mjs` re-pointed to the hub PATHS; the demo shot list names the hubs; `demo-video-copy`
+  reads `NAV_ITEMS` labels instead of regex-matching the nav source (hub labels are derived now).
+- **Not fixed, recorded:** the global-search "screens" source (`lib/queries/search.ts`) covers `NAV_ITEMS` only — a tab name is
+  found through the help source, not as a screen. W4's palette/help work owns it.
+
+**Independent skeptic before commit (Opus, 56 calls):** 12 CONFIRMED, 0 REFUTED, 1 UNVERIFIABLE — the 307 (no server in its
+remit) — settled by the measurement above and the config redirect; three small findings fixed in the wave (dangling
+`aria-controls`; the per-file gate scan; the e2e wire assertion). Builder red-on-revert: 18 mutations, each restored and
+sha-checked; P-B proved the HEAD pro-gating test passed on an ungated hub.
+
+**Gate:** `npm run verify` (vyuha-verifier) EXIT 0 — 478 files / 11,373 passed / 35 skipped (+1 file `tests/hubs.test.ts`, +45 passed against the W9 baseline), lint 0 errors (the 6 pre-existing warnings), `next build` "Compiled successfully in 12.1s", `package-lock.json` unchanged, `npm ls esbuild` clean; Playwright not run locally (`--list` 128 in 36; CI runs both jobs on the commit). `drift:close-out` 21 PASS / 0 FAIL / 3 SKIP. **Prose pass: 12 files / 4 findings / 29 tool calls** (doc-auditor on Haiku, all CONFIRMED and fixed in README the same session: three tables/sentences still listing the seven screens as separate sidebar entries; and, found by the session beside them, "six broker importers" — the registry names eight since W9).

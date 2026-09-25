@@ -27,7 +27,9 @@ test("reports/scaling: the replay route survives the browser-only chart", async 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("response", (r) => {
-    if (r.url().includes("/reports/scaling") && r.status() >= 500) errors.push(`HTTP ${r.status()}`);
+    // v4.6.0 W3: /reports/scaling redirects to the Edge Clinic's Scaling tab,
+    // so a 5xx on either URL is the route failing.
+    if ((r.url().includes("/reports/scaling") || r.url().includes("/reports/edge-clinic")) && r.status() >= 500) errors.push(`HTTP ${r.status()}`);
   });
 
   await ensureTrades(page);

@@ -187,7 +187,7 @@ describe("G-G3-1 · every writer and both dialogs read THIS calendar, not a copy
     "components/trades/edit-trade-dialog.tsx",
     "lib/analytics/ipo-link.ts",
     "app/api/ipos/route.ts",
-    "app/reports/broker-compare/page.tsx",
+    "app/reports/costs/_tabs/broker-compare.tsx", // v4.6.0 W3: the old /reports/broker-compare body
   ])("%s imports the shared calendar and defines none of its own", (rel) => {
     const src = read(rel);
     expect(/from "@\/lib\/domain\/trading-day"/.test(src), "imports lib/domain/trading-day").toBe(true);

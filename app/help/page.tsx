@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { HelpDesk } from "@/components/system/help-desk";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { OPTIONS_HELP } from "@/lib/domain/options-help";
-import { NAV_GROUPS, NAV_ITEMS } from "@/components/layout/nav-config";
+import { NAV_GROUPS, navGroupHrefs } from "@/components/layout/nav-config";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,9 @@ export default function HelpPage() {
   // the app rather than a second information architecture.
   const groups = NAV_GROUPS.map((label) => ({
     label,
-    hrefs: NAV_ITEMS.filter((i) => i.group === label).map((i) => i.href),
+    // navGroupHrefs, not a bare NAV_ITEMS filter: a hub's seven help entries
+    // are keyed by their `?tab=` URL (v4.6.0 W3) and would otherwise vanish here.
+    hrefs: navGroupHrefs(label),
   }));
   return (
     <>

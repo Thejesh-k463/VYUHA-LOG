@@ -6,7 +6,8 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
 import { useNavHistory } from "@/components/layout/nav-history";
-import { screenVisible, type Workspace } from "@/lib/domain/workspace";
+import { screenVisible, tabVisible, type Workspace } from "@/lib/domain/workspace";
+import { HUBS, hubTabHref, type Hub, type HubTab } from "@/lib/domain/hubs";
 import type { SearchResult, SourceKey } from "@/lib/domain/search-scope";
 import { Search, CornerDownLeft, Plus, ArrowLeft, Undo2 } from "lucide-react";
 import { isPaletteChord } from "./search-panel-keys";
@@ -46,7 +47,18 @@ interface Command {
   href: string;
   keywords: string;
   action?: true;
+  /** Set on a hub-tab row, so workspace mode can hide the tab (`tabVisible`), not just its hub. */
+  hubTab?: { hub: Hub; tab: HubTab };
 }
+
+/**
+ * One row per analytics-hub TAB (v4.6.0 W3), "<Hub> › <Tab>", DERIVED from
+ * HUBS: seven screens became tabs, and a trader who types "discipline" or
+ * "expiry" should still land on that tab in one step rather than on the hub.
+ */
+const HUB_TAB_COMMANDS: (Omit<Command, "keywords"> & { hubTab: { hub: Hub; tab: HubTab } })[] = HUBS.flatMap((hub) =>
+  hub.tabs.map((tab) => ({ label: `${hub.label} › ${tab.label}`, group: "Analytics", href: hubTabHref(hub, tab.id), hubTab: { hub, tab } })),
+);
 
 const ACTIONS: Command[] = [
   { label: "Add trade (closed / manual)", group: "Actions", href: "/trades?add=manual", keywords: "new trade entry log", action: true },
@@ -74,9 +86,11 @@ let keywordCache: KeywordMap | null = null;
  */
 let optionsCache: Command[] | null = null;
 
-function buildCommands(keywords: KeywordMap | null, options: Command[] | null): Command[] {
+/** Exported for tests/hubs.test.ts (the hub-tab rows and their workspace filter); PURE. */
+export function buildCommands(keywords: KeywordMap | null, options: Command[] | null): Command[] {
   return [
     ...NAV_ITEMS.map((n) => ({ label: n.label, group: n.group, href: n.href, keywords: keywords?.get(n.href) ?? n.label.toLowerCase() })),
+    ...HUB_TAB_COMMANDS.map((c) => ({ ...c, keywords: keywords?.get(c.href) ?? c.label.toLowerCase() })),
     ...ACTIONS,
     ...(options ?? []),
   ];
@@ -86,11 +100,13 @@ function buildCommands(keywords: KeywordMap | null, options: Command[] | null): 
  * Workspace mode hides the other book's screens here too — a palette that
  * still offers Expiry Analytics to an equity-only user has not tidied
  * anything. Actions are matched on their PATH, so "Add IPO" (/ipos?add=1)
- * disappears with the IPO screen it would open.
+ * disappears with the IPO screen it would open. A hub-tab row needs BOTH its
+ * hub and its tab visible — the Capital & Expiry hub is shared, its Expiry tab
+ * is not.
  */
-function commandsFor(all: Command[], ws: Workspace): Command[] {
+export function commandsFor(all: Command[], ws: Workspace): Command[] {
   if (ws === "both") return all;
-  return all.filter((c) => screenVisible(c.href.split("?")[0], ws));
+  return all.filter((c) => screenVisible(c.href.split("?")[0], ws) && (!c.hubTab || tabVisible(c.hubTab.hub, c.hubTab.tab, ws)));
 }
 
 function rank(c: Command, q: string): number {
@@ -177,7 +193,11 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
     if (!open || (keywords && optionCmds)) return;
     let live = true;
     Promise.all([import("@/lib/domain/help-content"), import("@/lib/domain/options-help")]).then(([m, opts]) => {
-      keywordCache = new Map(NAV_ITEMS.map((n) => [n.href, deriveKeywords(m.HELP_ENTRIES, n.href, n.label)]));
+      keywordCache = new Map([
+        ...NAV_ITEMS.map((n) => [n.href, deriveKeywords(m.HELP_ENTRIES, n.href, n.label)] as const),
+        // A tab row's words come from ITS help entry (keyed by the tab URL).
+        ...HUB_TAB_COMMANDS.map((c) => [c.href, deriveKeywords(m.HELP_ENTRIES, c.href, c.hubTab.tab.label)] as const),
+      ]);
       optionsCache = opts.OPTIONS_HELP.map((e) => ({
         label: e.name,
         group: "Options",

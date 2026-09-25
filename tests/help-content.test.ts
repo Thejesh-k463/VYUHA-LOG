@@ -6,6 +6,7 @@ import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 import { SHIPPED_PROVIDER_IDS, allProviderCapabilities } from "@/lib/quotes/registry";
 import { CONNECTABLE_PROVIDER_IDS } from "@/lib/live/connect-prompt";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
+import { HUBS, LEGACY_HREFS, hubTabForHref, hubTabHref } from "@/lib/domain/hubs";
 // READ-ONLY import (v4.3 audit round 3, D-1): the shipped catalogue, so the
 // /strategies entry's free/Pro sentence is derived from `legacyFree` rather
 // than typed out beside it. `lib/analytics/strategy-catalogue.ts` is another
@@ -36,9 +37,29 @@ describe("help covers the app, exactly", () => {
   });
 
   it("no help entry describes a screen that does not exist", () => {
+    // v4.6.0 W3: an entry may be keyed by a hub TAB URL (`/reports/costs?tab=charges`),
+    // so the join is on the entry's PATH — and a `?tab=` entry's tab must exist in HUBS.
     const navHrefs = new Set(NAV_ITEMS.map((n) => n.href));
-    const ghosts = HELP_ENTRIES.filter((e) => !navHrefs.has(e.href)).map((e) => e.href);
+    const ghosts = HELP_ENTRIES.filter((e) => !navHrefs.has(e.href.split("?")[0])).map((e) => e.href);
     expect(ghosts, `help for non-existent screens: ${ghosts.join(", ")}`).toEqual([]);
+    const badTabs = HELP_ENTRIES.filter((e) => e.href.includes("?") && !hubTabForHref(e.href)).map((e) => e.href);
+    expect(badTabs, `help for tabs that do not exist: ${badTabs.join(", ")}`).toEqual([]);
+  });
+
+  it("every analytics-hub tab keeps its own help entry, and every hub has one (v4.6.0 W3)", () => {
+    const byHref = new Map(HELP_ENTRIES.map((e) => [e.href, e]));
+    for (const hub of HUBS) {
+      expect(byHref.get(hub.href)?.keywords.length ?? 0, `${hub.href} has no hub entry`).toBeGreaterThan(0);
+      const hubWords = byHref.get(hub.href)!;
+      expect([hubWords.answers, ...hubWords.body].join(" ").split(/\s+/).length, `${hub.href} entry ≤ 60 words`).toBeLessThanOrEqual(60);
+      for (const tab of hub.tabs) {
+        expect(hubWords.keywords, `${hub.href} keywords carry the tab label`).toContain(tab.label.toLowerCase());
+        expect(byHref.get(hubTabHref(hub, tab.id))?.keywords.length ?? 0, `${hubTabHref(hub, tab.id)} lost its help entry`).toBeGreaterThan(0);
+      }
+    }
+    // …and no entry is still keyed by a route that only redirects now.
+    const stale = HELP_ENTRIES.filter((e) => LEGACY_HREFS.includes(e.href.split("?")[0])).map((e) => e.href);
+    expect(stale).toEqual([]);
   });
 
   it("entries are unique per href", () => {

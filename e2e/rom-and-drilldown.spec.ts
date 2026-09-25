@@ -6,9 +6,13 @@ import { ensureTrades, ensureDatedTrades } from "./helpers";
  */
 test("ROM report: renders, groups by segment, never prints an impossible annualised figure", async ({ page }) => {
   await ensureTrades(page);
+  // v4.6.0 W3: the old URL redirects to the Capital & Expiry hub's ROM tab —
+  // the goto now also proves the redirect; the heading is the hub's.
   await page.goto("/reports/rom");
+  await expect(page).toHaveURL(/\/reports\/capital\?tab=rom$/);
 
-  await expect(page.getByRole("heading", { name: /Return on Margin/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Capital & Expiry/i })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Return on Margin/i, selected: true })).toBeVisible();
   await expect(page.getByText(/Capital deployed/i).first()).toBeVisible();
   await expect(page.getByText(/where capital works hardest/i)).toBeVisible();
 

@@ -333,7 +333,7 @@ export async function deleteImportBatchAction(_prev: ActionState, formData: Form
 }
 
 function revalidateAfterTradeChange() {
-  for (const p of ["/trades", "/risk", "/equity", "/active", "/", "/reports/broker-compare"]) revalidatePath(p);
+  for (const p of ["/trades", "/risk", "/equity", "/active", "/", "/reports/costs"]) revalidatePath(p);
 }
 
 /** Close an open position at an exit price/date — any segment (equity/MTF/options/futures). */

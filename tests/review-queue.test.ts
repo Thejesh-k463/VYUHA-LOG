@@ -606,7 +606,8 @@ describe("the route parses, calls and revalidates — nothing else", () => {
     const ok = await route.POST(req({ action: "mark-reviewed", id }));
     expect(ok.status).toBe(200);
     expect(reviewedAtOf(id)).not.toBeNull();
-    expect(vi.mocked(revalidatePath).mock.calls.map((c) => c[0])).toEqual(["/review", "/trades", "/reports/discipline", "/"]);
+    // v4.6.0 W3: the weekly score lives on the Edge Clinic's Discipline tab; revalidatePath takes the hub PATH.
+    expect(vi.mocked(revalidatePath).mock.calls.map((c) => c[0])).toEqual(["/review", "/trades", "/reports/edge-clinic", "/"]);
 
     expect((await route.POST(req({ action: "reopen", id }))).status).toBe(200);
     expect(reviewedAtOf(id)).toBeNull();

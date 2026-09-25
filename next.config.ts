@@ -1,6 +1,23 @@
 import type { NextConfig } from "next";
+// Relative on purpose: the config is loaded before any `@/` alias exists, and
+// lib/domain/hubs.ts imports nothing, so it is safe to pull in here.
+import { HUBS, hubTabHref } from "./lib/domain/hubs";
 
 const nextConfig: NextConfig = {
+  // v4.6.0 W3 (owner ruling T1): the seven analytics screens that became hub
+  // tabs answer a REAL 307 here, before any rendering. The old page.tsx files
+  // also call redirect() — but under the root loading.tsx boundary the shell
+  // streams first, so that redirect arrives as an RSC `NEXT_REDIRECT` payload
+  // over a 200 (measured 2026-09-25 on the dev server) and only client JS
+  // follows it; a bookmark opened by curl, the screenshot script or a
+  // crawler would sit on the stub. Both layers derive from lib/domain/hubs.ts.
+  // `permanent: false` → 307, never 308: 4.7.0 re-maps the Edge Clinic's
+  // default tab and a browser-cached 308 would outlive that.
+  async redirects() {
+    return HUBS.flatMap((hub) =>
+      hub.tabs.map((tab) => ({ source: tab.legacyHref, destination: hubTabHref(hub, tab.id), permanent: false })),
+    );
+  },
   // DELIBERATELY OFF (attempted 2026-08-11, rolled back the same day).
   // Enabling it made SSR and client collapse JSX whitespace differently at
   // `</b>` + newline-text boundaries — hydration mismatches on at least two

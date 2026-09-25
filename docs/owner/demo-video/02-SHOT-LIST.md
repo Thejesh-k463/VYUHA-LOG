@@ -27,7 +27,7 @@ every screen named below is one click away and no take shows you hunting.
 | Step | Action | Hold |
 |---|---|---|
 | 1 | Start on **Dashboard** (sidebar group *Overview*). You will see the 7-day trial banner — that is correct, it is the real first-run experience; leave it. | 2 s |
-| 2 | Sidebar → *Analytics* → **Charges & MTF Leak** | — |
+| 2 | Sidebar → *Analytics* → **Costs** (the Charges & MTF Leak tab) | — |
 | 3 | Let it render. Hover one row of the charge breakdown so the tooltip shows. | 4 s |
 
 *The viewer must see the computed-vs-stated comparison before the narration finishes. If the report is sparse on the demo book, hover the biggest single charge line.*
@@ -78,8 +78,8 @@ Record these as **four separate takes** (5a–5d). The edit cuts between them ha
 | Take | Sidebar path | Hold |
 |---|---|---|
 | 5a | *Analytics* → **Arjun's Eye** | 6 s — let the charts draw, then still |
-| 5b | *Analytics* → **Edge / Setups** | 6 s |
-| 5c | *Analytics* → **Discipline** | 6 s |
+| 5b | *Analytics* → **Edge Clinic** (the Setups tab) | 6 s |
+| 5c | *Analytics* → **Edge Clinic** (the Discipline tab) | 6 s |
 | 5d | *Positions* → **Portfolio Risk** | 6 s |
 
 *Nav label note: it is "Portfolio Risk" under Positions — not "Risk".*

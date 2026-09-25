@@ -34,7 +34,8 @@ import { weeklyScoreAverage } from "@/components/reports/weekly-score-average";
 const root = path.resolve(__dirname, "..");
 const read = (p: string) => readFileSync(path.join(root, p), "utf8");
 
-const PAGES = ["app/reports/discipline/page.tsx", "app/reports/monthly/page.tsx"];
+// v4.6.0 W3: the discipline body is the Edge Clinic's Discipline tab now.
+const PAGES = ["app/reports/edge-clinic/_tabs/discipline.tsx", "app/reports/monthly/page.tsx"];
 
 /**
  * Wider than PAGES, and deliberately so. The v3.7.0 note says a limit you never

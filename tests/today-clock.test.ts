@@ -239,8 +239,9 @@ describe("source guard — one today", () => {
       "app/arjuns-eye/page.tsx",
       "app/equity/actions.ts",
       "app/page.tsx",
-      "app/reports/broker-compare/page.tsx",
-      "app/reports/expiry/page.tsx",
+      // v4.6.0 W3: the broker-compare and expiry bodies are hub tabs now.
+      "app/reports/costs/_tabs/broker-compare.tsx",
+      "app/reports/capital/_tabs/expiry.tsx",
       "app/reports/harvest/page.tsx",
       "app/reports/monthly/page.tsx",
       "app/reports/performance/page.tsx",

@@ -14,16 +14,19 @@ import { PRO_FEATURES, ENTITLEMENT_PATHS } from "@/lib/license";
 const ROOT = path.resolve(__dirname, "..");
 
 /**
- * "/reports/edge" → app/reports/edge/page.tsx.
+ * "/reports/edge-clinic?tab=setups" → app/reports/edge-clinic/page.tsx — the
+ * PATH's page.
  *
- * A href carrying a QUERY STRING is an action on an otherwise-free page
- * (`/trades?add=open` opens a dialog on the ungated Trades screen), not a Pro
- * page — gating the page would gate the core journal. Those return null and
- * are covered by the open-trade test below.
+ * v4.6.0 W3: this used to return null for any href carrying a query string, on
+ * the reasoning that such an href is an action on an otherwise-free page
+ * (`/trades?add=open`). That reasoning belongs to PARTIAL entries, which the
+ * caller already skips on `f.partial` before it gets here. A whole-page entry
+ * keyed by a hub TAB URL is a real Pro page, and returning null for it would
+ * mean seven Pro screens were never checked for a <ProGate> at all.
  */
 function pageFileFor(href: string): string | null {
-  if (href.includes("?")) return null;
-  const p = path.join(ROOT, "app", href === "/" ? "" : href, "page.tsx");
+  const pathname = href.split("?")[0].split("#")[0];
+  const p = path.join(ROOT, "app", pathname === "/" ? "" : pathname, "page.tsx");
   return fs.existsSync(p) ? p : null;
 }
 
@@ -61,6 +64,9 @@ describe("Pro gating — the registry and the real gates agree", () => {
       // NOT be page-gated; their own test below checks the entitlement read.
       if (f.partial) continue;
       const file = pageFileFor(f.href);
+      // v4.6.0 W3: a Pro entry whose page does not exist is not "nothing to
+      // check" — it is an entry pointing nowhere.
+      expect(file, `${f.href} names no page.tsx`).not.toBeNull();
       if (!file) continue;
       const src = read(file);
       if (!src.includes("<ProGate>")) ungated.push(f.href);

@@ -8,7 +8,7 @@ import { recordAudit } from "@/lib/audit";
 export const runtime = "nodejs";
 
 function revalidate() {
-  for (const p of ["/playbooks", "/trades", "/reports/discipline"]) revalidatePath(p);
+  for (const p of ["/playbooks", "/trades", "/reports/edge-clinic"]) revalidatePath(p);
 }
 
 /** Parse one-rule-per-line text into a clean rules array. */

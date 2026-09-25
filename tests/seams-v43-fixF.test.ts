@@ -647,7 +647,8 @@ describe("F1 · an MTF position paid for in full out of own capital (the editor'
     EditTradeDialog = (await import("@/components/trades/edit-trade-dialog")).EditTradeDialog;
     TrackerClient = (await import("@/components/trackers/tracker-client")).TrackerClient;
     ({ ReportTr, ReportTd } = await import("@/components/ui/report-table"));
-    brokerComparePage = (await import("@/app/reports/broker-compare/page")).default as () => unknown;
+    // v4.6.0 W3: the page body is the Costs hub's Broker Costs tab now.
+    brokerComparePage = (await import("@/app/reports/costs/_tabs/broker-compare")).BrokerCompareTab as () => unknown;
     equityPage = (await import("@/app/equity/page")).default as () => unknown;
   }, 60_000);
 

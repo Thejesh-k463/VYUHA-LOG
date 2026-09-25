@@ -14,11 +14,9 @@ import {
   LineChart,
   TrendingUp,
   ShieldAlert,
-  ShieldCheck,
   Scale,
   Landmark,
   Scissors,
-  CalendarClock,
   Layers,
   Banknote,
   History,
@@ -37,7 +35,6 @@ import {
   ScanSearch,
   ClipboardCheck,
   LibraryBig,
-  GitBranch,
   Sigma,
   Columns3,
   NotebookPen,
@@ -45,12 +42,20 @@ import {
   Ruler,
   Compass,
 } from "lucide-react";
+import { HUBS, LEGACY_TO_HUB, hubTabHref } from "@/lib/domain/hubs";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   group: string;
+};
+
+/** Sidebar icon per analytics hub (the hubs themselves live in lib/domain/hubs.ts, which is React-free). */
+const HUB_ICONS: Record<string, LucideIcon> = {
+  "/reports/edge-clinic": TrendingUp,
+  "/reports/capital": Gauge,
+  "/reports/costs": Receipt,
 };
 
 /**
@@ -97,13 +102,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/reports/performance", label: "Performance", icon: LineChart, group: "Analytics" },
   { href: "/arjuns-eye", label: "Arjun's Eye", icon: Eye, group: "Analytics" },
   { href: "/reports/monthly", label: "Report (PDF)", icon: Printer, group: "Analytics" },
-  { href: "/reports/charges", label: "Charges & MTF Leak", icon: Receipt, group: "Analytics" },
-  { href: "/reports/broker-compare", label: "Broker Costs", icon: Scale, group: "Analytics" },
-  { href: "/reports/expiry", label: "Expiry Analytics", icon: CalendarClock, group: "Analytics" },
-  { href: "/reports/rom", label: "Return on Margin", icon: Gauge, group: "Analytics" },
-  { href: "/reports/edge", label: "Edge / Setups", icon: TrendingUp, group: "Analytics" },
-  { href: "/reports/scaling", label: "Scaling & Replay", icon: GitBranch, group: "Analytics" },
-  { href: "/reports/discipline", label: "Discipline", icon: ShieldCheck, group: "Analytics" },
+  // v4.6.0 W3 (owner ruling T1): the three analytics hubs, DERIVED from HUBS —
+  // seven screens became tabs; their old routes redirect (lib/domain/hubs.ts).
+  ...HUBS.map((h) => ({ href: h.href, label: h.label, icon: HUB_ICONS[h.href] ?? LineChart, group: "Analytics" })),
   // Back Office
   { href: "/cash", label: "Cash & Ledger", icon: Banknote, group: "Back Office" },
   { href: "/surveillance", label: "Surveillance", icon: ShieldAlert, group: "Back Office" },
@@ -118,6 +119,19 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/rule-packs", label: "Rule & Rate Packs", icon: LibraryBig, group: "System" },
   { href: "/help", label: "Help Desk", icon: LifeBuoy, group: "System" },
 ];
+
+/**
+ * Every help-desk href a sidebar group owns: its screens, and for an analytics
+ * hub also each tab's `?tab=` URL. /help groups HELP_ENTRIES by these hrefs;
+ * before W3 it used the bare screen hrefs, which would have dropped the seven
+ * tab-keyed entries from the desk without any test noticing.
+ */
+export function navGroupHrefs(group: string): string[] {
+  return NAV_ITEMS.filter((i) => i.group === group).flatMap((i) => {
+    const hub = HUBS.find((h) => h.href === i.href);
+    return hub ? [i.href, ...hub.tabs.map((t) => hubTabHref(hub, t.id))] : [i.href];
+  });
+}
 
 export const NAV_GROUPS = [
   "Overview",
@@ -174,6 +188,37 @@ export function mergeOrder(saved: string[] | null | undefined, current: string[]
     out.splice(at, 0, k);
   });
   return out;
+}
+
+/**
+ * Re-key one saved href list from the seven pre-hub analytics routes to their
+ * hubs (PURE). A legacy href becomes its hub's href at the position of the
+ * FIRST member of that hub (legacy or the hub itself) in the list; every later
+ * member is dropped, so a hub never appears twice. Anything else is untouched.
+ */
+function migrateHrefList(list: readonly string[]): string[] {
+  const hubs = new Set(Object.values(LEGACY_TO_HUB));
+  const out: string[] = [];
+  for (const h of list) {
+    const target = LEGACY_TO_HUB[h] ?? h;
+    if (hubs.has(target) && out.includes(target)) continue;
+    out.push(target);
+  }
+  return out;
+}
+
+/**
+ * v4.6.0 W3 — carry a saved nav order across the analytics-hub merge (PURE,
+ * idempotent). `mergeOrder`/`mergeShown` drop unknown hrefs SILENTLY, so
+ * without this a user who had shown `/reports/edge` would find the Edge Clinic
+ * hub folded away: their saved Analytics set would read as all-unknown (stale)
+ * and fall back to the defaults. Here the hub takes the FIRST legacy member's
+ * place in `items`, and is shown when ANY legacy member was shown.
+ */
+export function migrateNavHrefs(state: NavOrderState): NavOrderState {
+  const remap = (rec: Record<string, string[]>) =>
+    Object.fromEntries(Object.entries(rec).map(([g, list]) => [g, migrateHrefList(list)]));
+  return { ...state, items: remap(state.items), shown: remap(state.shown) };
 }
 
 /**
@@ -337,16 +382,18 @@ export function parseNavOrder(raw: string | null | undefined): NavOrderState | n
     if (o.v === undefined) {
       // Legacy {groups, items}: order carries over, fold state starts default.
       if (o.groups === undefined && o.items === undefined) return null;
-      return { v: 1, groups: strArray(o.groups), items: strArrayRecord(o.items), shown: {}, expanded: {} };
+      return migrateNavHrefs({ v: 1, groups: strArray(o.groups), items: strArrayRecord(o.items), shown: {}, expanded: {} });
     }
     if (o.v !== 1) return null; // a future shape is discarded, never mis-read
-    return {
+    // v4.6.0 W3: the pre-hub analytics hrefs are re-keyed HERE, before the
+    // sidebar's mergeOrder/mergeShown can drop them as unknown.
+    return migrateNavHrefs({
       v: 1,
       groups: strArray(o.groups),
       items: strArrayRecord(o.items),
       shown: strArrayRecord(o.shown),
       expanded: boolRecord(o.expanded),
-    };
+    });
   } catch {
     return null;
   }

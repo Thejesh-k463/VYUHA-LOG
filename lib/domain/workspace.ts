@@ -24,6 +24,7 @@
 // rather than inventing a parallel one — see lib/domain/constants.ts.
 
 import type { Bucket } from "./constants";
+import type { Hub, HubTab } from "./hubs";
 
 export const WORKSPACES = ["both", "equity", "fno"] as const;
 export type Workspace = (typeof WORKSPACES)[number];
@@ -44,7 +45,9 @@ export const WORKSPACE_LABELS: Record<Workspace, string> = {
  *
  * Two that look one-sided and are deliberately NOT listed:
  *   /surveillance   — F&O ban list AND equity ASM/GSM/circuit bands
- *   /reports/rom    — margin on futures, short options AND intraday equity
+ *   /reports/capital — its Return on Margin tab covers futures, short options
+ *                     AND intraday equity; its Expiry tab is F&O-only, and that
+ *                     is a TAB rule (`tabVisible` below), not a screen rule
  *
  * /settings is never listed for a further reason: it is the only way back out
  * of a mode, so hiding it would strand the user in their own preference.
@@ -73,7 +76,6 @@ export const SCREEN_DOMAIN: Readonly<Record<string, Domain>> = {
   "/targets/active": "fno",
   "/strategies": "fno",
   "/options-journal": "fno",
-  "/reports/expiry": "fno",
 };
 
 /** Should this screen appear in the sidebar / command palette? */
@@ -81,6 +83,26 @@ export function screenVisible(href: string, ws: Workspace): boolean {
   if (ws === "both") return true;
   const domain = SCREEN_DOMAIN[href];
   return domain === undefined || domain === ws;
+}
+
+/**
+ * Should this hub TAB appear in the hub's strip / the command palette?
+ * (v4.6.0 W3.) The same rule as `screenVisible`, one level down: a tab with
+ * no `domain` is shared. A hidden tab still RESOLVES — `?tab=expiry` opens in
+ * an equity workspace, like any hidden screen's deep link.
+ */
+export function tabVisible(hub: Hub, tab: HubTab, ws: Workspace): boolean {
+  // `hub` carries no domain of its own today; it is in the signature so one can be added.
+  return ws === "both" || !tab.domain || tab.domain === ws;
+}
+
+/**
+ * The tab ids a hub's strip shows (PURE): every visible tab, plus the one being
+ * viewed even when it is hidden — the sidebar's `|| isCurrent` rule, so a deep
+ * link to a hidden tab still shows the user where they are.
+ */
+export function hubStripTabs(hub: Hub, activeId: string, ws: Workspace): string[] {
+  return hub.tabs.filter((t) => t.id === activeId || tabVisible(hub, t, ws)).map((t) => t.id);
 }
 
 /**

@@ -135,7 +135,7 @@ describe("both render sites print the SAME helper output", () => {
 
   it.each([
     ["components/dashboard/dashboard-client.tsx"],
-    ["app/reports/edge/page.tsx"],
+    ["app/reports/edge-clinic/_tabs/setups.tsx"], // v4.6.0 W3: the old /reports/edge body
   ])("%s renders perLotSecondLine beside rProvenanceLine", (file) => {
     const src = read(file);
     expect(src, "the shared second line, not a hand-rolled one").toContain("perLotSecondLine(");

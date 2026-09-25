@@ -132,11 +132,19 @@ const FREE: Lock = { locked: false };
  * edge columns are not. Locking it here put a padlock in the palette on a
  * screen the user can walk straight into, which reads as "you cannot open
  * this" and is simply false. The screen states its own partial gate.
+ *
+ * v4.6.0 W3 — a whole-page feature may itself be keyed by a TAB URL
+ * (`/reports/edge-clinic?tab=scaling`, lib/domain/hubs.ts): every tab of a hub
+ * is Pro, so such an entry locks its hub's PATH too. The entry whose href IS
+ * the requested one names what unlocks; any other tab of the same hub is the
+ * fallback label. Partial entries are still skipped, exactly as above.
  */
 export function lockFor(href: string, entitlement: { pro: boolean }, features: readonly Feature[] = PRO_FEATURES): Lock {
   if (entitlement.pro) return FREE;
-  const path = href.split("?")[0].split("#")[0];
-  const hit = features.find((f) => f.href === path && !f.partial);
+  const bare = href.split("#")[0];
+  const path = bare.split("?")[0];
+  const whole = features.filter((f) => !f.partial);
+  const hit = whole.find((f) => f.href === bare) ?? whole.find((f) => f.href.split("?")[0] === path);
   return hit ? { locked: true, unlocks: hit.label } : FREE;
 }
 

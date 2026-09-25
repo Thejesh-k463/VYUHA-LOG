@@ -37,8 +37,9 @@ const schema = z.discriminatedUnion("action", [
 
 // Every surface whose render depends on a review stamp or a weekly row: the
 // desk itself, the trades table's reviewed marker, the discipline report's
-// weekly score, and the dashboard's "review open" card.
-const PATHS = ["/review", "/trades", "/reports/discipline", "/"];
+// weekly score (the Edge Clinic's Discipline tab since v4.6.0 W3), and the
+// dashboard's "review open" card.
+const PATHS = ["/review", "/trades", "/reports/edge-clinic", "/"];
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);

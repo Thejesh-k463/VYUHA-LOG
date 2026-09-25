@@ -152,10 +152,13 @@ describe("README test counts agree with each other", () => {
     // Next.js route segment that renders a page — i.e. one `app/**/page.tsx`,
     // counted recursively, route groups and dynamic segments included, and
     // layouts, route handlers and error/loading files excluded because none of
-    // them is a screen a user can be on.
-    const pages = readdirSync(path.join(root, "app"), { recursive: true }).filter(
-      (f) => path.basename(String(f)) === "page.tsx",
-    );
+    // them is a screen a user can be on. v4.6.0 W3 added a second exclusion:
+    // a page.tsx whose whole body is a `redirect(` (the seven old analytics
+    // routes now forwarding to their hub tab) is a forwarding address, not a
+    // screen a user can be on — counting it would have said 52 for 45 screens.
+    const pages = readdirSync(path.join(root, "app"), { recursive: true })
+      .filter((f) => path.basename(String(f)) === "page.tsx")
+      .filter((f) => !/\bredirect\(/.test(readFileSync(path.join(root, "app", String(f)), "utf8")));
     expect(pages.length, "app/ has no page.tsx at all — the derivation is reading the wrong tree").toBeGreaterThan(0);
     const cell = readme.match(
       /\| \*\*[\d,]+\*\* \| \*\*(\d+)\*\* \| \*\*0\*\* \|\r?\n\| tests, \d+ end-to-end flows \| screens in the desktop app \|/,

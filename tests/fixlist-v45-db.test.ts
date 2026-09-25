@@ -149,7 +149,8 @@ beforeAll(async () => {
   ({ POST: unClosePOST } = await import("@/app/api/trades/un-close/route"));
   ({ POST: previewPOST } = await import("@/app/api/charges/preview/route"));
   ({ POST: limitsPOST } = await import("@/app/api/risk/limits/route"));
-  brokerComparePage = (await import("@/app/reports/broker-compare/page")).default as () => unknown;
+  // v4.6.0 W3: the page body is the Costs hub's Broker Costs tab now.
+  brokerComparePage = (await import("@/app/reports/costs/_tabs/broker-compare")).BrokerCompareTab as () => unknown;
   ({ ReportTr } = await import("@/components/ui/report-table"));
 
   t.db

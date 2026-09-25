@@ -18,9 +18,10 @@ describe("lockFor — the pure rule", () => {
   const cases: { href: string; ent: { pro: boolean }; locked: boolean }[] = [
     { href: "/risk", ent: FREE, locked: true },
     { href: "/risk", ent: PRO, locked: false },
-    { href: "/reports/edge", ent: FREE, locked: true },
-    { href: "/reports/edge?from=2026-01-01", ent: FREE, locked: true }, // path match survives a query string
-    { href: "/reports/edge#setups", ent: FREE, locked: true },
+    // v4.6.0 W3: /reports/edge is the Edge Clinic's Setups tab; the hub PATH locks.
+    { href: "/reports/edge-clinic", ent: FREE, locked: true },
+    { href: "/reports/edge-clinic?from=2026-01-01", ent: FREE, locked: true }, // path match survives a query string
+    { href: "/reports/edge-clinic#setups", ent: FREE, locked: true },
     { href: "/trades", ent: FREE, locked: false }, // core journal; `/trades?add=open` is a partial action, not the page
     { href: "/trades?symbol=TCS", ent: FREE, locked: false },
     { href: "/playbooks", ent: FREE, locked: false },
@@ -39,7 +40,10 @@ describe("lockFor — the pure rule", () => {
     const lock = lockFor(href, ent);
     expect(lock.locked).toBe(locked);
     if (locked) {
-      expect(lock.unlocks).toBe(PRO_FEATURES.find((f) => f.href === href.split("?")[0].split("#")[0])!.label);
+      // The first whole-page entry on that PATH names what unlocks (a hub's
+      // entries are keyed by tab URL, so compare paths on both sides).
+      const path = href.split("?")[0].split("#")[0];
+      expect(lock.unlocks).toBe(PRO_FEATURES.find((f) => !f.partial && f.href.split("?")[0] === path)!.label);
     } else {
       expect(lock.unlocks).toBeUndefined();
     }
@@ -53,8 +57,10 @@ describe("lockFor — the pure rule", () => {
         expect(lockFor(f.href.split("?")[0], FREE), f.href).toEqual({ locked: false });
         continue;
       }
-      if (f.href.includes("?")) continue;
+      // v4.6.0 W3: a whole-page entry keyed by a hub TAB URL is checked too —
+      // it must lock under its own label, and so must its hub's bare path.
       expect(lockFor(f.href, FREE), f.href).toEqual({ locked: true, unlocks: f.label });
+      expect(lockFor(f.href.split("?")[0], FREE).locked, f.href).toBe(true);
       expect(lockFor(f.href, PRO), f.href).toEqual({ locked: false });
     }
   });

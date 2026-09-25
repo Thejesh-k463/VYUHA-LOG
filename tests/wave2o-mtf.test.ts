@@ -39,7 +39,8 @@ let comparePage: () => unknown;
 // slower on SQLite-file work, AGENTS.md Testing).
 beforeAll(async () => {
   t = await openTempDb("wave2o-mtf", { seed: true });
-  comparePage = (await import("@/app/reports/broker-compare/page")).default as () => unknown;
+  // v4.6.0 W3: the page body is the Costs hub's Broker Costs tab now.
+  comparePage = (await import("@/app/reports/costs/_tabs/broker-compare")).BrokerCompareTab as () => unknown;
 }, 120_000);
 afterAll(() => t?.cleanup());
 

@@ -5,8 +5,10 @@ import {
   asWorkspace,
   defaultBucket,
   screenVisible,
+  tabVisible,
   type Workspace,
 } from "@/lib/domain/workspace";
+import { hubForHref } from "@/lib/domain/hubs";
 import { NAV_ITEMS, moveWithinVisible } from "@/components/layout/nav-config";
 
 describe("screenVisible", () => {
@@ -16,7 +18,12 @@ describe("screenVisible", () => {
 
   it("hides the other book, keeps its own", () => {
     expect(screenVisible("/strategies", "equity")).toBe(false);
-    expect(screenVisible("/reports/expiry", "equity")).toBe(false);
+    // v4.6.0 W3: Expiry is a TAB of the shared Capital & Expiry hub now — the
+    // hub stays, the tab leaves the equity book's strip.
+    const capital = hubForHref("/reports/capital")!;
+    const expiry = capital.tabs.find((t) => t.id === "expiry")!;
+    expect(tabVisible(capital, expiry, "equity")).toBe(false);
+    expect(screenVisible("/reports/capital", "equity")).toBe(true);
     expect(screenVisible("/equity", "equity")).toBe(true);
 
     expect(screenVisible("/ipos", "fno")).toBe(false);

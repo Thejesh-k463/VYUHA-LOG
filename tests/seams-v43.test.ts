@@ -697,8 +697,9 @@ describe("S7 · pct() is byte-identical in behaviour after B5 added three neighb
     expect(pct(1.23).startsWith("+")).toBe(false);
   });
 
-  it("app/reports/rom/page.tsx no longer runs its OWN pct — CLOSED in wave 2 (B6)", () => {
-    const src = read("app/reports/rom/page.tsx");
+  // v4.6.0 W3: the ROM body moved to the Capital & Expiry hub's tab, unchanged.
+  it("app/reports/capital/_tabs/rom.tsx no longer runs its OWN pct — CLOSED in wave 2 (B6)", () => {
+    const src = read("app/reports/capital/_tabs/rom.tsx");
     const imp = /import \{([^}]*)\} from "@\/lib\/format";/.exec(src);
     expect(imp, "rom stopped importing from lib/format at all").not.toBeNull();
     const imported = imp![1].split(",").map((s) => s.trim()).filter(Boolean).sort();

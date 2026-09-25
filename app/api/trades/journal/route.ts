@@ -125,6 +125,6 @@ export async function POST(req: Request) {
     after: { playbookId, emotionTag, mistakeTags: storedMistakeTags, notes, exitTrigger, ruleViolations: storedRuleViolations, reviewedAt: storedReviewedAt },
   });
   // /review joins the list: a save takes the trade out of the desk's queue.
-  for (const p of ["/trades", "/reports/discipline", "/review"]) revalidatePath(p);
+  for (const p of ["/trades", "/reports/edge-clinic", "/review"]) revalidatePath(p);
   return NextResponse.json({ ok: true, message: "Journal saved." });
 }

@@ -268,12 +268,12 @@ async function main() {
 
   await shoot("arjuns-eye", async () => { await gotoHydrated("/arjuns-eye"); });
   await shoot("playbooks", async () => { await gotoHydrated("/playbooks"); });
-  await shoot("rom-report", async () => { await gotoHydrated("/reports/rom"); });
+  await shoot("rom-report", async () => { await gotoHydrated("/reports/capital"); });
 
   // v2.99.60 surfaces — the report screens with the new shared table chrome
   // are the listing's biggest visual upgrade since the Dark Luxe foundation.
   await shoot("tax-pack", async () => { await gotoHydrated("/reports/tax"); });
-  await shoot("edge-report", async () => { await gotoHydrated("/reports/edge"); });
+  await shoot("edge-report", async () => { await gotoHydrated("/reports/edge-clinic"); });
   await shoot("surveillance", async () => { await gotoHydrated("/surveillance"); });
 
   await shoot("lenses", async () => { await gotoHydrated("/lenses"); });

@@ -7,7 +7,8 @@ import { metricCaveatLine } from "@/lib/domain/metric-help";
 /**
  * Source guard for the v3.6.0 WS5 fix — the EOD-replay caveat has ONE source
  * of truth: lib/domain/metric-help.ts (`metricCaveatLine("replayEod")`),
- * rendered by app/reports/scaling/page.tsx directly above <TradeReplay/>.
+ * rendered by app/reports/edge-clinic/_tabs/scaling.tsx (the Scaling & Replay
+ * tab since v4.6.0 W3) directly above <TradeReplay/>.
  *
  * components/reports/trade-replay.tsx used to hardcode a near-identical second
  * sentence ("EOD closes cannot show the intraday path between fills. Markers
