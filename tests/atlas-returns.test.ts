@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildGapMap,
   computeReturns,
   computeYtd,
   detectCorporateActionGaps,
@@ -130,5 +131,45 @@ describe("the corporate-action guard", () => {
     const r = computeYtd(universe, 2026, 1, gaps);
     expect(r.corporateActionExcluded).toEqual(["SPLIT"]);
     expect(r.metric.value_ppm).toBeNull();
+  });
+
+  it("buildGapMap (A5) is the ONE builder: market-baselined, keyed by symbol, absent when clean", () => {
+    const universe = [
+      series("A", [100, 50, 51]),
+      series("B", [100, 50, 51]),
+      series("C", [100, 50, 51]), // the whole market halved on session 1: a market event, not three splits
+      series("SPLIT", [500, 500, 100]), // session 2: alone
+    ];
+    const gaps = buildGapMap(universe);
+    expect([...gaps.keys()]).toEqual(["SPLIT"]);
+    expect(gaps.get("SPLIT")).toEqual([{ date: iso(2), ratioPpm: -800_000 }]);
+    // It equals the hand-built pipeline compute-daily used to inline.
+    const market = marketMoveByDate(universe);
+    expect(gaps.get("SPLIT")).toEqual(detectCorporateActionGaps(universe[3], { marketMovePpmByDate: market }));
+    expect(buildGapMap(universe, 900_000).size).toBe(0); // a looser threshold flags nothing
+  });
+});
+
+describe("the statistic (AQ18): median by default, mean by name", () => {
+  const universe = [
+    series("A", [100, 1, 1, 1, 1, 110]), // +10%
+    series("B", [100, 1, 1, 1, 1, 120]), // +20%
+    series("C", [100, 1, 1, 1, 1, 160]), // +60%
+  ];
+  const w = [{ key: "1w" as const, sessions: 5 }];
+
+  it("computeReturns is the median unless told otherwise", () => {
+    expect(computeReturns(universe, 3, new Map(), w)["1w"].metric.value_ppm).toBe(200_000);
+    expect(computeReturns(universe, 3, new Map(), w, "median")["1w"].metric.value_ppm).toBe(200_000);
+    expect(computeReturns(universe, 3, new Map(), w, "mean")["1w"].metric.value_ppm).toBe(300_000);
+    // The denominator, the coverage and the exclusions do not depend on the statistic.
+    expect(computeReturns(universe, 3, new Map(), w, "mean")["1w"].metric.denominator).toBe(3);
+  });
+
+  it("computeYtd takes the same parameter", () => {
+    const base = Date.UTC(2025, 11, 31);
+    const u = [series("A", [100, 110], base), series("B", [100, 120], base), series("C", [100, 160], base)];
+    expect(computeYtd(u, 2026, 3).metric.value_ppm).toBe(200_000);
+    expect(computeYtd(u, 2026, 3, new Map(), "mean").metric.value_ppm).toBe(300_000);
   });
 });

@@ -3,9 +3,12 @@ import { db } from "@/lib/db";
 import { instruments, instrumentIndices } from "@/lib/db/schema";
 import { asc, inArray } from "drizzle-orm";
 import {
+  buildClassificationResolution,
   buildSectorMap,
   buildSectorResolution,
   classificationEntries,
+  type ClassificationResolution,
+  type ClassificationSources,
   type SectorResolution,
   type SectorSources,
 } from "@/lib/analytics/instruments";
@@ -132,6 +135,19 @@ export function getSectorMap(): Map<string, string> {
 /** Same chain, with WHERE each sector came from and how confident the source was. */
 export function getSectorResolution(): Map<string, SectorResolution> {
   return buildSectorResolution(getInstruments(), sectorSources());
+}
+
+/**
+ * The LEVELS-aware chain (v4.6.0 W5, AQ21): the same sources and precedence,
+ * carrying macro / sector / industry / basic where the source states them. A
+ * user tag is sector-only (its industry is null, so the Atlas cohort falls UP
+ * to the sector); the universe carries all four; the index map is a
+ * sector-equivalent label. `getSectorResolution()` above is unchanged.
+ */
+export function getClassificationResolution(): Map<string, ClassificationResolution> {
+  const s = sectorSources();
+  const sources: ClassificationSources = { ...s, taxonomy: classificationEntries() };
+  return buildClassificationResolution(getInstruments(), sources);
 }
 
 /** Coverage summary for the manager status line. */

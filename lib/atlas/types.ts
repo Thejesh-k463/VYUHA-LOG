@@ -43,7 +43,11 @@ export type MetricReason =
   | "insufficient_history"
   | "no_baseline"
   | "no_anchor"
-  | "unclassified";
+  | "unclassified"
+  /** v4.6.0 W5 (AQ26): fewer than `GROUP_MIN_COMPUTE` members produced a figure. */
+  | "insufficient_members"
+  /** v4.6.0 W5 (AQ44): the denominator covers less than `COVERAGE_FLOOR_PPM` of the universe. */
+  | "coverage_below_floor";
 
 /** The five ledger reasons; also the `atlas_staleness.reason` value set. */
 export type ExclusionReason =
@@ -84,19 +88,82 @@ export interface SectorRef {
 // SPEC_VERSION bump (04 section 4.3) and invalidates stored atlas_metric rows.
 // ---------------------------------------------------------------------------
 
-/** Semver on the formula set, not on the code. */
-export const SPEC_VERSION = "atlas-core/1.0.0";
+/**
+ * Semver on the formula set, not on the code.
+ *
+ * 2.0.0 (v4.6.0 W5, owner ruling AQ18): the group statistic is the MEDIAN
+ * (the mean is persisted beside it under its own name), the regime honours
+ * `COVERAGE_FLOOR_PPM` (AQ44/A9), the 2m window is gone (AQ7) and every
+ * universe window is a median too. A stored `atlas_daily` row under 1.0.0 is
+ * recomputed on the existing spec-mismatch path; its `atlas_metric` rows for
+ * earlier sessions survive and are excluded from any cross-session read by the
+ * `spec_version` join (`lib/queries/atlas.ts`, design review A1).
+ */
+export const SPEC_VERSION = "atlas-core/2.0.0";
 
-/** `1d` is the current-day rotation window (A8/A9); the rest are the A5 windows. */
-export type ReturnWindowKey = "1d" | "1w" | "1m" | "2m" | "3m";
+/**
+ * `1d` is the current-day rotation window (A8/A9); the rest are the A5 windows.
+ * `2m` was removed in 2.0.0 (AQ7: "1w / 1m / 3m / YTD now, 2m LATER") — no
+ * stored reader named it, so the type member went with the row.
+ */
+export type ReturnWindowKey = "1d" | "1w" | "1m" | "3m";
 
-/** Return windows in sessions (04 section 1, A5). */
+/** Return windows in sessions (04 section 1, A5; AQ7 drops 2m). */
 export const RETURN_WINDOWS: { key: ReturnWindowKey; sessions: number }[] = [
   { key: "1w", sessions: 5 },
   { key: "1m", sessions: 21 },
-  { key: "2m", sessions: 42 },
   { key: "3m", sessions: 63 },
 ];
+
+/**
+ * The group statistic (AQ18). MEDIAN ships; the mean sits behind a labelled
+ * toggle and is persisted beside it, so the toggle is a READ, not a recompute.
+ */
+export type Statistic = "median" | "mean";
+export const DEFAULT_STATISTIC: Statistic = "median";
+
+/** The exchanges' four classification levels (v4.6.0 W2: macro 12 / sector 22 / industry 59 / basic 197). */
+export type ClassificationLevel = "macro" | "sector" | "industry" | "basic";
+
+/**
+ * AQ44 — below this coverage a tile prints its COVERAGE ("40 of 1,900 priced
+ * (2%)") instead of its value, and the regime label refuses to vote (A9).
+ * 30% is a PROPOSAL, not a measurement (owner, 2026-09-25).
+ */
+export const COVERAGE_FLOOR_PPM = 300_000;
+
+/**
+ * AQ26 floors. 3 members to compute a group figure, 8 to appear in a ranking;
+ * the hidden count is always stated. PROPOSALS, not measurements.
+ */
+export const GROUP_MIN_COMPUTE = 3;
+export const GROUP_MIN_RANK = 8;
+
+/**
+ * AQ26 / Q51 #4 — a cohort needs at least this many PRICED constituents AND
+ * this coverage of its membership, else the row says "cohort too thin to
+ * compare (3 of 41 priced)". 5 and 60% are PROPOSALS, not measurements.
+ */
+export const COHORT_MIN_PRICED = 5;
+export const COHORT_MIN_COVERAGE_PPM = 600_000;
+
+/**
+ * AQ9 / AQ20 — relative strength: 5/21/63-session returns weighted 0.5/0.3/0.2
+ * against the CROSS-SECTIONAL MEDIAN of the eligible universe (Sentinel S11's
+ * definition, the market median as the only benchmark in W5).
+ */
+export const RS_WINDOWS: readonly number[] = [5, 21, 63];
+export const RS_WEIGHTS: readonly number[] = [0.5, 0.3, 0.2];
+/** Eligibility floors: anchor-bar turnover (close × volume) ≥ ₹1 crore, close ≥ ₹20. */
+export const RS_MIN_TURNOVER_RUPEES = 10_000_000;
+export const RS_MIN_PRICE = 20;
+/** 63 sessions of return need 64 bars; the corporate-action guard covers the same span. */
+export const RS_MIN_BARS = 64;
+
+/** RSI (AQ5): Wilder's 14, "extreme" at ≤ 30 or ≥ 70. The thresholds are printed on the tile. */
+export const RSI_PERIOD = 14;
+export const RSI_LOW = 30;
+export const RSI_HIGH = 70;
 
 /** Current-day rotation (A8/A9). Kept out of RETURN_WINDOWS: it is not an A5 window. */
 export const ROTATION_WINDOW: { key: ReturnWindowKey; sessions: number } = { key: "1d", sessions: 1 };
@@ -157,7 +224,7 @@ export function shareMetric(
 }
 
 /**
- * An equal-weighted mean of per-symbol ppm figures (returns, group returns).
+ * An equal-weighted mean of per-symbol ppm figures (the mean toggle).
  * `numerator` is the SUM, so the row still shows its own arithmetic.
  */
 export function meanMetric(valuesPpm: number[], coverageBase: number, reason?: MetricReason): Metric {
@@ -193,6 +260,16 @@ export function medianMetric(valuesPpm: number[], coverageBase: number, reason?:
   };
   if (reason) m.reason = reason;
   return m;
+}
+
+/** The configured group statistic over per-symbol ppm figures (AQ18). */
+export function statMetric(
+  valuesPpm: number[],
+  coverageBase: number,
+  statistic: Statistic = DEFAULT_STATISTIC,
+  reason?: MetricReason,
+): Metric {
+  return statistic === "mean" ? meanMetric(valuesPpm, coverageBase, reason) : medianMetric(valuesPpm, coverageBase, reason);
 }
 
 /** A plain count (net high-low), still carrying what it was counted over. */

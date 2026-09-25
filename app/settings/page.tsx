@@ -31,6 +31,8 @@ import { AccountManager } from "@/components/settings/account-manager";
 import { getAccounts } from "@/lib/queries/accounts";
 import { brokerPlanOptions } from "@/lib/queries/broker-plan";
 import { TelegramCard } from "@/components/settings/telegram-card";
+import { CATCHUP_MAX_FILES } from "@/lib/atlas/catchup-plan";
+import { BACKFILL_RATE_LIMIT_MS } from "@/lib/jobs/bhavcopy-backfill";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +106,9 @@ export default function SettingsPage() {
             </Card>
           </Section>
           <Section id="settings-workspace"><WorkspaceCard /></Section>
-          <Section id="settings-preferences"><PreferencesCard /></Section>
+          {/* v4.6.0 W5: the catch-up cadence beside the auto-MTM toggle reads the job's
+              own constants; BACKFILL_RATE_LIMIT_MS is server-only, so it crosses here. */}
+          <Section id="settings-preferences"><PreferencesCard catchup={{ perOpen: CATCHUP_MAX_FILES, rateLimitMs: BACKFILL_RATE_LIMIT_MS }} /></Section>
           <Section id="settings-accounts"><AccountManager accounts={getAccounts()} planOptions={brokerPlanOptions()} /></Section>
           <Section id="settings-defaults"><DefaultSettingsCard /></Section>
           <Section id="settings-risk-rules">

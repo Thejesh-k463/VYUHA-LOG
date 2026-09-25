@@ -74,7 +74,10 @@ describe("the palette is remounted and re-keyed on the selected account (source)
   it("the layout keys CommandPalette on the selected account and passes it down", () => {
     const src = read("app/layout.tsx");
     expect(src, "the palette is mounted once and survives an account switch").toMatch(
-      /<CommandPalette\s+key=\{selectedAccountId\}\s+accountId=\{selectedAccountId\}/,
+      // The key is a per-component PREFIX + the account id since v4.6.0 W5: the palette and the
+      // search panel are siblings under one provider, and a bare id on both was React's
+      // "two children with the same key" on every page. The pin guards "keyed per account".
+      /<CommandPalette\s+key=\{`command-palette:\$\{selectedAccountId\}`\}\s+accountId=\{selectedAccountId\}/,
     );
     expect(src, "the account id must be read server-side, once").toMatch(/const selectedAccountId = getSelectedAccountId\(\);/);
   });

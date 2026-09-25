@@ -1,0 +1,25 @@
+-- v4.6.0 W5 — the Atlas regime thresholds become a SETTING (owner ruling AQ13,
+-- 2026-09-25: "print them and make them editable in Settings").
+--
+-- `settings.atlas_regime_thresholds` holds the four printed numbers the regime
+-- label is read against, as a versioned JSON envelope
+--   {v:1, expansionAboveSma50Ppm, expansionNetHighLow,
+--         contractionAboveSma50Ppm, contractionNetHighLow}
+-- or NULL, which means the shipped defaults (lib/atlas/regime.ts
+-- DEFAULT_REGIME_THRESHOLDS: 55% / 0 / 40% / -50). A shape from another
+-- version is discarded, never half-read (lib/atlas/regime-thresholds.ts).
+--
+-- IT STORES NO LABEL. The regime label is re-derived at READ time from the
+-- stored payload's two inputs with the current thresholds (lib/queries/atlas.ts
+-- getVerifiedSnapshot, design review A3), so an edit changes the screen on the
+-- next read, and the page and GET /api/atlas cannot disagree. Nothing is
+-- recomputed and no atlas_metric row is touched.
+--
+-- A per-journal CHOICE, not machine state: it travels in a backup (NOT in
+-- SETTINGS_MACHINE_COLUMNS — two machines reading one journal must print one
+-- label) and "Reset to defaults" returns it to NULL (BASELINE_SETTINGS_FIELDS
+-- in lib/domain/settings-baseline.ts). A pre-0076 backup restores NULL, i.e.
+-- the defaults. `tests/migration-0076-atlas-regime.test.ts` pins all of it.
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `settings` ADD COLUMN `atlas_regime_thresholds` text;

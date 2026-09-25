@@ -65,6 +65,14 @@ export const BASELINE_SETTINGS_FIELDS = [
   // current pair alone (Drizzle skips an undefined key).
   "riskFreeRatePpm",
   "riskFreeAsOf",
+  // The Atlas regime thresholds (v4.6.0 W5, migration 0076, owner ruling AQ13)
+  // — the four printed numbers the regime label is read against, as a
+  // versioned JSON envelope or null (= the shipped defaults). A CHOICE about
+  // the journal's analytics, so it travels in a backup (it is NOT in
+  // SETTINGS_MACHINE_COLUMNS) and "back to my defaults" returns it to the
+  // baseline's value; a baseline captured before 0076 holds no key and the
+  // restore leaves the current value alone (Drizzle skips an undefined key).
+  "atlasRegimeThresholds",
 ] as const;
 
 export type BaselineSettingsField = (typeof BASELINE_SETTINGS_FIELDS)[number];

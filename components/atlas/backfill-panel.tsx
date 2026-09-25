@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BackfillProgress } from "@/lib/jobs/bhavcopy-backfill";
+import type { CatchupStatus } from "@/lib/jobs/bhavcopy-catchup";
 
 /**
  * The backfill strip: confirm → start → progress → abort, plus the offline
@@ -35,11 +36,19 @@ export function BackfillPanel({
   consented,
   defaultDays,
   rateLimitMs,
+  catchup,
 }: {
   initialProgress: BackfillProgress;
   consented: boolean;
   defaultDays: number;
   rateLimitMs: number;
+  /**
+   * Q51 A1 (v4.6.0 W5): what the 252-day window is missing, from the server's
+   * catch-up status. A hole larger than one app-open can fill (`perOpen` files)
+   * is routed to this button with its count — "N sessions missing in your
+   * 252-day window — run the backfill".
+   */
+  catchup?: CatchupStatus;
 }) {
   const router = useRouter();
   const [progress, setProgress] = React.useState(initialProgress);
@@ -141,6 +150,14 @@ export function BackfillPanel({
           choose which: download the past {defaultDays} sessions from NSE at one file every {rateLimitMs / 1000}s,
           or drop files you already have — the second makes no network request at all.
         </p>
+        {catchup && catchup.missing > 0 ? (
+          <p className="tabular-nums text-foreground" data-testid="backfill-missing-line">
+            {catchup.line}
+            {catchup.automatic
+              ? ` Auto-MTM is on: each app open fetches up to ${catchup.perOpen} of them, ${catchup.rateLimitMs / 1000} s apart; the backfill fills the rest in one run.`
+              : ""}
+          </p>
+        ) : null}
 
         {running ? (
           <div className="space-y-2">

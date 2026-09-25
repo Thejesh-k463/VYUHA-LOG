@@ -28,6 +28,7 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 let t: TempDb;
 let bf: typeof import("@/lib/jobs/bhavcopy-backfill");
+let am: typeof import("@/lib/jobs/auto-mtm");
 
 const csvFor = (date: string, symbols = ["RELIANCE", "TCS"]) =>
   [
@@ -38,6 +39,7 @@ const csvFor = (date: string, symbols = ["RELIANCE", "TCS"]) =>
 beforeAll(async () => {
   t = await openTempDb("bhavcopy-backfill", { seed: true });
   bf = await import("@/lib/jobs/bhavcopy-backfill");
+  am = await import("@/lib/jobs/auto-mtm");
 });
 
 afterAll(() => t?.cleanup());
@@ -176,6 +178,78 @@ describe("the walk", () => {
     bf.writeBackfillProgress({ ...bf.IDLE_PROGRESS, status: "running" });
     const out = await bf.runBhavcopyBackfill({ fetchOne: async () => null, sleep: async () => {} });
     expect(out.ok === false && out.reason).toBe("already_running");
+  });
+
+  it("v4.6.0 W5 (A6 i): a 'running' envelope nobody has touched for longer than the dead threshold is DEAD and no longer blocks the button", async () => {
+    // The app was closed mid-run: the loop never wrote its final state. Before
+    // W5 this envelope blocked every later run forever.
+    const stale = new Date(Date.now() - bf.BACKFILL_DEAD_AFTER_MS - 60_000).toISOString();
+    t.sqlite
+      .prepare("UPDATE settings SET bhavcopy_backfill_progress = ?")
+      .run(JSON.stringify({ ...bf.IDLE_PROGRESS, status: "running", updatedAt: stale, startedAt: stale, applied: 7, abortRequested: true }));
+    expect(bf.readBackfillProgress().status).toBe("running");
+    const out = await bf.runBhavcopyBackfill({
+      days: 1,
+      now: new Date("2026-09-04T12:00:00Z"),
+      sleep: async () => {},
+      fetchOne: async (d) => ({ text: csvFor(d), source: "udiff", url: "test://x" }),
+    });
+    expect(out.ok).toBe(true);
+    expect(out.progress.status).toBe("done");
+    expect(out.progress.applied).toBe(1); // the stale abort flag did not leak into the new run
+    expect(out.progress.kind).toBe("backfill");
+    expect(bf.BACKFILL_DEAD_AFTER_MS).toBe(2 * am.FETCH_TIMEOUT_MS + 4 * bf.BACKFILL_RATE_LIMIT_MS);
+  });
+
+  it("W5 skeptic 1(b): a live run silent for 20 s is NOT dead — the button refuses instead of resetting it", async () => {
+    // One fetch is two attempts (UDiFF, then legacy) of FETCH_TIMEOUT_MS each;
+    // the threshold must exceed that or a slow archive makes a live run "dead"
+    // and the button starts a second walker on the same host.
+    expect(bf.BACKFILL_DEAD_AFTER_MS).toBeGreaterThan(2 * am.FETCH_TIMEOUT_MS + bf.BACKFILL_RATE_LIMIT_MS);
+    const quiet = new Date(Date.now() - 20_000).toISOString();
+    t.sqlite
+      .prepare("UPDATE settings SET bhavcopy_backfill_progress = ?")
+      .run(JSON.stringify({ ...bf.IDLE_PROGRESS, kind: "catchup", status: "running", updatedAt: quiet, startedAt: quiet, applied: 2 }));
+    let calls = 0;
+    const out = await bf.runBhavcopyBackfill({
+      days: 1,
+      now: new Date("2026-09-04T12:00:00Z"),
+      sleep: async () => {},
+      fetchOne: async () => {
+        calls++;
+        return null;
+      },
+    });
+    expect(out.ok === false && out.reason).toBe("already_running");
+    expect(calls).toBe(0);
+    expect(bf.readBackfillProgress().status).toBe("running"); // left alone, not re-labelled "error"
+  });
+
+  it("W5 skeptic 1(a): the envelope is touched before EACH fetch (heartbeat), not only after the apply", async () => {
+    const STALE = "2020-01-01T00:00:00.000Z";
+    const seenAtFetch: { date: string; updatedAt: string | null; message: string }[] = [];
+    const out = await bf.runBhavcopyBackfill({
+      days: 3,
+      now: new Date("2026-09-04T12:00:00Z"),
+      // The rate-limit wait sits between the previous persist and the next
+      // fetch. Age the stamp there: only a write BEFORE the fetch can refresh it.
+      sleep: async () => {
+        const row = t.sqlite.prepare("SELECT bhavcopy_backfill_progress AS p FROM settings").get() as { p: string };
+        t.sqlite.prepare("UPDATE settings SET bhavcopy_backfill_progress = ?").run(JSON.stringify({ ...JSON.parse(row.p), updatedAt: STALE }));
+      },
+      fetchOne: async (d) => {
+        const p = bf.readBackfillProgress();
+        seenAtFetch.push({ date: d, updatedAt: p.updatedAt, message: p.message });
+        return { text: csvFor(d), source: "udiff", url: "test://x" };
+      },
+    });
+    expect(out.ok).toBe(true);
+    expect(seenAtFetch).toHaveLength(3);
+    for (const s of seenAtFetch) {
+      expect(s.updatedAt, `stamp at the fetch for ${s.date}`).not.toBe(STALE);
+      expect(s.message, `message at the fetch for ${s.date}`).toBe(`Fetching ${s.date}…`);
+    }
+    expect(out.progress.message).toContain("3 sessions downloaded"); // the final sentence still wins
   });
 
   it("clamps the request to the 252 sessions PRIVACY item 2 states", async () => {

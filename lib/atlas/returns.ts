@@ -19,13 +19,15 @@
  */
 import {
   CA_GAP_THRESHOLD_PPM,
+  DEFAULT_STATISTIC,
   RETURN_WINDOWS,
-  meanMetric,
   roundPpm,
+  statMetric,
   type IsoDate,
   type Metric,
   type ReturnWindowKey,
   type Series,
+  type Statistic,
 } from "./types";
 
 export interface CaGap {
@@ -80,6 +82,27 @@ export function marketMoveByDate(series: Series[]): Map<IsoDate, number> {
   return out;
 }
 
+/**
+ * The corporate-action gap map over an ANCHOR-ALIGNED universe (design review
+ * A5). The market baseline is the universe's own median move that session, so
+ * a limit-down day for everything is not read as a split for every symbol.
+ *
+ * ONE builder for every consumer: the daily compute, the cohort, the relative
+ * strength and the trades join all take this map, so "excluded from the
+ * rotation" and "excluded from the cohort" are the same set by construction
+ * (the guard test in tests/atlas-cohort.test.ts pins it). Symbols with no gap
+ * are ABSENT — `gapsBySymbol.get(s) ?? []` is the read.
+ */
+export function buildGapMap(aligned: Series[], thresholdPpm: number = CA_GAP_THRESHOLD_PPM): Map<string, CaGap[]> {
+  const marketMove = marketMoveByDate(aligned);
+  const out = new Map<string, CaGap[]>();
+  for (const s of aligned) {
+    const gaps = detectCorporateActionGaps(s, { thresholdPpm, marketMovePpmByDate: marketMove });
+    if (gaps.length > 0) out.set(s.symbol, gaps);
+  }
+  return out;
+}
+
 /** `close[t]/close[t-N] - 1` in ppm, or `null` without N+1 valid closes. */
 export function symbolReturnPpm(series: Series, sessions: number): number | null {
   const n = series.bars.length;
@@ -109,12 +132,17 @@ export interface ReturnWindowResult {
   corporateActionExcluded: string[];
 }
 
-/** A5 for every configured window. Equal-weighted across valid symbols. */
+/**
+ * A5 for every configured window, equal-weighted across valid symbols under
+ * the configured `statistic` (AQ18: median by default; the mean is the
+ * labelled alternative and is never the silent one).
+ */
 export function computeReturns(
   series: Series[],
   coverageBase: number,
   gapsBySymbol: Map<string, CaGap[]> = new Map(),
   windows = RETURN_WINDOWS,
+  statistic: Statistic = DEFAULT_STATISTIC,
 ): Record<ReturnWindowKey, ReturnWindowResult> {
   const out = {} as Record<ReturnWindowKey, ReturnWindowResult>;
   for (const w of windows) {
@@ -137,7 +165,7 @@ export function computeReturns(
     out[w.key] = {
       key: w.key,
       sessions: w.sessions,
-      metric: meanMetric(values, coverageBase, values.length === 0 ? "insufficient_history" : undefined),
+      metric: statMetric(values, coverageBase, statistic, values.length === 0 ? "insufficient_history" : undefined),
       insufficient: insufficient.sort(),
       corporateActionExcluded: corporateActionExcluded.sort(),
     };
@@ -192,12 +220,13 @@ export interface YtdResult {
   corporateActionExcluded: string[];
 }
 
-/** A6 across the universe, equal-weighted, guard applied over the YTD span. */
+/** A6 across the universe, equal-weighted under `statistic`, guard applied over the YTD span. */
 export function computeYtd(
   series: Series[],
   year: number,
   coverageBase: number,
   gapsBySymbol: Map<string, CaGap[]> = new Map(),
+  statistic: Statistic = DEFAULT_STATISTIC,
 ): YtdResult {
   const values: number[] = [];
   const anchorKinds: Record<YtdAnchorKind, number> = { prior_year_close: 0, first_close_of_year: 0 };
@@ -219,7 +248,7 @@ export function computeYtd(
     anchorKinds[ytd.anchorKind] += 1;
   }
   return {
-    metric: meanMetric(values, coverageBase, values.length === 0 ? "insufficient_history" : undefined),
+    metric: statMetric(values, coverageBase, statistic, values.length === 0 ? "insufficient_history" : undefined),
     anchorKinds,
     insufficient: insufficient.sort(),
     corporateActionExcluded: corporateActionExcluded.sort(),

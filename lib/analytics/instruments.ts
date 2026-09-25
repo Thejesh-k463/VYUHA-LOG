@@ -323,6 +323,101 @@ export function buildSectorResolution(
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// The LEVELS-aware chain (v4.6.0 W5, owner ruling AQ21 / contract §1.6).
+// `buildSectorResolution` above is UNCHANGED and keeps every reader green; this
+// is a second builder over the same sources that carries all four of the
+// exchanges' levels where the source states them.
+// ---------------------------------------------------------------------------
+
+export interface ClassificationResolution {
+  macro: string | null;
+  /** Canonical label, after aliases. */
+  sector: string;
+  industry: string | null;
+  basic: string | null;
+  tier: SectorTier;
+  source: "user" | "taxonomy" | "index";
+  /** The sector label as the source stated it, before aliasing. */
+  raw: string;
+}
+
+/** The sources, with a taxonomy WIDE enough to carry the four levels. */
+export interface ClassificationSources extends Omit<SectorSources, "taxonomy"> {
+  taxonomy?: Iterable<Pick<TaxonomyEntry, "isin" | "symbol" | "sector" | "confidence" | "macro" | "industry" | "basic">>;
+}
+
+/**
+ * The same precedence as `buildSectorResolution` — user tag → taxonomy (by
+ * ISIN) → index map — with the LEVELS each source can honestly state:
+ *
+ *   user tag   — SECTOR ONLY. A tag names one bucket; inventing an industry
+ *                under it would be a classification the user never made, so
+ *                industry / basic / macro are null and the cohort falls UP.
+ *   taxonomy   — all four levels as the universe / sheet states them.
+ *   index map  — its `industry` field IS a sector-equivalent label (a
+ *                constituent list's heading); industry / basic / macro null.
+ *
+ * A user tag REPLACES the taxonomy row for that symbol (it does not keep the
+ * taxonomy's industry under a sector the user may have disagreed with).
+ */
+export function buildClassificationResolution(
+  rows: { symbol: string; sector: string | null; isin?: string | null }[],
+  sources: ClassificationSources = {},
+): Map<string, ClassificationResolution> {
+  const aliases = sources.aliases ?? SECTOR_ALIASES;
+  const canon = (label: string | null | undefined) => canonicalSector(label, aliases);
+  const out = new Map<string, ClassificationResolution>();
+  const up = (s: string) => String(s ?? "").trim().toUpperCase();
+  const blank = (s: string | null | undefined) => (s && s.trim() ? s.trim() : null);
+
+  for (const [symbol, meta] of Object.entries(sources.index ?? {})) {
+    const sector = canon(meta.industry);
+    if (symbol && sector) {
+      out.set(up(symbol), { macro: null, sector, industry: null, basic: null, tier: "index", source: "index", raw: String(meta.industry) });
+    }
+  }
+
+  type Wide = Pick<TaxonomyEntry, "isin" | "symbol" | "sector" | "confidence" | "macro" | "industry" | "basic">;
+  const byIsin = new Map<string, Wide>();
+  const fromTaxonomy = (e: Wide, sector: string): ClassificationResolution => ({
+    macro: blank(e.macro),
+    sector,
+    industry: blank(e.industry),
+    basic: blank(e.basic),
+    tier: e.confidence,
+    source: "taxonomy",
+    raw: e.sector,
+  });
+  for (const e of sources.taxonomy ?? []) {
+    byIsin.set(up(e.isin), e);
+    const symbol = up(sources.symbolByIsin?.(e.isin) ?? e.symbol);
+    const sector = canon(e.sector);
+    if (!symbol || !sector) continue;
+    // A ticker is not an identity (the same issuer guard as buildSectorResolution).
+    const owner = up(sources.isinBySymbol?.(symbol) ?? "");
+    if (owner && owner !== up(e.isin)) continue;
+    out.set(symbol, fromTaxonomy(e, sector));
+  }
+
+  for (const r of rows) {
+    const symbol = up(r.symbol);
+    if (!symbol) continue;
+    const own = canon(r.sector);
+    if (own) {
+      out.set(symbol, { macro: null, sector: own, industry: null, basic: null, tier: "user", source: "user", raw: String(r.sector).trim() });
+      continue;
+    }
+    const isin = up(r.isin ?? "") || up(sources.isinBySymbol?.(symbol) ?? "");
+    const e = isin ? byIsin.get(isin) : undefined;
+    const sector = e ? canon(e.sector) : null;
+    if (e && sector && (!out.has(symbol) || out.get(symbol)!.tier === "index")) {
+      out.set(symbol, fromTaxonomy(e, sector));
+    }
+  }
+  return out;
+}
+
 /**
  * symbol (upper) → sector. With no `sources` this is exactly the pre-v3.8
  * behaviour — the user's tagged rows and nothing else — so every caller and

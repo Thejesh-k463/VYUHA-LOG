@@ -930,6 +930,17 @@ export const settings = sqliteTable("settings", {
   // "progress" describes downloads that happened somewhere else.
   bhavcopyBackfillAck: text("bhavcopy_backfill_ack"),
   bhavcopyBackfillProgress: text("bhavcopy_backfill_progress"),
+  // Atlas regime thresholds (v4.6.0 W5, migration 0076, owner ruling AQ13) —
+  // the four printed numbers the regime label is read against, as a versioned
+  // JSON envelope {v:1, expansionAboveSma50Ppm, expansionNetHighLow,
+  // contractionAboveSma50Ppm, contractionNetHighLow}, or NULL for the shipped
+  // defaults (lib/atlas/regime.ts DEFAULT_REGIME_THRESHOLDS). A CHOICE about the
+  // journal's analytics, not machine state: it TRAVELS in a backup (not in
+  // SETTINGS_MACHINE_COLUMNS — two machines, one journal, one regime label) and
+  // "back to my defaults" returns it to NULL (BASELINE_SETTINGS_FIELDS). The
+  // label itself is never stored under a threshold: it is re-derived at read
+  // time from the payload's inputs (lib/queries/atlas.ts, design review A3).
+  atlasRegimeThresholds: text("atlas_regime_thresholds"),
   // Live Desk feed (v4.1, migration 0067) — which quote provider runs, how
   // fast the desk refreshes on screen, and the once-a-day guard for the
   // persisted mark. Default 'eod' keeps an upgraded install exactly where v4.0

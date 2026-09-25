@@ -533,6 +533,13 @@
       "when": 1788800900000,
       "tag": "0075_telegram-send-time-after-fo-close",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "6",
+      "when": 1788801000000,
+      "tag": "0076_atlas-regime-thresholds",
+      "breakpoints": true
     }
   ]
 }

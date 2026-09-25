@@ -30,6 +30,7 @@ import {
   openAlgoGate,
 } from "@/lib/domain/openalgo-disclosure";
 import { OpenAlgoDialog } from "@/components/system/openalgo-dialog";
+import { AtlasRegimeEditor } from "@/components/settings/atlas-regime-editor";
 import { LiveFeedCard } from "@/components/settings/live-feed-card";
 import { TintControl } from "@/components/settings/appearance/tint-control";
 import { PanelStyleSelect } from "@/components/settings/appearance/panel-style-select";
@@ -312,7 +313,13 @@ export function WorkspaceCard() {
   );
 }
 
-export function PreferencesCard() {
+/**
+ * `catchup` (v4.6.0 W5, Q51 A1 / #8): the freshness catch-up's cadence, restated
+ * beside the auto-MTM toggle whose consent it runs under. The two numbers are
+ * the job's own constants, handed down by the server page — `BACKFILL_RATE_LIMIT_MS`
+ * lives in a server-only module a client card cannot import.
+ */
+export function PreferencesCard({ catchup }: { catchup: { perOpen: number; rateLimitMs: number } }) {
   const f = useSettingsForm();
   return (
     <Card>
@@ -347,11 +354,16 @@ export function PreferencesCard() {
               Once per trading day (after ~7pm IST), fetch the NSE EOD file and mark open equity
               positions to close. <span className="text-warning">Overwrites the MTM price for symbols
               found in the file</span> — manual marks for anything else stay untouched. Needs internet;
-              skips silently offline. Every run is recorded in the Audit Log.
+              skips silently offline. Every run is recorded in the Audit Log.{" "}
+              <span data-testid="atlas-catchup-cadence">
+                With this on, each app open also fetches up to {catchup.perOpen} missing past sessions,{" "}
+                {catchup.rateLimitMs / 1000} s apart — same public archive, nothing uploaded.
+              </span>
             </div>
           </div>
           <Switch checked={f.autoMtm} onCheckedChange={(v) => f.setAutoMtm(Boolean(v))} />
         </div>
+        <AtlasRegimeEditor stored={f.current.atlasRegimeThresholds ?? null} />
         <SaveSettingsButton />
       </CardContent>
     </Card>

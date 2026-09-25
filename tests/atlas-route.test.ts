@@ -44,6 +44,7 @@ let t: TempDb;
 let atlas: typeof import("@/app/api/atlas/route");
 let backfill: typeof import("@/app/api/atlas/backfill/route");
 let importFiles: typeof import("@/app/api/atlas/import-files/route");
+let view: typeof import("@/app/api/atlas/view/route");
 let job: typeof import("@/lib/jobs/bhavcopy-backfill");
 
 const url = (p: string) => `http://localhost:3011${p}`;
@@ -66,6 +67,7 @@ beforeAll(async () => {
   atlas = await import("@/app/api/atlas/route");
   backfill = await import("@/app/api/atlas/backfill/route");
   importFiles = await import("@/app/api/atlas/import-files/route");
+  view = await import("@/app/api/atlas/view/route");
   job = await import("@/lib/jobs/bhavcopy-backfill");
 });
 
@@ -258,6 +260,45 @@ describe("POST /api/atlas/backfill — consent is a 403, not a shrug", () => {
     const body = await (await backfill.POST(post("/api/atlas/backfill", { action: "abort" }))).json();
     expect(body.ok).toBe(true);
     expect(body.progress.abortRequested).toBe(false); // nothing was running
+  });
+});
+
+describe("GET /api/atlas/view — the index filter (v4.6.0 W5, AQ23 / A8): a view, never the cache", () => {
+  const hostile = { origin: "https://not-vyuha.example", host: "localhost:3011" };
+
+  it("keeps the same-origin guard and the verbatim Pro refusal", async () => {
+    expect((await view.GET(get("/api/atlas/view?index=Nifty%2050", hostile))).status).toBe(403);
+    ent.value = { ...BLOCKED };
+    const res = await view.GET(get("/api/atlas/view?index=Nifty%2050"));
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toBe("Vyuha Pro required.");
+  });
+
+  it("lists the filters without an index, and refuses a name the map does not carry", async () => {
+    const list = await (await view.GET(get("/api/atlas/view"))).json();
+    expect(list.ok).toBe(true);
+    expect(list.filters.size).toContain("Nifty 500");
+    expect(list.filters.size).toHaveLength(8);
+    expect(list.provenance).toBe("Computed from your stored end-of-day bhavcopy. No Chartink data is used.");
+    const bad = await view.GET(get("/api/atlas/view?index=Nifty%20Imaginary"));
+    expect(bad.status).toBe(404);
+    expect((await bad.json()).message).toContain("Nifty Imaginary");
+  });
+
+  it("computes the restricted market in memory, states the denominator, and writes NO cache row", async () => {
+    const before = (t.sqlite.prepare("SELECT COUNT(*) AS n FROM atlas_daily").get() as { n: number }).n;
+    const res = await view.GET(get("/api/atlas/view?index=Nifty%2050"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.index).toBe("Nifty 50");
+    expect(body.members).toBe(50);
+    expect(body.priced).toBe(2); // RELIANCE + TCS
+    expect(body.header).toBe("restricted to Nifty 50 (2 of 50 priced)");
+    expect(body.payload.universe.included).toBe(2);
+    expect(body.specVersion).toBe("atlas-core/2.0.0");
+    expect((t.sqlite.prepare("SELECT COUNT(*) AS n FROM atlas_daily").get() as { n: number }).n).toBe(before);
+    expect((t.sqlite.prepare("SELECT COUNT(*) AS n FROM atlas_metric WHERE as_of > '2026-08-03'").get() as { n: number }).n).toBe(0);
   });
 });
 

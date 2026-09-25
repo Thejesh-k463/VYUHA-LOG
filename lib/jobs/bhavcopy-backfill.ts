@@ -4,7 +4,8 @@ import { db, sqlite } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { applyBhavcopyMtm } from "@/lib/import/mtm-bhavcopy";
 import { latestBhavcopyDate, previousTradingDay } from "@/lib/domain/market-calendar";
-import { fetchBhavcopyForDate, type BhavcopyFetch } from "@/lib/jobs/auto-mtm";
+import { isEnvelopeDead } from "@/lib/atlas/catchup-plan";
+import { FETCH_TIMEOUT_MS, fetchBhavcopyForDate, type BhavcopyFetch } from "@/lib/jobs/auto-mtm";
 
 /**
  * The one-time history backfill (research answer Q43).
@@ -40,6 +41,19 @@ import { fetchBhavcopyForDate, type BhavcopyFetch } from "@/lib/jobs/auto-mtm";
 
 /** One request per 1.5 s. See property 2 above. */
 export const BACKFILL_RATE_LIMIT_MS = 1_500;
+/**
+ * A `running` envelope not touched for this long is DEAD — the app was closed
+ * mid-run — and is reset rather than blocking the button (and the W5 catch-up)
+ * forever (design review A6 i). The threshold must EXCEED the longest silence
+ * a live loop can legitimately go: both walkers heartbeat the envelope right
+ * before every fetch, and one `fetchBhavcopyForDate` is up to TWO attempts
+ * (UDiFF, then legacy) of `FETCH_TIMEOUT_MS` each, then the apply. So
+ * 2 × 15 s + 4 × 1.5 s = 36 s. The first cut (ten rate-limit intervals, 15 s)
+ * was shorter than ONE slow fetch: a live run read as dead, a button press or
+ * the next app-open reset it, and a second walker started on the same host
+ * (W5 skeptic item 1).
+ */
+export const BACKFILL_DEAD_AFTER_MS = 2 * FETCH_TIMEOUT_MS + 4 * BACKFILL_RATE_LIMIT_MS;
 /** 252 sessions ~ one year: exactly what the 52-week high/low window needs. */
 export const BACKFILL_DEFAULT_DAYS = 252;
 /** The privacy sheet says "up to 252 past files"; the code must not exceed it. */
@@ -88,6 +102,12 @@ export interface BackfillProgress {
   /** Which file answered last — `udiff` or `legacy` (Q48). */
   lastSource: "udiff" | "legacy" | null;
   message: string;
+  /**
+   * v4.6.0 W5: which job wrote the envelope. Absent on a pre-W5 row (= the
+   * backfill). The catch-up (lib/jobs/bhavcopy-catchup.ts) shares this ONE
+   * envelope so two jobs can never fetch in parallel.
+   */
+  kind?: "backfill" | "catchup";
 }
 
 export const IDLE_PROGRESS: BackfillProgress = {
@@ -226,8 +246,8 @@ export function backfillDates(now: Date, days: number): string[] {
   return out;
 }
 
-/** date → how many `price_history` rows it already holds. */
-function existingRowsByDate(): Map<string, number> {
+/** date → how many `price_history` rows it already holds. Shared with the W5 catch-up. */
+export function existingRowsByDate(): Map<string, number> {
   const rows = sqlite.prepare("SELECT date, COUNT(*) AS n FROM price_history GROUP BY date").all() as {
     date: string;
     n: number;
@@ -238,19 +258,66 @@ function existingRowsByDate(): Map<string, number> {
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * A6 (ii): ONE process-level lock for BOTH bhavcopy walkers — this backfill
+ * and the W5 catch-up (lib/jobs/bhavcopy-catchup.ts) — taken before the
+ * envelope is read. Two requests can arrive within the same tick (two windows
+ * POSTing /api/mtm/auto, or a button press landing during an app-open) and
+ * both read an idle envelope before either writes `running`; the lock closes
+ * that window. It lives HERE, exported, so the two jobs share one key — two
+ * different locks would be no lock at all. `globalThis` survives Next's module
+ * re-evaluation in dev.
+ */
+const LOCK_KEY = "__vyuhaBhavcopyJobLock" as const;
+type LockHost = typeof globalThis & { [LOCK_KEY]?: boolean };
+export function takeBhavcopyJobLock(): boolean {
+  const g = globalThis as LockHost;
+  if (g[LOCK_KEY]) return false;
+  g[LOCK_KEY] = true;
+  return true;
+}
+export function releaseBhavcopyJobLock(): void {
+  (globalThis as LockHost)[LOCK_KEY] = false;
+}
+
+/**
  * Walk back `days` sessions, one file at a time, into `price_history`.
  *
  * Returns when the walk finishes, aborts, or gives up — the ROUTE is what
  * makes it a background job (it does not await this), and the UI polls the
- * progress the loop persists after every date.
+ * progress the loop persists after every date. The shared job lock is held
+ * for the whole walk, so the catch-up cannot start beside it.
  */
 export async function runBhavcopyBackfill(deps: BackfillDeps = {}): Promise<BackfillOutcome> {
   if (!hasBackfillConsent()) {
     return { ok: false, reason: "consent", progress: readBackfillProgress() };
   }
+  if (!takeBhavcopyJobLock()) {
+    return { ok: false, reason: "already_running", progress: readBackfillProgress() };
+  }
+  try {
+    return await walkBackfill(deps);
+  } finally {
+    releaseBhavcopyJobLock();
+  }
+}
+
+/** The walk itself; the caller holds the job lock. */
+async function walkBackfill(deps: BackfillDeps): Promise<BackfillOutcome> {
   const existing = readBackfillProgress();
   if (existing.status === "running") {
-    return { ok: false, reason: "already_running", progress: existing };
+    // A6 (i): a run the app was closed on never wrote its final state. Left
+    // alone it blocks this button — and the W5 catch-up — on every later open.
+    // The stamp is compared against the SAME clock that writes it (real time),
+    // never against `deps.now`, which is the DATE plan's clock.
+    if (!isEnvelopeDead(existing, Date.now(), BACKFILL_DEAD_AFTER_MS)) {
+      return { ok: false, reason: "already_running", progress: existing };
+    }
+    writeBackfillProgress({
+      ...existing,
+      status: "error",
+      abortRequested: false,
+      message: `A previous run stopped without finishing (last touched ${existing.updatedAt ?? "unknown"}); cleared so a new one can start. Nothing already saved was lost.`,
+    });
   }
 
   const days = Math.max(1, Math.min(BACKFILL_MAX_DAYS, Math.trunc(deps.days ?? BACKFILL_DEFAULT_DAYS)));
@@ -263,6 +330,7 @@ export async function runBhavcopyBackfill(deps: BackfillDeps = {}): Promise<Back
 
   let progress: BackfillProgress = {
     ...IDLE_PROGRESS,
+    kind: "backfill",
     status: "running",
     requested: days,
     from: dates[0] ?? null,
@@ -309,6 +377,13 @@ export async function runBhavcopyBackfill(deps: BackfillDeps = {}): Promise<Back
     // one-file run never waits, and n files make exactly n-1 waits.
     if (fetched > 0) await sleep(BACKFILL_RATE_LIMIT_MS);
     fetched++;
+
+    // HEARTBEAT: touch the envelope right BEFORE the fetch. One fetch can be
+    // two attempts of FETCH_TIMEOUT_MS each; with the stamp written only
+    // after the apply, a live run went silent for ~31 s and read as dead to a
+    // button press or the next app-open, which then started a second walker.
+    progress = { ...progress, message: `Fetching ${date}…` };
+    persist();
 
     let got: BhavcopyFetch | null = null;
     try {

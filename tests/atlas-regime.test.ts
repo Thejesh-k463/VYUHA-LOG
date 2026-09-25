@@ -46,6 +46,23 @@ describe("regime — three states over PRINTED thresholds", () => {
     expect(classifyRegime(input, strict).thresholds).toEqual(strict);
   });
 
+  it("v4.6.0 W5 (AQ44 / A9): an input under the coverage floor cannot vote — unknown / coverage_below_floor", () => {
+    const thin = { value_ppm: 600_000, denominator: 40, coverage_ppm: 21_053 }; // 40 of 1,900 priced
+    const wide = { value: 25, denominator: 1_800, coverage_ppm: 947_368 };
+    const r = classifyRegime({ aboveSma50: thin, netHighLow: wide });
+    expect(r.regime).toBe("unknown");
+    expect(r.reason).toBe("coverage_below_floor");
+    expect(r.coverageFloorPpm).toBe(300_000);
+    expect(r.belowFloor).toEqual([{ input: "aboveSma50", coverage_ppm: 21_053 }]);
+    // The inputs are still printed, so the screen can say what it refused to read.
+    expect(r.inputs).toEqual({ aboveSma50Ppm: 600_000, netHighLow: 25 });
+    // At the floor exactly, it votes.
+    expect(classifyRegime({ aboveSma50: { ...thin, coverage_ppm: 300_000 }, netHighLow: wide }).regime).toBe("expansion");
+    // The floor is a parameter, defaulted to COVERAGE_FLOOR_PPM and carried on every result.
+    expect(classifyRegime({ aboveSma50: sma(600_000), netHighLow: net(25) }).coverageFloorPpm).toBe(300_000);
+    expect(classifyRegime({ aboveSma50: { ...thin, coverage_ppm: 500_000 }, netHighLow: wide }, DEFAULT_REGIME_THRESHOLDS, 600_000).reason).toBe("coverage_below_floor");
+  });
+
   it("prints the rule with the numbers substituted", () => {
     const r = classifyRegime({ aboveSma50: sma(612_345), netHighLow: net(25) });
     expect(r.formula).toContain("Expansion when above-SMA50 >= 55.0%");

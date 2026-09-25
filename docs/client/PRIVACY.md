@@ -46,8 +46,11 @@ Exactly four kinds, and only one of them is automatic:
    from bars kept on this machine. Off by default. Two shapes, one public
    archive (`nsearchives.nseindia.com`), and nothing is uploaded:
    *the daily file* — one download per trading day, only while end-of-day
-   auto-MTM is on; and *the history backfill* — up to 252 past daily files,
-   one every 1.5 seconds, and only when you press the button and confirm it.
+   auto-MTM is on, and, with auto-MTM on, a catch-up of up to 10 missing past
+   daily files per app open from the same archive, 1.5 seconds apart, until
+   your 252-day window is complete; and *the history backfill* — up to 252
+   past daily files, one every 1.5 seconds, and only when you press the
+   button and confirm it.
    The backfill is never automatic, it can be stopped at any point, and
    whatever it has already saved is kept. These files are the same public
    market data served to everyone: they carry no account, no identifier and

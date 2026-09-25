@@ -12,7 +12,7 @@ import { NO_CHARTINK_LINE, NOT_ADVICE_LINE } from "@/lib/queries/atlas";
  *     either — the tiles show em-dashes and say why. A "sample" screen with
  *     plausible-looking breadth percentages would be a fabricated denominator
  *     on the one screen whose entire pitch is that every figure carries its
- *     own (AGENTS.md invariant 6), and a buyer who later saw different real
+ *     own (AGENTS.md invariant 6), and a user who later saw different real
  *     numbers would be right to distrust both.
  *  2. NO DATABASE READ. It takes no props and calls nothing. The page decides
  *     Pro BEFORE loading, so a locked visitor never pays for a full-market
@@ -20,42 +20,56 @@ import { NO_CHARTINK_LINE, NOT_ADVICE_LINE } from "@/lib/queries/atlas";
  *
  * It is a server component: nothing here has state, and the sibling panel is
  * "use client" only because five tabs need a selected tab.
+ *
+ * v4.6.0 W5 (Atlas v3): the five entries below match the panel's TABS, in
+ * order, and describe the v3 figures — the median as the group statistic, the
+ * industry cohort, relative strength against the market median, and the list
+ * of what Atlas does not compute.
  */
 
 const TABS: { label: string; what: string }[] = [
   {
     label: "Market",
     what:
-      "Advancing, declining and unchanged with their denominators; % above the 20/50/200-day averages with a " +
-      "90-session spark for each; new highs and lows over the 52-week window; median volume expansion and the " +
-      "names furthest above their own 20-session baseline. A named regime sits on top of the first two, with " +
-      "its thresholds and its arithmetic printed beside it.",
+      "A named regime first, with its two voting inputs, its thresholds (editable in Settings) and the advancing " +
+      "share beside them as a non-voting third tile; then your own names in one line, the sector relative-strength " +
+      "leaders, the cap-band ladder in brief, and the breadth tiles — advancing / declining / unchanged with their " +
+      "denominators, % above the 20/50/200-day averages with a 90-session spark each, new 52-week highs and lows, " +
+      "RSI-14 extremes as counts, the advancing share of volume, and median volume expansion.",
   },
   {
     label: "Sectors",
     what:
-      "Every sector's equal-weighted move and its internal breadth over the same window, with how many of its " +
-      "members were actually measurable — and the symbols that carry no sector counted nowhere rather than " +
-      "swept into an “Other” bucket.",
+      "One rotation table with a level toggle — the exchanges' 22 sectors by default, their 59 industries one click " +
+      "away — and a statistic toggle: the median of each measurable member's own return ships, the equal-weighted " +
+      "mean is the labelled alternative. Columns for 1 week, 1 month, 3 months and year-to-date, relative strength " +
+      "against the market median, the change in rank, % above the 50-day average, new highs minus new lows, members " +
+      "at a 52-week high and turnover share; leaders and laggards only from groups wide enough to rank, with the " +
+      "hidden count stated. Labelled as the current classification, not a point-in-time one.",
   },
   {
     label: "Cap bands",
     what:
       "Large, mid and small by AMFI's half-yearly list (SEBI's ranking) rather than by a market cap Vyuha would " +
-      "have to guess at, with Nifty size-index membership (micro included) as a separate table. Labelled as the " +
-      "current classification, not a point-in-time one.",
+      "have to guess at — a ladder of breadth, RSI-14, rotation, % above the averages and new highs and lows per " +
+      "band, NSE Emerge named as not ranked by AMFI, and Nifty size-index membership as a separate lens. Labelled as " +
+      "the current classification, not a point-in-time one.",
   },
   {
     label: "My names",
     what:
-      "Each open equity position against the equal-weighted return of its own sector cohort over 1 week and 1 " +
-      "month, and the difference between them — the first honest answer to “was that the pick, or the sector?”.",
+      "Each open equity position against the median return of its own cohort — its industry, falling up to its " +
+      "sector when the industry is too thin, the row saying which it used and on how many priced names — over 1 " +
+      "week and 1 month, with its rank in that cohort, and a plain description of what the price did against the " +
+      "group. Beside it: what market breadth read on the days you opened those positions, with the day count as " +
+      "the denominator.",
   },
   {
     label: "Coverage",
     what:
-      "The ledger: what was excluded and why, the denominator behind every metric, which symbols are stale, and " +
-      "the one-time history backfill that fills the window the deeper metrics need.",
+      "The ledger: what was excluded and why, the denominator behind every metric, which symbols are stale, how " +
+      "many sessions your 252-day window is missing, the history backfill that fills it — and the list of what Atlas " +
+      "does not compute and the input each family waits behind.",
   },
 ];
 
@@ -73,7 +87,7 @@ export function AtlasPreview() {
           <p>
             This is what the screen shows with a Pro licence. Nothing below is computed on this copy and nothing
             below is a sample figure either — inventing numbers on the one screen whose whole promise is that
-            every figure carries its denominator would be the wrong way to sell it.
+            every figure carries its denominator would be the wrong way to present it.
           </p>
           <p>
             Atlas reads only the end-of-day bhavcopy bars already stored on this machine. Switching it on adds no

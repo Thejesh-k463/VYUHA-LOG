@@ -221,9 +221,9 @@ describe("cap bands — the ISIN join, and its two different empties", () => {
 
 describe("my names — dark until the window is real (Q51)", () => {
   it("stays dark under 21 sessions and says how to enable it", () => {
-    const view = q.getMyNames([], { groups: [], unclassified: [] } as never, 12);
+    const view = q.getMyNames([], 12);
     expect(view.enabled).toBe(false);
-    expect(view.rows).toEqual([]);
+    expect(view.cohorts).toEqual([]);
     expect(view.reason).toContain("you have 12");
     expect(view.reason).toContain("Run the backfill to enable it");
   });
@@ -240,12 +240,190 @@ describe("my names — dark until the window is real (Q51)", () => {
       .values(tradeRow({ accountId: 1, symbol: "RELIANCE", tradingsymbol: "RELIANCE", isOpen: true, buyQty: 10 }) as never)
       .run();
     const v = q.getAtlasView();
-    const row = v.myNames.rows.find((r) => r.symbol === "RELIANCE");
-    expect(row).toBeDefined();
-    expect(row!.stock1wPpm).not.toBeNull();
-    // diff = stock - cohort, and it is null whenever either side is null.
-    if (row!.cohort1wPpm === null) expect(row!.diff1wPpm).toBeNull();
-    else expect(row!.diff1wPpm).toBe(row!.stock1wPpm! - row!.cohort1wPpm);
+    // v4.6.0 W5 phase 2 (Q51 #5): the legacy `rows` projection is gone; the
+    // cohort row is the ONLY shape. A four-symbol universe has no cohort wide
+    // enough (AQ26: ≥ 5 priced), so the row says so in the AQ26 sentence rather
+    // than printing a two-member "median".
+    expect("rows" in v.myNames).toBe(false);
+    const cohort = v.myNames.cohorts.find((c) => c.symbol === "RELIANCE")!;
+    expect(cohort).toBeDefined();
+    expect(cohort.windows["1w"].own).not.toBeNull();
+    // diff = own − cohort, and it is null whenever either side is null.
+    const w1 = cohort.windows["1w"];
+    if (w1.cohort?.value_ppm == null) expect(w1.diff).toBeNull();
+    else expect(w1.diff).toBe(w1.own! - w1.cohort.value_ppm);
+    expect(cohort.thin).toBe(true);
+    expect(cohort.thinLine).toMatch(/^cohort too thin to compare \(\d+ of \d+ priced\)$/);
+    expect(cohort.windows["1m"].cohort).toBeNull();
+    expect(cohort.decidedOn?.window).toBe("1m");
+    expect(v.myNames.statistic).toBe("median");
+    expect(v.myNames.spans["1m"]?.stored).toBe(22);
+  });
+
+  it("hands the rotation table its sparse-history spans, computed server-side (Q51 #7)", () => {
+    const v = q.getAtlasView();
+    // The seeded universe holds 22 sessions: 1w and 1m have a span, 3m does not.
+    expect(v.windowSpans["1w"]?.stored).toBe(6);
+    expect(v.windowSpans["1m"]?.stored).toBe(22);
+    expect(v.windowSpans["3m"]).toBeNull();
+    for (const key of ["1w", "1m"] as const) {
+      const s = v.windowSpans[key]!;
+      // The seed's dates are synthetic, not all trading days, so the calendar may count FEWER
+      // sessions than the store holds; `missing` is documented as never negative.
+      expect(s.missing).toBe(Math.max(0, s.expected - s.stored));
+      if (s.missing === 0) expect(s.gapLine).toBeNull();
+      else expect(s.gapLine).toContain(`${s.missing} missing session`);
+    }
+  });
+});
+
+describe("rank Δ reads ONE spec_version (design review A1)", () => {
+  const D = (i: number) => SESSION_DATES[i];
+  const seedSnapshot = (asOf: string, spec: string, rs: Record<string, number>) => {
+    t.sqlite
+      .prepare(
+        "INSERT INTO atlas_daily (as_of, generated_at, spec_version, source_mode, input_checksum, universe_included, universe_excluded, anchor_coverage, anchor_coverage_ppm, payload_json) VALUES (?, ?, ?, 'bhavcopy_local', ?, 4, 0, 4, 1000000, NULL)",
+      )
+      .run(asOf, `${asOf}T14:00:00.000Z`, spec, `chk-${asOf}-${spec}`);
+    const ins = t.sqlite.prepare(
+      "INSERT INTO atlas_metric (as_of, metric, group_kind, group_name, value_ppm, numerator, denominator, coverage_ppm, insufficient_history) VALUES (?, 'group_rs_ppm', 'sector', ?, ?, ?, 8, 1000000, 0)",
+    );
+    for (const [group, value] of Object.entries(rs)) ins.run(asOf, group, value, value);
+  };
+
+  it("1.0.0 rows for an earlier as_of never enter a 2.0.0 rank Δ", () => {
+    const today = q.getStoredSnapshot()!.asOf;
+    expect(today).toBe(D(29));
+    // Earlier tests in this file left a snapshot at session 19 (the anchor
+    // moved back and forward again); start from today's row alone.
+    t.sqlite.prepare("DELETE FROM atlas_metric WHERE as_of <> ?").run(today);
+    t.sqlite.prepare("DELETE FROM atlas_daily WHERE as_of <> ?").run(today);
+    // Today's real snapshot is 2.0.0 and has no sector wide enough to rank
+    // (four symbols), so give it two rankable sector rows of its own.
+    t.sqlite.prepare("DELETE FROM atlas_metric WHERE as_of = ? AND metric = 'group_rs_ppm'").run(today);
+    const ins = t.sqlite.prepare(
+      "INSERT INTO atlas_metric (as_of, metric, group_kind, group_name, value_ppm, numerator, denominator, coverage_ppm, insufficient_history) VALUES (?, 'group_rs_ppm', 'sector', ?, ?, ?, 8, 1000000, 0)",
+    );
+    ins.run(today, "Alpha", 10_000, 10_000);
+    ins.run(today, "Beta", 5_000, 5_000);
+
+    // Four older 2.0.0 snapshots (D1..D4) → with today that is five: the 1w
+    // window (5 sessions) can read its past rank from the OLDEST of them, D1.
+    seedSnapshot(D(21), "atlas-core/2.0.0", { Alpha: 1_000, Beta: 9_000 }); // D1: Beta ranked 1, Alpha 2
+    seedSnapshot(D(23), "atlas-core/2.0.0", { Alpha: 9_000, Beta: 1_000 });
+    seedSnapshot(D(25), "atlas-core/2.0.0", { Alpha: 9_000, Beta: 1_000 });
+    seedSnapshot(D(27), "atlas-core/2.0.0", { Alpha: 9_000, Beta: 1_000 });
+    // Two 1.0.0 leftovers: one older than everything, one BETWEEN D4 and today.
+    // Without the spec filter the between-row would be counted as a snapshot
+    // and the oldest-of-five would move from D1 to D2.
+    seedSnapshot(D(3), "atlas-core/1.0.0", { Alpha: 9_000, Beta: 1_000 });
+    seedSnapshot(D(28), "atlas-core/1.0.0", { Alpha: 9_000, Beta: 1_000 });
+
+    const view = q.getRankDeltas(today, "sector");
+    expect(view.rank).toEqual({ Alpha: 1, Beta: 2 });
+    const w1 = view.windows.find((w) => w.key === "1w")!;
+    expect(w1.have).toBe(5); // five 2.0.0 snapshots; the two 1.0.0 rows are not counted
+    expect(w1.pastAsOf).toBe(D(21));
+    expect(w1.shortfall).toBeNull();
+    // Alpha was rank 2 at D1 and is rank 1 today: climbed one. Beta the reverse.
+    expect(w1.delta).toEqual({ Alpha: 1, Beta: -1 });
+
+    const m1 = view.windows.find((w) => w.key === "1m")!;
+    expect(m1.pastAsOf).toBeNull();
+    expect(m1.shortfall).toBe("rank Δ needs 21 daily snapshots under this formula set; you have 5 (one is written each day Atlas is opened with new bars)");
+    expect(m1.delta).toEqual({});
+
+    t.sqlite.prepare("DELETE FROM atlas_metric WHERE as_of <> ?").run(today);
+    t.sqlite.prepare("DELETE FROM atlas_daily WHERE as_of <> ?").run(today);
+  });
+
+  it("hides a group under the 8-eligible floor from the ranking and counts it", () => {
+    const today = q.getStoredSnapshot()!.asOf;
+    t.sqlite
+      .prepare(
+        "INSERT INTO atlas_metric (as_of, metric, group_kind, group_name, value_ppm, numerator, denominator, coverage_ppm, insufficient_history) VALUES (?, 'group_rs_ppm', 'sector', 'Thin', 99000, 99000, 3, 1000000, 0)",
+      )
+      .run(today);
+    const view = q.getRankDeltas(today, "sector");
+    expect(view.rank.Thin).toBeUndefined();
+    expect(view.hiddenBelowFloor).toBe(1);
+    expect(view.minRank).toBe(8);
+    t.sqlite.prepare("DELETE FROM atlas_metric WHERE as_of = ? AND metric = 'group_rs_ppm'").run(today);
+    q.refreshAtlasSnapshot({ force: true });
+  });
+});
+
+describe("the trades join (design review A7) — breadth on the entry days, days outside the replay NAMED", () => {
+  it("reads the session's %>SMA50 and advance share from the replay, and counts the days it cannot", () => {
+    // RELIANCE was opened above with no buyDate; give it one inside the replay,
+    // and add a closed winner opened long before any stored bar.
+    t.sqlite.prepare("UPDATE trades SET buy_date = ? WHERE symbol = 'RELIANCE'").run(SESSION_DATES[25]);
+    t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: 1, symbol: "TCS", tradingsymbol: "TCS", isOpen: false, buyQty: 5, sellQty: 5, buyDate: "2026-01-05", sellDate: "2026-02-05", netPnl: 1500 }) as never)
+      .run();
+    const v = q.getAtlasView();
+    const j = v.entryDayBreadth;
+    expect(j.replaySessions).toBe(30);
+    expect(j.open.entryDays).toBe(1);
+    expect(j.open.withFigure).toBe(1);
+    expect(j.open.outsideReplay).toBe(0);
+    expect(j.open.advanceMeanPpm).toBe(v.payload!.history.find((h) => h.as_of === SESSION_DATES[25])!.advance_pct_ppm);
+    expect(j.open.sentence).toMatch(/^On 1 of 1 entry days, /);
+    expect(j.open.sentence).not.toMatch(/\bwill\b|\bshould\b/);
+    expect(j.closedWinners.entryDays).toBe(1);
+    expect(j.closedWinners.withFigure).toBe(0);
+    expect(j.closedWinners.outsideReplay).toBe(1);
+    expect(j.closedWinners.sentence).toContain("None of the 1 entry days of closed winners fall inside the 30-session replay");
+    expect(j.closedLosers.entryDays).toBe(0);
+    expect(j.closedLosers.sentence).toBe("No entry days of closed losers to look up.");
+    t.sqlite.prepare("DELETE FROM trades WHERE symbol = 'TCS'").run();
+  });
+});
+
+describe("the index-membership filter (design review A8) — in memory, never the cache", () => {
+  it("restricts the universe to the bundled index's members and states the denominator", () => {
+    const before = (t.sqlite.prepare("SELECT COUNT(*) AS n FROM atlas_daily").get() as { n: number }).n;
+    const view = q.getAtlasIndexView("Nifty 50");
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    expect(view.members).toBe(50);
+    expect(view.priced).toBe(2); // RELIANCE + TCS of our four
+    expect(view.header).toBe("restricted to Nifty 50 (2 of 50 priced)");
+    expect(view.payload!.universe.included).toBe(2);
+    expect(view.specVersion).toBe("atlas-core/2.0.0");
+    // NOTHING was written: the filtered market is a view, not a snapshot.
+    expect((t.sqlite.prepare("SELECT COUNT(*) AS n FROM atlas_daily").get() as { n: number }).n).toBe(before);
+    expect(q.getStoredSnapshot()!.universeIncluded).toBe(UNIVERSE.length);
+  });
+
+  it("lists the filters the map exposes, and refuses a name it does not know", () => {
+    const f = q.listIndexFilters();
+    expect(f.size).toContain("Nifty 500");
+    expect(f.size).toHaveLength(8);
+    expect(f.sectoral.length).toBeGreaterThan(20);
+    expect(q.indexMembers("Nifty 50")!.has("RELIANCE")).toBe(true);
+    const bad = q.getAtlasIndexView("Nifty Imaginary");
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.message).toContain("Nifty Imaginary");
+  });
+});
+
+describe("the W5 additions on the one read (catch-up status, thresholds, honesty list)", () => {
+  it("carries the catch-up count, the stored thresholds and the honesty registry", () => {
+    const v = q.getAtlasView();
+    expect(v.statistic).toBe("median");
+    expect(v.regimeThresholds.isDefault).toBe(true);
+    expect(v.coverageFloorPpm).toBe(300_000);
+    expect(v.groupMinRank).toBe(8);
+    expect(v.catchup.windowDays).toBe(252);
+    expect(v.catchup.perOpen).toBe(10);
+    expect(v.catchup.automatic).toBe(false);
+    expect(v.catchup.line).toMatch(/sessions missing in your 252-day window — run the backfill\.$/);
+    expect(v.notComputed.length).toBeGreaterThan(5);
+    expect(v.rankDeltas.sector.windows.map((w) => w.key)).toEqual(["1w", "1m", "3m"]);
+    // The page's payload and GET's payload are the same re-derived regime (A3).
+    expect(v.payload!.regime).toEqual(q.getVerifiedSnapshot().snapshot!.payload!.regime);
   });
 });
 

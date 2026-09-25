@@ -122,13 +122,13 @@ export const HELP_TASKS: Record<string, HelpTask> = {
   },
   "/atlas": {
     steps: [
-      "Store bhavcopy bars on Instruments; every Atlas figure is computed from the bars in your journal.",
-      "Read advance/decline breadth and the regime classification.",
-      "Compare sector rotation and cap-band behaviour, each printed with its denominator.",
-      "Open the Coverage tab to see how many sessions and symbols the read stands on.",
+      "Store bhavcopy bars on Instruments or backfill from Coverage; every figure comes from stored bars.",
+      "Read the regime card: two voting inputs, thresholds printed and editable in Settings.",
+      "On Sectors, toggle sector or industry and median or mean; each column states its priced count.",
+      "My names compares each open position with its industry cohort's median, falling up to sector.",
     ],
     watchOut:
-      "A thin day prints an em dash instead of a number. The Atlas describes stored history; it names no stock and forecasts nothing.",
+      "A thin group prints an em dash, not a zero, and a tile under 30% coverage shows its coverage instead. The index filter restricts every tab; the header says so.",
     related: ["/instruments", SETUPS],
     screenshot: "atlas",
   },

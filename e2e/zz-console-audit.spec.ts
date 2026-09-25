@@ -47,7 +47,13 @@ const B2_PATTERNS: { name: string; re: RegExp }[] = [
  */
 const NOT_OURS = /aria-hidden/;
 
-const PAGES = ["/live", "/trades", "/strategies", "/", "/reports/tax"];
+/**
+ * The five surfaces fix-list B2 named, plus `/atlas` and `/settings` (v4.6.0
+ * W5): a "two children with the same key, `1`" warning surfaced in the W5 run
+ * with no page attribution, and neither of the two new surfaces was walked.
+ * The fresh e2e database is a day-1 trial, so `/atlas` renders the Pro panel.
+ */
+const PAGES = ["/live", "/trades", "/strategies", "/", "/reports/tax", "/atlas", "/settings"];
 
 interface Captured {
   page: string;
@@ -71,8 +77,8 @@ function listen(page: Page, where: () => string): void {
   });
 }
 
-test("the five surfaces render without React's key or render-phase-update warnings", async ({ page }) => {
-  // 90 s is the config's per-test budget and five dev-mode route compiles fit
+test("the audited surfaces render without React's key or render-phase-update warnings", async ({ page }) => {
+  // 90 s is the config's per-test budget and seven dev-mode route compiles fit
   // inside it only just; this walks them one at a time and asserts once.
   test.slow();
 
@@ -91,7 +97,7 @@ test("the five surfaces render without React's key or render-phase-update warnin
 
   // The deliverable: everything seen, verbatim, whether asserted on or not.
   console.log("PROBE-BEGIN console-audit");
-  if (captured.length === 0) console.log("(no console warnings or errors on any of the five pages)");
+  if (captured.length === 0) console.log(`(no console warnings or errors on any of the ${PAGES.length} pages)`);
   for (const c of captured) console.log(`--- [${c.type}] ${c.page}\n${c.text}`);
   console.log(`PROBE-END console-audit (${captured.length} message(s))`);
 

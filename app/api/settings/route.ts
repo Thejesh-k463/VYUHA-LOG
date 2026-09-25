@@ -11,6 +11,13 @@ import { recordAudit } from "@/lib/audit";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { WORKSPACES } from "@/lib/domain/workspace";
 import { PANEL_STYLES, parseCustomTheme, serializeCustomTheme } from "@/lib/domain/appearance";
+import { DEFAULT_REGIME_THRESHOLDS } from "@/lib/atlas/regime";
+import {
+  parseRegimeThresholds,
+  serializeRegimeThresholds,
+  thresholdsFromObject,
+  validateRegimeThresholds,
+} from "@/lib/atlas/regime-thresholds";
 
 export const runtime = "nodejs";
 
@@ -259,6 +266,33 @@ export async function POST(req: Request) {
     recordAudit({ entity: "settings", action: "update", summary: `risk-free rate → ${riskFreeOf(parsed.ppm, parsed.asOf).label}`, before, after });
     for (const p of ["/reports/performance", "/reports/monthly", "/risk"]) revalidatePath(p);
     return NextResponse.json({ ok: true, message: `Risk-free rate saved — ${riskFreeOf(parsed.ppm, parsed.asOf).label}.` });
+  }
+
+  if (body.type === "atlas-regime") {
+    // v4.6.0 W5 (owner ruling AQ13): the four printed regime thresholds become a
+    // setting. Route handler + client fetch + router.refresh(), never a server
+    // action (AGENTS.md). `{ reset: true }` returns the column to NULL, i.e. the
+    // shipped defaults; otherwise the four numbers are validated by the pure
+    // helper (0 ≤ ppm ≤ 1,000,000; each contraction bound strictly below its
+    // expansion bound) and stored as the versioned envelope. No label is stored
+    // and nothing is recomputed: the read re-derives the label (design review A3).
+    const existing = db.select().from(settings).limit(1).all()[0];
+    if (!existing) return NextResponse.json({ ok: false, message: "No settings row to save onto." }, { status: 400 });
+    const before = parseRegimeThresholds(existing.atlasRegimeThresholds) ?? DEFAULT_REGIME_THRESHOLDS;
+    if (body.reset === true) {
+      db.update(settings).set({ atlasRegimeThresholds: null, updatedAt: now }).where(eq(settings.id, existing.id)).run();
+      recordAudit({ entity: "settings", action: "update", summary: "Atlas regime thresholds reset to defaults", before: { ...before }, after: { ...DEFAULT_REGIME_THRESHOLDS } });
+      for (const p of ["/atlas", "/settings"]) revalidatePath(p);
+      return NextResponse.json({ ok: true, message: "Regime thresholds reset to the defaults.", thresholds: DEFAULT_REGIME_THRESHOLDS, isDefault: true });
+    }
+    const t = thresholdsFromObject(body.thresholds ?? body);
+    if (!t) return NextResponse.json({ ok: false, message: "All four thresholds are required, as numbers." }, { status: 400 });
+    const problem = validateRegimeThresholds(t);
+    if (problem) return NextResponse.json({ ok: false, message: problem }, { status: 400 });
+    db.update(settings).set({ atlasRegimeThresholds: serializeRegimeThresholds(t), updatedAt: now }).where(eq(settings.id, existing.id)).run();
+    recordAudit({ entity: "settings", action: "update", summary: "Atlas regime thresholds edited", before: { ...before }, after: { ...t } });
+    for (const p of ["/atlas", "/settings"]) revalidatePath(p);
+    return NextResponse.json({ ok: true, message: "Regime thresholds saved. The label is re-read against them on the next Atlas view.", thresholds: t, isDefault: false });
   }
 
   if (body.type === "settings") {

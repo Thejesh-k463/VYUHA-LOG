@@ -151,14 +151,17 @@ export default function RootLayout({
               book's trades under another's name. The key remounts it; the
               accountId prop also stamps the cache key and the session frames,
               so neither half depends on the other. */}
-          <CommandPalette key={selectedAccountId} accountId={selectedAccountId} workspace={workspace} />
+          <CommandPalette key={`command-palette:${selectedAccountId}`} accountId={selectedAccountId} workspace={workspace} />
           {/* v4.6.0 W4: the keyboard-shortcuts sheet — "?" anywhere, the
               palette's "Keyboard shortcuts" action, the help desk's button. */}
           <ShortcutsSheet />
           {/* The floating search assistant — the SAME engine as the palette,
               on a surface that survives navigation. Keyed and stamped on the
-              account for the same reason (invariant 8). */}
-          <SearchPanel key={selectedAccountId} accountId={selectedAccountId} />
+              account for the same reason (invariant 8). The two keys carry a
+              prefix: both are direct children of the TooltipProvider, and a
+              bare account id on each was React's "two children with the same
+              key, `1`" on every page (W5 console audit). */}
+          <SearchPanel key={`search-panel:${selectedAccountId}`} accountId={selectedAccountId} />
           {/* Mounted once, so each navigation is recorded exactly once. */}
           <NavHistoryTracker />
           {/* First-run wizard (opens over the dashboard only — it gates on the

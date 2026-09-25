@@ -56,7 +56,7 @@ describe("computeAtlasDaily — the snapshot", () => {
     expect(r.daily!.universe_excluded).toBe(2); // ETFX (non-equity) + SLOWCO (stale)
     expect(r.daily!.anchor_coverage).toBe(4);
     expect(r.daily!.anchor_coverage_ppm).toBe(800_000);
-    expect(r.daily!.spec_version).toBe("atlas-core/1.0.0");
+    expect(r.daily!.spec_version).toBe("atlas-core/2.0.0"); // AQ18: the median swap is a MAJOR bump
     expect(r.daily!.source_mode).toBe("bhavcopy_local");
     expect(r.daily!.generated_at).toBe(GENERATED_AT);
   });
@@ -96,7 +96,8 @@ describe("computeAtlasDaily — the snapshot", () => {
     }
     // ...and counted as insufficient history, NOT as an exclusion, where the
     // window is longer than anything the symbol has. The two are different facts.
-    for (const key of ["2m", "3m"] as const) {
+    // (2m left the window set in atlas-core/2.0.0 — AQ7.)
+    for (const key of ["3m"] as const) {
       expect(r.payload!.market_pulse.performance.windows[key].corporateActionExcluded).toEqual([]);
       expect(r.payload!.market_pulse.performance.windows[key].insufficient).toContain("SPLITCO");
     }
@@ -183,6 +184,50 @@ describe("computeAtlasDaily — the snapshot", () => {
       b.symbol === "AAA" && b.date === iso(29) ? { ...b, close: b.close + 1 } : b,
     );
     expect(run(tampered).daily!.input_checksum).not.toBe(run().daily!.input_checksum);
+  });
+
+  it("v4.6.0 W5: persists the new universe rows, the three group tables and no 2m row", () => {
+    const r = run();
+    const names = new Set(r.metrics.map((m) => m.metric));
+    for (const n of ["rsi_low_count", "rsi_high_count", "volume_adv_share_ppm", "rs_eligible_count"]) expect(names, n).toContain(n);
+    expect(names).not.toContain("return_2m_ppm"); // AQ7
+    expect(names).toContain("return_3m_ppm");
+    // The sector table under the contract's names, median AND mean side by side (AQ18).
+    const med = metric(r.metrics, "group_return_median_1w", "Banks");
+    const mean = metric(r.metrics, "group_return_mean_1w", "Banks");
+    expect(med.group_kind).toBe("sector");
+    // Banks holds two members — under the 3-member floor (AQ26) both rows are
+    // null with a null denominator, never a two-member "median" dressed as a figure.
+    expect(med.value_ppm).toBeNull();
+    expect(med.denominator).toBeNull();
+    expect(mean.value_ppm).toBeNull();
+    for (const n of ["group_ytd_ppm", "group_rs_ppm", "group_rsi_low_count", "group_rsi_high_count", "group_above_sma20_pct_ppm", "group_new_high_count", "group_new_low_count", "group_net_high_low", "group_turnover_share_ppm", "group_volume_expansion_median_ppm", "group_volume_adv_share_ppm"]) {
+      expect(r.metrics.some((m) => m.metric === n && m.group_kind === "sector" && m.group_name === "Banks"), n).toBe(true);
+    }
+    // Two members: under the 3-member floor every Banks figure is null with its reason in the payload.
+    const banks = r.payload!.groups.sector.find((g) => g.group === "Banks")!;
+    expect(banks.computable).toBe(false);
+    expect(banks.returns["1w"].median.reason).toBe("insufficient_members");
+    expect(r.payload!.groups.unclassified.sector).toBe(0);
+    // No classificationOf ⇒ the sector-only lift: an empty industry table, every symbol unclassified there.
+    expect(r.payload!.groups.industry).toEqual([]);
+    expect(r.payload!.groups.unclassified.industry).toBe(4);
+    // No capBandOf ⇒ no cap table, and no `cap` row.
+    expect(r.payload!.groups.cap).toEqual([]);
+    expect(r.metrics.some((m) => m.group_kind === "cap")).toBe(false);
+    expect(r.payload!.statistic).toBe("median");
+    expect(r.payload!.relative_strength.priced).toBe(4);
+    expect(r.payload!.relative_strength.eligible).toBe(0); // 30 bars < 64
+    expect(r.payload!.regime.coverageFloorPpm).toBe(300_000);
+  });
+
+  it("v4.6.0 W5: with a cap-band lookup the AMFI table is persisted under group_kind 'cap'", () => {
+    const r = computeAtlasDaily(UNIVERSE, sectorOf, { ...OPTS, capBandOf: (s) => (s === "AAA" || s === "BBB" || s === "CCC" ? "large" : null) });
+    const row = metric(r.metrics, "group_return_median_1w", "large");
+    expect(row.group_kind).toBe("cap");
+    expect(row.denominator).toBe(3);
+    expect(r.payload!.groups.cap.map((g) => [g.group, g.members, g.computable])).toEqual([["large", 3, true]]);
+    expect(r.payload!.groups.unclassified.cap).toBe(1); // SPLITCO carries no band
   });
 
   it("returns an empty screen, not a zeroed one, with no bars at all", () => {

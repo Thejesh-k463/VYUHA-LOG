@@ -286,7 +286,9 @@ describe("panel contracts (source)", () => {
 
   it("is mounted ONCE by the root layout, keyed per account (invariant 8)", () => {
     const layout = read(LAYOUT);
-    expect(layout).toMatch(/<SearchPanel key=\{selectedAccountId\} accountId=\{selectedAccountId\}/);
-    expect(layout, "the panel sits beside the palette, not inside a page").toContain("<CommandPalette key={selectedAccountId}");
+    // Keys carry a per-component prefix since v4.6.0 W5 (siblings under one provider); the pin
+    // guards "keyed per account", which the prefixed template key still is.
+    expect(layout).toMatch(/<SearchPanel key=\{`search-panel:\$\{selectedAccountId\}`\} accountId=\{selectedAccountId\}/);
+    expect(layout, "the panel sits beside the palette, not inside a page").toContain("<CommandPalette key={`command-palette:${selectedAccountId}`}");
   });
 });

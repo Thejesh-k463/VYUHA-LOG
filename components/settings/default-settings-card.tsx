@@ -21,6 +21,7 @@ const FIELD_LABELS: Record<string, string> = {
   defaultSellOrders: "default sell orders", autoMtmEnabled: "auto-MTM",
   strategyShelfJson: "strategy shelf",
   riskFreeRatePpm: "risk-free rate", riskFreeAsOf: "risk-free rate date",
+  atlasRegimeThresholds: "Atlas regime thresholds",
 };
 
 // v4.3.0 P12 + N25: restoreBaseline re-inserts the snapshot's charge rows WITH

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { COVERAGE_FLOOR_PPM } from "@/lib/atlas/types";
 
 /**
  * The unit of the Atlas panel: a figure that CANNOT be rendered without its
@@ -15,6 +16,47 @@ export function ppmToPct(ppm: number | null, digits = 1): string {
   return ppm === null ? "—" : `${(ppm / 10_000).toFixed(digits)}%`;
 }
 
+/** Signed percentage for a RETURN: +2.10% / −0.35%; "—" for null. */
+export function signedPct(ppm: number | null | undefined, digits = 2): string {
+  if (ppm == null) return "—";
+  const s = (Math.abs(ppm) / 10_000).toFixed(digits);
+  return ppm > 0 ? `+${s}%` : ppm < 0 ? `−${s}%` : `${s}%`;
+}
+
+/** An integer with Indian grouping; "—" for null. */
+export function fmtCount(x: number | null | undefined): string {
+  return x == null ? "—" : x.toLocaleString("en-IN");
+}
+
+/** "12 Jul" from an ISO date — UTC-anchored so the server and the browser print the same day. */
+export function fmtDay(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/**
+ * AQ44 — the collapsed-denominator sentence: "40 of 1,900 priced (2%)". The
+ * universe is recovered from the metric's own `denominator` and `coverage_ppm`
+ * (coverage = denominator / universe), so the tile needs no extra prop.
+ */
+export function coverageSentence(denominator: number, coveragePpm: number): string {
+  const universe = coveragePpm > 0 ? Math.round((denominator * 1_000_000) / coveragePpm) : null;
+  const whole = Math.round(coveragePpm / 10_000);
+  const pct = whole === 0 && coveragePpm > 0 ? "<1%" : `${whole}%`;
+  return universe === null
+    ? `${denominator.toLocaleString("en-IN")} priced (${pct})`
+    : `${denominator.toLocaleString("en-IN")} of ${universe.toLocaleString("en-IN")} priced (${pct})`;
+}
+
+/** True when the AQ44 rule applies: a real denominator whose coverage is under the floor. */
+export function belowCoverageFloor(
+  denominator: number | null | undefined,
+  coveragePpm: number | null | undefined,
+  floorPpm: number,
+): boolean {
+  return denominator != null && denominator > 0 && coveragePpm != null && coveragePpm < floorPpm;
+}
+
 export function MetricTile({
   label,
   valuePpm,
@@ -26,6 +68,7 @@ export function MetricTile({
   formula,
   children,
   className,
+  coverageFloorPpm = COVERAGE_FLOOR_PPM,
 }: {
   label: string;
   /** A ratio, in integer ppm. */
@@ -40,16 +83,29 @@ export function MetricTile({
   formula?: string;
   children?: React.ReactNode;
   className?: string;
+  /**
+   * AQ44 (v4.6.0 W5): below this coverage the tile prints its COVERAGE
+   * ("40 of 1,900 priced (2%)") INSTEAD of its value — a figure over a
+   * collapsed denominator is not published, and it is never 0 or blank.
+   * Above it the value prints with its coverage beneath. 30% is a proposal.
+   */
+  coverageFloorPpm?: number;
 }) {
-  const missing = shortfall || (valuePpm === undefined ? value == null : valuePpm == null);
+  const collapsed = !shortfall && belowCoverageFloor(denominator, coveragePpm, coverageFloorPpm);
+  const missing = shortfall || collapsed || (valuePpm === undefined ? value == null : valuePpm == null);
   return (
-    <div className={cn("rounded-md border border-border bg-card/40 p-3", className)}>
+    <div className={cn("rounded-md border border-border bg-card/40 p-3", className)} data-coverage={collapsed ? "below-floor" : undefined}>
       <div className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={cn("mt-1 text-xl font-semibold tabular-nums", missing && "text-muted-foreground")}>
-        {shortfall ? "—" : valuePpm !== undefined ? ppmToPct(valuePpm) : (value ?? "—")}
+        {shortfall || collapsed ? "—" : valuePpm !== undefined ? ppmToPct(valuePpm) : (value ?? "—")}
       </div>
       {shortfall ? (
         <div className="mt-1 text-[0.6875rem] text-muted-foreground">{shortfall}</div>
+      ) : collapsed ? (
+        <div className="mt-1 text-[0.6875rem] tabular-nums text-muted-foreground">
+          {coverageSentence(denominator!, coveragePpm!)} · below the {ppmToPct(coverageFloorPpm, 0)} coverage floor, so the
+          value is not shown
+        </div>
       ) : (
         <div className="mt-1 text-[0.6875rem] tabular-nums text-muted-foreground">
           {denominator != null && denominator > 0 ? (

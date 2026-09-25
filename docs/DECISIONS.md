@@ -9380,3 +9380,168 @@ default cannot hold under parallel workers). Deviation recorded here; the pin it
 `VYUHA-STATE.md` §0. Scoped Playwright on the five specs W4 can touch
 (`z-help`, `command-palette`, `z-onboarding`, `z-section-order`, `zz-console-audit`): **21 passed in 2.2 min**, console audit
 0 messages. `package-lock.json` 62 / 0 before and after. **Prose pass: 11 files / 0 findings / 64 tool calls** (doc-auditor on Haiku — it counted 23 of its own calls, the harness billed 64, over the 40 budget; it re-derived every count in STATE §0, README, the spec and LEDGER against the tree, checked three code claims by grep, and found the six close-out placeholders in the session log as expected).
+
+## 2026-09-25 — v4.6.0 W5 opened: the twenty 06a AQ answers (two groups of ten, owner) and the Q51 design decisions (session)
+
+**Asked BEFORE any W5 code (twenty-seventh session), per spec §4 and the standing rule.** The twenty were the 06a questions no
+later ruling or shipped code had settled (`VYUHA/LIVE-DESK-RESEARCH/19-BACKLOG-RESEARCH-2026-09-16/06a-atlas-panel-v3.md`
+§2 lists the 32 settled ones): AQ1, AQ3–AQ11, AQ13, AQ14, AQ18, AQ20, AQ21, AQ23, AQ26, AQ28, AQ44, AQ52. Every answer was the
+recommended option. Two facts from the tree shaped the recommendations: the shipped cohort (`getMyNames`) uses the equal-weighted
+MEAN under `SPEC_VERSION = "atlas-core/1.0.0"`, and since W2 the taxonomy is the exchanges' own four levels (macro 12 / sector 22 /
+industry 59 / basic 197 from `lib/data/stock-universe.json`), so the 06a pack's `sector-map.json` level counts are superseded.
+
+**Group 1 — scope, layout, widget families (owner, 2026-09-25):**
+- **AQ52 + pack Q1 (scope): Option B.** Complete the five tabs + relative strength vs the cross-sectional market median + the
+  industry cohort view with rank-in-cohort + the trades join ("breadth was N% on the days you opened these positions", day count
+  as denominator, descriptive only) + the honesty list on tab 5 ("what Atlas does not compute, and why", Vyuha's own categories,
+  no widget titles, no dashboard id). Rejected: A (depth only — "a better Chartink"); C (an ETF-proxy index axis).
+- **AQ3 (layout): five tabs, tab 1 default** — the shipped structure; the locked Pro preview's five entries move in the same commit
+  as any tab rename. Rejected: one long screen; tabs + a pinned strip.
+- **AQ1 (first card): regime → my names → sector RS → cap bands → breadth tiles.** Rejected: breadth first (the bot's order);
+  my names first.
+- **AQ4 (remember tab + level): yes, per machine** via `use-stored-value.ts` (`vyuha-atlas-tab`, `vyuha-atlas-level`, `{v:1,…}`).
+- **AQ5 (breadth family): all nine MUST** — market breadth (adv/dec), %>SMA20/50/200, net new 52w H−L, new-high vs new-low count,
+  RSI extremes (RSI14), volume split adv/dec, daily volume vs 20-SMA. SMA lengths stay 20/50/200 (AQ15).
+- **AQ6 (group tables): ONE rotation table with a level toggle** (sector 22 / industry 59); windows are its columns; "industries at
+  52-week high" is a column with its own denominator. Rejected: two tables; sector only.
+- **AQ7 (windows): 1w / 1m / 3m / YTD now, 2m LATER.** YTD's anchor is the calendar's first session of the year
+  (`lib/domain/market-calendar.ts`, never a literal). A sparse history prints the window's real stored-session span.
+- **AQ8 (cap-band family): all five MUST** — per-band breadth, RSI, rotation (1w/1m/3m), %>SMA, NH/NL — on AMFI's band (U2);
+  Emerge never enters a band figure (U3).
+- **AQ9 (relative strength): first four MUST** (sector RS vs market median, symbol RS vs market median, symbol vs own sector
+  cohort, symbol vs own industry cohort); **rank Δ ships printing its shortfall** ("needs 21 stored sessions, you have N",
+  within one `spec_version`); **`money_flowing_in` ships as "turnover share"** — the word money never appears. RS = 5/21/63-session
+  returns weighted 0.5/0.3/0.2 vs the cross-sectional median, floors turnover ≥ ₹1 cr and price ≥ 20 (Sentinel S11).
+- **AQ10 + AQ11 (intraday and external/fundamental families): greyed tiles naming the gate; OI/delivery NEVER.** Tab 5 lists each
+  family under "needs an intraday feed" / "needs fundamentals" / "not computed here"; FII/DII/promoter = later. Rejected: hide
+  both; route intraday through C7.
+
+**Group 2 — definitions, groups, index axis, denominators, sequencing (owner, 2026-09-25):**
+- **AQ13 (regime thresholds): print them and make them editable in Settings** — W5's ONE migration (a settings column, numbered
+  at build time; considered for `SETTINGS_MACHINE_COLUMNS` in `lib/backup-format.ts`); a route handler + `router.refresh()`,
+  never a server action. Rejected: fixed; per-machine localStorage (two machines, one journal, two regime labels).
+- **AQ14 (regime rule): keep the two-input rule** (%>SMA50 AND net NH−NL); advancing % is shown as a third tile but does not
+  vote. Rejected: two-of-three voting (a second major spec change in one release).
+- **AQ18 (group statistic): MEDIAN shipped, mean behind a labelled toggle, MAJOR spec bump** `atlas-core/1.0.0` → `2.0.0`,
+  which invalidates every stored `atlas_metric` row by design so rank Δ never mixes two definitions; the release notes say the
+  numbers change. Rejected: keep the mean; both columns always.
+- **AQ20 (RS benchmark): the market median only in W5.** If an index leg is ever wanted: the exact owner file drop
+  (`date,index,close`) first, the ETF proxy as fallback, never the reverse. Rejected: median + ETF proxy; median + file drop now.
+- **AQ21 (default level): the cohort = INDUSTRY falling UP to sector** when the industry cohort is below the width floor, the row
+  saying which level it used (P1 extended to Atlas); **the rotation table opens at SECTOR** with industry one click away; macro
+  never rotates; basic (197) only on a row expander. Rejected: industry everywhere; sector everywhere.
+- **AQ23 (index memberships): a FILTER, not a table** — "restrict everything to Nifty 500 / Midcap 150 / Bank" over every tab;
+  themes stay overlapping lenses, never a denominator.
+- **AQ26 (floors): 3 members to compute, 8 to appear in a ranking, hidden count stated; a cohort needs ≥ 5 PRICED constituents
+  AND ≥ 60% coverage** else "—" with "cohort too thin to compare (3 of 41 priced)". **5 and 60% are proposals, not
+  measurements.** Rejected: 3/5/≥3; 5/10/≥8 + 75%.
+- **AQ28 (ETF → index map): nothing built in W5.** Recorded for a later index leg: NIFTYBEES → Nifty 50, JUNIORBEES → Nifty Next
+  50, BANKBEES → Nifty Bank, MID150BEES → Nifty Midcap 150, ITBEES → Nifty IT, PHARMABEES → Nifty Pharma, PSUBNKBEES → Nifty PSU
+  Bank, CPSEETF → Nifty CPSE; a visible, editable table with a liquidity floor (drop a thin ETF rather than print a thin proxy).
+- **AQ44 (collapsed denominator): below 30% coverage a tile shows the COVERAGE instead of the number** ("40 of 1,900 priced
+  (2%)"); above it the number prints with its coverage beneath; never 0, never blank (invariant 6). **30% is a proposal.**
+- **AQ52 (sequencing, reframed — S1/B1 place Q51 + Atlas v3 in v4.6.0): ALL of Option B in W5, one builder,** a design review
+  before the builder because the median swap + spec bump touches stored rows. Rejected: tabs 3/4 to v4.7.0; honesty-only W5.
+
+**Q51's nine questions — decided by the session under the decision policy** (the spec's W5 line already chose "the 3 honesty
+gaps + freshness catch-up"; `Q51-cohort-analytics.md` §6; the owner may overrule):
+1. "AUTOMATED" = (a) the app tops up missing sessions itself under the EXISTING auto-MTM consent; the Sentinel file drop is the
+   offline import already built (Q43's second half), not a second channel.
+2. Catch-up budget: **10 files max per app-open, 1.5 s apart (`BACKFILL_RATE_LIMIT_MS`), abortable**; a larger hole routes the
+   user to the existing backfill button with the count. Same host, same politeness as the backfill.
+3. Cohort node = industry falling up to sector (= AQ21). 4. Width floor 5 priced / 60% (= AQ26). 5. The row shows "14 of 17
+   priced" (`constituents` of `members`) and the bare `cohortSize` goes. 6. `gapsBySymbol` is passed into the cohort windows and
+   a split leaves the row "—" with "excluded: unreconciled price gap on <date>", as the daily rotation already does. 7. Sparse
+   history is LABELLED (real date span + missing-session count); refused only below the 21-session depth floor. 8. NO new consent
+   line — the auto-MTM toggle + PRIVACY item 2 cover a top-up; the cadence is restated in Settings and PRIVACY item 2 re-read in
+   the same commit (a copy change there is a claims-audit item, not a version bump). 9. Journal-vintage cohorts: PARKED (six
+   partition lenses + theme edge already cover it; a `/lenses` extension if ever wanted, declaring overlap like `theme-edge`).
+The dead `tier` field on `MyNameRow`: populated from the grouping's tier count if the row can state it honestly, else deleted —
+the builder decides from the code and records which.
+
+## 2026-09-25 — v4.6.0 W5 built: Q51 cohort analytics + Atlas panel v3 — `atlas-core/2.0.0`, industry cohorts, relative strength vs the market median, the catch-up, regime thresholds in Settings (migration 0076)
+
+**What the scout and the design review found before the build (twenty-seventh session):** `computeYtd` already existed at universe
+level; `atlas_metric.group_kind` already admitted `industry` but `atlas_metric` has NO `spec_version` column (the version lives on
+`atlas_daily`, and a recompute deletes only rows with `as_of > anchor`, so every 1.0.0 row for an earlier session survives a bump);
+`getMyNames` ran on the UNALIGNED series, passed no `gapsBySymbol`, and used the equal-weighted mean; the regime label was stored in the
+payload with the thresholds of its run; `SectorResolution` carried only `sector` although the W2 universe holds all four levels; the
+backfill's `running` envelope had NO reset path (a job killed mid-run blocked the button forever — tolerable for a button press, fatal
+for a job that runs on every app open); a filtered recompute persisted under the same checksum would have been served as the market on
+the next open. The design review's verdict was REVISE; its ten amendments are the contract's §9 and are all built.
+
+**Decided by the session under the decision policy (the owner's twenty answers are the previous entry; the owner may overrule):**
+- **The statistic is persisted BOTH ways.** `group_return_median_<w>` and `group_return_mean_<w>` (and `group_ytd_ppm` /
+  `group_ytd_mean_ppm`) are stored per group per window, so the mean toggle is a READ, not a recompute. Rejected: computing the mean on
+  toggle (a full-universe pass on a click). The UNIVERSE windows moved to the median as well (one statistic for the formula set).
+- **Rank Δ's denominator is DAILY SNAPSHOTS, not stored sessions**, read through `atlas_metric JOIN atlas_daily ON as_of WHERE
+  spec_version = SPEC_VERSION`; copy: "needs 21 daily snapshots under this formula set; you have N (one is written each day Atlas is
+  opened with new bars)". Pinned: "1.0.0 rows for an earlier as_of never enter a 2.0.0 rank Δ".
+- **One gap map.** `buildGapMap(aligned, thresholdPpm)` is called by the daily compute AND by the query for the cohort / RS / trades
+  join, all over `alignToAnchor(series, modalAnchor(series))`. Pinned: the rotation tab's exclusion set equals the cohort's over one
+  seeded book.
+- **The cohort's level is chosen ONCE per symbol on the 1m priced count**, both windows use it, and the row states the level and the
+  count. `groupByLevel` itself does NOT fall up (a symbol with no label at the asked level is unclassified at that level) — fall-up is the
+  cohort's rule only. A user tag is sector-only and REPLACES the taxonomy row (never the taxonomy's industry under a sector the user
+  disagreed with). The dead `tier` field is DELETED; the row carries `classification.source` and `level`.
+- **The regime label is re-derived at read time** in `getVerifiedSnapshot()` (and `getAtlasView`) from the payload's stored inputs with
+  the CURRENT thresholds, so the page and `GET /api/atlas` never disagree after an edit; `classifyRegime` refuses ANY input below the
+  coverage floor (`unknown` / `coverage_below_floor`) — taken literally, even when the other input alone would say contraction.
+  `atlas_regime_thresholds` travels WITH the backup (not a machine column) and joins `BASELINE_SETTINGS_FIELDS` so Reset returns it to null.
+- **The catch-up:** runs inside `POST /api/mtm/auto` after the top-up, gated on `autoMtmEnabled` ONLY (the backfill ack is consent to a
+  button press); re-reads consent AND abort from the DB before every file; a `running` envelope untouched for 10 × `BACKFILL_RATE_LIMIT_MS`
+  is DEAD and reset (the same rule now guards the backfill's own refusal); a `globalThis` lock stops two windows fetching in parallel;
+  the plan excludes `latestBhavcopyDate(now)` (that file is the top-up's — two jobs never race for one file); the date walk is the
+  calendar's only; the new job holds NO URL (the egress guard pins the host inside `auto-mtm.ts`). Dead-run clock = `Date.now()`, the
+  clock `writeBackfillProgress` stamps, never the plan's `now`.
+- **The index filter never writes the cache**: `GET /api/atlas/view?index=` computes in memory over the aligned series; the stored rows
+  stay unfiltered; membership from the bundled map (`sizeIndices` / `symbols[].indices`), `instrument_indices` as fallback.
+- **`2m` is gone from the type** (no stored reader named it). **`COVERAGE_FLOOR_PPM = 300_000`, `COHORT_MIN_PRICED = 5`,
+  `COHORT_MIN_COVERAGE_PPM = 600_000`, `GROUP_MIN_COMPUTE = 3`, `GROUP_MIN_RANK = 8` are PROPOSALS, not measurements** — their comments say so.
+- Two one-line edits outside the phase-1 file set were forced by exhaustive pins and accepted: `default-settings-card.tsx` gains the
+  English label for the new baseline field (`tests/settings-baseline.test.ts:195`), `tests/atlas-page.test.ts`'s `Object.keys(view)` list.
+
+**Migration 0076** `settings.atlas_regime_thresholds` (text, JSON `{v:1,…}` or null → defaults). W6's `trades.side` takes **0077**.
+
+**Phase 2 (a fresh builder) and its decisions:** the sparse-history spans the contract placed "in the payload" did not exist there —
+`AtlasView.windowSpans` (server-side, over the aligned session calendar) carries them; the e2e Pro path is the fresh DB's day-1 trial
+(the `z-live-desk` pattern EXPIRES a trial — the opposite fork); the median-wording pin followed the table into `rotation-table.tsx`;
+under an index filter rank Δ shows "—" with a note and the volume leaders / index-band lens / cohort tab SAY the filter does not apply
+(stored ranks are the whole market's — never pretend); leaders/laggards rank by group RS, consistent with tab 1; `app/settings/page.tsx`
+gained three lines passing the catch-up constants to the preferences card because `BACKFILL_RATE_LIMIT_MS` lives in a `server-only`
+module and the literal may not be typed twice (accepted over moving the constant); the static preview keeps ONE literal ("252-day
+window") since it takes no props. Measured on a temp DB with 1,900 real symbols × 300 sessions: `payload_json` 256,888 bytes, 1,649
+`atlas_metric` rows, `getAtlasView()` 9,998 ms first compute / 2,958 ms on a checksum hit — the cache saves the compute, not the bar
+read (LEDGER L-25; the lever is not built in W5). `e2e/z-atlas.spec.ts`: 6 flows, 6 passed locally in 32.9 s; Playwright now lists
+141 flows in 38 specs.
+
+**Independent skeptic before commit (Fable, 43 calls): 15 claims — 13 CONFIRMED, 2 REFUTED.** Product: the catch-up's dead-run
+threshold (10 × 1.5 s = 15 s) was not above ONE archive fetch timeout (15 s, two attempts per date) and the envelope was stamped only
+after each apply, so a slow NSE answer would have made a LIVE run read as dead and let the backfill button or the next open start a
+second walker on the same host (and `runBhavcopyBackfill` never took the lock) — fixed with a heartbeat before every fetch, a threshold
+derived from the fetch timeout (2 × timeout + 4 × rate) and one shared process lock (LEDGER F-22, L-26); the regime editor posted a
+CLEARED field as 0 (`Number("") === 0`) — a blank is now NaN and the route's 400 fires (F-23). Test integrity: `z-atlas.spec.ts` now
+deletes only the `atlas_daily` rows it produced and asserts the cache did not GROW across the filter fetch; `zz-console-audit` gains
+`/atlas` and `/settings` so a React key warning names its page. Copy: "equal-weighted MEDIAN" → "median (every member counts once)".
+Observations recorded, not defects: the 30% coverage floor applies to TILES (AQ44's word) — a computable group ROW prints its median
+with "3 of 60 priced" beside it; `getCapBands` / `getIndexBands` / `getVolumeLeaders` still run on the raw series (pre-existing; they
+compute no window return, so the gap map does not apply).
+
+**The fix wave (a fresh builder, five items) and what it found:** the dead-run threshold is now DERIVED — `BACKFILL_DEAD_AFTER_MS =
+2 × FETCH_TIMEOUT_MS + 4 × BACKFILL_RATE_LIMIT_MS` (36 s; `FETCH_TIMEOUT_MS` exported from `auto-mtm.ts`), with a heartbeat stamped
+before every fetch in both walkers and ONE shared `globalThis` lock (`takeBhavcopyJobLock` / `releaseBhavcopyJobLock`) held by the
+backfill for its whole walk and by the catch-up; `isEnvelopeDead` stays pure with the threshold as a parameter. Extending
+`zz-console-audit` to `/atlas` and `/settings` REPRODUCED the duplicate-key warning on `/settings` on the first run; a CDP owner-stack
+probe (removed) traced it to `app/layout.tsx` — `<CommandPalette key={selectedAccountId}>` and `<SearchPanel key={selectedAccountId}>`
+are siblings under one provider with the same key, pre-existing since v3.9 W3 (`c04e1ad`), never seen because the audit visited neither
+route (LEDGER F-24, L-27). Keys are now per-component prefixes; remount-on-account-switch is preserved. Recorded, not done: the audit's
+header comment still says React 19 appends the component stack to the console text (it does not); a CDP owner-stack capture in that
+spec would make the next unattributed warning name its page.
+
+**Gate:** run 1 (`vyuha-verifier`, alone) EXIT 1 in 331 s — `Test Files 4 failed | 485 passed (489)`, `Tests 3 failed | 11564 passed |
+47 skipped`, `next build` not reached: README's file count (482 → 489; the test count 11,447 → 11,564 fixed with it — FAIL-E), two
+SOURCE pins expecting the bare `key={selectedAccountId}` the layout fix prefixed (`search-fixes.test.ts:77`,
+`search-panel.test.ts:289-290` — re-pinned to the prefixed keys; the pins guard "keyed per account", still true), and
+`seams-v42-fix5`'s 30 s `beforeAll` under the suite (32.5 s; 14.0 s alone — FAIL-J, not touched). Between the runs
+`npm run help:shots` re-shot the 14 screenshots (942 KB) so the Atlas card shows the v3 panel; the scoped re-check was 4 files / 137
+tests. Run 2 (alone): **EXIT 0 in 290 s — 489 files / 11,579 passed / 35 skipped**, lint 0 errors (the 6 pre-existing warnings), `next build` "Compiled successfully in 13.2s"; `seams-v42-fix5` did not time out. `package-lock.json` and `package.json` unchanged. **Prose pass: 8 files / 1 finding (the placeholder itself) / 28 tool calls (doc-auditor on Haiku; the harness billed 47) — counts, paths, SPEC_VERSION, the consent gate, PRIVACY item 2 and the "equal-weighted" scan all re-derived clean.**

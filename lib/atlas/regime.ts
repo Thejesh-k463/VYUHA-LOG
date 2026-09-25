@@ -12,7 +12,7 @@
  * Neutral:     anything else, with both inputs present
  * Unknown:     an input is null (never fabricate a denominator, invariant 6)
  */
-import type { CountMetric, Metric } from "./types";
+import { COVERAGE_FLOOR_PPM, type CountMetric, type Metric } from "./types";
 
 export type Regime = "expansion" | "contraction" | "neutral" | "unknown";
 
@@ -35,9 +35,12 @@ export const DEFAULT_REGIME_THRESHOLDS: RegimeThresholds = {
 };
 
 export interface RegimeInput {
-  aboveSma50: Pick<Metric, "value_ppm" | "denominator"> | null;
-  netHighLow: Pick<CountMetric, "value" | "denominator"> | null;
+  /** `coverage_ppm` is optional for a legacy caller; when present it is checked against the floor (A9). */
+  aboveSma50: (Pick<Metric, "value_ppm" | "denominator"> & { coverage_ppm?: number }) | null;
+  netHighLow: (Pick<CountMetric, "value" | "denominator"> & { coverage_ppm?: number }) | null;
 }
+
+export type RegimeUnknownReason = "missing_sma50" | "missing_net_high_low" | "coverage_below_floor";
 
 export interface RegimeResult {
   regime: Regime;
@@ -47,24 +50,59 @@ export interface RegimeResult {
   /** The rule, substituted — printed next to the label. */
   formula: string;
   /** Present only when the label is `unknown`. */
-  reason?: "missing_sma50" | "missing_net_high_low";
+  reason?: RegimeUnknownReason;
+  /**
+   * AQ44 / A9 (atlas-core/2.0.0): the coverage below which an input may not
+   * vote. Carried so the tile can print it beside the label. Absent on a
+   * 1.0.0 payload.
+   */
+  coverageFloorPpm?: number;
+  /** Which input fell below the floor, with the coverage it had — printed, never guessed. */
+  belowFloor?: { input: "aboveSma50" | "netHighLow"; coverage_ppm: number }[];
 }
 
-/** Classify. Pure, total, and null-honest in both inputs. */
+/**
+ * Classify. Pure, total, and null-honest in both inputs.
+ *
+ * A9: an input whose `coverage_ppm` is below `coverageFloorPpm` yields
+ * `unknown` with reason `coverage_below_floor` — the label must not vote on
+ * 40 of 1,900 while the tile beneath it prints its coverage instead of a
+ * value. This check comes FIRST: a below-floor input is not "present".
+ */
 export function classifyRegime(
   input: RegimeInput,
   thresholds: RegimeThresholds = DEFAULT_REGIME_THRESHOLDS,
+  coverageFloorPpm: number = COVERAGE_FLOOR_PPM,
 ): RegimeResult {
   const above = input.aboveSma50?.value_ppm ?? null;
   const net = input.netHighLow?.value ?? null;
   const inputs = { aboveSma50Ppm: above, netHighLow: net };
+
+  const belowFloor: NonNullable<RegimeResult["belowFloor"]> = [];
+  if (above !== null && input.aboveSma50?.coverage_ppm !== undefined && input.aboveSma50.coverage_ppm < coverageFloorPpm) {
+    belowFloor.push({ input: "aboveSma50", coverage_ppm: input.aboveSma50.coverage_ppm });
+  }
+  if (net !== null && input.netHighLow?.coverage_ppm !== undefined && input.netHighLow.coverage_ppm < coverageFloorPpm) {
+    belowFloor.push({ input: "netHighLow", coverage_ppm: input.netHighLow.coverage_ppm });
+  }
+  if (belowFloor.length > 0) {
+    return {
+      regime: "unknown",
+      inputs,
+      thresholds,
+      formula: formulaLine(inputs, thresholds),
+      reason: "coverage_below_floor",
+      coverageFloorPpm,
+      belowFloor,
+    };
+  }
 
   const contraction =
     (above !== null && above <= thresholds.contractionAboveSma50Ppm) ||
     (net !== null && net < thresholds.contractionNetHighLow);
 
   if (contraction) {
-    return { regime: "contraction", inputs, thresholds, formula: formulaLine(inputs, thresholds) };
+    return { regime: "contraction", inputs, thresholds, formula: formulaLine(inputs, thresholds), coverageFloorPpm };
   }
   if (above === null) {
     return {
@@ -73,6 +111,7 @@ export function classifyRegime(
       thresholds,
       formula: formulaLine(inputs, thresholds),
       reason: "missing_sma50",
+      coverageFloorPpm,
     };
   }
   if (net === null) {
@@ -82,6 +121,7 @@ export function classifyRegime(
       thresholds,
       formula: formulaLine(inputs, thresholds),
       reason: "missing_net_high_low",
+      coverageFloorPpm,
     };
   }
   const expansion = above >= thresholds.expansionAboveSma50Ppm && net > thresholds.expansionNetHighLow;
@@ -90,6 +130,7 @@ export function classifyRegime(
     inputs,
     thresholds,
     formula: formulaLine(inputs, thresholds),
+    coverageFloorPpm,
   };
 }
 

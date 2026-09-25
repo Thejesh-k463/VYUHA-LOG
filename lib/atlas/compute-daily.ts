@@ -20,27 +20,29 @@ import {
   classificationCoverage,
   computeGroupBreadth,
   computeGroupReturns,
+  computeGroupTable,
   groupBySector,
+  turnoverOf,
+  volumeSplit,
   type ClassificationCoverage,
   type GroupBreadthRow,
   type GroupReturnRow,
+  type GroupTableRow,
+  type GroupingResult,
+  type VolumeSplitResult,
 } from "./groups";
 import { computeHighLow, type HighLowOptions, type HighLowResult } from "./high-low";
 import { buildLedger, shortfallLine, type HistoryShortfall, type MetricDenominator, type StalenessLedger } from "./ledger";
+import { groupByLabel, groupByLevel, type ClassificationRef } from "./levels";
 import { classifyRegime, DEFAULT_REGIME_THRESHOLDS, type RegimeResult, type RegimeThresholds } from "./regime";
-import {
-  computeReturns,
-  computeYtd,
-  detectCorporateActionGaps,
-  marketMoveByDate,
-  type CaGap,
-  type ReturnWindowResult,
-  type YtdResult,
-} from "./returns";
+import { buildGapMap, computeReturns, computeYtd, type CaGap, type ReturnWindowResult, type YtdResult } from "./returns";
+import { computeRelativeStrength, rsiExtremes, type RsResult, type RsiExtremesResult } from "./rs";
 import { computeSmaBreadthSet, type SmaBreadthResult } from "./sma-breadth";
 import { computeVolumeExpansion, type VolumeResult } from "./volume";
 import {
   CA_GAP_THRESHOLD_PPM,
+  COVERAGE_FLOOR_PPM,
+  DEFAULT_STATISTIC,
   HISTORY_SESSIONS,
   RETURN_WINDOWS,
   ROTATION_WINDOW,
@@ -56,6 +58,7 @@ import {
   type ReturnWindowKey,
   type SectorRef,
   type Series,
+  type Statistic,
 } from "./types";
 
 export const ROTATION_CAVEAT = "Current classification, not point-in-time.";
@@ -70,6 +73,8 @@ export interface AtlasOptions {
   /** Caller-supplied eligibility (ETFs, index rows, non-equity series). */
   isEligible?: (symbol: string) => boolean;
   regimeThresholds?: RegimeThresholds;
+  /** AQ44 / A9: below this coverage an input may not vote. Defaults to `COVERAGE_FLOOR_PPM`. */
+  coverageFloorPpm?: number;
   historySessions?: number;
   caThresholdPpm?: number;
   highLow?: HighLowOptions;
@@ -77,6 +82,16 @@ export interface AtlasOptions {
   smaPeriods?: readonly number[];
   returnWindows?: { key: ReturnWindowKey; sessions: number }[];
   rotationWindow?: { key: ReturnWindowKey; sessions: number };
+  /**
+   * v4.6.0 W5 — the levels-aware classification (macro / sector / industry /
+   * basic). When absent, `sectorOf` is lifted to a sector-only ref, so a legacy
+   * caller still gets the sector table and an empty industry table.
+   */
+  classificationOf?: (symbol: string) => ClassificationRef | null;
+  /** AMFI's cap band per symbol (ruling U2), or null when unbanded. Absent ⇒ no cap table. */
+  capBandOf?: (symbol: string) => string | null;
+  /** The group statistic (AQ18). Median by default; the mean is persisted beside it either way. */
+  statistic?: Statistic;
 }
 
 export interface AtlasHistoryEntry {
@@ -125,6 +140,32 @@ export interface AtlasPayload {
     sectors: GroupReturnRow[];
     breadth: GroupBreadthRow[];
   };
+  /**
+   * v4.6.0 W5 (atlas-core/2.0.0). The whole breadth family per SECTOR, per
+   * INDUSTRY and per AMFI CAP BAND (AQ5/AQ6/AQ8), plus the universe-level
+   * additions: relative strength (AQ9), RSI extremes and the volume split
+   * (AQ5). `statistic` names which group statistic `groups.*.returns[w].statistic`
+   * carries; the mean sits beside it under `.mean` (AQ18).
+   */
+  statistic: Statistic;
+  groups: {
+    sector: GroupTableRow[];
+    industry: GroupTableRow[];
+    cap: GroupTableRow[];
+    /** Symbols with no label at each level — stated, never bucketed. */
+    unclassified: { sector: number; industry: number; cap: number };
+  };
+  relative_strength: {
+    eligible: number;
+    priced: number;
+    medians: Record<string, number | null>;
+    windows: readonly number[];
+    weights: readonly number[];
+    floors: RsResult["floors"];
+    ineligible: RsResult["ineligible"];
+  };
+  rsi: Omit<RsiExtremesResult, "bySymbol">;
+  volume_split: VolumeSplitResult;
   history: AtlasHistoryEntry[];
   ledger: StalenessLedger;
   warnings: string[];
@@ -146,7 +187,8 @@ export interface AtlasDailyRow {
 export interface AtlasMetricRow {
   as_of: IsoDate;
   metric: string;
-  group_kind: "market" | "sector" | "industry" | "index";
+  /** `cap` = AMFI's band (v4.6.0 W5); the column is free text, no schema change (lib/db/schema.ts). */
+  group_kind: "market" | "sector" | "industry" | "index" | "cap";
   group_name: string;
   /** NULL for a count metric, and NULL whenever the denominator is empty. */
   value_ppm: number | null;
@@ -252,6 +294,14 @@ export function computeAtlasDaily(
   const volumeBaseline = opts.volumeBaseline ?? VOLUME_BASELINE;
   const historySessions = opts.historySessions ?? HISTORY_SESSIONS;
   const caThreshold = opts.caThresholdPpm ?? CA_GAP_THRESHOLD_PPM;
+  const statistic = opts.statistic ?? DEFAULT_STATISTIC;
+  const coverageFloorPpm = opts.coverageFloorPpm ?? COVERAGE_FLOOR_PPM;
+  const classificationOf: (symbol: string) => ClassificationRef | null =
+    opts.classificationOf ??
+    ((symbol) => {
+      const ref = sectorOf(symbol);
+      return ref && ref.sector ? { macro: null, sector: ref.sector, industry: null, basic: null, tier: ref.tier, source: ref.source } : null;
+    });
   const input_checksum = opts.sha256(checksumInput(bars));
 
   const all = toSeries(bars);
@@ -267,40 +317,71 @@ export function computeAtlasDaily(
   const aligned = alignment.aligned;
   const included = aligned.length;
 
-  // Corporate-action guard. The market baseline is the universe's own median
-  // move that session, so a limit-down day for everything is not read as a
-  // split for every symbol.
-  const marketMove = marketMoveByDate(aligned);
-  const gapsBySymbol = new Map<string, CaGap[]>();
+  // Corporate-action guard — ONE map for every consumer (design review A5).
+  // The market baseline inside `buildGapMap` is the universe's own median move
+  // that session, so a limit-down day for everything is not read as a split
+  // for every symbol.
+  const gapsBySymbol: Map<string, CaGap[]> = buildGapMap(aligned, caThreshold);
   const caEntries: { symbol: string; date: IsoDate; ratioPpm: number }[] = [];
-  for (const s of aligned) {
-    const gaps = detectCorporateActionGaps(s, { thresholdPpm: caThreshold, marketMovePpmByDate: marketMove });
-    if (gaps.length > 0) {
-      gapsBySymbol.set(s.symbol, gaps);
-      const worst = gaps.reduce((a, b) => (Math.abs(b.ratioPpm) > Math.abs(a.ratioPpm) ? b : a));
-      caEntries.push({ symbol: s.symbol, date: worst.date, ratioPpm: worst.ratioPpm });
-    }
+  for (const [symbol, gaps] of gapsBySymbol) {
+    const worst = gaps.reduce((a, b) => (Math.abs(b.ratioPpm) > Math.abs(a.ratioPpm) ? b : a));
+    caEntries.push({ symbol, date: worst.date, ratioPpm: worst.ratioPpm });
   }
   caEntries.sort((a, b) => (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0));
 
   const breadth = computeBreadth(aligned, included);
   const sma = computeSmaBreadthSet(aligned, smaPeriods, included);
   const highLow = computeHighLow(aligned, included, opts.highLow);
-  const returns = computeReturns(aligned, included, gapsBySymbol, windows);
+  const returns = computeReturns(aligned, included, gapsBySymbol, windows, statistic);
   const year = anchor ? Number(anchor.slice(0, 4)) : NaN;
   const ytd = Number.isFinite(year)
-    ? computeYtd(aligned, year, included, gapsBySymbol)
-    : computeYtd([], 0, included, gapsBySymbol);
+    ? computeYtd(aligned, year, included, gapsBySymbol, statistic)
+    : computeYtd([], 0, included, gapsBySymbol, statistic);
   const volume = computeVolumeExpansion(aligned, included, volumeBaseline);
 
+  // v4.6.0 W5 — the universe-level additions.
+  const rs = computeRelativeStrength(aligned, {}, gapsBySymbol);
+  const rsi = rsiExtremes(aligned, included);
+  const split = volumeSplit(aligned, included);
+  const universeTurnover = turnoverOf(aligned);
+
   const grouping = groupBySector(aligned, sectorOf);
-  const rotation = computeGroupReturns(grouping, rotationWindow, gapsBySymbol);
+  const rotation = computeGroupReturns(grouping, rotationWindow, gapsBySymbol, statistic);
   const groupBreadth = computeGroupBreadth(grouping);
   const classification = classificationCoverage(grouping, included);
+
+  // The three group tables (AQ5/AQ6/AQ8), one arithmetic (`computeGroupTable`).
+  const tableCtx = {
+    gapsBySymbol,
+    windows,
+    year: Number.isFinite(year) ? year : null,
+    smaPeriods,
+    highLow: opts.highLow,
+    volumeBaseline,
+    rs,
+    universeTurnoverRupees: universeTurnover.rupees,
+    statistic,
+  };
+  const sectorGrouping: GroupingResult = groupByLevel(aligned, "sector", classificationOf);
+  const industryGrouping: GroupingResult = groupByLevel(aligned, "industry", classificationOf);
+  const capGrouping: GroupingResult = opts.capBandOf
+    ? groupByLabel(aligned, opts.capBandOf, "cap")
+    : { level: "cap", groups: [], unclassified: aligned.map((s) => s.symbol) };
+  const groupTables = {
+    sector: computeGroupTable(sectorGrouping, tableCtx),
+    industry: computeGroupTable(industryGrouping, tableCtx),
+    cap: computeGroupTable(capGrouping, tableCtx),
+    unclassified: {
+      sector: sectorGrouping.unclassified.length,
+      industry: industryGrouping.unclassified.length,
+      cap: capGrouping.unclassified.length,
+    },
+  };
 
   const regime = classifyRegime(
     { aboveSma50: sma[50]?.metric ?? null, netHighLow: highLow.netHighLow },
     opts.regimeThresholds ?? DEFAULT_REGIME_THRESHOLDS,
+    coverageFloorPpm,
   );
 
   const history = computeHistory(aligned, {
@@ -414,6 +495,19 @@ export function computeAtlasDaily(
     },
     regime,
     rotation: { window: rotationWindow, caveat: ROTATION_CAVEAT, sectors: rotation, breadth: groupBreadth },
+    statistic,
+    groups: groupTables,
+    relative_strength: {
+      eligible: rs.eligible,
+      priced: rs.priced,
+      medians: rs.medians,
+      windows: rs.windows,
+      weights: rs.weights,
+      floors: rs.floors,
+      ineligible: rs.ineligible,
+    },
+    rsi: { low: rsi.low, high: rsi.high, valid: rsi.valid, insufficient: rsi.insufficient, thresholds: rsi.thresholds },
+    volume_split: split,
     history,
     ledger,
     warnings,
@@ -457,6 +551,54 @@ export function computeAtlasDaily(
     metrics.push(
       ratioRow(anchor, "group_advance_pct_ppm", row.advancing, row.breadth.insufficient.length, "sector", row.group),
     );
+  }
+
+  // v4.6.0 W5 — the universe additions and the three group tables. Names per
+  // the W5 contract §6; `group_kind` is `sector` | `industry` | `cap`.
+  metrics.push(
+    countRow(anchor, "rsi_low_count", rsi.low, rsi.insufficient.length),
+    countRow(anchor, "rsi_high_count", rsi.high, rsi.insufficient.length),
+    ratioRow(anchor, "volume_adv_share_ppm", split.advancingShare, split.noVolume.length),
+    countRow(
+      anchor,
+      "rs_eligible_count",
+      { value: rs.priced === 0 ? null : rs.eligible, denominator: rs.priced, coverage_ppm: included > 0 ? Math.round((rs.priced * 1_000_000) / included) : 0 },
+      rs.priced - rs.eligible,
+    ),
+  );
+  const kinds: [AtlasMetricRow["group_kind"], GroupTableRow[]][] = [
+    ["sector", groupTables.sector],
+    ["industry", groupTables.industry],
+    ["cap", groupTables.cap],
+  ];
+  for (const [kind, table] of kinds) {
+    for (const row of table) {
+      const g = row.group;
+      for (const w of windows) {
+        const r = row.returns[w.key];
+        if (!r) continue;
+        metrics.push(
+          ratioRow(anchor, `group_return_median_${w.key}`, r.median, r.insufficient.length, kind, g),
+          ratioRow(anchor, `group_return_mean_${w.key}`, r.mean, r.insufficient.length, kind, g),
+        );
+      }
+      metrics.push(
+        ratioRow(anchor, "group_ytd_ppm", row.ytd.median, row.ytd.insufficient.length, kind, g),
+        ratioRow(anchor, "group_ytd_mean_ppm", row.ytd.mean, row.ytd.insufficient.length, kind, g),
+        ratioRow(anchor, "group_rs_ppm", row.rs, row.members - row.rsEligible, kind, g),
+        countRow(anchor, "group_rsi_low_count", row.rsiLow, 0, kind, g),
+        countRow(anchor, "group_rsi_high_count", row.rsiHigh, 0, kind, g),
+        countRow(anchor, "group_new_high_count", asCount(row.newHighs.numerator, row.newHighs), 0, kind, g),
+        countRow(anchor, "group_new_low_count", asCount(row.newLows.numerator, row.newLows), 0, kind, g),
+        countRow(anchor, "group_net_high_low", row.netHighLow, 0, kind, g),
+        ratioRow(anchor, "group_turnover_share_ppm", row.turnoverShare, 0, kind, g),
+        ratioRow(anchor, "group_volume_expansion_median_ppm", row.volumeExpansion, 0, kind, g),
+        ratioRow(anchor, "group_volume_adv_share_ppm", row.volumeAdvancingShare, 0, kind, g),
+      );
+      for (const p of smaPeriods) {
+        metrics.push(ratioRow(anchor, `group_above_sma${p}_pct_ppm`, row.aboveSma[p], 0, kind, g));
+      }
+    }
   }
 
   const staleness: AtlasStalenessRow[] = [];

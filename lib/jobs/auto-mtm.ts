@@ -42,7 +42,14 @@ const NSE_HEADERS = {
   Referer: "https://www.nseindia.com/",
 } as const;
 
-const FETCH_TIMEOUT_MS = 15_000;
+/**
+ * One attempt's budget. Exported because the bhavcopy walkers' dead-run rule
+ * (`BACKFILL_DEAD_AFTER_MS` in bhavcopy-backfill.ts) must exceed the longest
+ * silence one `fetchBhavcopyForDate` can legitimately go: TWO attempts (UDiFF,
+ * then legacy) of this each. A threshold shorter than that read a live run as
+ * dead and started a second walker on the same host (W5 skeptic item 1).
+ */
+export const FETCH_TIMEOUT_MS = 15_000;
 
 /** Which of the two files answered. Surfaced so a run can be audited. */
 export type BhavcopySource = "udiff" | "legacy";
