@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   HUBS,
   HUB_TAB_PARAM,
@@ -333,5 +333,66 @@ describe("the Help Desk (/help) still shows every entry after the hubs", () => {
     const src = read("app/help/page.tsx");
     expect(src).toContain("navGroupHrefs(label)");
     expect(src).not.toMatch(/NAV_ITEMS\.filter\([^)]*\)\.map\(\(i\) => i\.href\)/);
+  });
+});
+
+/**
+ * LEDGER D-9, CLOSED (v4.6.0 W4). Global search's "screens" source listed
+ * NAV_ITEMS only, so after W3 a tab name ("Expiry", "Discipline") was found only
+ * as a HELP result, never as a screen. The source now carries one row per hub
+ * tab, derived from HUBS — this pin is the record, against the real reader on a
+ * migrated database (the module imports lib/db, so it needs one).
+ */
+describe("global search finds a hub TAB as a screen (D-9)", () => {
+  let t: import("./helpers/temp-db").TempDb;
+  let search: typeof import("@/lib/queries/search");
+  beforeAll(async () => {
+    const { openTempDb } = await import("./helpers/temp-db");
+    t = await openTempDb("hubs-search", { seed: true });
+    search = await import("@/lib/queries/search");
+  });
+  afterAll(() => t?.cleanup());
+
+  it("one screens row per tab, '<Hub> › <Tab>', opening hubTabHref, grouped under the hub's sidebar group", () => {
+    const tabRows = search.SCREEN_CANDIDATES.filter((c) => c.href.includes("?tab="));
+    const want = HUBS.flatMap((h) =>
+      h.tabs.map((tab) => [`${h.label} › ${tab.label}`, hubTabHref(h, tab.id), NAV_ITEMS.find((n) => n.href === h.href)!.group]),
+    );
+    expect(tabRows.map((c) => [c.label, c.href, c.group])).toEqual(want);
+    expect(tabRows).toHaveLength(7);
+  });
+
+  it.each([
+    ["expiry", "/reports/capital?tab=expiry"],
+    ["discipline", "/reports/edge-clinic?tab=discipline"],
+    ["broker costs", "/reports/costs?tab=broker-compare"],
+  ])("searching %s returns %s from the screens source", (query, href) => {
+    const got = search.SOURCE_READERS.screens(query, 0).map((r) => r.href);
+    expect(got).toContain(href);
+  });
+});
+
+describe("command palette — help topics join only once something is typed (v4.6.0 W4)", () => {
+  it("the empty pool carries no help row; a built pool carries one per topic, deep-linking to /help#topic-…", async () => {
+    const { HELP_TOPICS } = await import("@/lib/domain/help-content");
+    const { helpCommands } = await import("@/components/system/command-palette");
+    expect(buildCommands(null, null).filter((c) => c.group === "Help")).toEqual([]);
+    const rows = helpCommands(HELP_TOPICS);
+    expect(rows).toHaveLength(HELP_TOPICS.length);
+    expect(rows.every((c) => /^\/help#topic-[a-z0-9-]+$/.test(c.href))).toBe(true);
+    const all = buildCommands(null, null, rows);
+    expect(all.filter((c) => c.group === "Help")).toHaveLength(HELP_TOPICS.length);
+    // A step's words reach the row's keywords.
+    const trades = rows.find((c) => c.href === "/help#topic-trades")!;
+    const tradesTopic = HELP_TOPICS.find((t) => t.href === "/trades")!;
+    expect(trades.keywords).toContain(tradesTopic.steps[0].toLowerCase());
+  });
+
+  it("the palette passes help rows only for a non-empty query, and offers the shortcuts sheet as an action", () => {
+    const src = read("components/system/command-palette.tsx");
+    expect(src).toMatch(/const help = ql \? helpCmds : null;/);
+    expect(src).toContain("buildCommands(keywords, opts, help)");
+    const action = buildCommands(null, null).find((c) => c.label === "Keyboard shortcuts");
+    expect(action?.event).toBe("vyuha:shortcuts");
   });
 });

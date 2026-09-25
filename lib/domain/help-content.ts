@@ -11,6 +11,7 @@
 
 import { OPTIONS_HELP, searchOptionsHelp, type OptionsHelpEntry } from "@/lib/domain/options-help";
 import { hubForHref, hubTabHref, type Hub } from "@/lib/domain/hubs";
+import { HELP_TASKS } from "@/lib/domain/help-topics";
 
 /**
  * v4.6.0 W3 — seven screens became TABS of three analytics hubs. Each keeps its
@@ -625,4 +626,83 @@ function searchScreens(entries: HelpEntry[], query: string): HelpEntry[] {
   return entries.filter((e) =>
     [e.title, e.answers, ...e.body, ...e.keywords, ...(e.refusals ?? [])].some((s) => s.toLowerCase().includes(q)),
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELP TOPICS (v4.6.0 W4, owner ruling H4) — the task-first layer.
+//
+// A topic is a HELP_ENTRIES entry joined with its HELP_TASKS record (the steps,
+// the one trap, the related screens) from ./help-topics.ts, keyed by the SAME
+// href. The join runs at module load and THROWS on a missing or an orphan
+// href: a topic card for a screen that does not exist, or a screen whose card
+// silently has no steps, is the drift this registry exists to make impossible.
+// The entry's body and refusals are untouched — they render under "In detail".
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The task-first layer of a help topic (v4.6.0 W4, ruling H4). Keyed by the entry's href. */
+export interface HelpTask {
+  /** 3–5 imperative steps, each one sentence, ≤ 20 words. */
+  steps: string[];
+  /** The one thing that goes wrong on this screen, one or two sentences. */
+  watchOut: string;
+  /** hrefs of other HELP_ENTRIES (never ids); 0–4. */
+  related: string[];
+  /** File stem under public/help/<name>.webp — only for a top-level screen with stable demo content. */
+  screenshot?: string;
+}
+
+export interface HelpTopic extends HelpEntry, HelpTask {
+  /** `helpTopicId(href)` — the `/help#<id>` fragment that opens this topic. */
+  id: string;
+}
+
+const slug = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+/**
+ * The URL-fragment id of a topic, derived from its href (PURE, deterministic).
+ * `"/"` → `"topic-dashboard"`; `"/reports/edge-clinic?tab=setups"` →
+ * `"topic-reports-edge-clinic-setups"`. Always `topic-` + `[a-z0-9-]`, so it can
+ * never collide with an Options anchor (`options-<id>`).
+ */
+export function helpTopicId(href: string): string {
+  const [pathPart, query = ""] = href.split("#")[0].split("?");
+  const base = pathPart === "/" || pathPart === "" ? "dashboard" : slug(pathPart);
+  const values = [...new URLSearchParams(query).values()].map(slug).filter(Boolean);
+  return `topic-${[base, ...values].filter(Boolean).join("-")}`;
+}
+
+/**
+ * Join entries with their task records. Throws naming the offending href(s) on
+ * an entry with no record, or a record with no entry. Exported so the throw is
+ * testable against a hand-built registry.
+ */
+export function joinHelpTopics(entries: readonly HelpEntry[], tasks: Readonly<Record<string, HelpTask>>): HelpTopic[] {
+  const hrefs = new Set(entries.map((e) => e.href));
+  const orphans = Object.keys(tasks).filter((h) => !hrefs.has(h));
+  if (orphans.length) throw new Error(`help-content: HELP_TASKS names no help entry: ${orphans.join(", ")}`);
+  const missing = entries.filter((e) => !tasks[e.href]).map((e) => e.href);
+  if (missing.length) throw new Error(`help-content: help entry has no HELP_TASKS record: ${missing.join(", ")}`);
+  return entries.map((e) => ({ ...e, ...tasks[e.href], id: helpTopicId(e.href) }));
+}
+
+/** Every help entry with its task layer, in HELP_ENTRIES order. */
+export const HELP_TOPICS: HelpTopic[] = joinHelpTopics(HELP_ENTRIES, HELP_TASKS);
+
+/** The two fields a "?" link needs — small enough to hand to every page header. */
+export const HELP_TOPIC_LINKS: { href: string; id: string }[] = HELP_TOPICS.map((t) => ({ href: t.href, id: t.id }));
+
+/**
+ * Topics matching `query`: everything `searchHelp` matches on the entry
+ * (title, answers, body, keywords, refusals) PLUS the task layer — a step or a
+ * watch-out line. An empty query returns every topic.
+ */
+export function searchTopics(query: string, topics: readonly HelpTopic[] = HELP_TOPICS): HelpTopic[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...topics];
+  const onEntry = new Set(searchScreens([...topics], q).map((e) => e.href));
+  return topics.filter((t) => onEntry.has(t.href) || [...t.steps, t.watchOut].some((s) => s.toLowerCase().includes(q)));
 }

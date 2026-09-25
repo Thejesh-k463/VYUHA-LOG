@@ -9288,3 +9288,95 @@ remit) — settled by the measurement above and the config redirect; three small
 sha-checked; P-B proved the HEAD pro-gating test passed on an ungated hub.
 
 **Gate:** `npm run verify` (vyuha-verifier) EXIT 0 — 478 files / 11,373 passed / 35 skipped (+1 file `tests/hubs.test.ts`, +45 passed against the W9 baseline), lint 0 errors (the 6 pre-existing warnings), `next build` "Compiled successfully in 12.1s", `package-lock.json` unchanged, `npm ls esbuild` clean; Playwright not run locally (`--list` 128 in 36; CI runs both jobs on the commit). `drift:close-out` 21 PASS / 0 FAIL / 3 SKIP. **Prose pass: 12 files / 4 findings / 29 tool calls** (doc-auditor on Haiku, all CONFIRMED and fixed in README the same session: three tables/sentences still listing the seven screens as separate sidebar entries; and, found by the session beside them, "six broker importers" — the registry names eight since W9).
+
+## 2026-09-25 — v4.6.0 W4 built: the Help revamp (H1–H4) and the getting-started strip (row 9.5) — data, components, one dependency; no maths, no schema
+
+**What the scout measured before the contract (twenty-sixth session):** `lib/domain/help-content.ts` held 50 entries (40 screens
++ 3 hubs + 7 tabs since W3) with NO category field — the "categories" were `NAV_GROUPS` through `navGroupHrefs`; `/help` was
+one client component (`components/system/help-desk.tsx`, 246 lines) with anchors for the OPTIONS entries only; the lock held no
+accordion, collapsible or hover-card; `components/help/` did not exist; the palette used help text only as screen keywords; the
+global-search "screens" source listed `NAV_ITEMS` alone (LEDGER D-9); no shortcuts list existed anywhere; nothing in the DB
+records when a backup was taken; `tests/help-content.test.ts` carried ~60 copy pins over the entries' `body` sentences (the
+consent path, "opt-in", the SEBI descriptive rule, "no alerts") — a wholesale rewrite of every body would have re-pinned
+regulatory copy for a layout change. `@radix-ui/react-accordion` 1.2.15 (+ its dependency `react-collapsible` 1.1.15) is the
+release whose dependency versions EQUAL the lock's existing Radix set (primitive 1.1.4, context 1.1.4, direction 1.1.2, id 1.1.2,
+react-primitive 2.1.7, collection 1.1.11, compose-refs 1.1.3, use-controllable-state 1.2.3, presence 1.1.6, use-layout-effect
+1.1.2) — 1.2.16+ moves to primitive 1.1.5 / context 1.2.0 and would have nested four packages.
+
+**Decided by the session under the decision policy (W4 owed no question group — spec §4; the owner may overrule; H4 gives the
+owner the copy review):**
+- **The task-first layer is ADDED, the detail layer kept.** Every entry gains `{steps[3–5], watchOut, related[], screenshot?}`
+  from `lib/domain/help-topics.ts` (`HELP_TASKS`, keyed by href; joined into `HELP_TOPICS` at load — a missing or orphan href
+  THROWS, naming it) and an `id = helpTopicId(href)` (`topic-<slug>`, the `?tab=` value kept, disjoint from `optionsAnchorId`
+  by pin). The entry's `answers` / `body` / `refusals` render UNCHANGED under "In detail" / "What it will not do", so the ~60
+  copy pins hold. "≤ ~120 words/card" (H4) is the CARD — title + answers + steps + watchOut — pinned at 120 (written to ≤ 110;
+  longest 107, `/strategies`). Rejected: rewriting every body (re-pins regulatory copy; the steps ARE the task-first rewrite).
+- **Two agents, disjoint files:** a UI builder and a content writer (the spec's "one builder (UI) + content by the session" —
+  the content agent is the session's writer). Hub tab keys in the content file are DERIVED through `hubTabHref`, never typed.
+- **One dependency, spliced by text** (AGENTS "Adding a dependency"): two `packages` entries + one root line inserted at their
+  alphabetical anchors with a script that asserts each anchor occurs once; `npm ci` clean, `npm ls esbuild` clean, 62 additions /
+  0 deletions. The "hovercard" (H2) is the EXISTING Radix Tooltip wrapper — the ruling allows one new dependency and the
+  accordion is it; `react-hover-card` would have been a second.
+- **`/help` layout (H1):** search hero (local state, no `?q=`) → a flat result list while a query is typed → otherwise a Radix
+  Accordion `type="multiple"` over `NAV_GROUPS` (each item = group label + topic count; open groups remembered under
+  `vyuha-help-open-groups` `{v:1, groups}`; all collapsed by default — search-first) → a topic card opens the dialog.
+  `components/system/help-desk.tsx` STAYS the `/help` root and the Options section stays inside it unmoved (four tests —
+  `options-help`, `typography-scale`, `seams-v43`, `seams-v43-wave2` — read or render it; the contract's `options-section.tsx`
+  split was not done for that reason). The hash store moved to `components/help/use-help-hash.ts` (still
+  `useSyncExternalStore`; `writeHelpHash` notifies readers directly so a click opens on the click, not the next poll).
+- **The dialog:** Radix Dialog, `sm:max-w-3xl`, `text-lg` (18px at the compact root, 19px comfortable), sections title →
+  answers → Steps → Watch out → screenshot (`<img loading="lazy">`, only when set) → In detail → What it will not do → Related
+  (swaps the open topic) → "Open <title>". Esc and the focus trap are Radix's; closing clears the hash to the bare
+  pathname + search. `seams-v43` S1 keeps every `DialogDescription` `text-sm`, so the answers line is an 18px span inside it.
+- **"?" deep links (H2):** `components/help/help-link.tsx` in `PageHeader` (49 call sites, the header stays a server
+  component; only `{href, id}` pairs reach the client bundle — `HELP_TOPIC_LINKS`); resolves the exact `pathname?tab=` URL
+  first, then the bare pathname; a hub TAB links to the tab's topic. Hidden in print.
+- **Glossary:** `lib/domain/glossary.ts` (35 terms, meanings ≤ 40 words, `metricId` on the six that ARE `METRIC_HELP` metrics)
+  + a pure `splitGlossary` (first whole-word occurrence per paragraph, longest alias first, hyphen-safe) rendered in the
+  dialog's steps, watch-out and body through the Tooltip.
+- **Shortcuts sheet:** `lib/domain/shortcuts.ts` registry pinned against the REAL bindings (`isPaletteChord`,
+  `isPanelToggleChord`, `deskAction`, `methodByKey`, the Alt+← tracker) so a rebound key reddens the test; opens on `?`
+  (no ctrl/meta/alt, target not editable, no dialog open), the `vyuha:shortcuts` window event, the hero button and a palette
+  action; mounted once in `app/layout.tsx`. Recorded limitation: on `/help` the auto-focused search box is an editable target,
+  so `?` types there — the hero button opens the sheet on that one screen. Accepted over stealing the key from an input.
+- **Palette Help source:** one row per topic (`/help#topic-…`), shown ONLY under a typed query — the empty palette stays the
+  screens list (fifty extra rows would bury it). `buildCommands` gained an optional third parameter; existing callers unchanged.
+- **Global search (D-9 CLOSED):** the "screens" source gains one row per hub tab, derived from `HUBS`, labelled "Hub › Tab",
+  pinned in `tests/hubs.test.ts`. A tab is now found as a screen, not only through the help source.
+- **Getting-started strip (row 9.5):** `lib/domain/getting-started.ts` (pure: the five steps, `deriveGettingStarted`) +
+  `lib/queries/getting-started.ts` (server-only; trades and "a stop recorded" through `getSelectedAccountId()` with
+  `accountId > 0 ? filter : all` — registered in `tests/account-isolation.test.ts` OWNERS; accounts global; the plan = the
+  selected account's `broker_plan`, any account's in the all-accounts view). "Backup taken" is NOT in the DB anywhere and the
+  spec says no new state: the backup control writes a per-machine localStorage marker `vyuha-backup-taken` `{v:1, at}` and the
+  strip says "on this machine". Dismissal is `vyuha-getting-started-dismissed` `{v:1, at}`; the strip renders null when all
+  five are done or dismissed. Mounted on the dashboard below the warnings, above the sections (not a `[data-section]`, so
+  `z-section-order` is untouched).
+- **Screenshots (H3):** `scripts/capture-help-screens.mjs` (`npm run help:shots`) — throwaway DB via `e2e/prepare-db.ts`, port
+  3214 with the retake script's stale-port refusal, the same hydration probe, dark ASSERTED as the absence of `theme-light` on
+  `<html>` (the app has no third theme), Pro from the fresh DB's trial, routes DERIVED from the topics that name a
+  `screenshot`, webp through `sharp` (next's optional dep; exits 2 with a message if absent), per-file bytes + "installer
+  growth". 14 files / 941 KB (963,112 bytes) bundled under `public/help/`. **They carry the sidebar footer (`v4.5`) and the
+  dashboard one carries the strip — re-run AFTER `bump-version 4.6.0`, before the release build (LEDGER L-19).**
+- **Tests:** `tests/help-content.test.ts` +12 (join both ways, id rules, steps 3–5 ≤ 20 words, card ≤ 120, related exist / no
+  self-ref, screenshot file exists — FAIL-T, forbidden words); `tests/glossary.test.ts` (11), `tests/shortcuts.test.ts` (28),
+  `tests/getting-started.test.ts` (13), `tests/getting-started-query.test.ts` (5, its own temp DB); `tests/hubs.test.ts` +5;
+  `e2e/z-help.spec.ts` (7 flows: search, accordion + dialog, deep link, Esc clears the hash, the "?" on `/trades`, the sheet,
+  the strip's Dismiss surviving a reload by `expect.poll`).
+
+**Independent skeptic before commit (Opus, 70 calls):** 15 claims — 13 CONFIRMED, 2 REFUTED, both content: the `/instruments`
+step "Import an NSE or BSE bhavcopy" named a control that lives on Portfolio Risk (Auto-MTM from bhavcopy) — reworded to what
+`/instruments` shows; the broker-compare watch-out said partial brokers are "excluded from the ranking" where
+`broker-compare.ts` lists them last with an asterisk and never calls them cheapest — reworded. Also fixed from its list: the
+spec's one `.first()`. Builder red-on-revert: 13 mutations, each restored and sha-checked. The three items the builder left
+outside its set were done by the session (OWNERS row, THIRD-PARTY-NOTICES row, README counts).
+
+**Gate:** first `npm run verify` EXIT 1 on README's stale counts (fixed in the doc: 478 → 482 files, 11,373 → 11,447 tests,
+128 → 135 flows, 36 → 37 specs) and ONE 5 s timeout in `tests/search-route.test.ts` "answers no-store" under the full suite
+(13.3 s for the file) — measured alone: 2.0 s on W4's `search.ts`, 2.3 s with HEAD's `search.ts` stashed back in, so W4 did
+not slow it (FAIL-J). It timed out again in the THIRD run (5.2 s, with a Haiku doc-auditor reading the tree) — two of three
+runs — so the session applied the AGENTS Testing remedy rather than re-rolling the gate: that ONE `it` carries a 15 s timeout
+with the measured times in its comment (the warm-up of the first real search in the file, not the assertion, is what the 5 s
+default cannot hold under parallel workers). Deviation recorded here; the pin itself is unchanged. The fourth run's numbers are in
+`VYUHA-STATE.md` §0. Scoped Playwright on the five specs W4 can touch
+(`z-help`, `command-palette`, `z-onboarding`, `z-section-order`, `zz-console-audit`): **21 passed in 2.2 min**, console audit
+0 messages. `package-lock.json` 62 / 0 before and after. **Prose pass: 11 files / 0 findings / 64 tool calls** (doc-auditor on Haiku — it counted 23 of its own calls, the harness billed 64, over the 40 budget; it re-derived every count in STATE §0, README, the spec and LEDGER against the tree, checked three code claims by grep, and found the six close-out placeholders in the session log as expected).

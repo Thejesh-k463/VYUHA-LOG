@@ -6,6 +6,7 @@ import { getEntitlement } from "@/lib/queries/license";
 import { classificationByIsin } from "@/lib/analytics/instruments";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
+import { HUBS, hubTabHref } from "@/lib/domain/hubs";
 import isinSymbols from "@/lib/data/isin-symbols.json";
 import type { ListingTuple } from "@/lib/import/isin-symbol";
 import { ftsMatch, minTrigram, rankCandidates, type Candidate } from "@/lib/domain/search-rank";
@@ -369,13 +370,32 @@ function readHelp(q: string, _accountId: number): SearchResult[] {
   }));
 }
 
-const SCREEN_CANDIDATES: (Candidate & { href: string; group: string })[] = NAV_ITEMS.map((n) => ({
-  id: n.href,
-  label: n.label,
-  keywords: [n.group],
-  href: n.href,
-  group: n.group,
-}));
+/**
+ * Every sidebar screen PLUS one row per analytics-hub tab (v4.6.0 W4, closing
+ * LEDGER D-9): seven screens became tabs in W3, and a tab must be found AS A
+ * SCREEN — "Capital & Expiry › Expiry" opening its `?tab=` URL — not only
+ * through its help entry. Derived from HUBS (`hubTabHref`, the one spelling of
+ * a tab URL), grouped under the hub's own sidebar group; tests/hubs.test.ts pins it.
+ */
+export const SCREEN_CANDIDATES: (Candidate & { href: string; group: string })[] = [
+  ...NAV_ITEMS.map((n) => ({
+    id: n.href,
+    label: n.label,
+    keywords: [n.group],
+    href: n.href,
+    group: n.group,
+  })),
+  ...HUBS.flatMap((hub) => {
+    const group = NAV_ITEMS.find((n) => n.href === hub.href)?.group ?? "Analytics";
+    return hub.tabs.map((tab) => ({
+      id: hubTabHref(hub, tab.id),
+      label: `${hub.label} › ${tab.label}`,
+      keywords: [group, tab.label, hub.label],
+      href: hubTabHref(hub, tab.id),
+      group,
+    }));
+  }),
+];
 
 function readScreens(q: string, _accountId: number): SearchResult[] {
   return rankCandidates(q, SCREEN_CANDIDATES, RESULT_CAP).map(({ candidate: c }) => ({

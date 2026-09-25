@@ -1,7 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { HELP_ENTRIES, searchHelp } from "@/lib/domain/help-content";
+import {
+  HELP_ENTRIES,
+  HELP_TOPICS,
+  HELP_TOPIC_LINKS,
+  helpTopicId,
+  joinHelpTopics,
+  searchHelp,
+  searchTopics,
+  type HelpTask,
+} from "@/lib/domain/help-content";
+import { HELP_TASKS } from "@/lib/domain/help-topics";
+import { OPTIONS_HELP, optionsAnchorId } from "@/lib/domain/options-help";
+import { topicForPath } from "@/components/help/help-link";
 import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 import { SHIPPED_PROVIDER_IDS, allProviderCapabilities } from "@/lib/quotes/registry";
 import { CONNECTABLE_PROVIDER_IDS } from "@/lib/live/connect-prompt";
@@ -1105,5 +1117,122 @@ describe("the /reports/tax entry states the tax-person scope (B6)", () => {
     // description of what the page computes was not rewritten.
     expect(text).toMatch(/23-Jul-2024 cutover/);
     expect(text).toMatch(/31-Jan-2018 grandfathering/);
+  });
+});
+
+/**
+ * v4.6.0 W4 (owner ruling H4) — THE TASK-FIRST LAYER.
+ *
+ * Every help entry is joined, by href, with a HELP_TASKS record (the steps a
+ * trader takes on that screen, the one trap, related screens). The join throws
+ * at load on a miss or an orphan; these pin the join, the id scheme, the card
+ * budget, the voice of the new copy, and the screenshot files the dialog links.
+ */
+describe("help topics — the task-first layer (v4.6.0 W4, H4)", () => {
+  const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
+
+  it("every entry has exactly one HELP_TASKS record, and no record is an orphan", () => {
+    const entryHrefs = HELP_ENTRIES.map((e) => e.href);
+    const taskHrefs = Object.keys(HELP_TASKS);
+    expect(taskHrefs.filter((h) => !entryHrefs.includes(h)), "orphan task records").toEqual([]);
+    expect(entryHrefs.filter((h) => !HELP_TASKS[h]), "entries with no task record").toEqual([]);
+    expect(HELP_TOPICS.map((t) => t.href)).toEqual(entryHrefs);
+  });
+
+  it("the join THROWS naming the href — on a missing record and on an orphan", () => {
+    const task: HelpTask = { steps: ["a", "b", "c"], watchOut: "w", related: [] };
+    const entries = [{ href: "/x", title: "X", answers: "a", body: [], keywords: [] }];
+    expect(() => joinHelpTopics(entries, {})).toThrow(/\/x/);
+    expect(() => joinHelpTopics(entries, { "/x": task, "/ghost": task })).toThrow(/\/ghost/);
+    expect(joinHelpTopics(entries, { "/x": task })[0]).toMatchObject({ href: "/x", id: "topic-x", steps: ["a", "b", "c"] });
+  });
+
+  it("helpTopicId: the pinned examples, and always topic-[a-z0-9-]", () => {
+    expect(helpTopicId("/")).toBe("topic-dashboard");
+    expect(helpTopicId("/trades")).toBe("topic-trades");
+    expect(helpTopicId("/reports/edge-clinic?tab=setups")).toBe("topic-reports-edge-clinic-setups");
+    expect(helpTopicId("/reports/costs?tab=broker-compare")).toBe("topic-reports-costs-broker-compare");
+    expect(helpTopicId("/targets/equity")).toBe("topic-targets-equity");
+    expect(helpTopicId("/trades"), "deterministic").toBe(helpTopicId("/trades"));
+  });
+
+  it("topic ids are unique, well-formed, and never an Options anchor", () => {
+    const ids = HELP_TOPICS.map((t) => t.id);
+    expect(new Set(ids).size, "two topics share an id").toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^topic-[a-z0-9-]+$/);
+    const anchors = new Set([...OPTIONS_HELP.map((e) => optionsAnchorId(e.id)), "options-help"]);
+    expect(ids.filter((id) => anchors.has(id))).toEqual([]);
+    for (const t of HELP_TOPICS) expect(t.id).toBe(helpTopicId(t.href));
+  });
+
+  it("3–5 steps per topic, each at most 20 words", () => {
+    for (const t of HELP_TOPICS) {
+      expect(t.steps.length, `${t.href} step count`).toBeGreaterThanOrEqual(3);
+      expect(t.steps.length, `${t.href} step count`).toBeLessThanOrEqual(5);
+      for (const s of t.steps) expect(words(s), `${t.href}: "${s}"`).toBeLessThanOrEqual(20);
+      expect(t.watchOut.trim().length, `${t.href} watch-out`).toBeGreaterThan(0);
+    }
+  });
+
+  it("the card — title + answers + steps + watch-out — is at most 120 words", () => {
+    for (const t of HELP_TOPICS) {
+      const card = [t.title, t.answers, t.steps.join(" "), t.watchOut].join(" ");
+      expect(words(card), `${t.href} card`).toBeLessThanOrEqual(120);
+    }
+  });
+
+  it("related hrefs exist, never point at the topic itself, and number at most four", () => {
+    const hrefs = new Set(HELP_ENTRIES.map((e) => e.href));
+    for (const t of HELP_TOPICS) {
+      expect(t.related.length, t.href).toBeLessThanOrEqual(4);
+      for (const r of t.related) {
+        expect(hrefs.has(r), `${t.href} → related ${r} is no help entry`).toBe(true);
+        expect(r, `${t.href} relates to itself`).not.toBe(t.href);
+      }
+    }
+  });
+
+  it("the steps and watch-outs describe — none of the forbidden words", () => {
+    const FORBIDDEN = /\b(simply|just|powerful|best|seamless|should|must)\b/i;
+    for (const t of HELP_TOPICS) {
+      for (const s of [...t.steps, t.watchOut]) expect(s, t.href).not.toMatch(FORBIDDEN);
+    }
+  });
+
+  // RED UNTIL THE ORCHESTRATOR RUNS `npm run help:shots`: the dialog links
+  // /help/<name>.webp, so a named screenshot with no file is a broken image.
+  it("every screenshot name is kebab-case, names a top-level screen, and its webp exists", () => {
+    const shots = HELP_TOPICS.filter((t) => t.screenshot);
+    expect(shots.length, "screenshot count").toBeGreaterThanOrEqual(12);
+    for (const t of shots) {
+      expect(t.screenshot!, t.href).toMatch(/^[a-z0-9-]+$/);
+      expect(t.href, `${t.href} is a tab URL — tabs are not shot`).not.toContain("?");
+      expect(t.href, `${t.href} is not shot`).not.toBe("/help");
+      const file = path.join(process.cwd(), "public", "help", `${t.screenshot}.webp`);
+      expect(fs.existsSync(file), `missing ${path.relative(process.cwd(), file)}`).toBe(true);
+    }
+  });
+
+  it("searchTopics matches the entry AND the task layer; an empty query is every topic", () => {
+    expect(searchTopics("")).toHaveLength(HELP_TOPICS.length);
+    expect(searchTopics("delete").map((t) => t.href)).toContain("/trades");
+    // A phrase that lives ONLY in a step or a watch-out is found through it.
+    const task = { steps: ["Press the zzqq button", "b", "c"], watchOut: "yyxx trap", related: [] };
+    const only = joinHelpTopics([{ href: "/x", title: "X", answers: "a", body: [], keywords: [] }], { "/x": task });
+    expect(searchTopics("zzqq", only).map((t) => t.href)).toEqual(["/x"]);
+    expect(searchTopics("yyxx", only).map((t) => t.href)).toEqual(["/x"]);
+    expect(searchTopics("absent-word", only)).toEqual([]);
+  });
+
+  it("the header's '?' finds every topic on its own screen — a tab by its tab URL, a hub by its path", () => {
+    for (const t of HELP_TOPICS) {
+      const [p, query] = t.href.split("?");
+      const tab = query ? new URLSearchParams(query).get("tab") : null;
+      expect(topicForPath(p, tab, HELP_TOPIC_LINKS)?.id, t.href).toBe(t.id);
+    }
+    expect(topicForPath("/trades", null, HELP_TOPIC_LINKS)?.id).toBe("topic-trades");
+    // an unknown tab falls back to the hub; an unrelated query param is ignored
+    expect(topicForPath("/reports/capital", "nope", HELP_TOPIC_LINKS)?.id).toBe("topic-reports-capital");
+    expect(topicForPath("/trades/123", null, HELP_TOPIC_LINKS)).toBeNull();
   });
 });

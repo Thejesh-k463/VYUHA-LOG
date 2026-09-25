@@ -6,6 +6,19 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
 import { Download, Upload, Database, ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { writeStored } from "@/components/layout/use-stored-value";
+import { BACKUP_TAKEN_KEY, markerJson } from "@/lib/domain/getting-started";
+
+/**
+ * The dashboard's getting-started strip counts a backup as taken ON THIS
+ * MACHINE (v4.6.0 W4): the database records no backup anywhere, so a download
+ * leaves a `{v:1, at}` marker in this browser profile. Written when the
+ * download is handed to the browser — the JSON export once its file exists,
+ * the SQLite link on click.
+ */
+function markBackupTaken(): void {
+  writeStored(BACKUP_TAKEN_KEY, markerJson(new Date().toISOString()));
+}
 
 export function BackupPanel() {
   const router = useRouter();
@@ -23,6 +36,7 @@ export function BackupPanel() {
     const href = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = href; a.download = data.fileName; a.click(); URL.revokeObjectURL(href);
+    markBackupTaken();
     toast.success(`Complete backup downloaded${password ? " with AES-256 encryption" : ""}.`);
   }
 
@@ -61,7 +75,7 @@ export function BackupPanel() {
           <Download className="size-3.5" /> {busy ? "Working…" : "Complete backup"}
         </Button>
         <Button size="sm" variant="outline" asChild>
-          <a href="/api/backup?format=sqlite" download>
+          <a href="/api/backup?format=sqlite" download onClick={markBackupTaken}>
             <Database className="size-3.5" /> Download SQLite
           </a>
         </Button>

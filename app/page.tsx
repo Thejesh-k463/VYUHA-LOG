@@ -7,6 +7,8 @@ import { TelegramRunner } from "@/components/system/telegram-runner";
 import { AutoPullRunner } from "@/components/system/auto-pull-runner";
 import { BreachBanner } from "@/components/risk/breach-banner";
 import { ReviewOpenCard } from "@/components/review/review-open-card";
+import { GettingStartedStrip } from "@/components/dashboard/getting-started-strip";
+import { getGettingStartedFacts } from "@/lib/queries/getting-started";
 import { SectionArrangeProvider } from "@/components/layout/section-stack";
 import { RearrangeControls } from "@/components/layout/rearrange-controls";
 import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
@@ -98,6 +100,9 @@ export default function DashboardPage() {
             same read, not a second one that could disagree. */}
         <BreachBanner breaches={scanBreachesForSelectedAccount()} accountId={getSelectedAccountId()} />
         <ReviewOpenCard />
+        {/* v4.6.0 W4 (row 9.5): five first steps, above the movable sections
+            and below every warning. Facts are read here, scoped (invariant 8). */}
+        <GettingStartedStrip facts={getGettingStartedFacts()} />
         <DashboardClient
           workspace={asWorkspace(settings?.workspace)}
           trades={dash}

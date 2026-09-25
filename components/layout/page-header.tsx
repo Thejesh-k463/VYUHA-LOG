@@ -1,6 +1,8 @@
 import * as React from "react";
 import { BackButton } from "./back-button";
 import { PaletteSearchButton } from "@/components/system/command-palette";
+import { HelpLink } from "@/components/help/help-link";
+import { HELP_TOPIC_LINKS } from "@/lib/domain/help-content";
 
 export function PageHeader({
   title,
@@ -32,6 +34,10 @@ export function PageHeader({
           server component; the button only dispatches the palette's event. */}
       <div className="flex items-center gap-2 print:hidden">
         {actions}
+        {/* v4.6.0 W4: "?" opens this screen's help topic. The header stays a
+            server component — it hands the island only the {href, id} pairs,
+            so no help prose reaches a page's client bundle. */}
+        <HelpLink topics={HELP_TOPIC_LINKS} />
         <PaletteSearchButton />
       </div>
     </div>

@@ -1,14 +1,34 @@
 "use client";
 
-/** The Help Desk — every screen described, searchable, deep-linked. */
+/**
+ * The Help Desk — every screen described, searchable, deep-linked.
+ *
+ * v4.6.0 W4 (rulings H1–H4): the client root of /help. It holds the search
+ * query and reads the URL fragment ONCE, then derives everything from them —
+ * the flat result list or the category grid (components/help/), which topic
+ * dialog is open (`#topic-…`), which group that expands, and the Options
+ * section below, whose markup, anchors and deep-link scroll are unchanged here
+ * (tests/options-help.test.ts, tests/typography-scale.test.ts and the v4.3
+ * seams read THIS file for them).
+ */
 
 import * as React from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { badgeVariants } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { searchHelp, type HelpEntry } from "@/lib/domain/help-content";
+import { HELP_TOPICS, searchTopics, type HelpEntry } from "@/lib/domain/help-content";
+import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
+import { HelpSearchHero } from "@/components/help/help-search-hero";
+import {
+  HELP_OPEN_GROUPS_KEY,
+  HelpCategoryGrid,
+  groupOfTopic,
+  parseOpenGroups,
+  serializeOpenGroups,
+} from "@/components/help/help-category-grid";
+import { HelpTopicDialog } from "@/components/help/help-topic-dialog";
+import { readHash, subscribeHash, topicIdFromHash, writeHelpHash } from "@/components/help/use-help-hash";
 import {
   OPTIONS_BEGINNER_LABEL,
   OPTIONS_HELP_FOOTER,
@@ -21,43 +41,7 @@ import {
   type OptionsHelpEntry,
 } from "@/lib/domain/options-help";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
-import { ArrowRight, Search, ShieldOff } from "lucide-react";
-
-/**
- * THE URL FRAGMENT, READ AS AN EXTERNAL STORE (v4.3 audit round 3, U-4).
- *
- * `useSyncExternalStore`, never a `setState` in an effect: an effect keyed on
- * other state is what broke the Trades view filter under the React Compiler
- * (AGENTS.md), and the hash is not this component's state anyway — it belongs
- * to the document. The server snapshot is `""`, so the server render and the
- * first client render agree.
- *
- * Three signals, because the platform has no single "the fragment changed"
- * event: `hashchange` (a link click, a typed fragment, `location.hash = …`),
- * `popstate` (back/forward), and a coarse poll — because the command palette
- * deep-links with `router.push("/help#options-<id>")` and, the path being the
- * same one, the App Router moves that fragment with `history.pushState`, which
- * fires neither event and re-renders nothing in this subtree. The poll notifies
- * only when the string actually differs, so a still page re-renders nothing.
- */
-const HASH_POLL_MS = 250;
-
-function subscribeHash(onChange: () => void): () => void {
-  let last = window.location.hash;
-  const fire = () => {
-    if (window.location.hash === last) return;
-    last = window.location.hash;
-    onChange();
-  };
-  window.addEventListener("hashchange", fire);
-  window.addEventListener("popstate", fire);
-  const timer = window.setInterval(fire, HASH_POLL_MS);
-  return () => {
-    window.removeEventListener("hashchange", fire);
-    window.removeEventListener("popstate", fire);
-    window.clearInterval(timer);
-  };
-}
+import { ArrowRight } from "lucide-react";
 
 /** The four parts, in the order every entry states them. */
 const PARTS: { label: string; read: (e: OptionsHelpEntry) => string }[] = [
@@ -77,17 +61,38 @@ export function HelpDesk({
   options: OptionsHelpEntry[];
 }) {
   const [q, setQ] = React.useState("");
-  const hits = React.useMemo(() => searchHelp(entries, q), [entries, q]);
-  const hitSet = React.useMemo(() => new Set(hits.map((h) => h.href)), [hits]);
+  // One topic per entry the page handed us (the join is HELP_TOPICS; the
+  // entries prop still decides which screens this desk describes).
+  const topics = React.useMemo(() => {
+    const hrefs = new Set(entries.map((e) => e.href));
+    return HELP_TOPICS.filter((t) => hrefs.has(t.href));
+  }, [entries]);
+  const hits = React.useMemo(() => searchTopics(q, topics), [q, topics]);
+  const searching = q.trim().length > 0;
   // The fragment the reader was sent to, so its card is rendered even when the
   // search they already had typed would have filtered it out — otherwise the
-  // anchor is not in the DOM and the deep link scrolls nowhere.
-  const hash = React.useSyncExternalStore(
-    subscribeHash,
-    () => window.location.hash,
-    () => "",
-  );
+  // anchor is not in the DOM and the deep link scrolls nowhere. The store lives
+  // in components/help/use-help-hash.ts; this is its one reader on the page.
+  const hash = React.useSyncExternalStore(subscribeHash, readHash, () => "");
   const optionHits = React.useMemo(() => visibleOptions(options, q, hash), [options, q, hash]);
+
+  // The open topic IS the fragment: `#topic-…` on load or on a palette push
+  // opens it, and closing clears it. Nothing is copied into state.
+  const openId = topicIdFromHash(hash);
+  const openTopic = topics.find((t) => t.id === openId) ?? null;
+  const storedGroups = parseOpenGroups(useStoredValue(HELP_OPEN_GROUPS_KEY));
+  const hashGroup = groupOfTopic(groups, openTopic);
+  const openGroups = hashGroup && !storedGroups.includes(hashGroup) ? [...storedGroups, hashGroup] : storedGroups;
+
+  function closeTopic() {
+    // A deep link expanded its group; keep it expanded once the reader is
+    // back on the grid, rather than collapsing it under them (an event
+    // handler, not an effect).
+    if (hashGroup && !storedGroups.includes(hashGroup)) {
+      writeStored(HELP_OPEN_GROUPS_KEY, serializeOpenGroups([...storedGroups, hashGroup]));
+    }
+    writeHelpHash(null);
+  }
 
   // …and then SCROLL to it. Next runs its own hash scroll at navigation commit,
   // when a card the search had filtered out is still absent from the DOM, so the
@@ -105,19 +110,49 @@ export function HelpDesk({
 
   return (
     <div className="space-y-5">
-      <div className="relative max-w-xl">
-        <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-        <Input
-          className="pl-8"
-          placeholder="Search by what you want to do — 'delete', 'stop loss', 'tax', 'backup'…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label="Search help"
+      <HelpSearchHero query={q} onQueryChange={setQ} topicCount={topics.length} />
+
+      {searching ? (
+        hits.length > 0 && (
+          <section aria-label="Matching topics">
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              {hits.length} {hits.length === 1 ? "topic matches" : "topics match"}
+            </h3>
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {hits.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => writeHelpHash(t.id)}
+                    className="flex w-full flex-col items-start gap-0.5 px-4 py-2.5 text-left hover:bg-card-hover"
+                  >
+                    <span className="text-base font-semibold">{t.title}</span>
+                    <span className="text-sm italic text-foreground/80">{t.answers}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      ) : (
+        <HelpCategoryGrid
+          groups={groups}
+          topics={topics}
+          openGroups={openGroups}
+          onOpenGroupsChange={(next) => writeStored(HELP_OPEN_GROUPS_KEY, serializeOpenGroups(next))}
+          onOpenTopic={(id) => writeHelpHash(id)}
         />
-      </div>
+      )}
+
+      {searching && hits.length === 0 && optionHits.length === 0 && (
+        <p className="text-sm text-foreground/90">Nothing matches “{q}”. Try a broader word — every screen is described here.</p>
+      )}
+
+      <HelpTopicDialog topic={openTopic} topics={topics} onClose={closeTopic} onOpenTopic={(id) => writeHelpHash(id)} />
 
       {/* ───────────────────────────────────────────────────────────────────
-          OPTIONS — the highlighted section, at the top, free on every tier.
+          OPTIONS — the highlighted section, free on every tier. Since v4.6.0
+          W4 it sits below the topics; the hero's "Options help" jumps here.
           Accent border and a badge rather than another muted group header:
           it is the one part of this page a reader is sent to from elsewhere
           (/strategies cards deep-link to #options-<id>), so it has to be
@@ -194,52 +229,6 @@ export function HelpDesk({
 
           <p className="mt-4 text-sm text-foreground/90">{OPTIONS_HELP_FOOTER}</p>
         </section>
-      )}
-
-      {hits.length === 0 && optionHits.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing matches “{q}”. Try a broader word — every screen is described here.</p>
-      ) : (
-        groups.map((g) => {
-          const items = entries.filter((e) => g.hrefs.includes(e.href) && hitSet.has(e.href));
-          if (items.length === 0) return null;
-          return (
-            <section key={g.label}>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</h3>
-              <div className="grid gap-3 lg:grid-cols-2">
-                {items.map((e) => (
-                  <Card key={e.href} className="p-0">
-                    <CardHeader className="flex-row items-start justify-between gap-2 pb-2">
-                      <div>
-                        <CardTitle className="text-base">{e.title}</CardTitle>
-                        <p className="mt-0.5 text-sm italic text-muted-foreground">{e.answers}</p>
-                      </div>
-                      <Link
-                        href={e.href}
-                        className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-sm hover:bg-card-hover"
-                      >
-                        Open <ArrowRight className="size-3" />
-                      </Link>
-                    </CardHeader>
-                    <CardContent className="space-y-1.5 pt-0 text-sm text-foreground/90">
-                      {e.body.map((b, i) => (
-                        <p key={i}>{b}</p>
-                      ))}
-                      {e.refusals?.map((r, i) => (
-                        <p key={`r${i}`} className="flex items-start gap-1.5">
-                          <ShieldOff className="mt-0.5 size-3 shrink-0" />
-                          {/* Chip is a <span>, not <Badge> (a <div>): a div inside <p> makes the
-                              browser's parser close the <p> early, so the hydrated DOM never
-                              matches the server tree — React #418, three per visit on this page. */}
-                          <span><span className={cn(badgeVariants({ variant: "outline" }), "mr-1")}>won&apos;t do</span>{r}</span>
-                        </p>
-                      ))}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </section>
-          );
-        })
       )}
     </div>
   );

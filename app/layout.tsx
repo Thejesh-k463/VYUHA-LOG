@@ -5,6 +5,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandPalette } from "@/components/system/command-palette";
 import { SearchPanel } from "@/components/system/search-panel";
+import { ShortcutsSheet } from "@/components/help/shortcuts-sheet";
 import { NavHistoryTracker } from "@/components/layout/nav-history-tracker";
 import { OnboardingWizard, type OnboardingWizardProps } from "@/components/system/onboarding-wizard";
 import { TelegramFailureNote } from "@/components/system/telegram-failure-note";
@@ -151,6 +152,9 @@ export default function RootLayout({
               accountId prop also stamps the cache key and the session frames,
               so neither half depends on the other. */}
           <CommandPalette key={selectedAccountId} accountId={selectedAccountId} workspace={workspace} />
+          {/* v4.6.0 W4: the keyboard-shortcuts sheet — "?" anywhere, the
+              palette's "Keyboard shortcuts" action, the help desk's button. */}
+          <ShortcutsSheet />
           {/* The floating search assistant — the SAME engine as the palette,
               on a surface that survives navigation. Keyed and stamped on the
               account for the same reason (invariant 8). */}

@@ -89,12 +89,19 @@ describe("validation", () => {
     expect((await get("?q=kou&cat=nope")).status).toBe(400);
   });
 
+  // The FIRST real search in this file pays the route's warm-up (every source
+  // module loads here). Measured 2026-09-25 (v4.6.0 W4 session): 2.3 s alone on
+  // HEAD's search.ts and 2.0 s alone on W4's, but 5.2 s under the full suite in
+  // two of three `npm run verify` runs — vitest's 5 s default is not a budget
+  // this warm-up can meet under parallel workers (AGENTS Testing: a raised
+  // timeout carries the measured local time). The per-`it` budget is unmet by
+  // the warm-up, not by the assertion; the later searches in this file are fast.
   it("answers no-store, so a cached answer cannot outlive an account switch", async () => {
     selectAccount(PRIMARY);
     const res = await get("?q=kou");
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-  });
+  }, 15_000);
 });
 
 describe("account scope", () => {

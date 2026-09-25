@@ -11,6 +11,7 @@ import { HUBS, hubTabHref, type Hub, type HubTab } from "@/lib/domain/hubs";
 import type { SearchResult, SourceKey } from "@/lib/domain/search-scope";
 import { Search, CornerDownLeft, Plus, ArrowLeft, Undo2 } from "lucide-react";
 import { isPaletteChord } from "./search-panel-keys";
+import { SHORTCUTS_EVENT } from "@/lib/domain/shortcuts";
 import {
   MIN_QUERY,
   SEARCH_DEBOUNCE_MS,
@@ -49,6 +50,8 @@ interface Command {
   action?: true;
   /** Set on a hub-tab row, so workspace mode can hide the tab (`tabVisible`), not just its hub. */
   hubTab?: { hub: Hub; tab: HubTab };
+  /** A row that opens something in place: dispatch this window event instead of navigating. */
+  event?: string;
 }
 
 /**
@@ -65,6 +68,8 @@ const ACTIONS: Command[] = [
   { label: "Add open trade", group: "Actions", href: "/trades?add=open", keywords: "new position running sl target", action: true },
   { label: "Add IPO", group: "Actions", href: "/ipos?add=1", keywords: "new application allotment", action: true },
   { label: "New playbook", group: "Actions", href: "/playbooks?add=1", keywords: "new setup rules", action: true },
+  // v4.6.0 W4: opens the shortcuts sheet (components/help/shortcuts-sheet.tsx) in place.
+  { label: "Keyboard shortcuts", group: "Actions", href: "/help", keywords: "keys hotkeys keyboard shortcuts", event: SHORTCUTS_EVENT },
 ];
 
 /**
@@ -86,13 +91,32 @@ let keywordCache: KeywordMap | null = null;
  */
 let optionsCache: Command[] | null = null;
 
+/**
+ * The help topics (v4.6.0 W4), one row per HELP_TOPIC, deep-linking to
+ * `/help#topic-…` — through the SAME lazy import, and, like the option
+ * structures, only once something has been typed: the empty palette stays a
+ * list of screens, not fifty help rows.
+ */
+let helpCache: Command[] | null = null;
+
+/** The help rows from a loaded help-content module; PURE (tests/hubs.test.ts). */
+export function helpCommands(topics: readonly { id: string; title: string; answers: string; keywords: string[]; steps: string[] }[]): Command[] {
+  return topics.map((t) => ({
+    label: t.title,
+    group: "Help",
+    href: `/help#${t.id}`,
+    keywords: [t.answers, ...t.keywords, ...t.steps].join(" ").toLowerCase(),
+  }));
+}
+
 /** Exported for tests/hubs.test.ts (the hub-tab rows and their workspace filter); PURE. */
-export function buildCommands(keywords: KeywordMap | null, options: Command[] | null): Command[] {
+export function buildCommands(keywords: KeywordMap | null, options: Command[] | null, help: Command[] | null = null): Command[] {
   return [
     ...NAV_ITEMS.map((n) => ({ label: n.label, group: n.group, href: n.href, keywords: keywords?.get(n.href) ?? n.label.toLowerCase() })),
     ...HUB_TAB_COMMANDS.map((c) => ({ ...c, keywords: keywords?.get(c.href) ?? c.label.toLowerCase() })),
     ...ACTIONS,
     ...(options ?? []),
+    ...(help ?? []),
   ];
 }
 
@@ -158,6 +182,7 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
   const [hits, setHits] = React.useState<Hits | null>(null);
   const [keywords, setKeywords] = React.useState<KeywordMap | null>(keywordCache);
   const [optionCmds, setOptionCmds] = React.useState<Command[] | null>(optionsCache);
+  const [helpCmds, setHelpCmds] = React.useState<Command[] | null>(helpCache);
 
   // Close resets the query so every open starts fresh (no setState-in-effect needed).
   const close = React.useCallback(() => {
@@ -190,7 +215,7 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
   // Keywords AND the option structures: one lazy import pair per session, on
   // the first open. Neither registry is in this file's module graph until then.
   React.useEffect(() => {
-    if (!open || (keywords && optionCmds)) return;
+    if (!open || (keywords && optionCmds && helpCmds)) return;
     let live = true;
     Promise.all([import("@/lib/domain/help-content"), import("@/lib/domain/options-help")]).then(([m, opts]) => {
       keywordCache = new Map([
@@ -204,14 +229,16 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
         href: `/help#${opts.optionsAnchorId(e.id)}`,
         keywords: [e.id.replace(/-/g, " "), e.style, ...e.keywords].join(" ").toLowerCase(),
       }));
+      helpCache = helpCommands(m.HELP_TOPICS);
       if (!live) return;
       setKeywords(keywordCache);
       setOptionCmds(optionsCache);
+      setHelpCmds(helpCache);
     });
     return () => {
       live = false;
     };
-  }, [open, keywords, optionCmds]);
+  }, [open, keywords, optionCmds, helpCmds]);
 
   const q = query.trim();
   const ql = q.toLowerCase();
@@ -220,14 +247,17 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
     // workspace does not offer them — the same rule the /strategies screen
     // itself follows.
     const opts = ql && screenVisible("/strategies", workspace) ? optionCmds : null;
-    const pool = commandsFor(buildCommands(keywords, opts), workspace);
+    // Help topics join the pool only once something is typed (the empty
+    // palette is the screens list).
+    const help = ql ? helpCmds : null;
+    const pool = commandsFor(buildCommands(keywords, opts, help), workspace);
     if (!ql) return pool;
     return pool
       .map((c) => ({ c, r: rank(c, ql) }))
       .filter((x) => x.r >= 0)
       .sort((a, b) => a.r - b.r)
       .map((x) => x.c);
-  }, [ql, workspace, keywords, optionCmds]);
+  }, [ql, workspace, keywords, optionCmds, helpCmds]);
 
   // ── Search (debounced, aborted on change) ────────────────────────────────
   const searching = open && q.length >= MIN_QUERY;
@@ -265,6 +295,13 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
 
   function go(c: Command) {
     close();
+    if (c.event) {
+      // After this dialog's close has committed, so the sheet is not the
+      // "dialog already open" the sheet refuses to open over.
+      const name = c.event;
+      window.setTimeout(() => window.dispatchEvent(new Event(name)), 0);
+      return;
+    }
     router.push(c.href);
   }
 

@@ -439,7 +439,8 @@ describe("account-scoped table registry", () => {
     //     never over-merge): two blank accounts are NEVER pooled.
     // `accountScopeWhere(column)` with NO person list is the legacy rule,
     // unchanged, which is why every reader below still reads as it always did.
-    trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts", "lib/queries/account-delete.ts"],
+    // v4.6.0 W4 — the getting-started strip's facts (trade count, a stop recorded) are a scoped READ.
+    trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts", "lib/queries/account-delete.ts", "lib/queries/getting-started.ts"],
     import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/account-delete.ts"],
     ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts", "lib/queries/account-delete.ts"],
     // Three writers, not one. The registry listed only the query module, and
