@@ -87,7 +87,10 @@ export const OPENALGO_WHAT_IT_IS: DisclosureItem[] = [
   {
     title: "Why it is worth the trouble",
     body:
-      "Vyuha has direct API pulls for Zerodha, Dhan, Angel One and Upstox only. Through OpenAlgo, Groww, Paytm Money and Kotak also get a same-day pull, with no broker-specific code. Sahi has no OpenAlgo plugin and stays on file import.",
+      // v4.6.0 W9: Fyers and Nuvama named — a FACTUAL correction (two brokers
+      // joined the list), not a change to what the user consents to, so the
+      // disclosure version is amended, never bumped, until v4.6.0 ships (D-6).
+      "Vyuha has direct API pulls for Zerodha, Dhan, Angel One and Upstox only. Through OpenAlgo, Groww, Paytm Money, Kotak and Fyers also get a same-day pull, with no broker-specific code. Sahi and Nuvama have no OpenAlgo plugin and stay on file import.",
   },
 ];
 

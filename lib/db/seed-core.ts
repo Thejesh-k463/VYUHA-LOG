@@ -121,6 +121,9 @@ function seedAll(log: boolean): SeedReport {
     // kotakneo.com/pricing "up to 4X", paytmmoney 4x, sahi 4x — same ballpark,
     // and without a row these three fell back to the global default silently.
     kotakneo: 25, paytm: 25, sahi: 25,
+    // v4.6.0 W9: Fyers and Nuvama take the same 25 the other three use —
+    // neither is researched per broker yet, and a missing row falls back silently.
+    fyers: 25, nuvama: 25,
   };
   const SEGMENT_MARGIN_DEFAULTS = [
     { segment: "eq_delivery", marginPct: 100, note: "full value deployed" },

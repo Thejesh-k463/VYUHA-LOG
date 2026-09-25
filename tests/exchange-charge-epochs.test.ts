@@ -51,7 +51,7 @@ const CLASSES: Class[] = [
   {
     name: "NSE cash, delivery and MTF",
     match: (r) => r.exchange === "NSE" && DELIVERY.includes(r.segment),
-    keys: 20,
+    keys: 28,
     froms: ["1970-01-01", "2012-07-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01"],
     txn: [0.0000345, 0.0000345, 0.0000325, 0.0000322, 0.0000297, 0.000030699],
     ipft: [0.000000001, 0.000000001, 0.000001, 0.000001, 0.000001, 0.000000001],
@@ -60,7 +60,7 @@ const CLASSES: Class[] = [
   {
     name: "NSE cash, intraday",
     match: (r) => r.exchange === "NSE" && EQ.includes(r.segment) && !DELIVERY.includes(r.segment),
-    keys: 10,
+    keys: 14,
     froms: ["1970-01-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01"],
     txn: [0.0000345, 0.0000325, 0.0000322, 0.0000297, 0.000030699],
     ipft: [0.000000001, 0.000001, 0.000001, 0.000001, 0.000000001],
@@ -69,7 +69,7 @@ const CLASSES: Class[] = [
   {
     name: "NSE futures",
     match: (r) => r.exchange === "NSE" && r.segment === "future",
-    keys: 10,
+    keys: 14,
     froms: NSE_FUT,
     txn: [0.00002, 0.00002, 0.000019, 0.0000188, 0.0000173, 0.000018299, 0.000018299],
     ipft: [0.000000001, 0.000000001, 0.000001, 0.000001, 0.000001, 0.000000001, 0.000000001],
@@ -78,7 +78,7 @@ const CLASSES: Class[] = [
   {
     name: "NSE options (index and stock, of premium)",
     match: (r) => r.exchange === "NSE" && (r.segment === "index_option" || r.segment === "stock_option"),
-    keys: 20,
+    keys: 28,
     froms: NSE_OPT,
     txn: [0.00053, 0.00053, 0.0005, 0.000495, 0.0003503, 0.000355299, 0.000355299],
     ipft: [0.000000001, 0.000000001, 0.000005, 0.000005, 0.000005, 0.000000001, 0.000000001],
@@ -87,7 +87,7 @@ const CLASSES: Class[] = [
   {
     name: "BSE cash (Group A / B / non-exclusive), delivery and MTF",
     match: (r) => r.exchange === "BSE" && DELIVERY.includes(r.segment),
-    keys: 20,
+    keys: 28,
     froms: ["1970-01-01", "2012-07-01", "2022-12-01"],
     txn: [0.0000345, 0.0000345, 0.0000375],
     ipft: [0, 0, 0],
@@ -96,7 +96,7 @@ const CLASSES: Class[] = [
   {
     name: "BSE cash (Group A / B / non-exclusive), intraday",
     match: (r) => r.exchange === "BSE" && EQ.includes(r.segment) && !DELIVERY.includes(r.segment),
-    keys: 10,
+    keys: 14,
     froms: ["1970-01-01", "2022-12-01"],
     txn: [0.0000345, 0.0000375],
     ipft: [0, 0],
@@ -105,7 +105,7 @@ const CLASSES: Class[] = [
   {
     name: "BSE stock options (of premium)",
     match: (r) => r.exchange === "BSE" && r.segment === "stock_option",
-    keys: 10,
+    keys: 14,
     froms: ["1970-01-01", "2016-06-01", "2022-05-02", "2023-04-01", "2024-10-01", "2026-04-01"],
     txn: [0, 0, 0.00005, 0.00005, 0.00005, 0.00005],
     ipft: [0, 0, 0, 0, 0, 0],
@@ -114,7 +114,7 @@ const CLASSES: Class[] = [
   {
     name: "BSE index options (Sensex/Bankex, of premium)",
     match: (r) => r.exchange === "BSE" && r.segment === "index_option",
-    keys: 10,
+    keys: 14,
     froms: ["1970-01-01", "2016-06-01", "2022-05-02", "2023-04-01", "2023-11-01", "2024-05-13", "2024-10-01", "2026-04-01"],
     txn: [0, 0, 0.00005, 0.00005, 0.000375, 0.000495, 0.000325, 0.000325],
     ipft: [0, 0, 0, 0, 0, 0, 0, 0],
@@ -138,7 +138,7 @@ const CLASSES: Class[] = [
   {
     name: "ETF STT rate rows, equity-oriented (delivery-like, + the 2013 s.98 row 2A)",
     match: (r) => String(r.segment) === "etf_equity",
-    keys: 20,
+    keys: 28,
     froms: ["1970-01-01", "2012-07-01", "2013-06-01"],
     txn: [0, 0, 0],
     ipft: [0, 0, 0],
@@ -147,7 +147,7 @@ const CLASSES: Class[] = [
   {
     name: "ETF STT rate rows, non-equity-oriented (one flat row, no STT at all)",
     match: (r) => String(r.segment) === "etf_other",
-    keys: 20,
+    keys: 28,
     froms: ["1970-01-01"],
     txn: [0],
     ipft: [0],
@@ -156,7 +156,7 @@ const CLASSES: Class[] = [
   {
     name: "MCX commodity futures (unchanged, no history)",
     match: (r) => r.exchange === "MCX" && r.segment === "commodity_future",
-    keys: 10,
+    keys: 14,
     froms: ["1970-01-01"],
     txn: [0.000021],
     ipft: [0],
@@ -165,7 +165,7 @@ const CLASSES: Class[] = [
   {
     name: "MCX commodity options (unchanged, no history)",
     match: (r) => r.exchange === "MCX" && r.segment === "commodity_option",
-    keys: 10,
+    keys: 14,
     froms: ["1970-01-01"],
     txn: [0.000418],
     ipft: [0],
@@ -215,7 +215,7 @@ const perCrore = (r: SeedRow) => Math.round((r.exchangeTxnPct + r.ipftPct) * 1e7
 const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 describe("the seed's exchange-charge epochs", () => {
-  it("the classes partition all 170 keys and 700 rows", () => {
+  it("the classes partition all 238 keys and 980 rows", () => {
     expect(CLASSES.reduce((a, c) => a + keysOf(c).length, 0)).toBe(byKey.size);
     // Re-pinned 2026-09-22 (v4.5.0 wave U): 117 → 130 keys, 558 → 620 rows. Upstox Plus is the
     // second PAID PLAN in the seed (Kotak Neo's was the first), and `emit` gives a plan the same
@@ -230,8 +230,13 @@ describe("the seed's exchange-charge epochs", () => {
     //   = 40 keys; × (etf_equity 3 epochs + etf_other 1 epoch) = 80 rows.
     // The CLASSES table gains both as classes rather than excluding them (they must be partitioned
     // like everything else, or a wrong exchange charge on an etf_* row would go unpinned).
-    expect(byKey.size).toBe(170);
-    expect(seed).toHaveLength(700);
+    // Re-pinned 2026-09-25 (v4.6.0 W9): 170 → 238 keys, 700 → 980 rows. Four broker-plans join —
+    // fyers|default, fyers|prime, nuvama|default, nuvama|elite — and `emit` + `emitEtf` give each the
+    // same 13 product keys + 4 ETF keys and the same 70 rows every existing broker-plan has
+    // (measured by running the seed: 14 broker-plans × 70 = 980). Each class's `keys` scales with
+    // the plan count: 20 → 28 (two per plan), 10 → 14 (one per plan).
+    expect(byKey.size).toBe(238);
+    expect(seed).toHaveLength(980);
   });
 
   it.each(CLASSES)("$name: windows, transaction charge, IPFT and the per-crore total on every key", (c) => {

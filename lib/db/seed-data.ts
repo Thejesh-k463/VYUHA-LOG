@@ -501,6 +501,58 @@ function brokerageFor(
     }
   }
 
+  // Fyers STANDARD (the free default) — fyers.in/pricing and
+  // fyers.in/charges-list, read 2026-09-25 (no effective date is stated):
+  // "₹20 or 0.3% per executed order for Delivery, ETF & MTF", intraday and
+  // futures ₹20 or 0.03%, "Options Flat ₹20 per executed order" (index vs stock
+  // not split). COMMODITY brokerage is stated on NO Fyers page for this plan;
+  // it follows the Kotak Neo / Sahi precedent for an unpublished commodity
+  // figure — the broker's own F&O card, futures and options respectively —
+  // recorded in docs/DECISIONS.md (v4.6.0 W9).
+  if (broker === "fyers") {
+    switch (segment) {
+      case "eq_delivery":
+      case "eq_mtf":
+        return { flat: null, pct: 0.003, cap: 20, floor: 0 }; // min(20, 0.3%)
+      case "eq_intraday":
+      case "future":
+      case "commodity_future":
+        return { flat: null, pct: 0.0003, cap: 20, floor: 0 }; // min(20, 0.03%)
+      case "index_option":
+      case "stock_option":
+      case "commodity_option":
+        return FLAT20;
+    }
+  }
+
+  // Nuvama LITE PLUS (the default; nuvamawealth.com/our-pricing, read
+  // 2026-09-25 — its price-comparison page calls the same card "Lite"):
+  // "₹20 per executed order", capped at "2% of the value" — min(20, 2%) on
+  // equity and F&O alike (index vs stock not split). Commodity futures 0.05%
+  // (the page's separate "Carry Forward Futures 0.20%" is NOT modelled — the
+  // key has no carry-forward dimension); commodity options ₹30 PER LOT, seeded
+  // as ₹30 per ORDER because charge_config has no per-lot column, so a
+  // multi-lot order is UNDER-estimated (DECISIONS, v4.6.0 W9). MTF brokerage
+  // is not stated: it follows the delivery rate (the Kotak Neo precedent — MTF
+  // is a delivery product). The owner's own account is on a NEGOTIATED card
+  // (₹10/lot NSE options, ₹30/lot MCX options, ~0.05% MCX futures); that card
+  // is not a published plan and is never seeded (owner answer 2026-09-25).
+  if (broker === "nuvama") {
+    switch (segment) {
+      case "eq_delivery":
+      case "eq_mtf":
+      case "eq_intraday":
+      case "future":
+      case "index_option":
+      case "stock_option":
+        return { flat: null, pct: 0.02, cap: 20, floor: 0 }; // min(20, 2%)
+      case "commodity_future":
+        return { flat: null, pct: 0.0005, cap: null, floor: 0 }; // 0.05%
+      case "commodity_option":
+        return { flat: 30, pct: 0, cap: null, floor: 0 }; // ₹30 per lot, seeded per order
+    }
+  }
+
   // groww
   switch (segment) {
     case "eq_delivery":
@@ -550,6 +602,13 @@ function dpFor(broker: Broker): {
     // Sahi: ₹13.50 per company on SELL transactions.
     case "sahi":
       return { dpCharge: 13.5, dpGstApplicable: true, dpMinValue: 0 };
+    // Fyers (fyers.in/charges-list, 2026-09-25): "₹12.5 + GST" per scrip on a sell.
+    case "fyers":
+      return { dpCharge: 12.5, dpGstApplicable: true, dpMinValue: 0 };
+    // Nuvama Lite Plus (nuvamawealth.com/our-pricing, 2026-09-25): ₹20 per ISIN
+    // on a sell, GST extra. Elite differs — see its PAID_PLANS entry.
+    case "nuvama":
+      return { dpCharge: 20, dpGstApplicable: true, dpMinValue: 0 };
   }
 }
 
@@ -647,6 +706,36 @@ function mtfFor(broker: Broker): {
         pledgeCharge: 15, // ₹15 per transaction/ISIN + GST, from their pricing page
         unpledgeCharge: 15,
       };
+    // Fyers publishes a SLABBED rate on the funded amount (fyers.in/charges-list,
+    // read 2026-09-25, annual): 0% up to ₹1,000 · 16.49% to ₹1,00,000 · 15.49%
+    // to ₹10L · 14.49% to ₹25L · 12.49% above. MTF pledge and unpledge are
+    // "₹12 + GST" each (the ₹5 margin pledge is not an MTF charge).
+    case "fyers":
+      return {
+        mtfInterestAnnual: 0,
+        mtfTiers: [
+          { upTo: 1000, rate: 0 },
+          { upTo: 100000, rate: 0.1649 },
+          { upTo: 1000000, rate: 0.1549 },
+          { upTo: 2500000, rate: 0.1449 },
+          { upTo: null, rate: 0.1249 },
+        ],
+        pledgeCharge: 12,
+        unpledgeCharge: 12,
+      };
+    // Nuvama states NO MTF interest rate on its pricing page. Its "Delayed
+    // Payment Interest (MTF) 30%" is a delayed-payment rate with no unit, not
+    // the funding rate, so it is not read as one — the Kotak Neo rule: the row
+    // exists and says the rate is unknown. Pledge/unpledge ₹20 per ISIN (the
+    // only pledge figure the page states).
+    case "nuvama":
+      return {
+        mtfInterestAnnual: 0,
+        mtfRateUnknown: true,
+        mtfTiers: null,
+        pledgeCharge: 20,
+        unpledgeCharge: 20,
+      };
   }
 }
 
@@ -665,8 +754,8 @@ const COMBOS: { segment: Segment; exchanges: Exchange[] }[] = [
 /**
  * Paid plans, in addition to the free "default" every broker has.
  *
- * Kotak Neo and Upstox are the two that sell one — Angel One, Dhan, Zerodha,
- * Groww, Paytm and Sahi all run a single flat structure. Each entry
+ * Kotak Neo, Upstox, Fyers and Nuvama publish a second plan — Angel One, Dhan,
+ * Zerodha, Groww, Paytm and Sahi all run a single flat structure. Each entry
  * lists ONLY the segments the paid plan actually changes; everything else
  * falls through to the broker's default rates.
  *
@@ -681,6 +770,8 @@ interface PaidPlan {
   /** Segment overrides; anything absent uses the default plan's rate. */
   brokerage?: Partial<Record<Segment, { flat: number | null; pct: number; cap: number | null; floor: number }>>;
   mtfInterestAnnual?: number;
+  /** DP charge override, when the plan bills DP differently (Nuvama Elite). Absent = the broker's `dpFor`. */
+  dp?: ReturnType<typeof dpFor>;
 }
 
 const PAID_PLANS: Partial<Record<Broker, PaidPlan[]>> = {
@@ -741,10 +832,67 @@ const PAID_PLANS: Partial<Record<Broker, PaidPlan[]>> = {
       mtfInterestAnnual: 0.146,
     },
   ],
+  /**
+   * Fyers PRIME (fyers.in/pricing + fyers.in/prime, read 2026-09-25): ₹499 a
+   * month (₹4,990 a year) + 18% GST, waitlisted. Every ₹20 of Standard becomes
+   * ₹15: delivery min(15, 0.3%), intraday and futures min(15, 0.03%), options
+   * flat ₹15; commodity "₹15 per executed order for equity, F&O, Commodity"
+   * (the FAQ), no cap stated, so a flat ₹15. MTF brokerage is NOT stated for
+   * Prime (the page names delivery only) — it follows Prime's own delivery
+   * rate (the Kotak Neo precedent). MTF interest "Flat 12.49%". DP and pledge
+   * are Standard's. `monthly: 499` is EX-GST, the sticker price as the page
+   * states it — the precedent: Kotak Neo Pro's 249 is its page's sticker with no
+   * GST added, and broker-compare amortises the seeded figure as-is. (With the
+   * 18% GST Fyers bills on top, the real cost is ₹588.82 a month.)
+   */
+  fyers: [
+    {
+      plan: "prime",
+      label: "Fyers Prime",
+      monthly: 499,
+      brokerage: {
+        eq_delivery: { flat: null, pct: 0.003, cap: 15, floor: 0 }, // min(15, 0.3%)
+        eq_mtf: { flat: null, pct: 0.003, cap: 15, floor: 0 }, // not stated: Prime's delivery rate
+        eq_intraday: { flat: null, pct: 0.0003, cap: 15, floor: 0 }, // min(15, 0.03%)
+        future: { flat: null, pct: 0.0003, cap: 15, floor: 0 }, // min(15, 0.03%)
+        index_option: { flat: 15, pct: 0, cap: null, floor: 0 },
+        stock_option: { flat: 15, pct: 0, cap: null, floor: 0 },
+        commodity_future: { flat: 15, pct: 0, cap: null, floor: 0 },
+        commodity_option: { flat: 15, pct: 0, cap: null, floor: 0 },
+      },
+      mtfInterestAnnual: 0.1249,
+    },
+  ],
+  /**
+   * Nuvama ELITE (nuvamawealth.com/our-pricing, read 2026-09-25; "Volume & Slab
+   * based", no subscription fee stated → 0). Delivery 0.30% with a minimum of
+   * "the lower between ₹25 and 2.5%" — seeded as a ₹25 floor, because the seed
+   * floor is a constant: an order under ₹1,000 (where 2.5% < ₹25) is
+   * OVER-estimated. Intraday and futures 0.03%, no cap stated. Options ₹75 PER
+   * LOT, seeded as ₹75 per ORDER (no per-lot column — a multi-lot order is
+   * under-estimated). Commodity, MTF brokerage and MTF interest are not stated
+   * for Elite and fall through to Lite Plus. DP on a sell is the higher of
+   * 0.02% and ₹20 ("within Nuvama").
+   */
+  nuvama: [
+    {
+      plan: "elite",
+      label: "Nuvama Elite",
+      monthly: 0,
+      brokerage: {
+        eq_delivery: { flat: null, pct: 0.003, cap: null, floor: 25 }, // 0.30%, min ₹25
+        eq_intraday: { flat: null, pct: 0.0003, cap: null, floor: 0 }, // 0.03%
+        future: { flat: null, pct: 0.0003, cap: null, floor: 0 }, // 0.03%
+        index_option: { flat: 75, pct: 0, cap: null, floor: 0 }, // ₹75 per lot, seeded per order
+        stock_option: { flat: 75, pct: 0, cap: null, floor: 0 }, // ₹75 per lot, seeded per order
+      },
+      dp: { dpCharge: 20, dpPct: 0.0002, dpGstApplicable: true, dpMinValue: 0 }, // max(₹20, 0.02%)
+    },
+  ],
 };
 
 const BROKER_LIST: Broker[] = [
-  "dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi",
+  "dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi", "fyers", "nuvama",
 ];
 
 
@@ -774,7 +922,7 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
         const isDeliveryLike = segment === "eq_delivery" || segment === "eq_mtf";
         const isMtf = segment === "eq_mtf";
         const dp = isDeliveryLike
-          ? dpFor(broker)
+          ? (plan?.dp ?? dpFor(broker))
           : { dpCharge: 0, dpPct: 0, dpGstApplicable: false, dpMinValue: 0 };
         const baseMtf = isMtf
           ? mtfFor(broker)

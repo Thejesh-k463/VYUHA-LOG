@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-11005%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-11328%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-120%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
@@ -18,7 +18,7 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 <img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
 
-*6 auto-detected broker formats (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money) + any CSV via the column mapper + 4 broker-API pulls (Kite, Dhan, Angel One SmartAPI, Upstox Analytics token) — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
+*8 auto-detected brokers (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money, Fyers, Nuvama) + any CSV via the column mapper + 4 broker-API pulls (Kite, Dhan, Angel One SmartAPI, Upstox Analytics token) — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
 
 </div>
 
@@ -641,8 +641,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 | | | |
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
-| per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **11005** | **49** | **0** |
+| per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery; Fyers' and Nuvama's lists are not bundled yet) | charge-engine error vs a real broker report |
+| **11328** | **49** | **0** |
 | tests, 120 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
@@ -694,7 +694,7 @@ forever.** Your own record of your trading is never held hostage.
 ## ✨ Feature tour
 
 ### 📒 Journal every leg, effortlessly
-- **Import from ANY broker.** Six are auto-detected — **Dhan** (P&L *and* the charge-carrying Global Transaction Report), **Groww** (stocks P&L *and* order history), **Zerodha** (tradebook and Console P&L), **Angel One** (tradebook, P&L, *and* the seven-section tax P&L with explicit MTF quantities), **Upstox**, and **Paytm Money** (per-execution tradebook with the broker's own charge breakdown). (A broker PDF is read for its text only — no PDF layout has been calibrated, so it never imports a trade, and the import screen says so.) Detection keys on **in-content fingerprints**, never on filename or column shape: every parser must prove whose file it holds before claiming it, and a cross-broker refusal matrix in the test suite keeps it that way. For every other broker — **Kotak Neo, Sahi**, or one that launches next year — drop the CSV/XLSX and Vyuha asks you to **match the columns once**, then remembers the mapping. Nothing is ever guessed: a file whose layout is unknown produces a question, never a trade with quantity in the price field. Mapped tradebooks go through the same FIFO pairing, de-duplication and charge engine as native ones, with the **charge reconciliation panel** (computed vs broker-reported) before commit. Live API pulls too: Zerodha **Kite**, **Dhan**, **Angel One SmartAPI** — fully unattended, its daily login minted from your TOTP secret — and **Upstox** on its year-long, read-only Analytics token, all credentials encrypted at rest.
+- **Import from ANY broker.** Eight are auto-detected — **Dhan** (P&L *and* the charge-carrying Global Transaction Report), **Groww** (stocks P&L *and* order history), **Zerodha** (tradebook and Console P&L), **Angel One** (tradebook, P&L, *and* the seven-section tax P&L with explicit MTF quantities), **Upstox**, **Paytm Money** (per-execution tradebook with the broker's own charge breakdown), **Fyers** (tradebook, plus its Realised P&L as a reference) and **Nuvama** (the P&L report, with the charges Nuvama billed on every line). (A broker PDF is read for its text only — no PDF layout has been calibrated, so it never imports a trade, and the import screen says so.) Detection keys on **in-content fingerprints**, never on filename or column shape: every parser must prove whose file it holds before claiming it, and a cross-broker refusal matrix in the test suite keeps it that way. For every other broker — **Kotak Neo, Sahi**, or one that launches next year — drop the CSV/XLSX and Vyuha asks you to **match the columns once**, then remembers the mapping. Nothing is ever guessed: a file whose layout is unknown produces a question, never a trade with quantity in the price field. Mapped tradebooks go through the same FIFO pairing, de-duplication and charge engine as native ones, with the **charge reconciliation panel** (computed vs broker-reported) before commit. Live API pulls too: Zerodha **Kite**, **Dhan**, **Angel One SmartAPI** — fully unattended, its daily login minted from your TOTP secret — and **Upstox** on its year-long, read-only Analytics token, all credentials encrypted at rest.
 - **Brokers with no API of their own — Groww, Paytm Money, Kotak — can pull live through [OpenAlgo](docs/OPENALGO_SETUP.md)**, an open-source bridge you run on your own computer. Deliberately **off by default** behind an in-app disclosure, because it means running one more program that holds a broker credential: your credentials go into OpenAlgo, never into Vyuha; the data flows only from your broker to your machine; Vyuha's pull is read-only and goes through the same preview → charges → duplicate-check pipeline as every file. The integration was verified live against brokers' own contract notes before this line was written — the full setup guide is [docs/OPENALGO_SETUP.md](docs/OPENALGO_SETUP.md).
 - **Lenses — the same book, cut six ways.** One tab strip re-groups every trade by month, broker, trade type, import file, setup or outcome — so "what exactly did that one file produce?" is one click, in isolation, with that group's own P&L and charges (and, with Pro, its win rate, profit factor, expectancy and average R). Any group can be deleted from right there.
 - **Deletion you can reason about — and undo.** Delete by date range, by import file, by broker, by trade type, or exactly what the table is showing; every path goes through one confirmation that shows the precise set, counts and net P&L before anything happens, with type-to-confirm past ten trades. And every delete writes a **snapshot first** — trades, staged legs, chart attachments and all — restorable from **Backup & Restore → Deleted items**. Snapshots are never auto-purged.
@@ -998,7 +998,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       11005 unit + integration tests across 477 files (+ tests/load: 16 load cases, run separately)
+tests/       11328 unit + integration tests across 477 files (+ tests/load: 16 load cases, run separately)
 e2e/         120 Playwright flows through the real app, in 35 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -1019,7 +1019,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **11005 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **11328 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -1035,7 +1035,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (11005 tests) |
+| `npm test` | Vitest unit + integration suite (11328 tests) |
 | `npm run test:e2e` | Playwright e2e — 120 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -1105,7 +1105,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 11005 Vitest unit + integration tests (+ tests/load)
+  tests/          # 11328 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

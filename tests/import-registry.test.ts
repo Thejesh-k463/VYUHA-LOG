@@ -70,8 +70,9 @@ describe("every broker can get its trades in", () => {
     // A tripwire, not a wish: if a parser is added or removed this fails and
     // whoever changed it must update the README's broker-count claim too.
     // paytm joined 2026-08-12 (tradebook parser, from a verified real export).
+    // fyers and nuvama joined 2026-09-25 (v4.6.0 W9, one verified real export each): 6 → 8.
     expect(brokersWithNativeParser().sort()).toEqual(
-      ["angelone", "dhan", "groww", "paytm", "upstox", "zerodha"].sort(),
+      ["angelone", "dhan", "fyers", "groww", "nuvama", "paytm", "upstox", "zerodha"].sort(),
     );
   });
 });
@@ -157,7 +158,7 @@ describe("the generic source never outranks a real parser", () => {
 });
 
 describe("PDF broker detection covers every broker, and admits when it cannot tell", () => {
-  it("recognises all eight by name", () => {
+  it("recognises all ten by name", () => {
     const samples: Record<string, string> = {
       dhan: "DhanHQ Securities Pvt Ltd",
       zerodha: "Zerodha Broking Limited",
@@ -167,7 +168,10 @@ describe("PDF broker detection covers every broker, and admits when it cannot te
       kotakneo: "Kotak Securities — Neo",
       paytm: "Paytm Money Ltd",
       sahi: "Sahi (Aaritya Broking)",
+      fyers: "FYERS Securities Pvt Ltd",
+      nuvama: "Nuvama Wealth and Investment Limited (Formerly Edelweiss Broking Limited)",
     };
+    expect(Object.keys(samples).sort()).toEqual([...BROKERS].sort());
     for (const [broker, text] of Object.entries(samples)) {
       expect(detectBrokerFromText(text), text).toBe(broker);
     }

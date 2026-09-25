@@ -104,7 +104,7 @@ export function resolveMtfMargin(
     source: "default",
     asOf: null,
     coverage: b?.coverage ?? null,
-    note: b?.coverage === "no-mtf" ? (b.note ?? null) : null,
+    note: b?.coverage === "no-mtf" || b?.coverage === "not-bundled" ? (b.note ?? null) : null,
   };
 }
 

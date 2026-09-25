@@ -92,7 +92,9 @@ function staleCard(): Row[] {
   // Re-pinned 2026-09-22 (v4.5.0 wave 3a, ruling R90): 130 → 170 keys. The seed gained the two ETF
   // STT rate rows — 10 broker-plans × 2 exchanges × 2 rate segments — and this fixture plants ONE
   // 1970 row per KEY of this build's card, so it grows by the key count, not the row count (80).
-  expect(rows).toHaveLength(170);
+  // v4.6.0 W9 (measured): 170 → 238 keys — four broker-plans (fyers default/prime, nuvama
+  // default/elite) × the 17 keys every broker-plan carries.
+  expect(rows).toHaveLength(238);
   return rows;
 }
 

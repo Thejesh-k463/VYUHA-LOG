@@ -20,6 +20,8 @@ export function detectBrokerFromText(text: string): Broker | null {
     kotakneo: /kotak\s*(neo|securities)|\bkotak\b/i,
     paytm: /paytm\s*money|\bpaytm\b/i,
     sahi: /\bsahi\b|aaritya/i,
+    fyers: /\bfyers\b/i,
+    nuvama: /\bnuvama\b|edelweiss broking/i,
   };
   for (const b of BROKERS) {
     if (patterns[b].test(text)) return b;

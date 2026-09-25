@@ -27,6 +27,9 @@ import { detectZerodhaLedger, parseZerodhaLedgerSource } from "./parsers/zerodha
 import { detectGrowwLedger, parseGrowwLedgerSource } from "./parsers/groww-ledger";
 import { detectGrowwContractNote, parseGrowwContractNote } from "./parsers/groww-contract-note";
 import { detectUpstoxContractNote, parseUpstoxContractNote } from "./parsers/upstox-contract-note";
+import { detectFyersTradebook, parseFyersTradebook } from "./parsers/fyers-tradebook";
+import { detectFyersRealisedPnl, parseFyersRealisedPnl } from "./parsers/fyers-realised-pnl";
+import { detectNuvamaPnlReport, parseNuvamaPnlReport } from "./parsers/nuvama-pnl-report";
 
 export interface DetectedParser {
   sourceId: string;
@@ -82,6 +85,9 @@ const PARSERS: Record<string, (ctx: ParseContext) => Promise<ParsedFile> | Parse
   "groww-ledger": parseGrowwLedgerSource,
   "groww-contract-note": parseGrowwContractNote,
   "upstox-contract-note": parseUpstoxContractNote,
+  "fyers-tradebook": parseFyersTradebook,
+  "fyers-realised-pnl": parseFyersRealisedPnl,
+  "nuvama-pnl-report": parseNuvamaPnlReport,
   pdf: parsePdf,
   "generic-table": parseGenericTable,
 };
@@ -118,6 +124,9 @@ const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
   "groww-ledger": detectGrowwLedger,
   "groww-contract-note": detectGrowwContractNote,
   "upstox-contract-note": detectUpstoxContractNote,
+  "fyers-tradebook": detectFyersTradebook,
+  "fyers-realised-pnl": detectFyersRealisedPnl,
+  "nuvama-pnl-report": detectNuvamaPnlReport,
   pdf: detectPdf,
   "generic-table": detectGenericTable,
 };

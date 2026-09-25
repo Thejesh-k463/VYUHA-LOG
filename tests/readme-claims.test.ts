@@ -71,7 +71,7 @@ describe("README importers line", () => {
 
   it("the hero line separates auto-detected formats, the column mapper and API pulls", () => {
     expect(readme).toMatch(
-      /\*6 auto-detected broker formats \(Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money\) \+ any CSV via the column mapper \+ 4 broker-API pulls \(Kite, Dhan, Angel One SmartAPI, Upstox Analytics token\)/,
+      /\*8 auto-detected brokers \(Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money, Fyers, Nuvama\) \+ any CSV via the column mapper \+ 4 broker-API pulls \(Kite, Dhan, Angel One SmartAPI, Upstox Analytics token\)/,
     );
   });
 });

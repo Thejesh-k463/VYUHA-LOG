@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { mtfRateFor } from "@/lib/engine/charges";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
@@ -848,8 +849,13 @@ describe("G3 — the dimensions of the matrix are the real ones", () => {
     const map = loadRatesMap();
     const onDefault = findRates(map, paid.broker as never, "eq_mtf", "NSE", "2026-08-14");
     const onPaid = findRates(map, paid.broker as never, "eq_mtf", "NSE", "2026-08-14", paid.plan);
+    // v4.6.0 W9: the first paid plan alphabetically is now fyers|prime, whose FREE card is SLABBED
+    // (mtfTiers, mtfInterestAnnual 0), so each card's rate is read the way the engine reads it —
+    // `mtfRateFor` on this row's ₹16,000 — not off the flat column.
+    const paidRate = mtfRateFor(16000, onPaid);
+    const freeRate = mtfRateFor(16000, onDefault);
     // The paid card really is a different rate card (else the pin proves nothing).
-    expect(onPaid.mtfInterestAnnual).not.toBe(onDefault.mtfInterestAnnual);
+    expect(paidRate).not.toBe(freeRate);
 
     const seg = SEGMENTS.find((s) => s.segment === "eq_mtf")!;
     const id = openRow(seg, paid.broker, 16000, 0, paid.plan);
@@ -860,8 +866,8 @@ describe("G3 — the dimensions of the matrix are the real ones", () => {
     // The whole point of the file: what the dialog showed is what the save wrote.
     expect(shown).toEqual(stored);
     // …and it is the PAID card's interest, 30 days of it, not the free one's.
-    expect(stored[3]).toBe(Math.round(((16000 * onPaid.mtfInterestAnnual * 30) / 365) * 100) / 100);
-    expect(stored[3]).not.toBe(Math.round(((16000 * onDefault.mtfInterestAnnual * 30) / 365) * 100) / 100);
+    expect(stored[3]).toBe(Math.round(((16000 * paidRate * 30) / 365) * 100) / 100);
+    expect(stored[3]).not.toBe(Math.round(((16000 * freeRate * 30) / 365) * 100) / 100);
 
     // The control: the SAME row in an account that states no plan prices at the
     // free card, through both halves, so the plan is what moved the figure and
@@ -870,7 +876,7 @@ describe("G3 — the dimensions of the matrix are the real ones", () => {
     const shownFree = await preview(closePreviewBody(wire(free), seg.exit, "2026-08-14", { buyDate: BUY_ISO, sellDate: "2026-08-14" }));
     expect(commit.closePosition(free, seg.exit, "2026-08-14").ok).toBe(true);
     expect(shownFree).toEqual(saved(free));
-    expect(saved(free)[3]).toBe(Math.round(((16000 * onDefault.mtfInterestAnnual * 30) / 365) * 100) / 100);
+    expect(saved(free)[3]).toBe(Math.round(((16000 * freeRate * 30) / 365) * 100) / 100);
   });
 });
 

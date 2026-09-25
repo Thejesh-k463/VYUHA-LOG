@@ -229,11 +229,13 @@ describe("Sahi — sahi.com/pricing", () => {
     expect(r.dpCharge).toBe(13.5);
   });
 
-  it("shares 'no published MTF rate' with Kotak Neo's FREE plan and nobody else", () => {
+  it("shares 'no published MTF rate' with Kotak Neo's FREE plan and Nuvama, and nobody else", () => {
     // Kotak publishes 9.69% for Pro subscribers only; on the free tier it says
-    // nothing, and neither broker's silence may be read as zero.
+    // nothing, and neither broker's silence may be read as zero. Nuvama (v4.6.0
+    // W9) states no MTF interest rate at all — its "Delayed Payment Interest
+    // (MTF) 30%" is a delayed-payment rate, not the funding rate.
     const unknown = BROKERS.filter((b) => get(b, "eq_mtf")?.mtfRateUnknown);
-    expect(unknown).toEqual(["kotakneo", "sahi"]);
+    expect(unknown).toEqual(["kotakneo", "sahi", "nuvama"]);
     expect(get("kotakneo", "eq_mtf", "NSE", "pro")?.mtfRateUnknown).toBe(false);
   });
 });
@@ -301,7 +303,9 @@ describe("pricing plans — the free tier and the paid tier are separate offers"
     // about their pricing, not a gap in ours. Upstox joined Kotak Neo on the
     // multi-plan side in v4.5.0 wave U (Upstox Plus, owner rulings U1-U3), so
     // it is excluded here and asserted by tests/broker-plan.test.ts instead.
-    for (const broker of BROKERS.filter((b) => b !== "kotakneo" && b !== "upstox")) {
+    // Fyers (Prime) and Nuvama (Elite) publish a second plan too (v4.6.0 W9) —
+    // pinned in the describe below.
+    for (const broker of BROKERS.filter((b) => !["kotakneo", "upstox", "fyers", "nuvama"].includes(b))) {
       const plans = new Set([...rates.keys()].filter((k) => k.startsWith(`${broker}|`)).map((k) => k.split("|")[1]));
       expect([...plans], broker).toEqual(["default"]);
     }
@@ -328,5 +332,72 @@ describe("rate cards corrected against the brokers' published pages", () => {
   it("uses each broker's published MTF interest rate", () => {
     expect(get("angelone", "eq_mtf")?.mtfInterestAnnual).toBe(0.18);
     expect(get("upstox", "eq_mtf")?.mtfInterestAnnual).toBe(0.1825);
+  });
+});
+
+/**
+ * v4.6.0 W9 — Fyers and Nuvama, from their own pricing pages (read 2026-09-25:
+ * fyers.in/pricing, fyers.in/charges-list, fyers.in/prime,
+ * nuvamawealth.com/our-pricing). Each plan's card is pinned on a segment where
+ * the GROWW block — the seed's fallthrough — would price differently, so a
+ * broker branch that stops matching turns a named line red rather than
+ * silently billing Groww's card.
+ */
+describe("Fyers and Nuvama — their own cards, never the Groww fallthrough", () => {
+  const brokerage = (b: Broker, s: Segment, value: number, plan = "default") =>
+    computeCharges(roundTrip(s, value), get(b, s, s.startsWith("commodity") ? "MCX" : "NSE", plan)!).brokerage;
+
+  it("Fyers Standard: delivery min(₹20, 0.3%) — ₹3 on a ₹1,000 order, where Groww's floor bills ₹5", () => {
+    expect(brokerage("fyers", "eq_delivery", 1000)).toBeCloseTo(6, 2); // 0.3% × 1,000 × 2 sides
+    expect(brokerage("fyers", "eq_delivery", 500_000)).toBeCloseTo(40, 2); // the ₹20 cap
+    expect(brokerage("fyers", "future", 20_000)).toBeCloseTo(12, 2); // 0.03% × 20,000 × 2
+    expect(brokerage("fyers", "index_option", 500_000)).toBeCloseTo(40, 2); // flat ₹20
+  });
+
+  it("Fyers Standard MTF interest is Fyers' own slab table, pledge ₹12", () => {
+    const r = get("fyers", "eq_mtf")!;
+    expect(r.mtfTiers).toEqual([
+      { upTo: 1000, rate: 0 },
+      { upTo: 100000, rate: 0.1649 },
+      { upTo: 1000000, rate: 0.1549 },
+      { upTo: 2500000, rate: 0.1449 },
+      { upTo: null, rate: 0.1249 },
+    ]);
+    expect([r.pledgeCharge, r.unpledgeCharge, r.dpCharge, r.mtfRateUnknown]).toEqual([12, 12, 12.5, false]);
+  });
+
+  it("Fyers Prime: ₹15 where Standard says ₹20, ₹499 a month, MTF flat 12.49%", () => {
+    expect(brokerage("fyers", "index_option", 500_000, "prime")).toBeCloseTo(30, 2);
+    expect(brokerage("fyers", "eq_delivery", 500_000, "prime")).toBeCloseTo(30, 2);
+    expect(brokerage("fyers", "commodity_future", 500_000, "prime")).toBeCloseTo(30, 2);
+    const mtf = get("fyers", "eq_mtf", "NSE", "prime")!;
+    expect([mtf.subscriptionMonthly, mtf.planLabel, mtf.mtfInterestAnnual, mtf.mtfTiers]).toEqual([499, "Fyers Prime", 0.1249, null]);
+  });
+
+  it("Nuvama Lite Plus: ₹20 per order capped at 2% of value — options too, where Groww bills a flat ₹20", () => {
+    expect(brokerage("nuvama", "index_option", 500)).toBeCloseTo(20, 2); // 2% × 500 × 2 sides
+    expect(brokerage("nuvama", "index_option", 500_000)).toBeCloseTo(40, 2);
+    expect(brokerage("nuvama", "commodity_future", 1_000_000)).toBeCloseTo(1000, 2); // 0.05%, uncapped
+    expect(brokerage("nuvama", "commodity_option", 500_000)).toBeCloseTo(60, 2); // ₹30 per lot, seeded per order
+    const mtf = get("nuvama", "eq_mtf")!;
+    expect([mtf.mtfRateUnknown, mtf.mtfInterestAnnual, mtf.dpCharge, mtf.dpPct]).toEqual([true, 0, 20, 0]);
+  });
+
+  it("Nuvama Elite: delivery 0.30% with a ₹25 minimum, options ₹75, DP the higher of 0.02% and ₹20", () => {
+    expect(brokerage("nuvama", "eq_delivery", 500_000, "elite")).toBeCloseTo(3000, 2); // 0.3%, no cap
+    expect(brokerage("nuvama", "eq_delivery", 2_000, "elite")).toBeCloseTo(50, 2); // the ₹25 floor
+    expect(brokerage("nuvama", "index_option", 500_000, "elite")).toBeCloseTo(150, 2);
+    const d = get("nuvama", "eq_delivery", "NSE", "elite")!;
+    expect([d.dpCharge, d.dpPct, d.subscriptionMonthly, d.planLabel]).toEqual([20, 0.0002, 0, "Nuvama Elite"]);
+    // Commodity and MTF are not stated for Elite and fall through to Lite Plus.
+    expect(brokerage("nuvama", "commodity_option", 500_000, "elite")).toBeCloseTo(60, 2);
+    expect(get("nuvama", "eq_mtf", "NSE", "elite")?.mtfRateUnknown).toBe(true);
+  });
+
+  it("each of the two brokers carries exactly the two published plans — never the owner's negotiated card", () => {
+    for (const [broker, paid] of [["fyers", "prime"], ["nuvama", "elite"]] as const) {
+      const plans = new Set([...rates.keys()].filter((k) => k.startsWith(`${broker}|`)).map((k) => k.split("|")[1]));
+      expect([...plans].sort(), broker).toEqual(["default", paid].sort());
+    }
   });
 });

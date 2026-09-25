@@ -134,7 +134,9 @@ close-out DECISIONS entry — a session that cannot cite that line did not run i
   answer.
 - **Never invent a parser for a format nobody has published — a VERIFIED REAL EXPORT is what
   "published" means.** Kotak Neo and Sahi still document their export columns nowhere (Fyers and
-  Nuvama left this list on 2026-09-25, when the owner filed real exports — parsers in v4.6.0 W9), so their
+  Nuvama left this list on 2026-09-25, when the owner filed real exports — their parsers are BUILT in v4.6.0
+  W9: `fyers-tradebook`, `fyers-realised-pnl`, `nuvama-pnl-report`; F&O and MCX verified, equity rows
+  UNVERIFIED), so their
   files belong to `lib/import/generic-map.ts`, which asks; it refuses a row it cannot read rather
   than coercing a bad cell to 0, because a trade for zero shares at zero rupees is worse than no
   trade. Paytm Money moved OFF this list on 2026-08-12 when a real export pinned its layout —

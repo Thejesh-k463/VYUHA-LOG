@@ -1,4 +1,4 @@
-// OpenAlgo ApiImportSource — ONE adapter, SEVEN of Vyuha's eight brokers.
+// OpenAlgo ApiImportSource — ONE adapter, EIGHT of Vyuha's ten brokers.
 //
 // WHY THIS EXISTS
 // ---------------
@@ -9,7 +9,7 @@
 // surface, and the user runs it on their own machine. So this file replaces
 // "write a puller per broker" with "write a puller per PROTOCOL": Vyuha talks
 // to 127.0.0.1:5000, OpenAlgo talks to the broker, and groww / upstox / paytm
-// / kotakneo gain API auto-import for the first time with no code of their own.
+// / kotakneo / fyers gain API auto-import for the first time with no code of their own.
 //
 // WHAT VYUHA NEVER SEES: the broker credential. OpenAlgo holds it. Vyuha
 // stores an OpenAlgo API key and a host URL — both revocable from OpenAlgo's
@@ -96,11 +96,11 @@ export interface OpenAlgoCredentials {
 }
 
 /**
- * Which of Vyuha's EIGHT brokers can sit behind an OpenAlgo instance.
+ * Which of Vyuha's TEN brokers can sit behind an OpenAlgo instance.
  *
  * This table is the whole point of the adapter. The three native pullers cover
- * zerodha / dhan / angelone; this one covers SEVEN of the eight through the
- * same code path, so groww, upstox, paytm and kotakneo gain API auto-import
+ * zerodha / dhan / angelone; this one covers EIGHT of the ten through the
+ * same code path, so groww, upstox, paytm, kotakneo and fyers gain API auto-import
  * for the first time without a line of broker-specific code.
  *
  * `broker` is VYUHA's id and it is the load-bearing field: it selects the
@@ -147,6 +147,16 @@ export const OPENALGO_BROKERS: readonly OpenAlgoBrokerSupport[] = [
     supported: false,
     note:
       "OpenAlgo publishes no Sahi plugin. Sahi trades stay on the file-import path; nothing here can reach them.",
+  },
+  // v4.6.0 W9 (research R6/R7, 2026-09-25): OpenAlgo ships a `fyers` broker
+  // plugin. Like Paytm and Groww it is documented, not yet exercised by Vyuha.
+  { broker: "fyers", label: "Fyers", supported: true },
+  {
+    broker: "nuvama",
+    label: "not available",
+    supported: false,
+    note:
+      "OpenAlgo has no Nuvama plugin; its 'Nubra (Nuvama)' entry is Zanskar Securities. Nuvama trades stay on the file-import path (the P&L report).",
   },
 ] as const;
 

@@ -299,7 +299,8 @@ describe("9 · changing an account's broker ends its plan", () => {
 describe("10 · the account editor is offered a plan control only where there is a choice", () => {
   it("brokerPlanOptions lists only brokers with MORE THAN ONE plan, derived from charge_config", () => {
     const opts = brokerPlan.brokerPlanOptions();
-    expect(Object.keys(opts).sort()).toEqual(["kotakneo", "upstox"]);
+    // v4.6.0 W9: Fyers (Standard / Prime) and Nuvama (Lite Plus / Elite) joined the two-plan brokers.
+    expect(Object.keys(opts).sort()).toEqual(["fyers", "kotakneo", "nuvama", "upstox"]);
     // "default" first, then the paid tiers — the order the picker renders in.
     expect(opts.upstox.map((o) => o.plan)).toEqual(["default", "plus"]);
     expect(opts.upstox.map((o) => o.subscriptionMonthly)).toEqual([0, 0]); // owner ruling U3

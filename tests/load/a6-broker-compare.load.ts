@@ -23,7 +23,7 @@ import { report, rng, time } from "./helpers/measure";
 
 const SEGMENTS = ["equity_delivery", "equity_intraday", "futures", "options"];
 const EXCHANGES = ["NSE", "BSE"];
-const BROKERS = ["zerodha", "dhan", "groww", "angelone", "upstox", "paytm", "kotakneo", "sahi"];
+const BROKERS = ["zerodha", "dhan", "groww", "angelone", "upstox", "paytm", "kotakneo", "sahi", "fyers", "nuvama"];
 const PLANS = ["default", "plus"];
 
 function makeTrades(count: number): CompareTrade[] {

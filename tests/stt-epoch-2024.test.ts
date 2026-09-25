@@ -151,8 +151,8 @@ describe("the reference table (lib/data/charge-rates-defaults.json) states the c
 });
 
 describe("the seed's F&O STT epochs", () => {
-  it("all 50 F&O keys follow the five STT windows: an epoch starts on each STT boundary, every epoch carries its window's STT, and only STT, the exchange charge and IPFT differ", () => {
-    expect(fnoKeys).toHaveLength(50);
+  it("all 70 F&O keys follow the five STT windows: an epoch starts on each STT boundary, every epoch carries its window's STT, and only STT, the exchange charge and IPFT differ", () => {
+    expect(fnoKeys).toHaveLength(70);
     const rest = (r: SeedRow) => {
       const o: Record<string, unknown> = { ...r };
       for (const c of ["sttPct", "sttSide", "exchangeTxnPct", "ipftPct", "effectiveFrom", "effectiveTo"]) delete o[c];
@@ -171,9 +171,9 @@ describe("the seed's F&O STT epochs", () => {
     }
   });
 
-  it("equity delivery and MTF: all 40 keys follow FATAX20990 — 0.125% both sides before 2012-07-01, 0.1% from it; only STT, the exchange charge and IPFT differ", () => {
+  it("equity delivery and MTF: all 56 keys follow FATAX20990 — 0.125% both sides before 2012-07-01, 0.1% from it; only STT, the exchange charge and IPFT differ", () => {
     const delivery = [...byKey.entries()].filter(([, rows]) => isDelivery(rows[0].segment));
-    expect(delivery).toHaveLength(40);
+    expect(delivery).toHaveLength(56);
     const rest = (r: SeedRow) => {
       const o: Record<string, unknown> = { ...r };
       for (const c of ["sttPct", "sttSide", "exchangeTxnPct", "ipftPct", "effectiveFrom", "effectiveTo"]) delete o[c];
@@ -203,7 +203,7 @@ describe("the seed's F&O STT epochs", () => {
     }
   });
 
-  it("no other segment gains STT history EXCEPT etf_equity: the 40 intraday/MCX and 20 etf_other keys carry one STT on every epoch, the 20 etf_equity keys carry three, MCX keeps one open row, 700 rows in all", () => {
+  it("no other segment gains STT history EXCEPT etf_equity: the 56 intraday/MCX and 28 etf_other keys carry one STT on every epoch, the 28 etf_equity keys carry three, MCX keeps one open row, 980 rows in all", () => {
     const others = [...byKey.entries()].filter(([, rows]) => !isFno(rows[0].segment) && !isDelivery(rows[0].segment));
     // Re-pinned 2026-09-22 (v4.5.0 wave 3a, ruling R90): 40 → 80. The seed gained the two ETF STT
     // RATE ROWS — 10 broker-plans × 2 exchanges × 2 rate segments = 40 keys — and they are neither
@@ -214,9 +214,9 @@ describe("the seed's F&O STT epochs", () => {
     // 0.125%/both, 0.1%/both, 0.001%/sell. `etf_other` is in no row of the table at all and stays
     // one flat 0. Naming it here rather than widening the one-STT rule is the point: any OTHER
     // segment that grows a second STT value is still a finding.
-    expect(others).toHaveLength(80);
+    expect(others).toHaveLength(112);
     const etfEquity = others.filter(([, rows]) => String(rows[0].segment) === "etf_equity");
-    expect(etfEquity).toHaveLength(20);
+    expect(etfEquity).toHaveLength(28);
     for (const [k, rows] of etfEquity) {
       expect(
         [...rows].sort((a, b) => (a.effectiveFrom ?? "").localeCompare(b.effectiveFrom ?? "")).map((r) => `${r.effectiveFrom}/${r.sttPct}/${r.sttSide}`),
@@ -224,10 +224,10 @@ describe("the seed's F&O STT epochs", () => {
       ).toEqual(["1970-01-01/0.00125/both", "2012-07-01/0.001/both", "2013-06-01/0.00001/sell"]);
     }
     const flat = others.filter(([, rows]) => String(rows[0].segment) !== "etf_equity");
-    expect(flat).toHaveLength(60);
+    expect(flat).toHaveLength(84);
     for (const [k, rows] of flat) expect(new Set(rows.map((r) => `${r.sttPct}/${r.sttSide}`)).size, k).toBe(1);
     const mcx = others.filter(([, rows]) => rows[0].exchange === "MCX");
-    expect(mcx).toHaveLength(20); // 18 + the 2 `upstox|plus` MCX combos (v4.5.0 wave U)
+    expect(mcx).toHaveLength(28); // 18 + the 2 `upstox|plus` MCX combos (v4.5.0 wave U) + 8 for the four W9 broker-plans
     for (const [k, rows] of mcx) {
       expect(rows, k).toHaveLength(1);
       expect([rows[0].effectiveFrom, rows[0].effectiveTo], k).toEqual([undefined, undefined]);
@@ -237,7 +237,9 @@ describe("the seed's F&O STT epochs", () => {
     // QS-EQ2012 (measured): 522 before, 558 after = + 36 delivery/MTF keys × 2012-07-01.
     // Wave 3a (measured): 620 before, 700 after = + 40 ETF rate keys × (etf_equity 3 epochs,
     // etf_other 1) = 60 + 20 = 80 rows.
-    expect(seed).toHaveLength(700);
+    // v4.6.0 W9 (measured): 700 before, 980 after = + 4 broker-plans (fyers default/prime, nuvama
+    // default/elite) × the 70 rows every broker-plan carries.
+    expect(seed).toHaveLength(980);
   });
 
   it("R1's own pins: the day before and the day of each boundary the pre-R1 seed priced at the Finance Act 2023 rates", () => {
@@ -270,7 +272,7 @@ describe("the seed's F&O STT epochs", () => {
         checked++;
       }
     }
-    expect(checked).toBe(50 * 9);
+    expect(checked).toBe(70 * 9); // 70 F&O keys since v4.6.0 W9 (was 50)
   });
 });
 
@@ -360,7 +362,7 @@ function plantPreC8(db: Raw): number {
   return (db.prepare("SELECT count(*) AS n FROM charge_config").get() as { n: number }).n;
 }
 /** bbdc4ec's own DB: C-7's three F&O epochs, the pre-C-8 exchange charges. */
-const preC8State = (db: Raw) => expect(plantPreC8(db)).toBe(270);
+const preC8State = (db: Raw) => expect(plantPreC8(db)).toBe(378);
 
 /**
  * Back to a two-epoch F&O key, from bbdc4ec's card: the 1970 row takes the STT
@@ -380,7 +382,7 @@ function collapse(db: Raw, sttFrom: string, to: string | null): void {
     )
     .run(to).changes;
   const dropped = db.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2024}'`).run().changes;
-  expect([changed, dropped]).toEqual([50, 50]);
+  expect([changed, dropped]).toEqual([70, 70]);
 }
 /** The owner's real DB: two epochs per F&O key, the 1970 row carrying the 2026 STT and open-ended. */
 const ownerState = (db: Raw) => collapse(db, STT_EPOCH_2026, null);
@@ -389,7 +391,7 @@ const fy25State = (db: Raw) => collapse(db, STT_EPOCH_2024, STT_EPOCH_2026);
 /** Pre-v3.2: one open 1970 row per key at the current rates. */
 const preV32State = (db: Raw) => {
   ownerState(db);
-  expect(db.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2026}'`).run().changes).toBe(50);
+  expect(db.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2026}'`).run().changes).toBe(70);
 };
 /** The key the R54 state's user edited. */
 const MINE = "broker = 'dhan' AND plan = 'default' AND segment = 'index_option' AND exchange = 'NSE'";
@@ -470,11 +472,15 @@ describe("parity: seedDatabase() and refreshRateCards() agree on every planted s
     // plus the 10 NSE etf_other rows, whose ipft moves; the 10 BSE etf_other rows already match.
     // empty 620 → 700 added; owner/fy25 440/150 → 480/180; bbdc4ec 390/190 → 430/220;
     // pre-v3.2 490/110 → 530/140. R54 is one user-edited index_option key and does not move.
-    { name: "an empty migrated DB", plant: (db) => expect(snapshot(db)).toEqual([]), empty: true, expected: { added: 700, refreshed: 0, removed: 0 } },
-    { name: "the owner's real DB (4.2.0: two epochs, corrupted 1970 rows)", plant: ownerState, expected: { added: 480, refreshed: 180, removed: 0 } },
-    { name: "the correct two-epoch DB (1970 → 2026-04-01 at FY25 STT)", plant: fy25State, expected: { added: 480, refreshed: 180, removed: 0 } },
-    { name: "bbdc4ec's own DB (C-7's three F&O epochs, pre-C-8 exchange charges)", plant: preC8State, expected: { added: 430, refreshed: 220, removed: 0 } },
-    { name: "the pre-v3.2 one-epoch DB", plant: preV32State, expected: { added: 530, refreshed: 140, removed: 0 } },
+    // Re-pinned 2026-09-25 (v4.6.0 W9, measured): four broker-plans join (fyers default/prime,
+    // nuvama default/elite), each with the 17 keys / 70 rows every broker-plan has, so every
+    // per-plan count scales by 14/10: empty 700 → 980; owner/fy25 480/180 → 672/252;
+    // bbdc4ec 430/220 → 602/308; pre-v3.2 530/140 → 742/196. R54 does not move.
+    { name: "an empty migrated DB", plant: (db) => expect(snapshot(db)).toEqual([]), empty: true, expected: { added: 980, refreshed: 0, removed: 0 } },
+    { name: "the owner's real DB (4.2.0: two epochs, corrupted 1970 rows)", plant: ownerState, expected: { added: 672, refreshed: 252, removed: 0 } },
+    { name: "the correct two-epoch DB (1970 → 2026-04-01 at FY25 STT)", plant: fy25State, expected: { added: 672, refreshed: 252, removed: 0 } },
+    { name: "bbdc4ec's own DB (C-7's three F&O epochs, pre-C-8 exchange charges)", plant: preC8State, expected: { added: 602, refreshed: 308, removed: 0 } },
+    { name: "the pre-v3.2 one-epoch DB", plant: preV32State, expected: { added: 742, refreshed: 196, removed: 0 } },
     {
       name: "a user-edited open 1970 row with six stale seed epochs inside its window (R54)",
       plant: userEditedState,

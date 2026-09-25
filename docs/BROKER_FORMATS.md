@@ -463,6 +463,96 @@ neutral name, 1.00 with `upstox` in it — above the generic `pdf` source's 0.90
 
 ---
 
+## Fyers
+
+ONE real export of each report examined 2026-09-25 (v4.6.0 W9), window 25 Jul → 25 Aug 2026, all
+F&O; pinned by `tests/golden-books.test.ts` and routed/refused by `tests/import-detection-matrix.test.ts`
+(redacted copies `tests/fixtures/redacted/fyers-{tradebook,realised-pnl}-2026-07-25_2026-08-25.csv` —
+the files carry no client field at all; only the client id in Fyers' own FILENAME was dropped).
+Fyers' filenames: `FYERS_tradebook_<client>_<from>_to_<to>.csv`, `FYERS_realised_p&l_<client>_<from>_to_<to>.csv`.
+**Fingerprint: the word `fyers` in the FILENAME + the title line** (`Report Title,Tradebook report` /
+`Report Title,Realised P&L report`) — the CONTENT NEVER NAMES FYERS, so the same bytes under a neutral
+name claim nothing and fall to the column mapper. Preamble (both): `Report Title`, `Date Range,From
+dd/mm/yyyy to dd/mm/yyyy`, `Client Name,`, `Client ID,`, `PAN,` (all blank in the export), `Download
+Timestamp,… IST`, blank line. CRLF.
+
+### Tradebook (CSV) → `fyers-tradebook` — VERIFIED 2026-09-25
+
+```
+Symbol name,Symbol code,Date & time,Side,Product type,Qty,Traded price,Total value,Segment,Exchange order ID,OMS order ID
+CDSL26SEP1400CE,CDSL 1400 CE,"25 Aug 2026, 03:20:21 PM",SELL,Overnight,950,46.5,"44,175.00",Derivatives,2.2E+15,2.60825E+13
+```
+
+- 179 data rows = **98 real fills + 81 MIRROR rows**. Every real fill (product `Overnight` 85 /
+  `Intraday` 13) has a mirror of the OPPOSITE side, same qty and price, stamped `…, 12:00:00 AM`,
+  product `-`, ids `NDIR…`. The Realised P&L's quantities equal the REAL rows only (21 of 21). A row is a
+  mirror only when all three signs hold; mirrors are skipped and counted in ONE warning.
+- Order ids are printed in scientific notation (`2.2E+15`) — useless as identity — so 11 real rows are
+  byte-identical to another (same second, qty, price). They are separate fills (ANGELONE 2 × 2,500 =
+  5,000 bought, per the P&L); nothing ever collapses a row.
+- Newest-first. `Qty`/`Total value` carry thousands separators and 2 dp; `Date & time` is
+  `DD Mon YYYY, hh:mm:ss AM/PM` IST. Legs are handed to pairing in TIME order (in print order every
+  same-day long round trip read as an intraday short — 5 on the real file).
+- `Symbol name` is the exchange-compact contract (`CDSL26SEP1400CE` monthly, `SENSEX2681377500PE`
+  weekly = 2026-08-13); no exchange column (the classifier puts SENSEX/BANKEX on BSE). `Segment` is
+  `Derivatives` on every row. **Equity rows: UNVERIFIED** — accepted structurally, flagged in the preview
+  ("Fyers/Nuvama equity row layout not yet verified against a real export").
+- No charges stated: the engine prices at Fyers Standard. Result: 98 fills → 24 positions (22 closed —
+  ALKEM's lot sold on two days is two — 1 open ANGELONE 5,000, 1 opening sell COFORGE, basis unknown).
+
+### Realised P&L (CSV) → `fyers-realised-pnl` — VERIFIED 2026-09-25, reference only
+
+A totals block (`Total turnover (ICAI)`, `Gross P&L`, `Transaction charges`, `IPFT`, `Stamp duty`,
+`GST`, `Brokerage`, `CTT`, `SEBI`, `STT`, `Total charges`), a blank line, then
+`Symbol name,Symbol code,Segment,Gross P&L,Buy qty,Sell qty,Buy price,Sell price` with **21** rows
+(`NSE:ALKEM26AUG5800CE`, `BSE:SENSEX…`; ANGELONE, still open, is absent). Imports no trades: 21 scrip
+reference figures (key = the symbol without the exchange prefix) + one `fno` segment row carrying the
+totals block. Per-contract gross equals the tradebook's real fills to the paisa on 19 of 20 closed
+contracts; ALKEM differs by −₹0.01 (pair-legs rounds the two halves of one ₹52,068.75 lot half-up);
+COFORGE (+1,05,355) was bought before the window. **Disagreement, recorded not adjusted:** the charges
+block does NOT reconcile with the tradebook — Brokerage ₹2,700 exceeds ₹20 × 98 fills — while STT
+2,077 (= 0.15% of sell premium) and SEBI 2.60 agree. Stated: gross 1,96,908.00, total charges 6,664.57.
+
+## Nuvama
+
+ONE real export examined 2026-09-25 (v4.6.0 W9): `NUVAMA_PnL_Report_23-Sep-26.xlsx`, period
+01-Jul-2026 → 22-Sep-2026, NSE options + MCX futures/options (redacted copy
+`tests/fixtures/redacted/nuvama-pnl-report-2026-07-01_2026-09-22.xlsx`: the five personal VALUE cells
+— `Name :`, `Tel. No. :`, `Email Id :`, `Wealth Manager Name :`, `Wealth Manager Contact no :` — replaced
+on every sheet, nothing else changed). **Fingerprint: the five sheet names (`Summary`, `Detail Realised`,
+`Unrealised Details`, `Dividend`, `Understanding the Report`) + `Nuvama Wealth and Investment Limited`
+in a `Summary` cell** — the filename is not needed. Every sheet: ~24 preamble rows (legal name,
+`(Formerly Edelweiss Broking Limited)`, SEBI reg, `Date : dd-mm-yyyy hh:mm:ss`, the personal rows,
+`Period as on : <from> to <to>`, `Calculation Method : FIFO`), the header row (column A empty; found by
+`Isin` + `Instrument`), a `Total` row, data, `DISCLAIMER`.
+
+### Detail Realised + Unrealised Details → `nuvama-pnl-report` (the book) — VERIFIED 2026-09-25
+
+`Isin | Instrument | FolioNumber | TxnDate | TxnType | Action | Quantity | Price | Brok |
+STax_GSTOnBrokerage | Stt | StampDuty | SebiFees | TxnCharges | TaxOnTxnCharges | OtherCharges |
+AssetType | CumulativeQuantity | NetCharges | HoldingType | DeleteFlag` (+ `DaysPendingForLTCG` on
+Unrealised). 63 + 1 lines; ONE line per instrument × DAY × side at the day's weighted-average price
+(`244.6167`); `TxnDate` a string `dd-MMM-yy`; `TxnType` = exchange; no order id, no time; `Isin` blank
+on F&O. Within a day the two sides print in no fixed order — `CumulativeQuantity` (position after the
+line) is the ONLY sequencing signal and orders each day. Charges are Nuvama's billed figures, stored as
+stated (Brok → brokerage, GST on brokerage + TaxOnTxnCharges → gst, Stt → STT/CTT, StampDuty, SebiFees,
+TxnCharges → exchange; OtherCharges stays in the total only). Detail Total: Brok 1,569.20 · GST 389.06 ·
+STT 1,263.00 · stamp 31.09 · SEBI 2.33 · txn 589.86 · NetCharges Σ 3,844.54; Unrealised 14.98.
+Instrument grammar: `NIFTY-OPT-22Sep2026-PE-23550-NSE`, `ALUMINI-FUT-31Aug2026-MCX` → shown as
+`OPT NIFTY 22 Sep 2026 23550 PE` / `FUT ALUMINI 31 Aug 2026`, identity (`dedupLabel`) = the file's own
+string. ALUMINI (MCX aluminium mini) joined `COMMODITY_UNDERLYINGS`. Result: 64 lines → 33 positions
+(32 closed, PIIND 29 Sep CE open 175 @ 40.35). **Equity rows: UNVERIFIED** (would carry an ISIN).
+
+### Summary → reference only; Dividend → not imported
+
+`Summary`: 30 instrument rows + `Total` (BuyValue 11,43,099.33 · SellValue 11,69,669.03 ·
+NetRealizedPnL 26,569.84 · NetUnrealizedPnL −4,468.73 · TotalGL 22,101.11). Its Buy/Sell values INCLUDE
+Nuvama's charges, so its P&L is net: Σ closed (gross − billed charges) = 26,569.70, ₹0.14 under the
+Summary (Nuvama's rounding of its four-decimal averages). Never a source of trades. `Dividend`: no data
+rows in the only real file, layout unverified — a data row produces one warning, nothing else.
+The owner's account bills a NEGOTIATED card (₹10/lot NSE options, ₹30/lot MCX options, ~0.05% MCX
+futures); only the two published plans are seeded (Lite Plus = default, Elite).
+
 ## Groww
 
 ### Stocks — Order History (XLSX) — parsed by `lib/import/parsers/groww-orders.ts` (2026-08-12)
@@ -663,7 +753,7 @@ Still not built (as of 2026-09-17): a Zerodha ledger parser (Console Funds state
 parser (Client Fund Ledger), and Groww / Upstox contract-note parsers — the real exports arrived 2026-09-16/17
 (`VYUHA/BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md`; the parser wave is STATE §0.1 row 15). The three items
 this line used to name are done: the Paytm P&L parser and short-sell / cross-exchange pairing shipped in v3.9.0,
-and the Dhan MTF Report was ruled out of existence (DECISIONS 2026-08-30). Kotak Neo, Sahi, Paytm F&O and Groww F&O are CLOSED (no account / no such trading). **Fyers and Nuvama OPENED 2026-09-25**: the owner filed real exports (`FYERS_tradebook_…csv`, `FYERS_realised_p&l_…csv`, `NUVAMA_PnL_Report_23-Sep-26.xlsx`); their parsers are v4.6.0 wave W9 (spec `VYUHA/LIVE-DESK-RESEARCH/22-V460-BUILD/00-SPEC-PLAN.md`), and a Kotak Neo native API pull is v4.7.0 C6 — its FILE formats stay unpublished.
+and the Dhan MTF Report was ruled out of existence (DECISIONS 2026-08-30). Kotak Neo, Sahi, Paytm F&O and Groww F&O are CLOSED (no account / no such trading). **Fyers and Nuvama OPENED 2026-09-25 and are BUILT (v4.6.0 W9)**: the owner filed real exports (`FYERS_tradebook_…csv`, `FYERS_realised_p&l_…csv`, `NUVAMA_PnL_Report_23-Sep-26.xlsx`); parsers `fyers-tradebook`, `fyers-realised-pnl`, `nuvama-pnl-report` — see the `## Fyers` and `## Nuvama` sections (F&O/MCX verified, equity rows UNVERIFIED), and a Kotak Neo native API pull is v4.7.0 C6 — its FILE formats stay unpublished.
 
 ## Status (2026-08-20)
 

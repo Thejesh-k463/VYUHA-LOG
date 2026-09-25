@@ -55,6 +55,11 @@ export const IMPORT_SOURCES: readonly ImportSourceMeta[] = [
   { sourceId: "angelone-pnl-statement", label: "Angel One P&L Statement (XLSX) — broker-stated P&L reference, does not import trades", broker: "angelone", tab: "pnl", hint: "Angel One P&L statement (reference)" },
   { sourceId: "paytm-tradebook", label: "Paytm Money Tradebook (XLSX)", broker: "paytm", tab: "transactions", hint: "Paytm Money tradebook" },
   { sourceId: "paytm-realised-pnl", label: "Paytm Money Realized P&L (XLS) — broker-stated figures, imports no trades", broker: "paytm", tab: "pnl", hint: "Paytm Money Realized P&L (reference only)" },
+  // v4.6.0 W9 — each VERIFIED against one real owner export (F&O and, for
+  // Nuvama, MCX; equity rows are accepted but UNVERIFIED — docs/BROKER_FORMATS.md).
+  { sourceId: "fyers-tradebook", label: "Fyers Tradebook report (CSV)", broker: "fyers", tab: "transactions", hint: "Fyers tradebook" },
+  { sourceId: "fyers-realised-pnl", label: "Fyers Realised P&L report (CSV) — broker-stated figures, imports no trades", broker: "fyers", tab: "pnl", hint: "Fyers Realised P&L (reference only)" },
+  { sourceId: "nuvama-pnl-report", label: "Nuvama P&L Report (XLSX) — realised and unrealised lines with the charges Nuvama billed", broker: "nuvama", tab: "both", hint: "Nuvama P&L report" },
   // PDF is a TEXT EXTRACTOR, not an importer, and the copy has to say so:
   // lib/import/parsers/pdf.ts returns `trades: []` on every path because no
   // broker PDF layout has been calibrated yet. It was labelled "Broker P&L

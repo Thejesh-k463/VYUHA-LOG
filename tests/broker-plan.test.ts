@@ -375,6 +375,7 @@ describe("10 · which brokers get a plan picker is DERIVED, never a broker name"
     // The brokers with a question to ask are exactly those with >1 plan — the
     // derivation `brokerPlanOptions` (and so the account editor) runs on.
     const multi = [...new Set(seed.map((r) => r.broker))].filter((b) => plansFor(map, b).length > 1).sort();
-    expect(multi).toEqual(["kotakneo", "upstox"]);
+    // v4.6.0 W9: Fyers (Standard / Prime) and Nuvama (Lite Plus / Elite) joined the two-plan brokers.
+    expect(multi).toEqual(["fyers", "kotakneo", "nuvama", "upstox"]);
   });
 });

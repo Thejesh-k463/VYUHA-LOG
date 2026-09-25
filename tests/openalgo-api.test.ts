@@ -32,7 +32,7 @@ const row = (over: Partial<OpenAlgoTradeRow>): OpenAlgoTradeRow => ({
   ...over,
 });
 
-describe("the broker table covers all eight of Vyuha's brokers", () => {
+describe("the broker table covers all ten of Vyuha's brokers", () => {
   // The table is the adapter's contract with the charges engine. A broker
   // MISSING from it would fall through assertOpenAlgoBroker's "not a broker
   // Vyuha knows" branch and read as a typo rather than as an unmade decision.
@@ -42,10 +42,15 @@ describe("the broker table covers all eight of Vyuha's brokers", () => {
     expect(new Set(named).size).toBe(named.length);
   });
 
-  it("offers seven brokers and refuses the one OpenAlgo has no plugin for", () => {
+  it("offers eight brokers and refuses the two OpenAlgo has no plugin for", () => {
+    // v4.6.0 W9: Fyers joins through OpenAlgo's own `fyers` plugin; Nuvama does
+    // not — OpenAlgo's "Nubra (Nuvama)" entry is Zanskar Securities, another broker.
     const options = openAlgoBrokerOptions();
-    expect(options).toHaveLength(7);
+    expect(options).toHaveLength(8);
+    expect(options.map((b) => b.broker)).toContain("fyers");
     expect(options.map((b) => b.broker)).not.toContain("sahi");
+    expect(options.map((b) => b.broker)).not.toContain("nuvama");
+    expect(OPENALGO_BROKERS.find((b) => b.broker === "nuvama")?.note).toMatch(/Zanskar/);
   });
 
   it("every unsupported entry says WHY, so the UI never shows a bare refusal", () => {

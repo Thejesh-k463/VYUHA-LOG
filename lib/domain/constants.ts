@@ -1,6 +1,6 @@
 // Central domain vocabulary. Imported by the classifier, charges engine, and UI.
 
-export const BROKERS = ["dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi"] as const;
+export const BROKERS = ["dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi", "fyers", "nuvama"] as const;
 export type Broker = (typeof BROKERS)[number];
 
 export const BUCKETS = ["equity", "active"] as const;
@@ -35,6 +35,8 @@ export const BROKER_LABELS: Record<Broker, string> = {
   kotakneo: "Kotak Neo",
   paytm: "Paytm Money",
   sahi: "Sahi",
+  fyers: "Fyers",
+  nuvama: "Nuvama",
 };
 
 // Display names only — the DB/API bucket value stays "active" everywhere.
@@ -94,6 +96,10 @@ export const COMMODITY_UNDERLYINGS = [
   "COPPER",
   "ZINC",
   "ALUMINIUM",
+  // MCX's aluminium MINI contract. Seen on a real Nuvama P&L report (v4.6.0 W9,
+  // `ALUMINI-FUT-31Aug2026-MCX`); without it the future classified as an NSE-style
+  // `future` on MCX, a key charge_config does not carry, and the commit threw.
+  "ALUMINI",
   "LEAD",
   "NICKEL",
   "MENTHAOIL",

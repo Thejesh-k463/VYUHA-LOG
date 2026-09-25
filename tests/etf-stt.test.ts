@@ -138,7 +138,7 @@ describe("the overlay is gated, narrow, and cannot take a rate out of thin air",
 
   it("with EVERY etf_* rate row stripped out of the map the overlay falls back to the product row and never throws", () => {
     const stripped: RatesMap = new Map([...map.entries()].filter(([k]) => !k.includes("|etf_")));
-    expect(stripped.size).toBe(map.size - 40); // 10 broker-plans × 2 exchanges × 2 rate segments
+    expect(stripped.size).toBe(map.size - 56); // 14 broker-plans × 2 exchanges × 2 rate segments (10 before v4.6.0 W9)
     const via = (segment: Segment, isin: string) =>
       ratesForTrade(stripped, { broker: "zerodha", segment, exchange: "NSE", isin }, "2026-09-01");
     for (const segment of EQ_SEGMENTS) {
@@ -151,7 +151,7 @@ describe("the overlay is gated, narrow, and cannot take a rate out of thin air",
 
   it("an ETF trade differs from the plain product row in EXACTLY sttPct and sttSide — every other charge stays the trade's own", () => {
     for (const segment of ["eq_delivery", "eq_mtf"] as Segment[]) {
-      for (const broker of ["zerodha", "dhan", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi"] as Broker[]) {
+      for (const broker of ["zerodha", "dhan", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi", "fyers", "nuvama"] as Broker[]) {
         for (const exchange of ["NSE", "BSE"] as Exchange[]) {
           const base = findRates(map, broker, segment, exchange, "2026-09-01");
           const etf = ratesForTrade(map, { broker, segment, exchange, isin: "INF204KB14I2" }, "2026-09-01");
@@ -194,6 +194,6 @@ describe("the overlay is gated, narrow, and cannot take a rate out of thin air",
         checked++;
       }
     }
-    expect(checked).toBe(80); // 20 etf_equity keys × 3 epochs + 20 etf_other keys × 1
+    expect(checked).toBe(112); // 28 etf_equity keys × 3 epochs + 28 etf_other keys × 1 (80 before v4.6.0 W9: 14 broker-plans, was 10)
   });
 });

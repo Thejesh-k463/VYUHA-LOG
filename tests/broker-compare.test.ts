@@ -66,8 +66,9 @@ describe("compareBrokers — against the real seed rate cards", () => {
     // Upstox each sell a paid tier alongside their free one, and the whole
     // point is to see them side by side. +2, re-pinned from +1 when Upstox Plus
     // joined the seed.
-    expect(r.brokers.length).toBe(BROKERS.length + 2);
-    expect(r.brokers.filter((b) => b.plan !== "default").map((b) => b.broker).sort()).toEqual(["kotakneo", "upstox"]);
+    // v4.6.0 W9: Fyers Prime and Nuvama Elite join, so +4 (the paid-plan count).
+    expect(r.brokers.length).toBe(BROKERS.length + 4);
+    expect(r.brokers.filter((b) => b.plan !== "default").map((b) => b.broker).sort()).toEqual(["fyers", "kotakneo", "nuvama", "upstox"]);
     expect(r.cheapest).not.toBeNull();
     for (const b of r.brokers) {
       expect(b.covered).toBe(2);

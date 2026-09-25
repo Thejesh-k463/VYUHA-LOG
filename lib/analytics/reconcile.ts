@@ -249,13 +249,16 @@ export const RECONCILE_SOURCE_IDS = [
   "angelone-pnl-statement",
   "dhan-holdings",
   "dhan-dp-charges",
+  // v4.6.0 W9: Fyers' realised P&L states per-contract gross P&L and the
+  // period's charges; it imports no trades (the tradebook is the book).
+  "fyers-realised-pnl",
 ] as const;
 
 /**
  * The statements that put CHARGE figures on this screen and nothing else.
  *
  * They were always parsed into `scope: "charge"` rows; "Charges the broker
- * states" is what reads them, so the screen now has seven feeds, not five.
+ * states" is what reads them, so the screen has more feeds than the list above.
  * They are kept apart from the list above because that one doubles as an
  * import-time gate on what counts as a book of trades, and these two files
  * import no trades to gate.

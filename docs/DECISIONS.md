@@ -9143,3 +9143,78 @@ FAIL-J). Run 2 on the final tree: **EXIT 0 — 477 files / 11,005 passed / 35 sk
 (pre-existing), `next build` compiled, `package-lock.json` untouched. Browser (vyuha-dev): `/instruments` shows the universe,
 index-map and calendar paragraphs with their sha256; the Atlas cap tab shows both tables; 0 console errors.
 **Prose pass: 8 files / 1 finding / 40 tool calls** (doc-auditor on Sonnet) over STATE §0/§3, AGENTS.md (the three bundled-data sections), CLAUDE.md, README (counts), this entry, the LEDGER rows, the spec (W2, status, wave order, §4) and the session log — every count re-derived from the JSON files and the tests/ folder agreed; the one finding was timing (the docs called W2 committed before the commit existed), resolved by this commit and the session log's close line.
+
+## 2026-09-25 — v4.6.0 W9 built: Fyers + Nuvama join the broker list (rate cards from the brokers' own pages), three file parsers from the owner's real exports
+
+**What the owner's files actually contain (measured 2026-09-25, twenty-fourth session):** the Fyers tradebook
+(`FYERS_tradebook_<client>_2026-07-25_to_2026-08-25.csv`) holds 179 data rows = 98 real fills + **81 mirror rows**: every fill
+has an opposite-side twin at `12:00:00 AM`, product `-`, ids `NDIR…`; Fyers' own realised-P&L file counts only the real fills
+(21 of 21 symbols), so mirrors are skipped, never imported. 11 real rows are byte-identical to another (order ids are printed
+in scientific notation, `2.2E+15`) and the P&L PROVES they are separate fills (ANGELONE 2 × 2,500) — identical rows are kept,
+ids are never identity. Both files are all F&O (no equity row — equity layouts stay UNVERIFIED). Per-symbol gross P&L from
+the tradebook equals the P&L file to the paisa for 21 of 22 symbols; COFORGE's buy predates the window (an `opening-sell`,
+invariant 6); the P&L's charges block does not reconcile with the tradebook (brokerage ₹2,700 > ₹20 × 98 fills) and is
+recorded as a disagreement, not pinned. STT in BOTH brokers' files is 0.15% of options premium — the repo already carries
+that epoch (FATAX73524, `charge-rates-defaults.json` 2026-04-01). The Nuvama report (`NUVAMA_PnL_Report_23-Sep-26.xlsx`) is
+NOT "per-scrip realised P&L, no trades" as ruling B6 assumed: its `Detail Realised` sheet carries 63 per-day per-instrument
+legs with the billed brokerage / GST / STT / stamp / SEBI / txn heads, `Unrealised Details` the open legs, `Summary` the
+per-instrument totals (its own NetRealizedPnL 26,569.84 does not foot: SellValue − BuyValue = 26,569.70). Within a day the two
+sides are printed in no fixed order — `CumulativeQuantity` is the only sequencing signal. It bills ₹10/lot on NSE options,
+₹30/lot on an MCX option, ~0.05% on an MCX future — neither published plan.
+
+**Owner answers (W9 question group, all four the recommended option):** Nuvama `Detail Realised` + `Unrealised` rows ARE
+imported as trades with the billed charges stored as stated, `Summary` as reference rows, `Dividend` unparsed; the Nuvama
+account is on a negotiated plan (only the two PUBLISHED plans are seeded — a billed figure is never a plan); Fyers `default`
+= Standard ₹20, `prime` a second plan; no equity export exists now → equity rows accepted structurally with an UNVERIFIED
+warning.
+
+**Rate cards (primary pages read 2026-09-25 — fyers.in/pricing, /charges-list, /prime; nuvamawealth.com/our-pricing,
+/price-comparison, /faqs/29; NO page states an effective date):** Fyers Standard delivery/MTF lower of ₹20 / 0.3%, intraday and
+futures lower of ₹20 / 0.03%, options flat ₹20, DP ₹12.5 + GST per scrip, MTF interest slabbed 0% ≤ ₹1,000 → 16.49% → 15.49%
+→ 14.49% → 12.49% above ₹25L; Fyers Prime (paid, ₹499/month or ₹4,990/year + GST, waitlist) ₹15 in place of ₹20, commodity ₹15
+per order, MTF flat 12.49%. Nuvama Lite Plus ₹20 per order capped at 2% of value (its /price-comparison page says 0.01% and
+calls the plan "Lite" — the pricing page and FAQ say "Lite Plus"; the pricing page wins), commodity futures 0.05% (a 0.20%
+carry-forward rate exists and is NOT modelled), commodity options ₹30/lot, DP ₹20 per ISIN, margin and MTF pledge ₹20 per
+ISIN; Nuvama Elite delivery 0.30% with a floor of min(₹25, 2.5%), intraday/futures 0.03%, options ₹75/lot, DP higher of 0.02%
+/ ₹20. Nuvama publishes NO MTF brokerage or interest (`mtfRateUnknown`); its own page states no ₹0 delivery brokerage
+(secondary sites claiming it are wrong).
+
+**Decided by the session under the decision policy (the owner may overrule):**
+- **No SQL migration for the rate rows** — the spec said "hand-written migration", the code says otherwise: the rate card is
+  `lib/db/seed-data.ts` and the desktop refreshes `charge_config` from the shipped template on every start
+  (`scripts/rate-card-refresh.mjs`). The code wins (AGENTS.md rule). 14 broker-plans now: 238 keys / 980 rows.
+- Unpublished figures follow the seed's existing precedent, each labelled in a comment: Fyers Standard commodity = its own
+  F&O card (as Kotak Neo and Sahi); MTF brokerage where unstated (Fyers Prime, Nuvama) = the delivery rate (as Kotak);
+  per-LOT fees (Nuvama ₹75 and ₹30 per lot) seeded as per ORDER because no per-lot column exists — multi-lot orders are
+  under-estimated, a stated approximation; Elite's delivery floor seeded as a flat ₹25 (over-estimates orders under ₹1,000);
+  a small `dp?` override on the paid-plan type carries Elite's DP rule.
+- Fyers identity: the file's compact contract label (`CDSL26SEP1400CE`, the grammar `parseInstrumentName` already reads),
+  `Overnight` → delivery, `Intraday` → intraday, fill times kept on executions, no exchange column (the classifier resolves
+  SENSEX/BANKEX to BSE). Detector: the filename must contain "fyers" — the content never names the broker (AGENTS: no name,
+  no claim); a renamed file goes to the column mapper. Nuvama is detected by its name in the sheets.
+- Nuvama identity: `dedupLabel` = the file's own instrument string; `tradingsymbol` rendered Dhan-style with the FULL expiry
+  (`OPT NIFTY 22 Sep 2026 23550 PE`); legs ordered by the CumulativeQuantity chain, buys-first + a warning only if no order
+  satisfies it; a position's charge heads are those of the legs it consumed (a split day-leg contributes pro rata by qty).
+- `ALUMINI` added to the commodity set: the real Nuvama aluminium-mini future otherwise classified as an NSE future on MCX
+  with no rate row (the commit threw).
+- Overnight F&O shorts stay W6's: `pairLegs` makes a sell-then-later-buy an `opening-sell` + `open` for every broker today;
+  both real files have zero such positions. A same-day F&O sell-before-buy (KALYANKJIL 05 Aug) pairs with its exit time
+  before its entry time — the same netting every broker gets; recorded for W6.
+- MTF bundle: Fyers and Nuvama declared `not-bundled` (MTF exists, no approved list ships; the resolution chain continues) —
+  never `no-mtf`. OpenAlgo: Fyers supported (plugin `fyers`), Nuvama "not available" in Sahi's shape with the note that
+  OpenAlgo's "Nubra (Nuvama)" is Zanskar Securities. The disclosure sentence naming the broker set was AMENDED; the version
+  stays "4" (D-6).
+- Fixtures redacted: the Nuvama header's name, client code, phone, email and wealth-manager cells replaced on all four
+  sheets and the document properties cleared; the Fyers client id was only in the filename. Originals in
+  `tests/fixtures/private/` (gitignored).
+- Independent skeptic before commit: 2 REFUTED (Fyers execution ladders over-counted on split lots — copied from the
+  Zerodha window filter, which had the same latent defect and is fixed in the same commit through the new shared
+  `lib/import/leg-allocation.ts`, every Zerodha golden figure unchanged; Nuvama per-position heads pro-rated from
+  instrument totals) + 4 test gaps (mirror rule untested, DeleteFlag untested, Fyers detection filename-decided in the
+  matrix, a wrong residual comment) — all fixed in the wave. Fyers Prime's ₹499 is seeded ex-GST, matching Kotak Neo Pro's
+  precedent (the seed comment states the with-GST cost).
+**Gate:** `npm run verify` run 1 EXIT 1 (two pins on the SET of multi-plan brokers, `broker-plan*.test.ts` — fixed, FAIL-Q), run 2
+EXIT 0 — 477 files / 11,328 passed / 35 skipped, lint 0 errors, `next build` compiled. `drift:close-out` 21 PASS / 0 FAIL / 3 SKIP
+(README's test count was the one FAIL, fixed in the doc). **Prose pass: 15 files / 5 findings / 27 tool calls** (doc-auditor on
+Sonnet) — two fixed (this entry had the Fyers client id in a filename; the spec's status line still said "W9 next"), one is the
+session log rewritten at this close, two were the commit itself (STATE names the W9 sha's parent, written before the commit landed).

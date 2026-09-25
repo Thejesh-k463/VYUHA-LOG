@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 import fs from "node:fs";
 import path from "node:path";
 import { buildContext, rankParsers } from "@/lib/import/detect";
@@ -11,6 +12,7 @@ import { parseUpstoxLedger } from "@/lib/import/parsers/upstox-ledger";
 import { parseGrowwContractNote, readGrowwContractNoteText } from "@/lib/import/parsers/groww-contract-note";
 import { parseUpstoxContractNote, readUpstoxContractNoteText } from "@/lib/import/parsers/upstox-contract-note";
 import { classify } from "@/lib/engine/classify";
+import { INTRADAY_SHORT_NOTE } from "@/lib/import/pair-legs";
 import { fyOfDate } from "@/lib/analytics/ais";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
@@ -491,6 +493,46 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
     reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
     note: "Groww balance statement (Client Fund Ledger, 447 entries, 18 segment types). A cash file: it feeds the Cash & Ledger screen and books no trade, so every figure here is zero; the statement's own running balance, entry to entry in posting order, is pinned in the v4.4.0 describe below.",
+  },
+
+  // ── v4.6.0 W9: Fyers and Nuvama (one real owner export each; F&O + MCX) ────
+  {
+    file: "fyers-tradebook-2026-07-25_2026-08-25.csv",
+    parser: "fyers-tradebook", minScore: 0.95,
+    // 179 data rows = 98 real fills + 81 MIRROR rows (skipped). 22 contracts → 24 positions: ALKEM's
+    // 30-Jul lot was sold on 31 Jul AND 6 Aug, so it is two closed positions; ANGELONE is still open
+    // (2 × 2,500 identical fills = 5,000 bought 25 Aug); COFORGE's buy predates the window (opening sell).
+    shape: { sourceRows: 98, closed: 22, open: 1, openingSells: 1 },
+    reference: null,
+    charges: { mode: "engine" },
+    // MEASURED 2026-09-25. Gross 91,552.99 = the Realised P&L's 196,908.00 less COFORGE's 105,355.00 (its
+    // buy predates the window; invariant 6) less ALKEM's −0.01 pairing split (see the W9 describe).
+    // Charges = the engine at Fyers Standard (min(₹20, 0.03%) futures, ₹20 flat options).
+    commit: { net: 87265.67, gross: 91552.99, charges: 4287.32 },
+    note: "Fyers Tradebook report, 25 Jul → 25 Aug 2026, all F&O. The file states no P&L and no charges, so the journal holds the engine's estimate at Fyers Standard; the broker's own per-contract gross is pinned against it in the W9 describe below (the Realised P&L of the same window).",
+  },
+  {
+    file: "fyers-realised-pnl-2026-07-25_2026-08-25.csv",
+    parser: "fyers-realised-pnl", minScore: 0.95,
+    shape: { sourceRows: 21, closed: 0, open: 0, openingSells: 0 },
+    reference: null,
+    charges: { mode: "stated" },
+    reportedPins: { grossPnl: 196908, totalCharges: 6664.57, brokerage: 2700, stt: 2077, sebi: 2.6, exchangeTxn: 1153.83, gst: 694.14, stampDuty: 37 },
+    commit: { net: 0, gross: 0, charges: 0 },
+    note: "Fyers Realised P&L report, same window: 21 contract rows (the tradebook's 22nd contract, ANGELONE, is still open) → 21 broker-stated scrip figures + ONE fno segment row carrying the totals block, and ZERO trades. Charges conserve the reference way: the segment row's totalCharges equals the stated Total charges 6,664.57. That block does NOT reconcile with the tradebook (Brokerage 2,700 > ₹20 × 98 fills) — carried as stated, recorded in docs/BROKER_FORMATS.md.",
+  },
+  {
+    file: "nuvama-pnl-report-2026-07-01_2026-09-22.xlsx",
+    parser: "nuvama-pnl-report", minScore: 0.95,
+    shape: { sourceRows: 64, closed: 32, open: 1, openingSells: 0 },
+    // Detail Realised NetCharges 3,844.54 + the Unrealised Details line's 14.98 (the open PIIND CE buy).
+    reference: { charges: 3859.52, tol: 0.01 },
+    charges: { mode: "stated" },
+    reportedPins: { netRealisedPnl: 26569.84, netUnrealisedPnl: -4468.73, totalGl: 22101.11, buyValue: 1143099.33, sellValue: 1169669.03, "realised.totalCharges": 3844.54, "unrealised.totalCharges": 14.98, totalCharges: 3859.52 },
+    // MEASURED 2026-09-25: gross 30,414.24 (closed only), charges = the billed 3,859.52 (incl. the open
+    // buy's 14.98), net 26,554.72.
+    commit: { net: 26554.72, gross: 30414.24, charges: 3859.52 },
+    note: "Nuvama P&L report, 01 Jul → 22 Sep 2026: Detail Realised (63 lines) + Unrealised Details (1 line) → 33 positions (32 closed, the PIIND 29 Sep CE open at 175 @ 40.35). Charges are the ones Nuvama BILLED on each line, stored as stated and conserved to the lines' NetCharges to the paisa. Summary is reference only (30 instrument rows); its NetRealizedPnL is NET of charges, pinned against the book in the W9 describe below.",
   },
 ];
 
@@ -1125,4 +1167,175 @@ describe("v4.4.0 · the notes against the books they enrich (commit, one account
     expect(tradesMod.getJournalTrades()).toHaveLength(before);
     expect(outcome(res.warnings)).toMatchObject({ days: 28, unmatched: 0 });
   }, 60_000);
+});
+
+// ── v4.6.0 W9 · Fyers and Nuvama, against their own statements ─────────────
+//
+// One real owner export each (redacted: the Fyers CSVs carry no client field
+// at all; the Nuvama workbook's five personal value cells are replaced on every
+// sheet). What is pinned is the file's OWN arithmetic: the Fyers tradebook
+// against the Fyers Realised P&L of the same window, and the Nuvama book
+// against its Summary sheet and its Total rows.
+describe("v4.6.0 W9 · Fyers and Nuvama books against the broker's own statements", () => {
+  const parse = async (file: string) => {
+    const ctx = buildContext(file, fs.readFileSync(path.join(DIR, file)));
+    return rankParsers(ctx)[0].parse(ctx);
+  };
+  let fyers: ParsedFile;
+  let fyersPnl: ParsedFile;
+  let nuvama: ParsedFile;
+  beforeAll(async () => {
+    fyers = await parse("fyers-tradebook-2026-07-25_2026-08-25.csv");
+    fyersPnl = await parse("fyers-realised-pnl-2026-07-25_2026-08-25.csv");
+    nuvama = await parse("nuvama-pnl-report-2026-07-01_2026-09-22.xlsx");
+  });
+
+  it("Fyers: 81 mirror rows are skipped and counted in ONE warning; 98 real fills are read", () => {
+    expect(fyers.sourceRows).toBe(98);
+    const mirror = fyers.warnings.filter((w) => /mirror row/.test(w));
+    expect(mirror).toHaveLength(1);
+    expect(mirror[0]).toMatch(/^81 mirror rows were skipped/);
+    // Were the mirrors read as fills, every position would net to zero (ANGELONE bought 5,000 and
+    // "sold" 5,000). The real quantities tie to the Realised P&L: its Σ buy qty = Σ sell qty = 20,570,
+    // which is ours less the open ANGELONE 5,000 and plus COFORGE's 950 bought before the window.
+    const bought = sum(fyers.trades.map((t) => t.buyQty));
+    const sold = sum(fyers.trades.map((t) => t.sellQty));
+    expect([bought, sold]).toEqual([24620, 20570]);
+    const scrips = (fyersPnl.reference ?? []).filter((r) => r.scope === "scrip");
+    expect([sum(scrips.map((r) => r.figures.buyQty)), sum(scrips.map((r) => r.figures.sellQty))]).toEqual([bought - 5000 + 950, sold]);
+  });
+
+  it("Fyers: byte-identical rows are separate fills — ANGELONE is open at 2 × 2,500 = 5,000", () => {
+    const angel = fyers.trades.filter((t) => t.tradingsymbol === "ANGELONE26SEP280CE");
+    expect(angel).toHaveLength(1);
+    expect(angel[0]).toMatchObject({ buyQty: 5000, sellQty: 0, buyValue: 93500, buyDate: "2026-08-25" });
+    expect(angel[0].executions).toHaveLength(2);
+  });
+
+  it("Fyers: every closed contract's gross equals the Realised P&L's row — to the paisa but for ALKEM's pairing split", () => {
+    const stated = new Map((fyersPnl.reference ?? []).filter((r) => r.scope === "scrip").map((r) => [r.key, r.figures.grossPnl]));
+    expect(stated.size).toBe(21);
+    const ours = new Map<string, number>();
+    for (const t of fyers.trades.filter((x) => !x.basisUnknown && x.buyQty === x.sellQty)) ours.set(t.tradingsymbol, r2((ours.get(t.tradingsymbol) ?? 0) + t.grossPnl));
+    expect(ours.size).toBe(20); // 21 stated − COFORGE (opening sell)
+    const gaps: Record<string, number> = {};
+    for (const [sym, g] of ours) {
+      expect(stated.has(sym), `${sym} is not in the Realised P&L`).toBe(true);
+      const gap = r2(g - stated.get(sym)!);
+      if (gap !== 0) gaps[sym] = gap;
+    }
+    // ALKEM's 250-lot bought 30 Jul was sold half on 31 Jul and half on 6 Aug; pair-legs rounds each
+    // half of ₹52,068.75 to 26,034.38 (half-up), so Σ positions books ₹0.01 more cost than the fills.
+    // A pair-legs rounding property, not a parse error — pinned exactly so it cannot grow.
+    expect(gaps).toEqual({ ALKEM26AUG5800CE: -0.01 });
+    // COFORGE: the buy predates the window — no basis, no P&L (invariant 6), while Fyers states +1,05,355.
+    const coforge = fyers.trades.find((t) => t.tradingsymbol === "COFORGE26AUG1500CE")!;
+    expect(coforge).toMatchObject({ basisUnknown: true, grossPnl: 0, sellQty: 950 });
+    expect(stated.get("COFORGE26AUG1500CE")).toBe(105355);
+  });
+
+  it("Fyers: no same-day long round trip reads as an intraday short (legs are handed over in TIME order)", () => {
+    const shorts = fyers.trades.filter((t) => (t.importNotes ?? []).includes(INTRADAY_SHORT_NOTE));
+    expect(shorts.map((t) => t.tradingsymbol)).toEqual([]);
+  });
+
+  it("Nuvama: the CumulativeQuantity chain orders each day — no long round trip reads as a short", () => {
+    const shorts = nuvama.trades.filter((t) => (t.importNotes ?? []).includes(INTRADAY_SHORT_NOTE));
+    expect(shorts.map((t) => t.tradingsymbol)).toEqual([]);
+    expect(nuvama.warnings.some((w) => /could not be ordered/.test(w))).toBe(false);
+  });
+
+  it("Nuvama: identity follows the file's word — dedupLabel is the instrument string, shown as the Dhan-style name", () => {
+    const put = nuvama.trades.find((t) => t.tradingsymbol === "OPT NIFTY 22 Sep 2026 23550 PE")!;
+    expect(put.dedupLabel).toBe("NIFTY-OPT-22Sep2026-PE-23550-NSE");
+    expect(put.importNotes).toContain("gtr-name:NIFTY-OPT-22Sep2026-PE-23550-NSE");
+    for (const t of nuvama.trades) expect(t.dedupLabel, t.tradingsymbol).toMatch(/^[A-Z]+-(OPT|FUT)-\d{2}[A-Z][a-z]{2}\d{4}-.*(NSE|MCX)$/);
+  });
+
+  it("Nuvama: the open line is the Unrealised Details buy, 175 @ 40.35, with its billed 14.98", () => {
+    const open = nuvama.trades.filter((t) => t.buyQty !== t.sellQty);
+    expect(open).toHaveLength(1);
+    expect(open[0]).toMatchObject({ tradingsymbol: "OPT PIIND 29 Sep 2026 2400 CE", buyQty: 175, avgBuyPrice: 40.35, sellQty: 0, buyDate: "2026-09-22" });
+    expect(open[0].reportedCharges?.total).toBe(14.98);
+  });
+
+  it("Nuvama: the stated breakdown carries Nuvama's heads — Σ per head equals the Total rows within per-position rounding", () => {
+    const head = (k: "brokerage" | "gst" | "sttCtt" | "stampDuty" | "sebi" | "exchangeTxn") => sum(nuvama.trades.map((t) => t.reportedCharges?.[k] ?? 0));
+    const rep = nuvama.reported!;
+    // Detail Total + Unrealised Total, head by head. The fixture's Detail Realised sums are the real file's:
+    // Brok 1,569.20 · GST 389.06 · STT 1,263.00 · stamp 31.09 · SEBI 2.33 · txn 589.86 · NetCharges 3,844.54.
+    expect([rep["realised.brokerage"], rep["realised.gst"], rep["realised.stt"], rep["realised.stampDuty"], rep["realised.sebi"], rep["realised.exchangeTxn"], rep["realised.totalCharges"]])
+      .toEqual([1569.2016, 389.06, 1263, 31.09, 2.33, 589.86, 3844.54]);
+    // Σ over positions of each head = the Detail Total + the Unrealised Total, per head.
+    const want = { brokerage: 1579.2, gst: 391.31, sttCtt: 1263, stampDuty: 31.3, sebi: 2.34, exchangeTxn: 592.37 };
+    for (const [k, v] of Object.entries(want)) expect(Math.abs(head(k as keyof typeof want) - v), k).toBeLessThanOrEqual(0.01);
+    // Per position, the heads of the legs it CONSUMED — not the instrument's average mix. CE-23750
+    // closed on 02-Sep: half of the 02-Sep buy (brok 40, STT 0) + the whole 02-Sep sell (brok 20,
+    // STT 43) = brokerage 40, STT 43 exactly (the pro-rata spread stored 36.9 / 46.97).
+    const ce = nuvama.trades.find((t) => t.tradingsymbol === "OPT NIFTY 08 Sep 2026 23750 CE" && t.sellDate === "2026-09-02")!;
+    expect([ce.reportedCharges?.brokerage, ce.reportedCharges?.sttCtt]).toEqual([40, 43]);
+    expect(sum(nuvama.trades.map((t) => t.reportedCharges?.total ?? 0))).toBe(3859.52);
+    for (const t of nuvama.trades) expect(t.reportedCharges).toMatchObject({ ipft: 0, dpCharges: 0, mtfInterest: 0, pledgeCharges: 0 });
+  });
+
+  it("Nuvama: Σ closed (gross − billed charges) = the Summary's own SellValue − BuyValue; its NetRealizedPnL does not foot to that by ₹0.14", () => {
+    const closed = nuvama.trades.filter((t) => t.buyQty === t.sellQty);
+    const net = r2(sum(closed.map((t) => t.grossPnl)) - sum(closed.map((t) => t.reportedCharges?.total ?? 0)));
+    // MEASURED 2026-09-25: 30,414.24 − 3,844.54 = 26,569.70 — exactly Nuvama's own Summary Total
+    // SellValue − BuyValue (11,69,669.03 − 11,43,099.33, both charge-inclusive). The ₹0.14 gap is
+    // Nuvama's Summary NOT FOOTING: its NetRealizedPnL Total says 26,569.84. Not our rounding — pinned
+    // exactly, never a tolerance.
+    expect(net).toBe(26569.7);
+    expect(r2(nuvama.reported!.sellValue - nuvama.reported!.buyValue)).toBe(net);
+    expect(r2(net - nuvama.reported!.netRealisedPnl)).toBe(-0.14);
+    // Gross against the Summary is the whole of the billed realised charges plus that rounding.
+    expect(r2(sum(closed.map((t) => t.grossPnl)) - nuvama.reported!.netRealisedPnl)).toBe(3844.4);
+  });
+
+  // Invariant 5: commit writes every execution as a trade_legs row, so a ladder that does not sum to
+  // its parent is two records of one trade disagreeing. The date-window filter this replaces put
+  // 250 bought on ALKEM's 125-lot position (and KALYANKJIL 2,700 on a 1,350 one).
+  for (const file of ["fyers-tradebook-2026-07-25_2026-08-25.csv", "zerodha-tradebook-2026-04-01_2026-08-29.xlsx", "zerodha-tradebook-2026-04-01_2026-08-11.xlsx"]) {
+    it(`${file}: every position's Σ executions per side equals its buyQty / sellQty`, async () => {
+      const p = await parse(file);
+      const off: string[] = [];
+      for (const t of p.trades) {
+        const ex = t.executions ?? [];
+        const b = ex.filter((e) => e.side === "buy").reduce((s, e) => s + e.qty, 0);
+        const s = ex.filter((e) => e.side === "sell").reduce((s, e) => s + e.qty, 0);
+        if (Math.abs(b - t.buyQty) > 1e-9 || Math.abs(s - t.sellQty) > 1e-9) off.push(`${t.tradingsymbol} ${t.buyDate}→${t.sellDate} parent ${t.buyQty}/${t.sellQty} execs ${b}/${s}`);
+      }
+      expect(off).toEqual([]);
+      expect(p.warnings.some((w) => /could not be traced/.test(w))).toBe(false);
+    }, 60_000);
+  }
+
+  it("Nuvama: a DeleteFlag = true line is skipped and counted in the warning", async () => {
+    const wb = XLSX.read(fs.readFileSync(path.join(DIR, "nuvama-pnl-report-2026-07-01_2026-09-22.xlsx")), { type: "buffer" });
+    const ws = wb.Sheets["Detail Realised"]!;
+    // Row 29 (1-based) is a data line; column V is DeleteFlag in the verified header.
+    expect(String(ws["V26"]?.v)).toBe("DeleteFlag");
+    ws["V29"] = { t: "s", v: "true" };
+    const bytes = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const ctx = buildContext("export.xlsx", bytes);
+    const p = await rankParsers(ctx)[0].parse(ctx);
+    expect(p.sourceRows).toBe(63);
+    expect(p.warnings).toContain("1 line marked DeleteFlag = true was skipped, as the report itself withdraws it.");
+  });
+
+  it("Nuvama: the MCX lines classify as commodity contracts on MCX (ALUMINI is the aluminium mini)", () => {
+    const mcx = nuvama.trades.filter((t) => t.exchangeHint === "MCX").map((t) => classify({ tradingsymbol: t.tradingsymbol, exchangeHint: t.exchangeHint }));
+    expect(mcx.map((c) => [c.symbol, c.segment, c.exchange])).toEqual([
+      ["ALUMINI", "commodity_future", "MCX"],
+      ["CRUDEOIL", "commodity_option", "MCX"],
+    ]);
+  });
+
+  it("Nuvama: Summary is reference only — 30 instrument rows, never a trade", () => {
+    const scrips = (nuvama.reference ?? []).filter((r) => r.scope === "scrip");
+    expect(scrips).toHaveLength(30);
+    expect(nuvama.trades.every((t) => t.sourceFile && t.dedupLabel)).toBe(true);
+    expect(scrips.find((r) => r.key === "PIIND-OPT-29Sep2026-CE-2400-NSE")?.figures).toMatchObject({ closeQty: 175, netUnrealisedPnl: -4468.73 });
+    expect(scrips.every((r) => r.asOf === "2026-09-22" && r.fy === "2026-27")).toBe(true);
+  });
 });

@@ -52569,6 +52569,20 @@
    "count": 0,
    "fundedCount": 0,
    "stocks": {}
+  },
+  "fyers": {
+   "coverage": "not-bundled",
+   "note": "Fyers offers MTF; its approved-scrip list is not bundled yet — the margin comes from your upload, the margin-config rate or the default.",
+   "count": 0,
+   "fundedCount": 0,
+   "stocks": {}
+  },
+  "nuvama": {
+   "coverage": "not-bundled",
+   "note": "Nuvama offers MTF; its approved-scrip list is not bundled yet — the margin comes from your upload, the margin-config rate or the default.",
+   "count": 0,
+   "fundedCount": 0,
+   "stocks": {}
   }
  }
 }

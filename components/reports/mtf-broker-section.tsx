@@ -15,8 +15,13 @@ const label = (b: string) => BROKER_LABELS[b as never] ?? b;
  * as "cheapest broker".
  */
 export function MtfBrokerSection({ cmp }: { cmp: MtfComparison }) {
-  const mtfBrokers = cmp.brokers.filter((b) => b.coverage !== "no-mtf");
+  // A broker's row is priced only when its approved list is bundled. "no-mtf"
+  // means the broker offers no MTF at all; "not-bundled" (v4.6.0 W9: Fyers,
+  // Nuvama) means it does, but no list ships — "0 approved scrips" would be a
+  // false statement, so those rows say so instead of showing a count.
+  const mtfBrokers = cmp.brokers.filter((b) => b.coverage !== "no-mtf" && b.coverage !== "not-bundled");
   const noMtf = cmp.brokers.filter((b) => b.coverage === "no-mtf");
+  const notBundled = cmp.brokers.filter((b) => b.coverage === "not-bundled");
   const shown = cmp.yourBook.slice(0, 40);
 
   return (
@@ -59,6 +64,14 @@ export function MtfBrokerSection({ cmp }: { cmp: MtfComparison }) {
                 <ReportTd className="font-medium">{label(b.broker)}</ReportTd>
                 <ReportTd className="text-center" colSpan={4}>
                   does not provide MTF delivery — cash only
+                </ReportTd>
+              </ReportTr>
+            ))}
+            {notBundled.map((b) => (
+              <ReportTr key={b.broker} className="text-muted-foreground">
+                <ReportTd className="font-medium">{label(b.broker)}</ReportTd>
+                <ReportTd className="text-center" colSpan={4}>
+                  offers MTF — its approved list is not bundled; own margin comes from your rule or the default
                 </ReportTd>
               </ReportTr>
             ))}

@@ -54,6 +54,12 @@ for (const [broker, source] of Object.entries(BROKER_SOURCES)) {
 }
 
 brokers.sahi = { coverage: "no-mtf", note: "Sahi offers no margin trading facility.", count: 0, fundedCount: 0, stocks: {} };
+// v4.6.0 W9: both brokers OFFER MTF (Fyers publishes slabbed interest; Nuvama
+// lists MTF in its pricing), but no approved-scrip list is bundled yet. This is
+// NOT "no-mtf": with an empty list and no rule default, resolveMtfMargin's chain
+// simply continues — upload, then margin_config, then the 25% default.
+brokers.fyers = { coverage: "not-bundled", note: "Fyers offers MTF; its approved-scrip list is not bundled yet — the margin comes from your upload, the margin-config rate or the default.", count: 0, fundedCount: 0, stocks: {} };
+brokers.nuvama = { coverage: "not-bundled", note: "Nuvama offers MTF; its approved-scrip list is not bundled yet — the margin comes from your upload, the margin-config rate or the default.", count: 0, fundedCount: 0, stocks: {} };
 
 const out = { asOf: asOf ?? new Date().toISOString().slice(0, 10), marginMeaning: "trader's own contribution %", brokers };
 const dest = path.join(root, "lib", "data", "mtf-margins.json");

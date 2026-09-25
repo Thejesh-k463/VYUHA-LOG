@@ -758,8 +758,11 @@ describe("S3 · the C-7/C-8 card, delivered by the desktop refresh, is what comm
   // 1970 row only, so the launch reads 480 / 180 / 0 where it read 440 / 150 / 0: +40 added (the
   // 40 later ETF epochs) and +30 refreshed (all 20 etf_equity 1970 rows, which must close at
   // 2012-07-01, plus the 10 NSE etf_other rows whose planted IPFT moves).
-  it("the real sidecar refresh moves that card onto the template: 480 added, 180 refreshed, 0 removed, then 0 / 0 / 0", () => {
-    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 480, refreshed: 180, removed: 0 });
+  // Re-pinned 2026-09-25 (v4.6.0 W9, measured): four broker-plans join the seed (fyers default/prime,
+  // nuvama default/elite), each planted and refreshed exactly like the ten before, so the launch
+  // reads 672 / 252 / 0 where it read 480 / 180 / 0 (× 14/10); the second launch is still 0 / 0 / 0.
+  it("the real sidecar refresh moves that card onto the template: 672 added, 252 refreshed, 0 removed, then 0 / 0 / 0", () => {
+    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 672, refreshed: 252, removed: 0 });
     expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 0, refreshed: 0, removed: 0 });
   });
 

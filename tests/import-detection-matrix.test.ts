@@ -24,6 +24,9 @@ import { detectZerodhaLedger } from "@/lib/import/parsers/zerodha-ledger";
 import { detectGrowwLedger } from "@/lib/import/parsers/groww-ledger";
 import { detectGrowwContractNote } from "@/lib/import/parsers/groww-contract-note";
 import { detectUpstoxContractNote } from "@/lib/import/parsers/upstox-contract-note";
+import { detectFyersTradebook, isFyersMirrorRow } from "@/lib/import/parsers/fyers-tradebook";
+import { detectFyersRealisedPnl } from "@/lib/import/parsers/fyers-realised-pnl";
+import { detectNuvamaPnlReport } from "@/lib/import/parsers/nuvama-pnl-report";
 import { deflateSync } from "node:zlib";
 import { ownerContext, ownerFiles } from "./helpers/owner-broker-files";
 
@@ -102,6 +105,13 @@ const FIXTURES: { file: string; broker: string; expect: string; label: string }[
   { file: "zerodha-ledger-2025-01-01_2026-08-01.xlsx", broker: "zerodha", expect: "zerodha-ledger", label: "Zerodha Console ledger (Funds statement)" },
   { file: "groww-ledger-2025-01-01_2026-01-30.xlsx", broker: "groww", expect: "groww-ledger", label: "Groww fund ledger (balance statement)" },
   { file: "upstox-trade-2026-08-28_2026-09-04.xlsx", broker: "upstox", expect: "upstox", label: "Upstox trade report with F&O rows (FON/FOB)" },
+  // ── 2026-09-25, v4.6.0 W9: one real export each from Fyers (two CSVs) and
+  // Nuvama (a five-sheet workbook). The Fyers files never name Fyers in their
+  // content, so they load under their OWN names (the name is the claim); the
+  // Nuvama workbook states its legal name on every sheet and loads NEUTRAL.
+  { file: "fyers-tradebook-2026-07-25_2026-08-25.csv", broker: "fyers", expect: "fyers-tradebook", label: "Fyers tradebook report (CSV, mirror rows)" },
+  { file: "fyers-realised-pnl-2026-07-25_2026-08-25.csv", broker: "fyers", expect: "fyers-realised-pnl", label: "Fyers realised P&L report (CSV)" },
+  { file: "nuvama-pnl-report-2026-07-01_2026-09-22.xlsx", broker: "nuvama", expect: "nuvama-pnl-report", label: "Nuvama P&L report (XLSX, five sheets)" },
 ];
 
 /**
@@ -127,7 +137,7 @@ const havePrivate = PRIVATE.every((p) => fs.existsSync(path.join(PRIVATE_DIR, p.
 
 // The 2026-08-20 batch is loaded under a NEUTRAL filename so that a claim can
 // only come from the file's content — the real exports name no broker.
-const NEUTRAL = new Set(["paytm-tradebook-v2.xlsx", "paytm-equity-pnl.xls", "zerodha-tradebook-console.xlsx", "zerodha-console-pnl-cola.xlsx", "upstox-trade-report.xlsx", "upstox-realized-pnl.xlsx", "upstox-ledger.xlsx", "zerodha-taxpnl-fy2425.xlsx", "zerodha-taxpnl-fy2526.xlsx", "zerodha-ledger-2025-01-01_2026-08-01.xlsx", "groww-ledger-2025-01-01_2026-01-30.xlsx", "upstox-trade-2026-08-28_2026-09-04.xlsx"]);
+const NEUTRAL = new Set(["paytm-tradebook-v2.xlsx", "paytm-equity-pnl.xls", "zerodha-tradebook-console.xlsx", "zerodha-console-pnl-cola.xlsx", "upstox-trade-report.xlsx", "upstox-realized-pnl.xlsx", "upstox-ledger.xlsx", "zerodha-taxpnl-fy2425.xlsx", "zerodha-taxpnl-fy2526.xlsx", "zerodha-ledger-2025-01-01_2026-08-01.xlsx", "groww-ledger-2025-01-01_2026-01-30.xlsx", "upstox-trade-2026-08-28_2026-09-04.xlsx", "nuvama-pnl-report-2026-07-01_2026-09-22.xlsx"]);
 const load = (file: string) =>
   buildContext(NEUTRAL.has(file) ? "export" + path.extname(file) : file, fs.readFileSync(path.join(DIR, file)));
 
@@ -224,6 +234,11 @@ const CROSS_DETECTORS: {
   { name: "detectGrowwLedger", broker: "groww", container: "binary", fn: detectGrowwLedger },
   { name: "detectGrowwContractNote", broker: "groww", container: "binary", fn: detectGrowwContractNote },
   { name: "detectUpstoxContractNote", broker: "upstox", container: "binary", fn: detectUpstoxContractNote },
+  // 2026-09-25, v4.6.0 W9. The two Fyers detectors read CSV text only
+  // (`if (text == null) return 0`); the Nuvama detector a workbook only.
+  { name: "detectFyersTradebook", broker: "fyers", container: "text", fn: detectFyersTradebook },
+  { name: "detectFyersRealisedPnl", broker: "fyers", container: "text", fn: detectFyersRealisedPnl },
+  { name: "detectNuvamaPnlReport", broker: "nuvama", container: "binary", fn: detectNuvamaPnlReport },
 ];
 const readsText = (c: Container) => c === "text" || c === "both";
 const readsBinary = (c: Container) => c === "binary" || c === "both";
@@ -287,7 +302,85 @@ const CSV_FIXTURES: { dir: string; file: string; broker: string; label: string }
   { dir: DIR, file: "dhan-ledger-2026-04-01_2026-09-03-a1.csv", broker: "dhan", label: "Dhan ledger" },
   { dir: DIR, file: "dhan-dividend-2025-04-01_2026-03-31.csv", broker: "dhan", label: "Dhan dividend payout" },
   { dir: path.join(process.cwd(), "tests", "fixtures"), file: "zerodha-tradebook.csv", broker: "zerodha", label: "Zerodha tradebook (CSV)" },
+  { dir: DIR, file: "fyers-tradebook-2026-07-25_2026-08-25.csv", broker: "fyers", label: "Fyers tradebook report" },
+  { dir: DIR, file: "fyers-realised-pnl-2026-07-25_2026-08-25.csv", broker: "fyers", label: "Fyers realised P&L report" },
 ];
+
+/**
+ * v4.6.0 W9 — THE NAME RULE for the two new brokers. Fyers writes its name
+ * nowhere inside either CSV, so the FILENAME carries the identity and the same
+ * bytes under a neutral name must fall to the generic mapper. Nuvama writes its
+ * legal name on every sheet, so the workbook claims under any name — and the
+ * same five sheets with the name removed claim nothing.
+ */
+describe("v4.6.0 W9: Fyers needs its name in the filename; Nuvama its name in the content", () => {
+  const bytes = (f: string) => fs.readFileSync(path.join(DIR, f));
+  const TB = "fyers-tradebook-2026-07-25_2026-08-25.csv";
+  const PNL = "fyers-realised-pnl-2026-07-25_2026-08-25.csv";
+  const NUV = "nuvama-pnl-report-2026-07-01_2026-09-22.xlsx";
+
+  it("the Fyers tradebook under a neutral name is claimed by no broker parser", () => {
+    const ctx = buildContext("tradebook.csv", bytes(TB));
+    expect(detectFyersTradebook(ctx)).toBe(0);
+    const top = rankParsers(ctx).filter((r) => r.confidence > 0)[0];
+    if (top) expect(top.sourceId).toBe("generic-table");
+  });
+
+  it("the Fyers realised P&L under a neutral name is claimed by no broker parser", () => {
+    const ctx = buildContext("realised_pnl.csv", bytes(PNL));
+    expect(detectFyersRealisedPnl(ctx)).toBe(0);
+    const top = rankParsers(ctx).filter((r) => r.confidence > 0)[0];
+    if (top) expect(top.sourceId).toBe("generic-table");
+  });
+
+  it("each Fyers detector refuses the OTHER Fyers report even under a Fyers name", () => {
+    expect(detectFyersTradebook(buildContext("FYERS_realised_p&l.csv", bytes(PNL)))).toBe(0);
+    expect(detectFyersRealisedPnl(buildContext("FYERS_tradebook.csv", bytes(TB)))).toBe(0);
+  });
+
+  it("a mirror row needs ALL THREE signs — product '-', a non-numeric exchange id, 12:00:00 AM", () => {
+    const MIRROR = ["-", "NDIR4248023", "25 Aug 2026, 12:00:00 AM"] as const;
+    expect(isFyersMirrorRow(...MIRROR)).toBe(true);
+    // Flip each condition alone: the row is a real fill.
+    expect(isFyersMirrorRow("Overnight", MIRROR[1], MIRROR[2])).toBe(false);
+    expect(isFyersMirrorRow(MIRROR[0], "2.5E+15", MIRROR[2])).toBe(false);
+    expect(isFyersMirrorRow(MIRROR[0], MIRROR[1], "25 Aug 2026, 09:58:39 AM")).toBe(false);
+  });
+
+  it("other brokers' CSVs renamed FYERS_tradebook_x.csv score 0 on both Fyers detectors (content, not name)", () => {
+    const foreign = [
+      fs.readFileSync(path.join(DIR, "dhan-gtr-2026-04-01_2026-09-04-a1.csv")),
+      fs.readFileSync(path.join(DIR, "dhan-ledger-2026-04-01_2026-09-03-a1.csv")),
+      fs.readFileSync(path.join(process.cwd(), "tests", "fixtures", "zerodha-tradebook.csv")),
+    ];
+    for (const b of foreign) {
+      const ctx = buildContext("FYERS_tradebook_x.csv", b);
+      expect(detectFyersTradebook(ctx)).toBe(0);
+      expect(detectFyersRealisedPnl(ctx)).toBe(0);
+    }
+  });
+
+  it("the Fyers tradebook header without the title line is refused, named or not", () => {
+    const text = bytes(TB).toString("utf8").split(/\r?\n/).slice(7).join("\n"); // header + rows only
+    expect(detectFyersTradebook(buildContext("FYERS_tradebook.csv", Buffer.from(text)))).toBe(0);
+  });
+
+  it("the Nuvama workbook claims under any name; with its legal name removed it claims nothing", () => {
+    expect(detectNuvamaPnlReport(buildContext("export.xlsx", bytes(NUV)))).toBe(0.95);
+    const wb = XLSX.read(bytes(NUV), { type: "buffer" });
+    for (const name of wb.SheetNames) {
+      const ws = wb.Sheets[name]!;
+      for (const addr of Object.keys(ws)) {
+        if (addr[0] !== "!" && /nuvama|edelweiss/i.test(String(ws[addr].v ?? ""))) ws[addr] = { t: "s", v: "A Broker Limited" };
+      }
+    }
+    const nameless = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const ctx = buildContext("NUVAMA_PnL_Report.xlsx", nameless);
+    expect(detectNuvamaPnlReport(ctx)).toBe(0);
+    const top = rankParsers(ctx).filter((r) => r.confidence > 0)[0];
+    if (top) expect(top.sourceId).toBe("generic-table");
+  });
+});
 
 describe("no detector claims another BROKER's CSV", () => {
   for (const d of CROSS_DETECTORS.filter((x) => readsText(x.container))) {
@@ -422,6 +515,11 @@ const OWNER_PATTERNS: { pattern: RegExp; broker: string; expect: string }[] = [
   { pattern: /^Groww_Balance_Statement_.*\.xlsx$/, broker: "groww", expect: "groww-ledger" },
   { pattern: /^Contract_Note_\d+_\d{2}-[A-Za-z]{3}-\d{4}\.pdf$/, broker: "groww", expect: "groww-contract-note" },
   { pattern: /^CW_T_.*\.pdf$/, broker: "upstox", expect: "upstox-contract-note" },
+  // v4.6.0 W9: the Nuvama workbook routes on content under a neutral name.
+  // The two Fyers CSVs are deliberately NOT here: their content never names
+  // Fyers, so under this block's neutral filename they SHOULD score 0 — their
+  // routing is pinned under their own names by the redacted rows above.
+  { pattern: /^NUVAMA_PnL_Report_.*\.xlsx$/, broker: "nuvama", expect: "nuvama-pnl-report" },
 ];
 describe("the owner's real Dhan and Angel One exports route to their own source", () => {
   for (const p of OWNER_PATTERNS) {

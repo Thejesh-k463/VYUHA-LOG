@@ -2,6 +2,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { extractDate, extractTime } from "../time-parse";
 import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
+import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
@@ -602,6 +603,8 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       /** Keyed `date|side` — one leg per scrip-day-side. */
       legs: Map<string, Leg>;
       fills: Execution[];
+      /** Each leg's own fills — the ladder is cut from these by the quantity FIFO took. */
+      fillsOf: Map<Leg, Execution[]>;
     };
     const groups = new Map<string, Group>();
     const unreadable: string[] = [];
@@ -635,6 +638,7 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
         isin: cIsin >= 0 ? r[cIsin] || null : null,
         legs: new Map<string, Leg>(),
         fills: [],
+        fillsOf: new Map<Leg, Execution[]>(),
       };
       if (!g.isin && cIsin >= 0 && r[cIsin]) g.isin = r[cIsin];
 
@@ -663,13 +667,15 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       if (exchange) leg.venues = { ...leg.venues, [exchange]: (leg.venues?.[exchange] ?? 0) + qty * price };
       if (!existing) g.legs.set(legKey, leg);
       fillCount += 1;
-      g.fills.push({
+      const fill: Execution = {
         side,
         qty,
         price,
         date,
         time: extractTime(timeCell) ?? extractTime(dateCell),
-      });
+      };
+      g.fills.push(fill);
+      g.fillsOf.set(leg, [...(g.fillsOf.get(leg) ?? []), fill]);
       groups.set(key, g);
     }
 
@@ -683,8 +689,16 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       const paired = pairLegs(dayLegs);
       allLegs.push(...dayLegs);
       allPaired.push(...paired);
+      // v4.6.0 W9: each position's ladder is cut from the fills of the legs FIFO
+      // actually took, by quantity (lib/import/leg-allocation.ts), so Σ executions
+      // per side = the position's qty (invariant 5). The date-window filter this
+      // replaces handed a day-leg split across two positions to BOTH.
+      for (const [leg, fs] of g.fillsOf) g.fillsOf.set(leg, [...fs].sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99")));
+      const allocs = allocateSymbolLegs(dayLegs);
+      const cut = executionsByAllocation(allocs, g.fillsOf);
+      const matched = matchAllocations(paired, allocs);
 
-      for (const pos of paired) {
+      for (const [pi, pos] of paired.entries()) {
         // Product is STATED when the export carries the column; the real
         // Console tradebook does not, so it is derived from the calendar and
         // flagged — a derived fact never wears a reported fact's clothes.
@@ -692,14 +706,8 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
         const sameDay = pos.kind === "closed" && pos.buyDate != null && pos.buyDate === pos.sellDate;
         const hint: ProductHint = cProduct >= 0 ? stated : sameDay ? "intraday" : "delivery";
 
-        // Each position sees only the fills inside its own window, so a staged
-        // ladder is rebuilt from its own executions rather than the symbol's
-        // whole history. Approximate for re-entered symbols; totals stay exact.
-        const executions = g.fills.filter(
-          (e) =>
-            (pos.buyDate == null || (e.date ?? "") >= pos.buyDate) &&
-            (pos.sellDate == null || (e.date ?? "") <= pos.sellDate),
-        );
+        const a = matched[pi];
+        const executions = a ? cut.get(a) ?? [] : [];
 
         trades.push({
           broker: "zerodha",

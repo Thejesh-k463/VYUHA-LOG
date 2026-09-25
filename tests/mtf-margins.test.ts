@@ -11,7 +11,7 @@ describe("bundled mtf-margins.json", () => {
 
   it("carries an as-of date and every app broker", () => {
     expect(b.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    for (const broker of ["dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi"]) {
+    for (const broker of ["dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi", "fyers", "nuvama"]) {
       expect(b.brokers[broker], broker).toBeDefined();
     }
   });
@@ -40,6 +40,16 @@ describe("bundled mtf-margins.json", () => {
   it("declares honesty about what it doesn't have", () => {
     expect(b.brokers.sahi.coverage).toBe("no-mtf");
     expect(b.brokers.sahi.count).toBe(0);
+  });
+
+  it("Fyers and Nuvama OFFER MTF but ship no list: 'not-bundled', never 'no-mtf' (v4.6.0 W9)", () => {
+    for (const broker of ["fyers", "nuvama"]) {
+      expect(b.brokers[broker].coverage, broker).toBe("not-bundled");
+      expect(b.brokers[broker].count, broker).toBe(0);
+    }
+    // The chain simply continues past an empty list: margin_config, then the default.
+    expect(resolveMtfMargin("fyers", "ABB", null, 30)).toMatchObject({ pct: 30, source: "margin-config" });
+    expect(resolveMtfMargin("nuvama", "ABB")).toMatchObject({ pct: DEFAULT_MTF_OWN_MARGIN_PCT, source: "default" });
   });
 });
 

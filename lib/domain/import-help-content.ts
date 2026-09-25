@@ -214,6 +214,41 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     guide: OPENALGO_GUIDE,
   },
   {
+    id: "fyers",
+    title: "Fyers",
+    summary: "Tradebook report by file, with the Realised P&L as a reference; same-day pulls through OpenAlgo.",
+    channels: ["files", "openalgo"],
+    formats: sources("fyers-tradebook", "fyers-realised-pnl"),
+    steps: [
+      "As of Sep 2026: download Fyers' Tradebook report and its Realised P&L report as CSV, for the same window. Keep Fyers' own file name — it starts FYERS_ — because nothing inside the file names the broker, and Vyuha will not claim a file it cannot see is Fyers'.",
+      "Verified against one real export of each (Sep 2026, F&O only). Fyers prints every carried-over fill a second time at 12:00:00 AM with the opposite side and product \"-\"; Vyuha skips those mirror rows and says how many. Two identical rows are two real fills and are both kept.",
+      "The Realised P&L imports no trades — it is Fyers' own arithmetic over the tradebook's fills, so importing both as trades would count them twice. It stores Fyers' stated figures per contract and its charges block for reconciliation.",
+    ],
+    openalgo: [
+      "Documented but not yet exercised by Vyuha: OpenAlgo ships a Fyers plugin, and this path follows OpenAlgo's own broker docs. Vyuha's live OpenAlgo pulls have run against Dhan and Upstox (Aug 2026).",
+    ],
+    notes: [
+      "Fyers/Nuvama equity row layout not yet verified against a real export: an equity row is read the same way and flagged in the preview. Check the first one against your contract note.",
+    ],
+    guide: OPENALGO_GUIDE,
+  },
+  {
+    id: "nuvama",
+    title: "Nuvama",
+    summary: "The P&L report (XLSX) by file — realised and open lines with the charges Nuvama billed.",
+    channels: ["files"],
+    formats: sources("nuvama-pnl-report"),
+    steps: [
+      "As of Sep 2026: download Nuvama's P&L Report as XLSX. It carries five sheets; Vyuha reads Detail Realised and Unrealised Details as your trades, with the charges Nuvama billed on each line stored exactly as stated, and keeps the Summary sheet as Nuvama's own figures for reconciliation.",
+      "Verified against one real export (Sep 2026: NSE options and MCX futures and options). The report states one line per instrument, day and side at the day's average price, with no order ids and no times — so entry and exit times stay blank.",
+      "The Dividend sheet is not imported: its layout is unverified.",
+    ],
+    notes: [
+      "OpenAlgo has no Nuvama plugin (its \"Nubra (Nuvama)\" entry is a different broker), so Nuvama trades come in by file only.",
+      "Fyers/Nuvama equity row layout not yet verified against a real export: an equity line is read and flagged in the preview. Check the first one against your contract note.",
+    ],
+  },
+  {
     id: "generic",
     title: "Any other broker — map the columns",
     summary: "Kotak Neo, Sahi and anything unrecognised route here: you say whose file it is.",
