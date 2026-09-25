@@ -14,7 +14,8 @@
 // What --confirm does, in order:
 //   1. mints a LIFETIME key for the same email (and the same machine if the
 //      old key was bound, unless --machine overrides), ledger note
-//      "upgrade from <oldKeyId>; annual paid ₹X credited; <UTR>"
+//      "upgrade from <oldKeyId>; annual paid ₹X credited; <UTR>", and the old
+//      key's referral `ref` carried forward (the creator stays credited)
 //   2. archives it if --save-dir / VYUHA_KEY_ARCHIVE_DIR is set
 //   3. revokes the OLD key via scripts/license-revoke.mjs (build-time half)
 //   4. prints the revocation-publish + gh upload commands for the signed-list
@@ -122,7 +123,10 @@ if (!confirm) {
 // ── Mint the lifetime key ──────────────────────────────────────────────────
 const note = `upgrade from ${old.keyId}; annual paid ${inr(credit)} credited; ${confirm}`;
 const { key, keyId, payload } = mintKey({ email: old.email, sku: "app", expires: null, machine: boundTo, pemPath });
-const record = ledgerLine({ keyId, email: old.email, sku: "app", issued: payload.issued, expires: null, machine: boundTo, key, note });
+// The upgrade is the same customer the creator brought, so the ORIGINAL key's
+// referral code carries forward (null for a line that predates --ref) and
+// `license-list.mjs --by-ref` counts the upgrade under that creator.
+const record = ledgerLine({ keyId, email: old.email, sku: "app", issued: payload.issued, expires: null, machine: boundTo, key, note, ref: old.ref ?? null });
 appendLedger(ledgerPath, record);
 
 let archived = null;

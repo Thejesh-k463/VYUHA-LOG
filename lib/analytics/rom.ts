@@ -30,6 +30,7 @@
  */
 
 import { capitalBlocked, marginKey, type MarginRates } from "@/lib/risk/margin";
+import { sideOf as sideOfRow } from "@/lib/domain/side";
 
 /** One closed trade, in the shape ROM needs. */
 export interface RomTrade {
@@ -121,10 +122,11 @@ export function daysHeld(buyDate: string | null, sellDate: string | null): numbe
   return Math.max(1, Math.round(Math.abs(b - a) / 86_400_000));
 }
 
-/** A trade opened by selling is short — same convention as the trackers. */
-export function sideOf(t: Pick<RomTrade, "buyQty" | "sellQty" | "buyDate" | "sellDate">): "long" | "short" {
-  if (t.buyDate && t.sellDate) return new Date(t.sellDate) < new Date(t.buyDate) ? "short" : "long";
-  return t.sellQty > t.buyQty ? "short" : "long";
+/** A trade opened by selling is short. v4.6.0 W6: the ONE reading,
+ *  `sideOf` in lib/domain/side.ts (quantities, then the stored `side` on a
+ *  flat row, then the dates as days) — this name stays for its callers. */
+export function sideOf(t: Pick<RomTrade, "buyQty" | "sellQty" | "buyDate" | "sellDate"> & { side?: string | null }): "long" | "short" {
+  return sideOfRow(t);
 }
 
 /**

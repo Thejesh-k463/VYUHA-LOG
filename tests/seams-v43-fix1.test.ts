@@ -770,6 +770,7 @@ describe("S5 · the restore re-key skips a frozen lot (F1 close-open-lots → F1
       ["signal-notes-backfill-v1", true], // v4.3.0 Signal book: the seeded notes → signal_json backfill, registered fourth
       ["risk-source-v1", true], // v4.4.0 D1: classifies risk_source on pre-0073 rows, registered fifth
       ["dhan-gtr-symbols-v1", true], // v4.5.0 W1 F-L1-3: the Dhan report scrip-name re-group, registered sixth
+      ["trades-side-v1", true], // v4.6.0 W6: backfills trades.side (migration 0077), registered seventh
     ]);
     expect(results[0].rekeyed, "no frozen row may be re-keyed").toBe(0);
 

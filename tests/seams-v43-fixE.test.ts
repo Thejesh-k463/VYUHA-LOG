@@ -906,7 +906,7 @@ describe("E-c · a partly closed position closed from the Trades dialog and from
 
     selectAccount(C_LONG);
     const journal = tradeQueries.getJournalTrades();
-    const stats = tradeQueries.tradeStatsOf(journal);
+    const stats = tradeQueries.getTradeStatsSql(); // the /trades KPI strip (v4.6.0 W6)
     const r = row(L.id)!;
     // THE assertions (on revert of commit.ts: 100 / 40, sellValue 10,200, and
     // the KPI strip and the tax report both print gross −9,800).
@@ -934,7 +934,7 @@ describe("E-c · a partly closed position closed from the Trades dialog and from
     expect(res.status).toBe(200);
 
     selectAccount(C_SHORT);
-    const stats = tradeQueries.tradeStatsOf(tradeQueries.getJournalTrades());
+    const stats = tradeQueries.getTradeStatsSql();
     const r = row(S.id)!;
     expect([r.buyQty, r.buyValue, r.avgBuyPrice, r.buyDate, r.sellQty, r.sellValue]).toEqual([100, 19800, 198, "2026-08-26", 100, 25000]);
     expect([stats.count, stats.open, stats.gross, stats.net]).toEqual([1, 0, 5200, r.netPnl]);
@@ -1741,7 +1741,7 @@ describe("E-f · an IPO whose stored exit date cannot be read, edited from /ipos
   const books = (accountId: number) => {
     selectAccount(accountId);
     const all = tradeQueries.getJournalTrades();
-    const k = tradeQueries.tradeStatsOf(all);
+    const k = tradeQueries.getTradeStatsSql();
     return { kpi: [k.count, k.open, k.gross, k.charges, k.net], fy: taxByFy(taxRowsOf(all)).map((s) => [s.fy, s.trades, s.totalRealised]) };
   };
   const refusedSold = { ok: false, message: "The linked holding has a sale recorded in Trades. Change its quantity or prices there, or remove the sale first. Nothing was saved." };

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { DERIVATIVE_MARK_MESSAGE, isDerivativeInstrument, writeTypedMark } from "@/lib/queries/mtm";
 import { eq, sql } from "drizzle-orm";
+import { sideOf } from "@/lib/domain/side";
 
 export const runtime = "nodejs";
 
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   }
 
   // Short (sell-to-open) has its entry on the sell leg — avgBuyPrice is unset until covered.
-  const isShort = t.sellQty > t.buyQty;
+  const isShort = sideOf(t) === "short";
   const openQty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
   const entryPrice = isShort ? t.avgSellPrice : t.avgBuyPrice;
   // D1 (v4.4.0) — a risk DERIVED FROM A STOP is the user's plan, so the row

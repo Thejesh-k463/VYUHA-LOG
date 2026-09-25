@@ -400,6 +400,8 @@ function syncLinkedTrade(tradeId: number, accountId: number, values: Record<stri
       // expectancy, which is correct: it has no basis yet.
       acquisitionPrice: patch.acquisitionPrice > 0 ? patch.acquisitionPrice : null,
       acquisitionDate: patch.acquisitionDate,
+      // v4.6.0 W6 (contract D3): an allotment is a LONG's entry.
+      side: "long",
       buyQty: patch.buyQty,
       avgBuyPrice: patch.avgBuyPrice,
       buyValue: patch.buyValue,

@@ -57,7 +57,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
 import { num } from "@/lib/format";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
-import { staleAmbiguousNote } from "@/lib/analytics/data-quality";
+import { LEGACY_SHORT_PAIR_NOTE, staleAmbiguousNote } from "@/lib/analytics/data-quality";
 
 /** Structurally `StaleOpenView` (lib/queries/data-quality.ts), restated for the client. */
 export interface StaleLotFixPair {
@@ -83,6 +83,8 @@ export interface StaleLotFixPair {
   closedLotIds: number[];
   /** R2-DQ N10 — the sale was recorded in several fills. */
   saleStaged: boolean;
+  /** v4.6.0 W6 (D5) — a pre-4.6 import's two rows of one overnight F&O short. */
+  legacyShort: boolean;
   blocked: string | null;
 }
 
@@ -161,6 +163,11 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
                 {p.saleDateStated ? p.saleDate : `pulled ${p.saleDate}, no date stated`}
               </span>
             </div>
+            {p.legacyShort && (
+              <p className="mt-2 text-muted-foreground" data-stale-legacy-short="">
+                {LEGACY_SHORT_PAIR_NOTE}
+              </p>
+            )}
             {p.ambiguous ? (
               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-stale-review="">
                 <p className="text-muted-foreground">{staleAmbiguousNote(p)}</p>

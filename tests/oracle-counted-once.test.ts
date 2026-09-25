@@ -47,8 +47,8 @@ import type { NormalizedTrade } from "@/lib/engine/types";
  *                     lib/analytics/tax.ts:69     taxByFy   (app/reports/tax/page.tsx:72)
  *   ITR export        lib/queries/tax-itr.ts:96   getItrExportRows / :87 countItrRows
  *   AIS reconcile     app/api/ais/route.ts:25     POST — purchase AND sale sides
- *   /trades KPI       lib/queries/trades.ts:501   tradeStatsOf(getJournalTrades())
- *                     (app/trades/page.tsx:52 `stats`, the KPI strip)
+ *   /trades KPI       lib/queries/trades.ts       getTradeStatsSql (v4.6.0 W6)
+ *                     (app/trades/page.tsx `stats`, the KPI strip)
  *   the IPO book      lib/queries/ipos.ts:206     getIpoRealisedNet (no argument —
  *                     /ipos' own total, which must NOT move when a consumer
  *                     stops counting a record)

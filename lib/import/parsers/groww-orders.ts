@@ -32,7 +32,7 @@ import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
-import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
+import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg } from "../pair-legs";
 import { extractTime } from "../time-parse";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.]/g, "");
@@ -177,7 +177,8 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
     fills.set(symbol, f);
   }
 
-  const paired = pairLegs(legs);
+  // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header).
+  const paired = pairLegs(legs, { shortable: isShortableSymbol });
   const check = summarisePairing(legs, paired);
   const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -190,11 +191,14 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
     // Give each position only the fills inside its own window, so a staged
     // ladder is built from its own executions rather than the symbol's whole
     // history. Approximate for re-entered symbols; the aggregate stays exact.
+    // A closed short's window runs from its sale to its buy-back (v4.6.0 W6).
+    const fillSide = fillSidesOf(p);
+    const [from, to] = fillSide.entry === "sell" ? [p.sellDate, p.buyDate] : [p.buyDate, p.sellDate];
     const all = fills.get(p.symbol) ?? [];
     const executions = all.filter(
       (e) =>
-        (p.buyDate == null || (e.date ?? "") >= p.buyDate) &&
-        (p.sellDate == null || (e.date ?? "") <= p.sellDate),
+        (from == null || (e.date ?? "") >= from) &&
+        (to == null || (e.date ?? "") <= to),
     );
 
     return {
@@ -215,12 +219,13 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
       productHint: hint,
       exchangeHint: (p.exchange as Exchange | null) ?? null,
       sourceFile: ctx.filename,
-      entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
-      exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+      entryTime: executions.find((e) => e.side === fillSide.entry)?.time ?? null,
+      exitTime: [...executions].reverse().find((e) => e.side === fillSide.exit)?.time ?? null,
       executions: executions.length > 0 ? executions : null,
       basisUnknown: p.basisUnknown,
       productDerived: true,
       importNotes: p.notes.length ? p.notes : null,
+      side: p.side,
     };
   });
 

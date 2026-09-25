@@ -14,6 +14,7 @@ import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
 import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
+import { sideOf } from "@/lib/domain/side";
 import { signalFromForm, parseFormNumber } from "@/lib/domain/signal";
 import { recordAudit } from "@/lib/audit";
 import { AccountRequiredError, getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
@@ -418,9 +419,10 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
 function tradeDirection(id: number): "long" | "short" {
   const t = db.select().from(trades).where(eq(trades.id, id)).get();
   if (!t) return "long";
-  // sellQty > buyQty, not buyQty === 0 — a partially covered short has
-  // buyQty > 0 and must stay short, or the rebuilt P&L sign-inverts (fix A6).
-  return t.sellQty > t.buyQty ? "short" : "long";
+  // Not buyQty === 0 — a partially covered short has buyQty > 0 and must stay
+  // short, or the rebuilt P&L sign-inverts (fix A6). v4.6.0 W6: `sideOf`, so a
+  // FLAT (closed) short also stays short.
+  return sideOf(t);
 }
 
 /** Turn a plain trade into a staged one by seeding the ladder from its own
@@ -637,6 +639,9 @@ export async function setAcquisitionAction(_prev: ActionState, formData: FormDat
     const buyValue = Math.round(row.sellQty * price! * 100) / 100;
     const grossPnl = Math.round((row.sellValue - buyValue) * 100) / 100;
     patch.buyQty = row.sellQty;
+    // v4.6.0 W6 (contract D3): a basis is a LONG's entry — the row is flat now
+    // and states the side its quantities can no longer say.
+    patch.side = "long";
     patch.avgBuyPrice = price;
     patch.buyValue = buyValue;
     patch.grossPnl = grossPnl;

@@ -35,7 +35,7 @@
  */
 
 import * as XLSX from "xlsx";
-import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
+import { isShortableSymbol, pairLegs, summarisePairing, type Leg } from "../pair-legs";
 import { allocateSymbolLegs, matchAllocations, type Allocation } from "../leg-allocation";
 import type { ChargeBreakdown, NormalizedTrade } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
@@ -331,7 +331,7 @@ function breakdownOf(alloc: Allocation, bill: Map<Leg, { heads: Heads; net: numb
   const sum: Record<(typeof HEAD_KEYS)[number], number> = { brokerage: 0, gst: 0, sttCtt: 0, stampDuty: 0, sebi: 0, exchangeTxn: 0 };
   let net = 0;
   let other = 0;
-  for (const slice of [...alloc.buys, ...(alloc.sell ? [alloc.sell] : [])]) {
+  for (const slice of [...alloc.buys, ...alloc.sells]) {
     const b = bill.get(slice.leg);
     if (!b || slice.leg.qty <= 0) continue;
     const f = slice.qty / slice.leg.qty;
@@ -406,9 +406,10 @@ export function parseNuvamaPnlReport(ctx: ParseContext): ParsedFile {
     instrumentOf.set(ordered[0].inst.tradingsymbol, { line: ordered[0], legs: own });
   }
 
-  const paired = pairLegs(legs);
+  // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header).
+  const paired = pairLegs(legs, { shortable: isShortableSymbol });
   // Which legs each position consumed, per instrument (lib/import/leg-allocation.ts).
-  const allocsBySymbol = new Map([...instrumentOf].map(([sym, v]) => [sym, allocateSymbolLegs(v.legs)]));
+  const allocsBySymbol = new Map([...instrumentOf].map(([sym, v]) => [sym, allocateSymbolLegs(v.legs, { shortable: isShortableSymbol(sym) })]));
   const allocOf: (Allocation | null)[] = new Array(paired.length).fill(null);
   for (const [sym, allocs] of allocsBySymbol) {
     const idx = paired.map((p, i) => (p.symbol === sym ? i : -1)).filter((i) => i >= 0);
@@ -449,6 +450,7 @@ export function parseNuvamaPnlReport(ctx: ParseContext): ParsedFile {
         : { brokerage: 0, gst: 0, sttCtt: 0, stampDuty: 0, sebi: 0, exchangeTxn: 0, ipft: 0, dpCharges: 0, mtfInterest: 0, pledgeCharges: 0, total: r2(p.charges) },
       basisUnknown: p.basisUnknown,
       importNotes: [...p.notes, `${DEDUP_LABEL_PREFIX}${l.instrument}`],
+      side: p.side,
     };
   });
 

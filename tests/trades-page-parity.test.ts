@@ -37,8 +37,13 @@ function book() {
   return queries.getJournalTrades();
 }
 
+/**
+ * `unknownBasisIds` exactly as app/trades/page.tsx builds it — since v4.6.0 W6
+ * from `getJournalPanelRows()`, not the whole book (tests/trades-kpi-sql.test.ts
+ * pins that the two agree).
+ */
 function unknownBasisSet(): Set<number> {
-  return new Set(book().filter((r) => !hasKnownBasis(r)).map((r) => r.id));
+  return new Set(queries.getJournalPanelRows().filter((r) => !hasKnownBasis(r)).map((r) => r.id));
 }
 
 function jsIds(f: TradeFilters): number[] {

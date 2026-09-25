@@ -123,6 +123,12 @@ export interface NormalizedTrade {
   dedupLabel?: string | null;
   /** Per-row provenance notes, carried through to the trade record. */
   importNotes?: string[] | null;
+  /**
+   * Which side OPENED the position (v4.6.0 W6), when the parser paired it
+   * (`PairedPosition.side`). Null/absent on a pre-aggregated P&L row — commit
+   * then stores `tradeDirection` of the row. Stored as `trades.side`.
+   */
+  side?: "long" | "short" | null;
 }
 
 /** One executed fill from a broker tradebook. */

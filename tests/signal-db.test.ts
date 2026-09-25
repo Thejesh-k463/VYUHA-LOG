@@ -227,6 +227,7 @@ describe("signal-notes-backfill-v1", () => {
       "signal-notes-backfill-v1",
       "risk-source-v1", // v4.4.0 D1 — registered after it; the Signal fix stays last of the v4.3.0 four
       "dhan-gtr-symbols-v1", // v4.5.0 W1 F-L1-3 — appended, never inserted among the older ones
+      "trades-side-v1", // v4.6.0 W6 — the trades.side backfill (migration 0077), appended
     ]);
   });
 });

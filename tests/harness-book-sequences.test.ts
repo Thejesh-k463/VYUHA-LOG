@@ -398,6 +398,50 @@ describe("every ordered pair of operations", () => {
   });
 });
 
+// ── v4.6.0 W6 — trades.side and the overnight F&O short ─────────────────────
+
+describe("v4.6.0 W6 — the overnight short and the pre-W6 pair (contract §2)", () => {
+  it("legacy pair → per-leg refusal → join → re-import: the ops really ran, and the sale is stated once", async () => {
+    const { ctx, violations } = await runSequence(["legacyShortJoinReimport"]);
+    expect(violations.join("\n")).toBe("");
+    // Not vacuous: both pre-W6 rows landed, the W6 re-import was refused per leg,
+    // the pair was listed and joined, and the re-import after the join deduped.
+    expect(ctx.log.at(-1)!.note).toMatch(/^pre-W6 rows \+1\/\+1; W6 re-import \+0; joined #\d+ into #\d+; again \+0$/);
+    const joined = t.db.select().from(t.schema.trades).all().filter((r) => r.tradingsymbol === SYM.legacy);
+    expect(joined.map((r) => [r.buyQty, r.sellQty, r.side, r.acquisition, r.isOpen])).toEqual([[75, 75, "short", null, false]]);
+  });
+
+  it("overnight short → a Trash restore → merge → un-merge: the closed short keeps its side through every hop", async () => {
+    const { ctx, violations } = await runSequence(["importOvernightShort", "restoreLatestSnapshot", "mergeAccountBIntoA", "restoreSourceAccount"]);
+    expect(violations.join("\n")).toBe("");
+    expect(ctx.log[0].note).toBe("added 1, deduped 0");
+    const r = t.db.select().from(t.schema.trades).all().find((x) => x.tradingsymbol === SYM.ovn)!;
+    expect([r.side, r.buyQty, r.sellQty]).toEqual(["short", 75, 75]);
+  });
+
+  it("legacy pair joined, then the purchase restored from Trash: still stated once, still clean", async () => {
+    await expectClean(["legacyShortJoinReimport", "restoreLatestSnapshot", "legacyShortJoinReimport"]);
+  });
+
+  // Fix wave (finding 1): the two shapes the per-leg check missed. Counted-once
+  // is I1's quantity statement (LEGACY_GROUP_STATEMENT) plus I3's net.
+  it("partial cover (sold 100, bought back 60) → the post-W6 file: the whole contract refused, the sale stated once", async () => {
+    const { ctx, violations } = await runSequence(["legacyPartialReimport"]);
+    expect(violations.join("\n")).toBe("");
+    expect(ctx.log.at(-1)!.note).toBe("pre-W6 rows +1/+1; W6 preview dup 2/2; W6 re-import +0, refused 2");
+    const rows = t.db.select().from(t.schema.trades).all().filter((r) => r.tradingsymbol === SYM.legacyPartial);
+    expect(rows.map((r) => [r.buyQty, r.sellQty]).sort()).toEqual([[0, 100], [60, 0]]);
+  });
+
+  it("two sells, one buy (50 + 50, then 130) → the post-W6 file: the whole contract refused, the sale stated once", async () => {
+    const { ctx, violations } = await runSequence(["legacyTwoSellsReimport"]);
+    expect(violations.join("\n")).toBe("");
+    expect(ctx.log.at(-1)!.note).toBe("pre-W6 rows +1/+1/+1; W6 preview dup 2/2; W6 re-import +0, refused 2");
+    const rows = t.db.select().from(t.schema.trades).all().filter((r) => r.tradingsymbol === SYM.legacyTwoSells);
+    expect(rows.map((r) => [r.buyQty, r.sellQty]).sort()).toEqual([[0, 50], [0, 50], [130, 0]]);
+  });
+});
+
 // ── the triples this release's findings name ─────────────────────────────────
 
 describe("the sequences the v4.3.0 re-checks were written about", () => {

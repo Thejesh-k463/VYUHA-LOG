@@ -1,7 +1,7 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { extractDate, extractTime } from "../time-parse";
-import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
+import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg } from "../pair-legs";
 import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
@@ -686,7 +686,9 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     for (const g of groups.values()) {
       const dayLegs = [...g.legs.values()];
       for (const leg of dayLegs) settleVenues(leg);
-      const paired = pairLegs(dayLegs);
+      // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header).
+      const shortable = isShortableSymbol(g.symbol);
+      const paired = pairLegs(dayLegs, { shortable });
       allLegs.push(...dayLegs);
       allPaired.push(...paired);
       // v4.6.0 W9: each position's ladder is cut from the fills of the legs FIFO
@@ -694,7 +696,7 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       // per side = the position's qty (invariant 5). The date-window filter this
       // replaces handed a day-leg split across two positions to BOTH.
       for (const [leg, fs] of g.fillsOf) g.fillsOf.set(leg, [...fs].sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99")));
-      const allocs = allocateSymbolLegs(dayLegs);
+      const allocs = allocateSymbolLegs(dayLegs, { shortable });
       const cut = executionsByAllocation(allocs, g.fillsOf);
       const matched = matchAllocations(paired, allocs);
 
@@ -708,6 +710,7 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
 
         const a = matched[pi];
         const executions = a ? cut.get(a) ?? [] : [];
+        const fillSide = fillSidesOf(pos);
 
         trades.push({
           broker: "zerodha",
@@ -727,8 +730,8 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
           unrealisedPnl: 0,
           buyDate: pos.buyDate,
           sellDate: pos.sellDate,
-          entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
-          exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+          entryTime: executions.find((e) => e.side === fillSide.entry)?.time ?? null,
+          exitTime: [...executions].reverse().find((e) => e.side === fillSide.exit)?.time ?? null,
           productHint: hint,
           exchangeHint: exchangeFrom(pos.exchange ?? ""),
           sourceFile: ctx.filename,
@@ -736,6 +739,7 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
           basisUnknown: pos.basisUnknown,
           ...(cProduct >= 0 ? {} : { productDerived: true }),
           importNotes: pos.notes.length > 0 ? pos.notes : null,
+          side: pos.side,
         });
       }
     }

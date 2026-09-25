@@ -74,12 +74,28 @@ export function mintKey({ email, sku, expires = null, machine = null, pemPath = 
 }
 
 /**
+ * A creator's referral code as the ledger stores it (v4.6.0 W6): trimmed and
+ * upper-cased; blank or `NONE` (any case) means no referrer → null. One code
+ * per CREATOR — the same string docs/owner/forms/referral-form.gs hands out.
+ * It lives in the ledger only, never in the signed key: the app never sees it.
+ * @param {unknown} raw
+ * @returns {string|null}
+ */
+export function normaliseRef(raw) {
+  if (raw == null) return null;
+  const code = String(raw).trim().toUpperCase();
+  return code === "" || code === "NONE" ? null : code;
+}
+
+/**
  * The ledger record for one minted key. Shape is frozen — license-list.mjs
  * and license-upgrade.mjs read it — so add fields, never rename them.
  * `note` is the payment reference (UTR) or the reason there is none.
- * @param {{keyId: string, email: string, sku: string, issued: string, expires?: string|null, machine?: string|null, key: string, note?: string|null}} r
+ * `ref` (added v4.6.0 W6, AFTER note) is the referring creator's code or null;
+ * lines written before it existed have no `ref` and readLedger reads them as null.
+ * @param {{keyId: string, email: string, sku: string, issued: string, expires?: string|null, machine?: string|null, key: string, note?: string|null, ref?: string|null}} r
  */
-export function ledgerLine({ keyId, email, sku, issued, expires = null, machine = null, key, note = null }) {
+export function ledgerLine({ keyId, email, sku, issued, expires = null, machine = null, key, note = null, ref = null }) {
   return {
     keyId,
     email,
@@ -89,6 +105,7 @@ export function ledgerLine({ keyId, email, sku, issued, expires = null, machine 
     machine: machine ?? null,
     key,
     note: note ?? null,
+    ref: normaliseRef(ref),
   };
 }
 
@@ -97,13 +114,65 @@ export function appendLedger(ledgerPath, line) {
   appendFileSync(ledgerPath, JSON.stringify(line) + "\n");
 }
 
-/** Every ledger record, oldest first. A missing ledger reads as empty. */
+/**
+ * Every ledger record, oldest first. A missing ledger reads as empty. A line
+ * written before `ref` existed reads with `ref: null` — the JSONL is
+ * append-only, so old lines are tolerated here and never rewritten.
+ */
 export function readLedger(ledgerPath) {
   if (!existsSync(ledgerPath)) return [];
   return readFileSync(ledgerPath, "utf8")
     .split("\n")
     .filter((l) => l.trim())
-    .map((l) => JSON.parse(l));
+    .map((l) => withRef(JSON.parse(l)));
+}
+
+/** A parsed ledger record with `ref` present (null when the line predates it). */
+export function withRef(r) {
+  return r && typeof r === "object" && !("ref" in r) ? { ...r, ref: null } : r;
+}
+
+/**
+ * Per-referrer sales summary for `license-list.mjs --by-ref` — pure, so the
+ * counts are pinned by a test rather than eyeballed on a payout day.
+ *
+ *   keys     every key the referrer's code is on
+ *   active   not expired as of `today` (the app's own isKeyExpired rule: valid
+ *            through the expiry date) and not revoked; lifetime never expires
+ *   lifetime keys with no expiry
+ *   yearly   keys WITH an expiry — every term key (annual, monthly on request,
+ *            custom), since the ledger records the date, not the plan asked for
+ *   latest   the newest `issued` date
+ *
+ * Unreferred keys group under ref null (printed "(none)"). Sorted by keys
+ * desc, then code ascending so the output is deterministic.
+ * @param {Array<{keyId: string, issued: string, expires?: string|null, ref?: string|null}>} records
+ * @param {{today?: Date, revoked?: readonly string[]}} [opts]
+ */
+export function summariseByRef(records, { today = new Date(), revoked = [] } = {}) {
+  /** @type {Map<string|null, {ref: string|null, keys: number, active: number, lifetime: number, yearly: number, latest: string}>} */
+  const by = new Map();
+  for (const r of records) {
+    const ref = normaliseRef(r.ref);
+    let s = by.get(ref);
+    if (!s) { s = { ref, keys: 0, active: 0, lifetime: 0, yearly: 0, latest: "" }; by.set(ref, s); }
+    s.keys += 1;
+    if (r.expires) s.yearly += 1;
+    else s.lifetime += 1;
+    const expired = !!r.expires && today.getTime() > new Date(r.expires + "T23:59:59").getTime();
+    if (!expired && !revoked.includes(r.keyId)) s.active += 1;
+    if (r.issued && r.issued > s.latest) s.latest = r.issued;
+  }
+  const label = (/** @type {string|null} */ ref) => ref ?? "(none)";
+  return [...by.values()].sort((a, b) => b.keys - a.keys || (label(a.ref) < label(b.ref) ? -1 : label(a.ref) > label(b.ref) ? 1 : 0));
+}
+
+/**
+ * One summary line: `CODE  keys N  active N  lifetime N  yearly N  latest YYYY-MM-DD`.
+ * @param {ReturnType<typeof summariseByRef>[number]} s
+ */
+export function formatByRefLine(s) {
+  return `${(s.ref ?? "(none)").padEnd(14)}  keys ${s.keys}  active ${s.active}  lifetime ${s.lifetime}  yearly ${s.yearly}  latest ${s.latest || "-"}`;
 }
 
 /** `<keyId>_<email with @ and dots as _>.txt` — the archive filename for a key. */
@@ -134,7 +203,7 @@ export function archiveKey({ dir, record, ledgerPath = defaultLedgerPath(), toda
  * Body of the archive file: the key alone on line 1, then human-readable facts.
  * @param {ReturnType<typeof ledgerLine>} r
  */
-export function archiveFileBody({ key, keyId, email, sku, issued, expires = null, machine = null, note = null }) {
+export function archiveFileBody({ key, keyId, email, sku, issued, expires = null, machine = null, note = null, ref = null }) {
   return [
     key,
     `key id : ${keyId}`,
@@ -144,6 +213,7 @@ export function archiveFileBody({ key, keyId, email, sku, issued, expires = null
     `expires: ${expires ?? "never (lifetime)"}`,
     `machine: ${machine ?? "unbound"}`,
     `note   : ${note ?? "—"}`,
+    `ref    : ${ref ?? "none"}`,
     "",
   ].join("\n");
 }

@@ -56,10 +56,17 @@ describe("the Trade Craft page keeps its structural wiring", () => {
     expect(src).toContain("directionByTrade");
   });
 
-  it("never guesses a direction for a flat row — fully-closed trades stay OUT of the direction map", () => {
+  it("never guesses a direction for a flat row — a fully-closed trade enters the map only with a STATED side", () => {
     // sellQty === buyQty says the trade is fully closed, not that it was long;
-    // guessing "long" inverted widen/tighten for every flat short (F3).
-    expect(src).toContain("if (t.sellQty !== t.buyQty) directionByTrade.set");
+    // guessing "long" inverted widen/tighten for every flat short (F3). v4.6.0
+    // W6: a flat row that states its side (`trades.side`, migration 0077) now
+    // enters the map; one that states none still stays out. Fix wave (finding
+    // 2): "states" is `statedSideOf` — null for a flat, same-day-or-undated row
+    // with no intraday-short note — never `side != null`, which the backfill
+    // used to satisfy with a GUESSED long.
+    expect(src).toContain("const side = statedSideOf(t);");
+    expect(src).toContain("if (side) directionByTrade.set(t.id, side);");
+    expect(src, "the stated-side test is a raw column read again").not.toContain("t.side != null");
     expect(src, "the flat-row long guess is back").not.toContain(
       "trades.map((t) => [t.id, t.sellQty > t.buyQty",
     );

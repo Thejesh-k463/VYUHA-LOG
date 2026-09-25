@@ -46,7 +46,15 @@ import path from "node:path";
  */
 const ts = createRequire(import.meta.url)("typescript") as typeof TS;
 
-export type RuleId = "mtf-funded-0" | "open-position-funded" | "own-capital-null" | "raw-date" | "ipo-link-scope" | "risk-cap-resolver";
+export type RuleId =
+  | "mtf-funded-0"
+  | "open-position-funded"
+  | "own-capital-null"
+  | "raw-date"
+  | "ipo-link-scope"
+  | "risk-cap-resolver"
+  | "trade-side-reader"
+  | "trade-side-writer";
 
 export interface FieldRule {
   id: RuleId;
@@ -197,6 +205,40 @@ export const REGISTRY: FieldRule[] = [
       "`globalRisk?.perTradeMaxLoss ?? 9500` off the global row while the breach checks resolved global < bucket < segment, " +
       "so an index_option import ignored the index_option cap; the Process Score pages judged every segment's loser against " +
       "the global row. Red fixture: 58bf72c:lib/import/commit.ts.",
+  },
+  {
+    id: "trade-side-reader",
+    field: "side",
+    rule:
+      "`trades.side` (v4.6.0 W6, migration 0077) is NULLABLE — null until the `trades-side-v1` data fix or a writer states it — " +
+      "and it answers only for a FLAT row: a lopsided row's quantities win. It is read through `sideOf` (lib/domain/side.ts), " +
+      "which applies both halves and falls back to `backfillSide` on null; a raw read takes 'long' for every null and trusts " +
+      "the column over the quantities. A reader that must not guess (the stop-migration direction map) reads `statedSideOf`, " +
+      "which answers null for a flat, same-day-or-undated row with no intraday-short note — the backfill leaves that row NULL " +
+      "(fix wave, finding 2), so `side != null` is not 'stated'.",
+    forbidden: "`row.side` (or `row[\"side\"]`, or destructuring it) on any CARRIER of a `.from(trades)` / `.from(tradesTable)` select",
+    allowed: "`sideOf(row)` / `statedSideOf(row)` / `readsLong(row)` / `tradeDirection(row)`, handing the value on unchanged (`side: row.side` in an object literal), and a `side` on anything that is not a trades select (a leg, a pair, an execution)",
+    // Structural scope: a file that never selects `trades` holds no row to read it off.
+    triggers: ["from(trades"],
+    roots: ["lib", "app", "components"],
+    provenance:
+      "v4.6.0 W6 contract D2: direction was re-derived at ~40 sites as `sellQty > buyQty`, so every closed short read as a long; " +
+      "the column exists to answer that one question and must not become a 41st reading of its own.",
+  },
+  {
+    id: "trade-side-writer",
+    field: "side",
+    rule:
+      "Every INSERT or UPDATE of `trades` that sets a leg quantity (`buyQty` / `sellQty`) sets `side` in the SAME statement " +
+      "(contract D3). A leg write that leaves the old side behind makes a flat row read the side it had before the edit.",
+    forbidden: "`.insert(trades|tradesTable).values({ …buyQty… })` or `.update(trades|tradesTable).set({ …sellQty… })` — an object literal (or a local one, or a spread/ternary of them, or `patch.buyQty = …` onto one) that carries a leg quantity and no `side`",
+    allowed: "the same literal with `side: …`, and a write that touches no leg quantity",
+    // Structural scope: only a file that inserts into or updates `trades` can write a leg.
+    triggers: [".insert(trades", ".update(trades"],
+    roots: ["lib", "app", "components"],
+    provenance:
+      "v4.6.0 W6 design review R-3 / R-8: `setAcquisitionAction`, the IPO link and the auto-close slice each wrote legs " +
+      "without a side, and the slice of a same-day short cover would have read long.",
   },
 ];
 
@@ -663,7 +705,7 @@ const ELEMENT_CALLBACKS = new Set(["find", "findLast", "filter", "map", "forEach
  * — a resolved figure handed down as a prop — out of the report without an
  * exception.
  */
-function riskRowCarriers(sf: TS.SourceFile): (e: TS.Node | undefined) => boolean {
+function riskRowCarriers(sf: TS.SourceFile, tables: readonly string[] = ["riskConfig"]): (e: TS.Node | undefined) => boolean {
   const names = new Set<string>();
   const fns = new Set<string>();
   const carries = (e: TS.Node | undefined): boolean => {
@@ -675,7 +717,7 @@ function riskRowCarriers(sf: TS.SourceFile): (e: TS.Node | undefined) => boolean
       const callee = e.expression;
       if (ts.isPropertyAccessExpression(callee) && callee.name.text === "from") {
         const arg = e.arguments[0];
-        if (arg && ts.isIdentifier(arg) && arg.text === "riskConfig") return true;
+        if (arg && ts.isIdentifier(arg) && tables.includes(arg.text)) return true;
       }
       if (ts.isIdentifier(callee)) return fns.has(callee.text);
       return carries(callee);
@@ -741,6 +783,99 @@ function scanRiskCap(sf: TS.SourceFile, file: string): Violation[] {
 }
 
 // ---------------------------------------------------------------------------
+// v4.6.0 W6 — `trades.side`: read through `sideOf`, written with every leg.
+// ---------------------------------------------------------------------------
+
+const TRADE_TABLES = ["trades", "tradesTable"];
+const SIDE_HELPERS = new Set(["sideOf", "statedSideOf", "sideAfterEdit", "backfillSide"]);
+
+function scanSideReader(sf: TS.SourceFile, file: string): Violation[] {
+  const out: Violation[] = [];
+  if (!TRADE_TABLES.some((t) => sf.text.includes(`from(${t})`))) return out;
+  const carries = riskRowCarriers(sf, TRADE_TABLES);
+  const why = "a raw `side` read off a trades row trusts the column over the quantities and reads null as long: read it through sideOf";
+  walk(sf, (n) => {
+    if (isFieldRead(n, "side")) {
+      const target = (n as TS.PropertyAccessExpression | TS.ElementAccessExpression).expression;
+      const p = n.parent;
+      const isWrite = p && ts.isBinaryExpression(p) && p.left === n && p.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      // Handing it on unchanged (`side: row.side`) is not a reading of it, and
+      // neither is a null-coalesce onto the helper (`x.side ?? sideOf(x)`).
+      const passedOn =
+        (p && ts.isPropertyAssignment(p) && p.initializer === n) ||
+        (p && ts.isBinaryExpression(p) && p.left === n && p.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken &&
+          ts.isCallExpression(p.right) && ts.isIdentifier(p.right.expression) && SIDE_HELPERS.has(p.right.expression.text));
+      if (!isWrite && !passedOn && carries(target)) out.push({ rule: "trade-side-reader", file, line: lineOf(sf, n), expr: oneLine(sf, p && ts.isBinaryExpression(p) ? p : n), why });
+    }
+    if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && carries(n.initializer)) {
+      for (const el of n.name.elements) {
+        const prop = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : ts.isIdentifier(el.name) ? el.name.text : null;
+        if (prop === "side") out.push({ rule: "trade-side-reader", file, line: lineOf(sf, n), expr: oneLine(sf, n), why });
+      }
+    }
+  });
+  return out;
+}
+
+/** The property names an object-literal-ish expression carries (spreads and ternaries of literals included). */
+function literalKeys(sf: TS.SourceFile, e: TS.Node | undefined, seen = new Set<TS.Node>()): Set<string> | null {
+  if (!e || seen.has(e)) return null;
+  seen.add(e);
+  if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) || ts.isNonNullExpression(e)) return literalKeys(sf, e.expression, seen);
+  if (ts.isConditionalExpression(e)) {
+    const a = literalKeys(sf, e.whenTrue, seen);
+    const b = literalKeys(sf, e.whenFalse, seen);
+    if (!a && !b) return null;
+    return new Set([...(a ?? []), ...(b ?? [])]);
+  }
+  if (ts.isIdentifier(e)) {
+    // A local bound to a literal — plus every `local.key = …` assignment onto it.
+    let init: TS.Expression | undefined;
+    walk(sf, (n) => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === e.text && n.initializer) init = n.initializer;
+    });
+    const keys = literalKeys(sf, init, seen);
+    if (!keys) return null;
+    walk(sf, (n) => {
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left) && ts.isIdentifier(n.left.expression) && n.left.expression.text === e.text) keys.add(n.left.name.text);
+    });
+    return keys;
+  }
+  if (!ts.isObjectLiteralExpression(e)) return null;
+  const keys = new Set<string>();
+  for (const p of e.properties) {
+    if ((ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name))) keys.add(p.name.text);
+    if (ts.isSpreadAssignment(p)) for (const k of literalKeys(sf, p.expression, seen) ?? []) keys.add(k);
+  }
+  return keys;
+}
+
+function scanSideWriter(sf: TS.SourceFile, file: string): Violation[] {
+  const out: Violation[] = [];
+  if (!TRADE_TABLES.some((t) => sf.text.includes(`(${t})`))) return out;
+  const why = "a trades write that sets a leg quantity sets `side` in the same statement (contract D3)";
+  walk(sf, (n) => {
+    // X.insert(trades).values(obj) / X.update(trades).set(obj)
+    if (!ts.isCallExpression(n) || !ts.isPropertyAccessExpression(n.expression)) return;
+    const method = n.expression.name.text;
+    if (method !== "values" && method !== "set") return;
+    const inner = n.expression.expression;
+    if (!ts.isCallExpression(inner) || !ts.isPropertyAccessExpression(inner.expression)) return;
+    const verb = inner.expression.name.text;
+    if (!((verb === "insert" && method === "values") || (verb === "update" && method === "set"))) return;
+    const table = inner.arguments[0];
+    if (!table || !ts.isIdentifier(table) || !TRADE_TABLES.includes(table.text)) return;
+    const arg = n.arguments[0];
+    const keys = literalKeys(sf, arg);
+    if (!keys) return; // a row copied whole (a restore) is not a leg write
+    if ((keys.has("buyQty") || keys.has("sellQty")) && !keys.has("side")) {
+      out.push({ rule: "trade-side-writer", file, line: lineOf(sf, n), expr: oneLine(sf, n.expression, 90), why });
+    }
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -766,6 +901,8 @@ export function scanSource(fileName: string, text: string, only?: RuleId[]): Vio
     if (r.id === "raw-date") out.push(...scanRawDate(parse(), file));
     if (r.id === "ipo-link-scope") out.push(...scanIpoLink(parse(), file));
     if (r.id === "risk-cap-resolver") out.push(...scanRiskCap(parse(), file));
+    if (r.id === "trade-side-reader") out.push(...scanSideReader(parse(), file));
+    if (r.id === "trade-side-writer") out.push(...scanSideWriter(parse(), file));
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule));
 }

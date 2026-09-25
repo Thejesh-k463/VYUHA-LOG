@@ -54,6 +54,8 @@ import path from "node:path";
 import { tradeRow, type TempDb } from "./temp-db";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
+// Pure (no DB): the note an overnight F&O short carries (v4.6.0 W6).
+import { OVERNIGHT_SHORT_NOTE } from "@/lib/domain/side";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Modules — ALL loaded dynamically. A static import of anything that reaches
@@ -124,7 +126,23 @@ export const SYM = {
   ipo: "GIPO", //  the IPO-linked closed holding
   mtf: "GMTF", //  a partly sold open MTF row
   fresh: "GNEW", // whatever `reimportOtherHash` brings in
+  // v4.6.0 W6 — two F&O contracts (classify reads them as index options):
+  ovn: "NIFTY26OCT25000PE", //  an overnight short, paired by a post-W6 parser
+  legacy: "NIFTY26OCT25100CE", // the same shape as a PRE-W6 import stored it: two rows
+  // Fix wave (finding 1) — the two shapes a per-leg check cannot see:
+  legacyPartial: "NIFTY26OCT25200PE", //  sold 100, bought back 60 (pre-W6: opening sale 100 + open long 60)
+  legacyTwoSells: "NIFTY26OCT25300PE", // sold 50 + 50, bought 130 (pre-W6: two opening sales + open long 130)
 } as const;
+
+/**
+ * What each fix-wave legacy contract's FILE sold and bought, per book — the
+ * counted-once statement for I1. A post-W6 re-import that lets any row of the
+ * group in states more than the file did.
+ */
+export const LEGACY_GROUP_STATEMENT: Record<string, { sold: number; bought: number }> = {
+  [SYM.legacyPartial]: { sold: 100, bought: 60 },
+  [SYM.legacyTwoSells]: { sold: 100, bought: 130 },
+};
 
 /** Every quantity the fixture states, in one place — no op derives one. */
 export const QTY = {
@@ -133,6 +151,7 @@ export const QTY = {
   ipo: 10, //  the allotment, and the holding it became
   mtfBuy: 100,
   mtfSold: 40, // partly sold: 60 still open (the H1 shape)
+  ovn: 75, //    sold 01 Sep, bought back 02 Sep
   fresh: 50,
 } as const;
 
@@ -480,7 +499,26 @@ export const statementOf = (): Record<string, number> => ({
   [SYM.ipo]: 0, //  the allotment was exited
   [SYM.mtf]: QTY.mtfBuy - QTY.mtfSold, // 60 still open
   [SYM.fresh]: 0, // nothing imported yet
+  [SYM.ovn]: 0, //  a closed short is flat
+  [SYM.legacy]: 0, // the pre-W6 pair nets flat, joined or not
+  [SYM.legacyPartial]: 0, //  nothing imported until its op runs (then −100 + 60)
+  [SYM.legacyTwoSells]: 0, // nothing imported until its op runs (then −50 − 50 + 130)
 });
+
+/** v4.6.0 W6: the closed overnight short a post-W6 parser emits for SYM.ovn / SYM.legacy. */
+function overnightShort(sym: string): NormalizedTrade {
+  const q = QTY.ovn;
+  return normalized({
+    tradingsymbol: sym,
+    productHint: null,
+    exchangeHint: null,
+    sellQty: q, avgSellPrice: 122, sellValue: 122 * q, sellDate: "2026-09-01",
+    buyQty: q, avgBuyPrice: 90, buyValue: 90 * q, buyDate: "2026-09-02",
+    grossPnl: 32 * q,
+    side: "short",
+    importNotes: [OVERNIGHT_SHORT_NOTE],
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The template — one build, one copy per scenario
@@ -920,6 +958,55 @@ export const OPS: BookOp[] = [
       record(ctx, "unCloseImport", "applied", `${piece.tradingsymbol}: ${res.message}`);
     },
   },
+  {
+    name: "importOvernightShort",
+    needs: "account A exists",
+    drives: "lib/import/commit.ts commitParsedFile of a paired closed F&O short (v4.6.0 W6: side 'short', OVERNIGHT_SHORT_NOTE)",
+    run: async (_db, ctx) => {
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, "importOvernightShort", "skipped", "account A is gone");
+      selectAccount(ctx, acc);
+      const res = ctx.m.commit.commitParsedFile(parsedFile([overnightShort(SYM.ovn)]), "g2-seq-ovn.csv", null, acc);
+      // A closed short is flat: no quantity delta, whether it was added or deduped.
+      record(ctx, "importOvernightShort", "applied", `added ${res.added}, deduped ${res.skipped}`);
+    },
+  },
+  {
+    name: "legacyShortJoinReimport",
+    needs: "account A exists",
+    drives:
+      "commitParsedFile of the PRE-W6 two-row shape (opening sale + open long), a post-W6 re-import (the per-leg refusal, R-6), " +
+      "POST /api/data-quality/close-stale on the listed legacy pair (D5), then the re-import again (the join's alias)",
+    run: async (_db, ctx) => {
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, "legacyShortJoinReimport", "skipped", "account A is gone");
+      selectAccount(ctx, acc);
+      const q = QTY.ovn;
+      const imp = (rows: NormalizedTrade[], f: string) => ctx.m.commit.commitParsedFile(parsedFile(rows), f, null, acc);
+      // (a) what a pre-W6 import stored: two rows, each committed alone so the
+      // declared delta is exact.
+      const sale = imp([normalized({ tradingsymbol: SYM.legacy, productHint: null, exchangeHint: null, sellQty: q, avgSellPrice: 122, sellValue: 122 * q, sellDate: "2026-09-01", basisUnknown: true })], "g2-seq-legacy-sale.csv");
+      bump(ctx, SYM.legacy, -q * sale.added);
+      const buy = imp([normalized({ tradingsymbol: SYM.legacy, productHint: null, exchangeHint: null, buyQty: q, avgBuyPrice: 90, buyValue: 90 * q, buyDate: "2026-09-02" })], "g2-seq-legacy-buy.csv");
+      bump(ctx, SYM.legacy, q * buy.added);
+      // (c1) the same file through a post-W6 parser, BEFORE any join: flat, and
+      // refused per leg — I1 counts the sale leg.
+      const again = imp([overnightShort(SYM.legacy)], "g2-seq-legacy-w6.csv");
+      // (b) the join Data Quality lists for it.
+      const pair = ctx.m.dq.getStaleOpenPairs().find((p) => p.tradingsymbol === SYM.legacy && p.legacyShort && p.oneClick && !p.blocked);
+      let joined = "no legacy pair listed";
+      if (pair) {
+        const res = await ctx.m.staleRoute.POST(
+          jsonReq("/api/data-quality/close-stale", { lotId: pair.lotId, saleId: pair.saleId, exitDate: pair.saleDate }),
+        );
+        const body = (await res.json()) as { ok: boolean; message: string };
+        joined = res.status === 200 ? `joined #${pair.saleId} into #${pair.lotId}` : `join refused ${res.status} ${body.message}`;
+      }
+      // (c2) and once more after the join — the alias the join recorded.
+      const after = imp([overnightShort(SYM.legacy)], "g2-seq-legacy-w6.csv");
+      record(ctx, "legacyShortJoinReimport", "applied", `pre-W6 rows +${sale.added}/+${buy.added}; W6 re-import +${again.added}; ${joined}; again +${after.added}`);
+    },
+  },
 ];
 
 /**
@@ -1281,7 +1368,92 @@ export const VARIANTS: BookOp[] = [
       record(ctx, "backupDumpAndRestore", res.ok ? "applied" : "refused", res.message);
     },
   },
+  legacyGroupReimport(
+    "legacyPartialReimport",
+    SYM.legacyPartial,
+    "a PARTLY covered overnight short: sold 100 on 01 Sep, bought back 60 on 02 Sep",
+    // Pre-W6 pairing: opening sale 100 + open long 60.
+    [
+      { sellQty: 100, avgSellPrice: 122, sellValue: 12200, sellDate: "2026-09-01", basisUnknown: true },
+      { buyQty: 60, avgBuyPrice: 90, buyValue: 5400, buyDate: "2026-09-02" },
+    ],
+    // Post-W6 pairing of the same file: closed short 60 + opening sale 40.
+    [
+      {
+        sellQty: 60, avgSellPrice: 122, sellValue: 7320, sellDate: "2026-09-01",
+        buyQty: 60, avgBuyPrice: 90, buyValue: 5400, buyDate: "2026-09-02",
+        grossPnl: 1920, side: "short", importNotes: [OVERNIGHT_SHORT_NOTE],
+      },
+      { sellQty: 40, avgSellPrice: 122, sellValue: 4880, sellDate: "2026-09-01", basisUnknown: true, side: "short" },
+    ],
+  ),
+  legacyGroupReimport(
+    "legacyTwoSellsReimport",
+    SYM.legacyTwoSells,
+    "a MULTI-LOT overnight short: sold 50 on 01 Sep and 50 on 02 Sep, bought 130 on 03 Sep",
+    // Pre-W6 pairing: two opening sales + open long 130.
+    [
+      { sellQty: 50, avgSellPrice: 122, sellValue: 6100, sellDate: "2026-09-01", basisUnknown: true },
+      { sellQty: 50, avgSellPrice: 124, sellValue: 6200, sellDate: "2026-09-02", basisUnknown: true },
+      { buyQty: 130, avgBuyPrice: 90, buyValue: 11700, buyDate: "2026-09-03" },
+    ],
+    // Post-W6 pairing, with the fills a tradebook carries: closed short 100 + open long 30.
+    [
+      {
+        sellQty: 100, avgSellPrice: 123, sellValue: 12300, sellDate: "2026-09-01",
+        buyQty: 100, avgBuyPrice: 90, buyValue: 9000, buyDate: "2026-09-03",
+        grossPnl: 3300, side: "short", importNotes: [OVERNIGHT_SHORT_NOTE],
+        executions: [
+          { side: "sell", qty: 50, price: 122, date: "2026-09-01" },
+          { side: "sell", qty: 50, price: 124, date: "2026-09-02" },
+          { side: "buy", qty: 100, price: 90, date: "2026-09-03" },
+        ],
+      },
+      { buyQty: 30, avgBuyPrice: 90, buyValue: 2700, buyDate: "2026-09-03", side: "long", executions: [{ side: "buy", qty: 30, price: 90, date: "2026-09-03" }] },
+    ],
+  ),
 ];
+
+/**
+ * Fix wave (finding 1) — the pre-W6 rows of an overnight short a per-leg check
+ * cannot see, then the SAME file through a post-W6 parser. Each pre-W6 row is
+ * committed alone so the declared quantity delta is exact; the post-W6 file is
+ * one commit, as a parser hands it over. The group rule must refuse ALL of it.
+ */
+function legacyGroupReimport(
+  name: string,
+  sym: string,
+  what: string,
+  preW6: Partial<NormalizedTrade>[],
+  postW6: Partial<NormalizedTrade>[],
+): BookOp {
+  return {
+    name,
+    needs: "account A exists",
+    drives: `commitParsedFile of the PRE-W6 rows of ${what}, then the post-W6 pairing of the same file (the group refusal, fix wave finding 1)`,
+    run: async (_db, ctx) => {
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, name, "skipped", "account A is gone");
+      selectAccount(ctx, acc);
+      const base = { tradingsymbol: sym, productHint: null, exchangeHint: null } as const;
+      const added = preW6.map((o, i) => {
+        const res = ctx.m.commit.commitParsedFile(parsedFile([normalized({ ...base, ...o })]), `g2-seq-${name}-pre-${i}.csv`, null, acc);
+        bump(ctx, sym, ((o.buyQty ?? 0) - (o.sellQty ?? 0)) * res.added);
+        return res.added;
+      });
+      // The pre-W6 book of the partial shape nets short: that IS the file's statement (a sale larger than its cover).
+      ctx.mayReadShort.add(sym);
+      const preview = ctx.m.commit.previewParsedFile(parsedFile(postW6.map((o) => normalized({ ...base, ...o }))), null, acc);
+      const again = ctx.m.commit.commitParsedFile(parsedFile(postW6.map((o) => normalized({ ...base, ...o }))), `g2-seq-${name}-w6.csv`, null, acc);
+      record(
+        ctx,
+        name,
+        "applied",
+        `pre-W6 rows +${added.join("/+")}; W6 preview dup ${preview.summary.dupCount}/${preview.summary.total}; W6 re-import +${again.added}, refused ${again.skipped}`,
+      );
+    },
+  };
+}
 
 /** The Signal book variants' own contract — flat, so it states no quantity. */
 export const SIGNAL_SYMBOL = "OPT GSIG 25 Sep 2026 100 CE";
@@ -1449,6 +1621,32 @@ export async function checkInvariants(db: BookDb, ctx: BookCtx): Promise<Violati
   }
   if (dupPerAccount.size === 0 && !inTrash.has(ctx.ids.dupHash)) {
     add("I1", `the duplicate round trip (${ctx.ids.dupHash}) is in neither book nor any Trash envelope`);
+  }
+  // v4.6.0 W6 — each overnight short's SALE is stated once per book: a post-W6
+  // re-import of a pre-W6 pair must not add the sale a second time (R-6), before
+  // or after the join. And a flat row that states a short reads short.
+  for (const sym of [SYM.ovn, SYM.legacy]) {
+    const perAccount = new Map<number, number>();
+    for (const r of rows) if (r.tradingsymbol === sym && r.sellQty > 0) perAccount.set(r.accountId, (perAccount.get(r.accountId) ?? 0) + 1);
+    for (const [acc, n] of perAccount) if (n > 1) add("I1", `${sym}: the overnight short's sale is stated ${n} times inside account ${acc}`);
+    for (const r of rows) {
+      if (r.tradingsymbol === sym && r.buyQty === r.sellQty && r.buyQty > 0 && ctx.m.lots.readsLong(r)) add("I1", `${sym} #${r.id}: a closed overnight short reads LONG`);
+    }
+  }
+  // Fix wave (finding 1): a partly covered or multi-lot legacy short — the file's
+  // sale AND purchase are each stated once per book, by QUANTITY (the pre-W6
+  // book legitimately holds two sale rows for the two-sells shape).
+  for (const [sym, st] of Object.entries(LEGACY_GROUP_STATEMENT)) {
+    const per = new Map<number, { sold: number; bought: number }>();
+    for (const r of rows) {
+      if (r.tradingsymbol !== sym) continue;
+      const p = per.get(r.accountId) ?? { sold: 0, bought: 0 };
+      per.set(r.accountId, { sold: r2(p.sold + r.sellQty), bought: r2(p.bought + r.buyQty) });
+    }
+    for (const [acc, p] of per) {
+      if (p.sold > st.sold) add("I1", `${sym}: account ${acc} states ${p.sold} sold, the file sold ${st.sold} — the sale is counted twice`);
+      if (p.bought > st.bought) add("I1", `${sym}: account ${acc} states ${p.bought} bought, the file bought ${st.bought} — the purchase is counted twice`);
+    }
   }
 
   // ── I3 BOOK-EQUALS-STATEMENT ──────────────────────────────────────────────

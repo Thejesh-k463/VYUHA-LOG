@@ -11,13 +11,14 @@ import { inr } from "@/lib/format";
 import { getTrades } from "@/lib/queries/trades";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { sideOf } from "@/lib/domain/side";
 
 // v4.6.0 W3 — the body of the old /reports/scaling screen, now the Edge
 // Clinic's Scaling & Replay tab. The hub page (../page.tsx) owns the page
 // header and the Pro gate.
 export function ScalingTab() {
   const staged = getTrades().filter((t) => t.staged); const ids = staged.map((t) => t.id); const legs = ids.length ? db.select().from(tradeLegs).where(inArray(tradeLegs.tradeId, ids)).all() : [];
-  const report = scalingQuality(staged.map((t) => ({ id: t.id, symbol: t.symbol, direction: t.sellQty > t.buyQty ? "short" as const : "long" as const, legs: legs.filter((l) => l.tradeId === t.id).map((l) => ({ ...l, kind: l.kind === "exit" ? "exit" as const : "entry" as const })) })));
+  const report = scalingQuality(staged.map((t) => ({ id: t.id, symbol: t.symbol, direction: sideOf(t), legs: legs.filter((l) => l.tradeId === t.id).map((l) => ({ ...l, kind: l.kind === "exit" ? "exit" as const : "entry" as const })) })));
   const replays = staged.map((t) => { const ls = legs.filter((l) => l.tradeId === t.id).sort((a,b) => a.seq-b.seq); const from = ls[0]?.tradeDate; const to = ls[ls.length-1]?.tradeDate; const bars = db.select({ date: priceHistory.date, close: priceHistory.close }).from(priceHistory).where(eq(priceHistory.symbol, t.symbol.toUpperCase())).all().filter((b) => (!from || b.date >= from) && (!to || b.date <= to)); return { id: t.id, symbol: t.symbol, entry: ls.find((l) => l.kind === "entry")?.price ?? 0, exit: ls.findLast?.((l) => l.kind === "exit")?.price ?? null, stop: t.slPlanned, target: t.targetPlanned, bars, legs: ls.map((l) => ({ id: l.id, kind: l.kind, tradeDate: l.tradeDate, price: l.price, qty: l.qty })) }; }).filter((x) => x.bars.length);
   return <><div className="grid gap-3 sm:grid-cols-4"><KpiCard label="Closed ladders" valueNum={report.closed} format="int" detail={metricDetail("closedLadders")} /><KpiCard label="Scaling improved" valueNum={report.improved} format="int" detail={metricDetail("scalingImproved")} /><KpiCard label="Scaling harmed" valueNum={report.harmed} format="int" detail={metricDetail("scalingHarmed")} /><KpiCard label="Total scaling impact" valueNum={report.totalImpact} detail={metricDetail("totalScalingImpact")} /></div>
   <Card className="p-0"><CardHeader><CardTitle>First-entry-only comparison</CardTitle></CardHeader><CardContent className="p-0">{report.rows.length ? (

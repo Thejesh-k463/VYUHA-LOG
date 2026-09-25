@@ -46,6 +46,12 @@ export const getTrades = cache((accountIds?: readonly number[]): Trade[] => {
  * scan's order, while an added WHERE clause (different plan) reorders rows
  * that tie on (sell_date, created_at) — and tie order feeds visible row order
  * and float-summation order on these surfaces.
+ *
+ * That measurement PREDATES the id tiebreak: since v3.9 every ORDER BY here
+ * ends on `id DESC` (AUTOINCREMENT, unique), so the order is TOTAL and no plan
+ * can reorder ties (tests/trades-total-order.test.ts). A WHERE-filtered read
+ * therefore returns exactly the whole book's rows in the whole book's relative
+ * order — `getJournalPanelRows` below (v4.6.0 W6) relies on that.
  */
 function pickCols<K extends keyof Trade & keyof typeof trades>(
   keys: readonly K[],
@@ -190,6 +196,40 @@ export type JournalTrade = SlimTrade & Pick<Trade, (typeof JOURNAL_EXTRA_FIELDS)
 export const getJournalTrades = cache((): JournalTrade[] =>
   scopedBookRows([...SLIM_TRADE_FIELDS, ...JOURNAL_EXTRA_FIELDS]));
 
+/**
+ * /trades side panels (v4.6.0 W6): `getJournalTrades()`'s projection, scope and
+ * order, restricted IN SQL to the only rows the page's three server panels can
+ * act on — measured 2026-09-25 on the 25,001-row perf book: the whole-book read
+ * was ~340–390 ms of the page at All accounts, this one ~12 ms.
+ *
+ *   - `summariseAcquisitions`, `ipoAllottedPnl` and the AcquisitionPanel's
+ *     `!hasKnownBasis` all start from `!!t.acquisition` — a JS truthiness
+ *     test, so NULL and '' are both "not flagged";
+ *   - the unmarked-holdings panel reads `t.isOpen && !isMarked(t) &&
+ *     t.instrumentType === "equity"`. `isMarked` also rejects a NON-FINITE
+ *     closing price, which `closing_price > 0` alone would accept for +Inf:
+ *     SQLite stores ±Inf in a REAL column (NaN it stores as NULL), and
+ *     `9e999` is SQLite's +Inf literal, so `< 9e999` is the finiteness test.
+ *
+ * The order is the whole book's (sell_date, created_at, id — DESC, total), so
+ * the subset keeps its relative order and the panels' float sums are
+ * bit-identical to the same calls over the whole book
+ * (tests/trades-kpi-sql.test.ts pins both).
+ */
+export const getJournalPanelRows = cache((): JournalTrade[] => {
+  const panel = sql`((${trades.acquisition} is not null and ${trades.acquisition} <> '')
+    or (${trades.isOpen} = 1 and ${trades.instrumentType} = 'equity'
+        and coalesce(${trades.closingPrice} > 0 and ${trades.closingPrice} < 9e999, 0) = 0))`;
+  // The same one scope rule as `scopedBookRows` (A8) — read, never copied.
+  const scope = accountScopeWhere(trades.accountId);
+  return db
+    .select(pickCols([...SLIM_TRADE_FIELDS, ...JOURNAL_EXTRA_FIELDS]))
+    .from(trades)
+    .where(scope ? and(scope, panel) : panel)
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id))
+    .all() as JournalTrade[];
+});
+
 const DASH_FIELDS = [
   "broker", "bucket", "segment", "symbol", "exchange",
   "netPnl", "grossPnl", "chargesTotal", "rMultiple",
@@ -210,6 +250,8 @@ const DASH_FIELDS = [
   // columns `lotsOf` needs are folded server-side into `lots`/`lotSource` below
   // rather than shipped.
   "riskAmount",
+  // v4.6.0 W6 (migration 0077): which side opened a FLAT row — read through `sideOf`.
+  "side",
 ] as const satisfies readonly (keyof Trade)[];
 
 /** v4.4.0 D3 — lots resolved on the SERVER, per row, and named. */
@@ -271,6 +313,8 @@ const TRACKER_FIELDS = [
   // whose ETF overlay keys on the ISIN FIRST and only then on the symbol. One
   // column, so the row's own identity answers it rather than a ticker lookup.
   "isin",
+  // v4.6.0 W6: the closed-trade strips read a flat row's entry day by `sideOf`.
+  "side",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type TrackerTrade = Pick<Trade, (typeof TRACKER_FIELDS)[number]>;
@@ -503,6 +547,9 @@ const ARJUN_FIELDS = [
   "slPlanned", "trailingSl", "targetPlanned", "riskAmount",
   // … and the behaviour fields the Trade Craft tabs read (exit-behaviour.ts).
   "setupTag", "playbookId", "buyOrderCount", "sellOrderCount", "exitTrigger",
+  // … and (v4.6.0 W6) which side opened a flat row: the MAE/MFE side and the
+  // stop-migration direction map read it through `sideOf`.
+  "side",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type ArjunTrade = Pick<Trade, (typeof ARJUN_FIELDS)[number]>;
@@ -678,3 +725,43 @@ export function tradeStatsOf(all: Array<Pick<Trade, "netPnl" | "grossPnl" | "cha
 export function getTradeStats() {
   return tradeStatsOf(getTrades());
 }
+
+export type TradeStats = ReturnType<typeof tradeStatsOf>;
+
+/**
+ * The /trades KPI strip as ONE SQL aggregate (v4.6.0 W6) — `tradeStatsOf`'s
+ * five figures without fetching the book.
+ *
+ * Money is summed as the column holds it — INTEGER PAISE (invariant 1) — and
+ * divided by 100 once, here. That equals `tradeStatsOf`'s reduce bit for bit:
+ * the reduce adds `paise / 100` floats and then rounds `× 100` back to the
+ * paisa, which recovers exactly this integer sum, and both finish on the same
+ * `n / 100`. (One sign differs by design: a book whose rows net to exactly
+ * zero can reduce to a tiny negative float, which `Math.round` turns into
+ * `-0`; the integer sum says `0`.) `open` counts `is_open = 1`, the drizzle
+ * boolean decoder's own rule (`Number(v) === 1`).
+ *
+ * Scope is `accountScopeWhere` — the same one rule `scopedBookRows` reads
+ * (invariant 8: `accountId > 0 ? filter : all`), with no other exclusion,
+ * because the book projections apply none.
+ */
+export const getTradeStatsSql = cache((): TradeStats => {
+  const q = db
+    .select({
+      count: sql<number>`count(*)`,
+      open: sql<number>`coalesce(sum(case when ${trades.isOpen} = 1 then 1 else 0 end), 0)`,
+      netPaise: sql<number>`coalesce(sum(${trades.netPnl}), 0)`,
+      grossPaise: sql<number>`coalesce(sum(${trades.grossPnl}), 0)`,
+      chargesPaise: sql<number>`coalesce(sum(${trades.chargesTotal}), 0)`,
+    })
+    .from(trades);
+  const where = accountScopeWhere(trades.accountId);
+  const r = (where ? q.where(where) : q).get();
+  return {
+    count: Number(r?.count ?? 0),
+    open: Number(r?.open ?? 0),
+    net: Number(r?.netPaise ?? 0) / 100,
+    gross: Number(r?.grossPaise ?? 0) / 100,
+    charges: Number(r?.chargesPaise ?? 0) / 100,
+  };
+});

@@ -31,7 +31,7 @@ import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
 // The SAME FIFO the Zerodha tradebook and the Dhan GTR parser pair with — a
 // catch-up window spans days, and a Monday buy closed on Wednesday is one
 // position. Forking that arithmetic here is how two sources start disagreeing.
-import { pairSymbolLegs, type Leg, type PairedPosition } from "@/lib/import/pair-legs";
+import { fillSidesOf, isShortableSymbol, pairSymbolLegs, type Leg, type PairedPosition } from "@/lib/import/pair-legs";
 import { totp } from "@/lib/totp";
 
 /** One row from GET /v2/positions (the fields we consume). */
@@ -610,7 +610,11 @@ function allocateFills(fills: DhanFill[], legs: LegFills[], positions: PairedPos
     for (let k = side.head; k < side.all.length && need > 0; k++) need = drain(side.all[k], need, i);
   };
   positions.forEach((p, i) => {
-    if (p.buyQty > 0) hand(buys, i, p.buyQty, p.kind === "closed" ? p.sellDate : null);
+    // A closed row's CLOSING leg is drained from its own day first: a long's
+    // sale day, and (v4.6.0 W6) a covered short's buy-back day — the covering
+    // buy leg pairLegs consumed.
+    const closeDay = p.kind !== "closed" ? null : fillSidesOf(p).exit === "buy" ? p.buyDate : p.sellDate;
+    if (p.buyQty > 0) hand(buys, i, p.buyQty, closeDay);
     if (p.sellQty > 0) hand(sells, i, p.sellQty, p.sellDate);
   });
   // Charges are split only once the takes of a fill are ALL known, so the
@@ -744,11 +748,16 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
     // in, which allocateFills replays; every leg of a group is one symbol, so
     // pairLegs(legs) is exactly this list stably sorted by entry date — the
     // order the rows are emitted in below.
-    const raw = pairSymbolLegs(legs.map((l) => l.leg));
+    // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts
+    // header) — within ONE pull; a daily pull that splits the sale and the
+    // buy-back across two pulls still files them apart (LEDGER D-8, recorded).
+    const raw = pairSymbolLegs(legs.map((l) => l.leg), { shortable: isShortableSymbol(g.symbol) });
     const taken = allocateFills(g.fills, legs, raw);
+    // Entry date by side, as pairLegs sorts (a short opened on its sale).
+    const entryOf = (p: PairedPosition) => (fillSidesOf(p).entry === "sell" ? p.sellDate : (p.buyDate ?? p.sellDate)) ?? "";
     const emitOrder = raw
       .map((_, k) => k)
-      .sort((a, b) => (raw[a].buyDate ?? raw[a].sellDate ?? "").localeCompare(raw[b].buyDate ?? raw[b].sellDate ?? ""));
+      .sort((a, b) => entryOf(raw[a]).localeCompare(entryOf(raw[b])));
     for (const i of emitOrder) {
       const pos = raw[i];
       // Every fill lands in exactly ONE position — handed out in pairLegs' own
@@ -764,6 +773,7 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
       // only adds paise-denominated numbers and the file's stored charges equal
       // what Dhan levied (D1, R81).
       const mine = taken[i];
+      const fillSide = fillSidesOf(pos);
       const executions: Execution[] = mine.map((m) => ({
         side: m.fill.side,
         qty: m.qty,
@@ -824,8 +834,8 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
         unrealisedPnl: 0,
         buyDate: pos.buyDate,
         sellDate: pos.sellDate,
-        entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
-        exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+        entryTime: executions.find((e) => e.side === fillSide.entry)?.time ?? null,
+        exitTime: [...executions].reverse().find((e) => e.side === fillSide.exit)?.time ?? null,
         // STATED by Dhan, not inferred from the calendar or the charges.
         productHint: productHintOf(g.productRaw),
         // D1 (v4.3.0 fix wave 2): the venue pairLegs decided for THIS row (R71's
@@ -837,6 +847,7 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
         reportedCharges,
         basisUnknown: pos.basisUnknown,
         importNotes: [...g.notes, ...pos.notes].length > 0 ? [...g.notes, ...pos.notes] : null,
+        side: pos.side,
       });
     }
   }

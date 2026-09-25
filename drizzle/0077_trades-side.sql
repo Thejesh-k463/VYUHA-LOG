@@ -1,0 +1,22 @@
+-- v4.6.0 W6 — `trades.side`: WHICH SIDE OPENED THE ROW ('long' | 'short').
+--
+-- A fully-closed row is flat (sell_qty = buy_qty), so its quantities cannot say
+-- whether a buy or a sale opened it, and every closed short read as a long
+-- wherever a site forgot to patch around it with the dates (LEDGER D-8). This
+-- column answers exactly that one question.
+--
+-- NULLABLE, NO DEFAULT, on purpose: a `NOT NULL DEFAULT 'long'` would make a
+-- restored pre-W6 backup mislabel every short silently. NULL means "not yet
+-- stated", and every reader goes through `sideOf` (lib/domain/side.ts), which
+-- reads the QUANTITIES first and this column only on a flat row, falling back to
+-- `backfillSide` on NULL.
+--
+-- THIS MIGRATION ONLY ADDS THE COLUMN. The backfill is the `trades-side-v1` data
+-- fix (lib/db/data-fixes.ts), in application code, because a 4.2.x row holds
+-- 'DD-MM-YYYY' dates and a same-day ISO row can carry a time suffix — a SQL byte
+-- compare of sell_date < buy_date would label a long as short. The fix runs at
+-- startup and again inside every backup restore's transaction.
+--
+-- `tests/side-column.test.ts` pins it. Hand-written, no drizzle-kit snapshot
+-- (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `trades` ADD COLUMN `side` text CHECK (`side` IN ('long', 'short'));

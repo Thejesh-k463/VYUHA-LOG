@@ -7,6 +7,7 @@ import { trades as tradesTable, tradeLegs } from "@/lib/db/schema";
 import { computeCharges } from "@/lib/engine/charges";
 import { ratesForTrade, resolvePlan, type PlanAccount, type RatesMap } from "@/lib/engine/rates";
 import { todayIstIso, normalizeDate, unreadableDateMessage, calendarDaysHeld } from "@/lib/domain/trading-day";
+import { sideOf, type SideInput } from "@/lib/domain/side";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeRates } from "@/lib/engine/types";
 import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
@@ -39,13 +40,13 @@ import {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** A short position is one whose entries are sells. */
-export function directionOf(t: { buyQty: number; sellQty: number; staged?: boolean }, _legs?: Leg[]): Direction {
-  // sellQty > buyQty, NOT buyQty === 0: a short that has been PARTIALLY
-  // covered has buyQty > 0, and the === 0 test flipped it long — which
-  // sign-inverted the P&L rebuilt onto the parent row. Equal quantities
-  // (fully closed) stay "long", the long-standing shape of closed rows.
-  // Heuristic until a stored direction column lands (deferred to v3.6).
-  return t.sellQty > t.buyQty ? "short" : "long";
+export function directionOf(t: SideInput & { staged?: boolean }, _legs?: Leg[]): Direction {
+  // NOT buyQty === 0: a short that has been PARTIALLY covered has buyQty > 0,
+  // and the === 0 test flipped it long — which sign-inverted the P&L rebuilt
+  // onto the parent row. v4.6.0 W6: the stored direction column landed —
+  // `sideOf` reads the quantities, and a FLAT (fully closed) row its `side`, so
+  // a closed short ladder rebuilds as the short it is.
+  return sideOf(t);
 }
 
 export interface DbLegRow {
@@ -604,6 +605,9 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction, asOf?
     tx.update(tradesTable)
     .set({
       staged: true,
+      // v4.6.0 W6: the ladder's direction is the side that opened it — a first
+      // entry leg that SELLS makes a short, and a rebuild never flips it.
+      side: dir,
       buyQty: agg.buyQty,
       avgBuyPrice: agg.avgBuyPrice,
       buyValue: agg.buyValue,

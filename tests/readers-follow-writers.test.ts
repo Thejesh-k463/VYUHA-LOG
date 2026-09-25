@@ -353,6 +353,32 @@ export function page(props: { segLimits: { perTradeMaxLoss: number | null }[] })
   });
 });
 
+describe("v4.6.0 W6 — the side rules can see the class they guard", () => {
+  const W = (src: string) => scanSource("side-probe.ts", src, ["trade-side-writer"]).map((v) => v.line);
+  const R = (src: string) => scanSource("side-probe.ts", src, ["trade-side-reader"]).map((v) => v.line);
+
+  it("a leg write with no side is reported — literal, local, spread, ternary and `patch.x =` shapes", () => {
+    expect(W(`db.update(trades).set({ buyQty: 1, avgBuyPrice: 2 }).run();`)).toEqual([1]);
+    expect(W(`tx.insert(tradesTable).values({ accountId: 1, sellQty: 5 }).run();`)).toEqual([1]);
+    expect(W(`const p = { ...(long ? { buyQty: 1 } : { sellQty: 1 }), isOpen: true };\ndb.update(trades).set(p).run();`)).toEqual([2]);
+    expect(W(`const patch: Record<string, unknown> = { acquisition: "ipo" };\npatch.buyQty = 3;\ndb.update(trades).set(patch).run();`)).toEqual([3]);
+  });
+
+  it("…and the same writes stating the side, or touching no leg, are not", () => {
+    expect(W(`db.update(trades).set({ side: "long", buyQty: 1 }).run();`)).toEqual([]);
+    expect(W(`const patch: Record<string, unknown> = {};\npatch.buyQty = 3;\npatch.side = "long";\ndb.update(trades).set(patch).run();`)).toEqual([]);
+    expect(W(`db.update(trades).set({ notes: "x" }).run();`)).toEqual([]);
+    expect(W(`db.update(tradeLegs).set({ qty: 1, buyQty: 2 }).run();`)).toEqual([]);
+  });
+
+  it("a raw side read off a trades select is reported; sideOf, a pass-on and a non-trades side are not", () => {
+    expect(R(`const r = db.select().from(trades).get()!;\nconst s = r.side === "short";`)).toEqual([2]);
+    expect(R(`const rows = db.select().from(tradesTable).all();\nrows.filter((x) => x.side === "long");`)).toEqual([2]);
+    expect(R(`const r = db.select().from(trades).get()!;\nconst s = sideOf(r);\nconst o = { side: r.side };\nconst k = r.side ?? sideOf(r);`)).toEqual([]);
+    expect(R(`const r = db.select().from(trades).get()!;\nconst leg = { side: "buy" };\nconst x = leg.side === "buy";`)).toEqual([]);
+  });
+});
+
 describe("G3 — HEAD under every rule", () => {
   /**
    * ONE walk for the whole file (measured locally 2026-09-15: 640 files read,
@@ -468,6 +494,21 @@ export function reads(p: P, list: P[]) {
     expect(hits("raw-date"), RULE["raw-date"].forbidden).toEqual([]);
   });
 
+  /**
+   * v4.6.0 W6 (contract D2/D3, design review R-3) — `trades.side`. Every writer
+   * that sets a leg quantity states the side in the same statement, and no
+   * reader takes the raw column off a trades select (it is read through `sideOf`).
+   */
+  it("trade-side-writer / trade-side-reader: every leg write states the side, and no raw side read of a trades row", () => {
+    expect(hits("trade-side-writer"), RULE["trade-side-writer"].forbidden).toEqual([]);
+    expect(hits("trade-side-reader"), RULE["trade-side-reader"].forbidden).toEqual([]);
+    // Not empty-satisfiable: the writers the review named ARE parsed by the rule.
+    for (const f of ["lib/import/commit.ts", "app/trades/actions.ts", "app/api/ipos/route.ts", "lib/queries/staged.ts", "lib/corporate-actions-apply.ts"]) {
+      const text = fs.readFileSync(f, "utf8");
+      expect(RULE["trade-side-writer"].triggers.some((t) => text.includes(t)), f).toBe(true);
+    }
+  });
+
   it("FINDING G-G3-1, fixed: the ladder prices through the shared calendar, and its writers refuse a day that does not exist", () => {
     // The scan's own answer, stated as the list it prints (empty, and it is the
     // FIX that empties it: the same rule reported this file at HEAD 8ff4288).
@@ -534,7 +575,7 @@ export function reads(p: P, list: P[]) {
   });
 
   it("the registry states a rule, its forbidden shapes and its provenance for every field it guards", () => {
-    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver"]);
+    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer"]);
     for (const r of REGISTRY) {
       expect(r.rule.length, r.id).toBeGreaterThan(40);
       expect(r.forbidden.length, r.id).toBeGreaterThan(20);

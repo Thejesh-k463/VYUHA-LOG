@@ -23,6 +23,7 @@
 // percentile.
 
 import type { SellerTrade } from "./options-seller";
+import { sideOf } from "@/lib/domain/side";
 
 /** Below this, a grouped statistic is reported but explicitly not trustworthy. */
 export const MIN_SAMPLE = 15;
@@ -38,7 +39,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** The population this module speaks about: positions opened by SELLING. */
 export function sellerTrades<T extends SellerTrade>(trades: T[]): T[] {
-  return trades.filter((t) => t.sellQty > 0 && (t.sellQty >= t.buyQty || t.avgSellPrice > 0));
+  // v4.6.0 W6: opened by selling (`sideOf`), or carrying a sale price.
+  return trades.filter((t) => t.sellQty > 0 && (sideOf(t) === "short" || t.avgSellPrice > 0));
 }
 
 function expectancyOf(nets: number[]): { trades: number; net: number; expectancy: number | null; winRate: number | null } {

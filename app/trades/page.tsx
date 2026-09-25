@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { TradesClient } from "@/components/trades/trades-client";
 import { toSlimTrade } from "@/lib/domain/slim-trade";
-import { getJournalTrades, tradeStatsOf } from "@/lib/queries/trades";
+import { getJournalPanelRows, getTradeStatsSql } from "@/lib/queries/trades";
 import { getTradesPage, countTrades } from "@/lib/queries/trades-page";
 import { EMPTY_TRADE_FILTERS, type TradeFilters } from "@/lib/domain/trades-filter";
 import { parseTradesQuery } from "@/lib/domain/trades-query";
@@ -43,14 +43,17 @@ export default async function TradesPage({
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) if (typeof v === "string") qs.set(k, v);
   const link = parseTradesQuery(qs.toString());
-  // Wire shape + acquisition fields selected in SQL — same rows, order and
-  // values as getTrades(), without mapping the 74-column row to use 47
-  // (perf sweep 2026-08-29). The KPI strip reduces over the same rows in the
-  // same order, so its floats are bit-identical to getTradeStats().
-  const trades = getJournalTrades();
+  // v4.6.0 W6 — the page no longer reads the whole book (~340–390 ms of it at
+  // All accounts on the 25,001-row perf book). The KPI strip is ONE SQL
+  // aggregate that sums the money columns as they are stored — integer paise —
+  // and divides by 100 once, which is exactly the paisa figure the old
+  // `tradeStatsOf` reduce recovered by rounding its float sum back to the paisa.
+  // The side panels read only the rows they can act on (a flagged acquisition,
+  // or an open unmarked equity holding), in the whole book's total order.
+  const panelRows = getJournalPanelRows();
   // A6 — only the aggregate view leaves "which account?" unanswered.
   const writeAccounts = isAggregateView() ? getAccounts().filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name })) : [];
-  const stats = tradeStatsOf(trades);
+  const stats = getTradeStatsSql();
   const workspace = asWorkspace(getSettings()?.workspace);
   // The bucket filter's default comes from the workspace — the CLIENT applied
   // it before v3.9, so the server has to apply the same one or the first page
@@ -74,12 +77,12 @@ export default async function TradesPage({
 
   // Sales whose purchase is not in the data — resolved here, at the top, because
   // every hour they stay unresolved is an hour the edge statistics are wrong.
-  const basisRows = trades.map((t) => ({
+  const basisRows = panelRows.map((t) => ({
     id: t.id, symbol: t.symbol, sellValue: t.sellValue, buyValue: t.buyValue,
     sellQty: t.sellQty, netPnl: t.netPnl, chargesTotal: t.chargesTotal, sellDate: t.sellDate,
     acquisition: t.acquisition, acquisitionPrice: t.acquisitionPrice, acquisitionDate: t.acquisitionDate,
   }));
-  const pending: PendingBasisTrade[] = trades
+  const pending: PendingBasisTrade[] = panelRows
     .filter((t) => !hasKnownBasis(t))
     .map((t) => ({
       id: t.id, symbol: t.symbol, sellQty: t.sellQty, sellValue: t.sellValue,
@@ -94,7 +97,7 @@ export default async function TradesPage({
   // almost always an IPO allotment, which is credited without ever appearing
   // as a buy.
   const ipoLinks = getIpoTradeLinks();
-  const unmarked: UnmarkedHolding[] = trades
+  const unmarked: UnmarkedHolding[] = panelRows
     // Derivatives are left out: a mark typed on one is refused (it would be
     // stored under the underlying's symbol), so the panel must not ask.
     .filter((t) => t.isOpen && !isMarked(t) && t.instrumentType === "equity")

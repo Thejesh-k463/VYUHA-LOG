@@ -7,6 +7,11 @@
 //   npm run sell -- <buyer-email> --months 1 --renewal --utr <UTR> --name "<Full Name>"    # second month on, Rs 1,499
 //   npm run sell -- you@example.com --lifetime --no-payment --name "Me"   # dry run on yourself
 //
+//   Add --ref <CODE> when a creator referred the sale (their referral-form code,
+//   e.g. --ref RAVI; trimmed + upper-cased, blank or NONE = nobody). It is passed
+//   to license-issue.mjs, lands in the ledger's `ref` field only (never in the
+//   key), and license-list.mjs --by-ref totals it per creator.
+//
 // WHAT IT REPLACES. On the first two real sales (2026-08-23) one mint command
 // fanned out into eight manual steps: mkdir the archive folder, mint, eyeball
 // the ledger, derive the receipt number, fill the receipt, save it, back up
@@ -35,7 +40,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultLedgerPath, readLedger, archiveFileName } from "./lib/license-mint.mjs";
+import { defaultLedgerPath, readLedger, archiveFileName, normaliseRef } from "./lib/license-mint.mjs";
 import { PLANS, nextReceiptNo, receiptText, sendMessage, chaseFrom } from "./lib/sale-flow.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -57,7 +62,8 @@ const renewal = has("--renewal"); // monthly only: the second month onwards, Rs 
 const utr = opt("--utr");
 const name = opt("--name");
 const freebie = has("--no-payment");
-const today = opt("--today") ?? new Date().toISOString().slice(0, 10); // tests pin the date
+const refRaw = opt("--ref"); // the referring creator's code (ledger only); see the header
+const today =opt("--today") ?? new Date().toISOString().slice(0, 10); // tests pin the date
 const receiptFloor = Number(opt("--receipt-floor") ?? process.env.VYUHA_RECEIPT_FLOOR ?? 2); // 001 and 002 were written by hand
 
 function die(msg) {
@@ -66,8 +72,9 @@ function die(msg) {
 }
 function usage(msg) {
   if (msg) console.error(`✗ ${msg}\n`);
-  console.error(`Usage: npm run sell -- <buyer-email> (--lifetime | --years 1 | --months 1 [--renewal]) --utr <UTR> --name "<Full Name>"`);
+  console.error(`Usage: npm run sell -- <buyer-email> (--lifetime | --years 1 | --months 1 [--renewal]) --utr <UTR> --name "<Full Name>" [--ref <CODE>]`);
   console.error(`       npm run sell -- <buyer-email> (--lifetime | --years 1 | --months 1 [--renewal]) --no-payment --name "<Name>"   # dry run`);
+  console.error(`       --ref <CODE>: the creator who referred the sale (referral-form code; blank or NONE = nobody)`);
   process.exit(1);
 }
 
@@ -78,6 +85,12 @@ if (renewal && !months) usage("--renewal is for a monthly sale only");
 if (!name) usage("--name \"<Full Name>\" is required — it goes on the receipt");
 if (!freebie && !utr) usage("--utr <UTR> is required (or --no-payment for a dry run / freebie)");
 if (utr && !/^\d{12}$/.test(utr)) usage(`--utr "${utr}" does not look like a 12-digit UPI UTR`);
+// Same rule as license-issue.mjs: a dangling --ref, or one that swallowed a flag
+// or the buyer's email, is a typo — refused before anything is minted.
+if (has("--ref") && (refRaw === undefined || refRaw.startsWith("-") || refRaw.includes("@"))) {
+  usage(`--ref needs a code right after it (e.g. --ref RAVI, or --ref none)${refRaw === undefined ? "" : `, got "${refRaw}"`}`);
+}
+const ref = has("--ref") ? normaliseRef(refRaw) : null;
 
 const plan = lifetime ? "lifetime" : months ? (renewal ? "monthlyRenewal" : "monthly") : "annual";
 const P = PLANS[plan];
@@ -113,6 +126,7 @@ if (dup && !has("--allow-duplicate-email")) {
 console.error(`\n── Vyuha sale ──────────────────────────────────────────────`);
 console.error(`  buyer   : ${name} <${email}>`);
 console.error(`  plan    : ${P.item}${freebie ? "  (NO PAYMENT — dry run / freebie)" : `  ₹${P.amount.toLocaleString("en-IN")}`}`);
+console.error(`  ref     : ${ref ?? "none"}`);
 console.error(`  archive : ${archiveDir}`);
 console.error(`  ledger  : ${ledgerPath}  (${before.length} key${before.length === 1 ? "" : "s"} before)`);
 
@@ -121,7 +135,8 @@ console.error(`\n[1/5] minting …`);
 const note = freebie ? undefined : `UTR ${utr}, Rs ${P.amount.toLocaleString("en-IN")} UPI ${today}`;
 const mintArgs = [path.join(here, "license-issue.mjs"), email, "app", ...P.flag.split(" "), "--save-dir", archiveDir];
 if (freebie) mintArgs.push("--no-payment");
-const mint = spawnSync(process.execPath, mintArgs, {
+if (ref) mintArgs.push("--ref", ref);
+const mint =spawnSync(process.execPath, mintArgs, {
   cwd: root,
   encoding: "utf8",
   env: { ...process.env, ...(note ? { VYUHA_LICENSE_NOTE: note } : {}) },
@@ -141,6 +156,7 @@ if (rec.key !== key) die("newest ledger line does not carry the key that was pri
 if (lifetime && rec.expires) die(`lifetime sale but ledger says expires ${rec.expires}`);
 if (!lifetime && !rec.expires) die("annual sale but ledger has NO expiry — this would be a lifetime key");
 if (!freebie && !(rec.note ?? "").includes(utr)) die("ledger note does not carry the UTR");
+if ((rec.ref ?? null) !== ref) die(`ledger ref is ${rec.ref ?? "none"}, expected ${ref ?? "none"}`);
 const keyFile = path.join(archiveDir, archiveFileName(rec.keyId, email));
 if (!existsSync(keyFile)) die(`archive file missing: ${keyFile}`);
 if (readFileSync(keyFile, "utf8").split("\n")[0].trim() !== key) die("archive file's first line is not the key");

@@ -5,7 +5,9 @@
 > VYUHA-REFERAL-FROM share url) — and send it (as PDF or
 > pasted text) WITH the client ZIP. One kit per creator; their code doubles as
 > their identifier in the licence ledger and the referral form, so one string
-> tracks a collaborator across leads, payouts and keys.
+> tracks a collaborator across leads, payouts and keys: mint a referred sale with
+> `license-issue.mjs … --ref [[CODE]]` and `license-list.mjs --by-ref` totals each
+> creator's keys at payout (LICENSE_OPERATIONS.md §2).
 >
 > Claims below are copied from the audited sales surfaces (README / landing page,
 > v3.0.0 audit). If a claim changes there, change it here in the same commit —

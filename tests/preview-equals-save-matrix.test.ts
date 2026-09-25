@@ -160,6 +160,66 @@ const saved = (id: number) => {
 };
 
 let seq = 0;
+/**
+ * v4.6.0 W6 — an OPEN SHORT (sold to open, nothing bought back), stating
+ * `side: 'short'` as every writer now does. `openRow` below builds longs only;
+ * a short closes by BUYING, and both halves read which leg closes through
+ * `sideOf` (closingAggregate / closePosition).
+ */
+function openShortRow(seg: SegFixture, broker: string, storedCloseCount: number, plan = "default"): number {
+  const sym = `S${++seq}`;
+  return t.db
+    .insert(t.schema.trades)
+    .values(
+      tradeRow({
+        accountId: PLAN_ACCOUNT.get(planKey(broker, plan)) ?? 1,
+        broker,
+        bucket: seg.bucket,
+        segment: seg.segment,
+        instrumentType: seg.instrumentType,
+        exchange: "NSE",
+        symbol: sym,
+        tradingsymbol: seg.instrumentType === "option" ? `${sym}100CESEP26` : sym,
+        side: "short",
+        buyQty: 0,
+        avgBuyPrice: 0,
+        buyValue: 0,
+        buyDate: null,
+        buyOrderCount: storedCloseCount,
+        sellQty: seg.qty,
+        avgSellPrice: seg.exit,
+        sellValue: seg.qty * seg.exit,
+        sellDate: BUY_ISO,
+        sellOrderCount: 1,
+        isOpen: true,
+        ...seg.extra,
+      }),
+    )
+    .returning({ id: t.schema.trades.id })
+    .get()!.id;
+}
+
+/** Every rate card × order-count cell of one SHORT (segment × exit-date) slice, for the CLOSE dialog. */
+async function closeShortSlice(seg: SegFixture, exitRaw: string, exitTag: string): Promise<CellResult[]> {
+  const out: CellResult[] = [];
+  for (const { broker, plan } of BROKER_PLANS) {
+    for (const counts of ["sent", "omitted"] as const) {
+      const id = openShortRow(seg, broker, counts === "sent" ? 2 : 0, plan);
+      const w = wire(id);
+      const exitIso = resolveExitIso(exitRaw);
+      // The dialog's own call site: a short's exit lands on the BUY side.
+      const body = closePreviewBody(w, seg.entry, exitRaw, { buyDate: exitIso, sellDate: w.sellDate });
+      const shown = await preview(body);
+      const res = commit.closePosition(id, seg.entry, exitRaw === "" ? null : exitRaw);
+      const r = row(id);
+      // The close covers on the BUY leg and the flat row keeps its side.
+      const shape = res.ok && r.buyQty === seg.qty && r.sellQty === seg.qty && r.side === "short";
+      out.push(compare(`close-short ${broker}/${plan} ${seg.segment} exit=${exitTag} counts=${counts}`, shown, res.ok && shape ? saved(id) : null));
+    }
+  }
+  return out;
+}
+
 function openRow(seg: SegFixture, broker: string, funded: number | null, storedCloseCount: number, plan = "default"): number {
   const sym = `M${++seq}`;
   return t.db
@@ -328,6 +388,21 @@ describe("G3 — the close dialog's preview equals what closePosition stores", (
     // THE assertion. On revert of S1/U2/V4/I1[1] this names every cell that
     // diverges, with both sets of figures.
     expect(divergent(cells), "close preview ≠ close save").toEqual([]);
+  });
+});
+
+// v4.6.0 W6 (contract §2) — a SHORT row per segment where a short can exist
+// (NO_SHORT_SEGMENTS = delivery, MTF): the close dialog's preview equals what
+// `closePosition` stores, to the paisa, and the save covers on the buy leg.
+const SHORT_SLICES = SEGMENTS.filter((s) => s.segment !== "eq_delivery" && s.segment !== "eq_mtf").flatMap((seg) =>
+  EXITS.map(([tag, raw]) => [seg.segment, tag, seg, raw] as const),
+);
+
+describe("v4.6.0 W6 — a SHORT's close: the dialog's preview equals what closePosition stores", () => {
+  it.each(SHORT_SLICES)("%s, exit %s: every rate card × order-count cell agrees to the paisa", async (_s, tag, seg, raw) => {
+    const cells = await closeShortSlice(seg, raw, tag);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(divergent(cells), "short close preview ≠ short close save").toEqual([]);
   });
 });
 

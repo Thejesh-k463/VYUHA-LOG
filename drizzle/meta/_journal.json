@@ -540,6 +540,13 @@
       "when": 1788801000000,
       "tag": "0076_atlas-regime-thresholds",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "6",
+      "when": 1788801100000,
+      "tag": "0077_trades-side",
+      "breakpoints": true
     }
   ]
 }

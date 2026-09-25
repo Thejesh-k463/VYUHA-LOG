@@ -14,6 +14,7 @@ import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire proje
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { ExitTriggerField } from "@/components/trades/exit-trigger-field";
 import { SignalSection } from "@/components/trades/signal-section";
+import { entryLegOf, sideOf } from "@/lib/domain/side";
 
 interface PreviewResp {
   breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
@@ -161,8 +162,7 @@ export function EditTradeDialog({
   // otherwise opening Edit would silently overwrite a genuinely custom risk
   // amount the instant the dialog mounts, before the user has touched anything.
   const [riskTouched, setRiskTouched] = useState(() => {
-    const origEntry = trade.sellQty > trade.buyQty ? trade.avgSellPrice : trade.avgBuyPrice;
-    const origQty = trade.sellQty > trade.buyQty ? trade.sellQty : trade.buyQty;
+    const { price: origEntry, qty: origQty } = entryLegOf(trade);
     if (trade.riskAmount == null || trade.slPlanned == null || !(origEntry > 0) || !(origQty > 0)) return trade.riskAmount != null;
     const derived = Math.round(Math.abs(origEntry - trade.slPlanned) * origQty * 100) / 100;
     return Math.abs(trade.riskAmount - derived) > 0.5;
@@ -177,7 +177,7 @@ export function EditTradeDialog({
   // MTF is long-only in India (you fund a purchase, never a short), but this
   // dialog is generic across segments — direction is read off the ORIGINAL
   // trade (stable for the dialog's lifetime), same convention as CloseTradeDialog.
-  const isShort = trade.sellQty > trade.buyQty;
+  const isShort = sideOf(trade) === "short";
 
   useEffect(() => {
     if (state.ok) {

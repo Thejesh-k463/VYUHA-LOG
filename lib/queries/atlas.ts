@@ -70,6 +70,7 @@ import {
   type BackfillProgress,
 } from "@/lib/jobs/bhavcopy-backfill";
 import { catchupStatus, type CatchupStatus } from "@/lib/jobs/bhavcopy-catchup";
+import { entryDateOf, exitDateOf } from "@/lib/domain/side";
 
 /**
  * lib/queries/atlas — the server wrapper around the PURE `lib/atlas` library.
@@ -1010,8 +1011,8 @@ export function getEntryDayBreadth(payload: AtlasPayload | null): EntryDayBreadt
   for (const h of payload?.history ?? []) history.set(h.as_of, { above: h.above_sma_ppm?.[50] ?? null, adv: h.advance_pct_ppm });
   const replaySessions = payload?.history?.length ?? 0;
   const trades = getTrackerTrades().filter((t) => t.instrumentType === "equity");
-  const entryOf = (t: { buyDate: string | null; sellDate: string | null; buyQty: number; sellQty: number }) =>
-    dayOf(t.sellQty > t.buyQty ? t.sellDate ?? t.buyDate : t.buyDate ?? t.sellDate);
+  const entryOf = (t: { buyDate: string | null; sellDate: string | null; buyQty: number; sellQty: number; side?: string | null }) =>
+    dayOf(entryDateOf(t) ?? exitDateOf(t));
   const open: string[] = [];
   const winners: string[] = [];
   const losers: string[] = [];

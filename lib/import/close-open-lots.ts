@@ -88,6 +88,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // for 4.3.0, so no IMPORT writes an alias; Data Quality's stale-lot close does
 // (R26, `withStaleCloseNote`), and a restore can bring aliased rows in.
 
+import { sideOf } from "@/lib/domain/side";
+
 /** Marks one alias hash inside `import_notes`. Segments are joined by " | ". */
 export const DEDUP_ALIAS_PREFIX = "dedup-alias:";
 
@@ -139,16 +141,21 @@ export interface RowLegs {
   sellQty: number;
   buyDate: string | null;
   sellDate: string | null;
+  /** Which side opened the row (migration 0077); read only on a FLAT row. */
+  side?: string | null;
+  /** Read by the NULL-side fallback (an intraday short's note). */
+  importNotes?: string | null;
 }
 
 /**
  * Does this row read LONG? The ONE definition (H1, wave 2H; moved here by V1
- * from `lib/trash.ts`, which had copied `updateManualTrade`'s): more bought than
- * sold, or a closed row whose purchase is dated before its sale — a closed row
- * states its direction only through its dates, the exit being the later one.
+ * from `lib/trash.ts`, which had copied `updateManualTrade`'s). Since v4.6.0 W6
+ * it delegates to `sideOf` (lib/domain/side.ts): the larger leg on a lopsided
+ * row, the stored `side` on a flat one (a flat row used to state its direction
+ * only through its dates, and a same-day covered short read as neither).
  */
 export function readsLong(x: RowLegs): boolean {
-  return x.buyQty > x.sellQty || (x.buyQty === x.sellQty && !!x.buyDate && !!x.sellDate && x.buyDate < x.sellDate);
+  return sideOf(x) === "long";
 }
 
 /**

@@ -59,6 +59,7 @@ import { sebiRadar, type RadarPosition } from "@/lib/risk/sebi-radar";
 import { getActiveRadarRules } from "@/lib/queries/rule-packs";
 import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { sideOf } from "@/lib/domain/side";
 
 export const dynamic = "force-dynamic";
 
@@ -135,7 +136,7 @@ export default function RiskPage() {
     .map((t) => {
       // Short (sell-to-open, e.g. a written CE/PE) has the open leg on sellQty with
       // buyQty still 0 — same convention as /strategies and the settlement engine.
-      const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
+      const side: "long" | "short" = sideOf(t);
       const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
       const entry = side === "long" ? t.avgBuyPrice : t.avgSellPrice;
       // Equity: stored symbol → stored contract → close → entry.
@@ -314,7 +315,7 @@ export default function RiskPage() {
     .filter((t) => t.isOpen && DERIVATIVE_SEGMENTS.has(t.segment))
     .map((t) => {
       const netQty = Math.abs(t.buyQty - t.sellQty) || t.buyQty;
-      const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
+      const side: "long" | "short" = sideOf(t);
       // SETTLEMENT reference — the UNDERLYING's cash price for BOTH legs
       // (owner ruling C-1). For an option it judges moneyness; for a future it
       // is the DELIVERY price, because the exchange settles a stock future at

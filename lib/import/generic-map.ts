@@ -40,7 +40,7 @@
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import { extractDate, extractTime } from "./time-parse";
-import { pairLegs, type Leg } from "./pair-legs";
+import { fillSidesOf, isShortableSymbol, pairLegs, type Leg } from "./pair-legs";
 
 // ── The two shapes a broker file can take ─────────────────────────────────
 //
@@ -279,7 +279,13 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
   // time) report one "trade" per fill instead of the position the trader
   // actually took. Fills are summed per symbol|date|side before pairing.
   const legs = new Map<string, Leg>();
-  const times = new Map<string, { first: string | null; last: string | null }>();
+  // v4.6.0 W6 fix wave (finding 6): each timed fill keeps its SIDE and DAY, so
+  // a position's entry is its opening side's first fill and its exit the
+  // closing side's last (`fillSidesOf`) — as every other tradebook parser
+  // reads them. The min/max time-of-day over all of a symbol's fills read a
+  // closed short's 10:40 buy-back as its entry, and any position held across
+  // days took the earliest clock time of either day.
+  const timedFills = new Map<string, { side: "buy" | "sell"; date: string; time: string }[]>();
   let skipped = 0;
   let undated = 0;
 
@@ -318,12 +324,7 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     if (exchange) leg.venues = { ...leg.venues, [exchange]: (leg.venues?.[exchange] ?? 0) + qty * price };
 
     const t = extractTime(cell(row, m.time));
-    if (t) {
-      const cur = times.get(symbol) ?? { first: null, last: null };
-      if (!cur.first || t < cur.first) cur.first = t;
-      if (!cur.last || t > cur.last) cur.last = t;
-      times.set(symbol, cur);
-    }
+    if (t) timedFills.set(symbol, [...(timedFills.get(symbol) ?? []), { side, date, time: t }]);
   }
 
   if (skipped > 0) {
@@ -348,10 +349,21 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     if (named.length > 1) leg.exchange = named.reduce((best, cur) => (round2(cur[1]) > round2(best[1]) ? cur : best))[0];
     else delete leg.venues;
   }
-  const paired = pairLegs([...legs.values()]);
+  // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header).
+  const paired = pairLegs([...legs.values()], { shortable: isShortableSymbol });
 
   const trades: NormalizedTrade[] = paired.map((p) => {
-    const t = times.get(p.symbol);
+    // The position's own window — a closed short's runs from its sale to its
+    // buy-back — in day-then-clock order.
+    const fillSide = fillSidesOf(p);
+    const [from, to] = fillSide.entry === "sell" ? [p.sellDate, p.buyDate] : [p.buyDate, p.sellDate];
+    const timed = (timedFills.get(p.symbol) ?? [])
+      .filter((f) => (from == null || f.date >= from) && (to == null || f.date <= to))
+      .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+    const t = {
+      first: timed.find((f) => f.side === fillSide.entry)?.time ?? null,
+      last: [...timed].reverse().find((f) => f.side === fillSide.exit)?.time ?? null,
+    };
     return {
       broker: opts.broker,
       tradingsymbol: p.symbol,
@@ -370,10 +382,11 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
       productHint: product,
       exchangeHint: (p.exchange as Exchange | null) ?? null,
       sourceFile: opts.filename,
-      entryTime: t?.first ?? null,
-      exitTime: p.kind === "closed" ? t?.last ?? null : null,
+      entryTime: t.first,
+      exitTime: p.kind === "closed" ? t.last : null,
       basisUnknown: p.basisUnknown || undefined,
       importNotes: p.notes.length > 0 ? p.notes : null,
+      side: p.side,
     };
   });
 

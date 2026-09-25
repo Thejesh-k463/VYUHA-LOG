@@ -17,6 +17,7 @@ import { getResultsDateMap, getSectorResolution } from "@/lib/queries/instrument
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getTrades } from "@/lib/queries/trades";
 import type { BarsCap, DeskBar, DeskRow, FeedInfo, LiveDeskData } from "./desk-types";
+import { sideOf } from "@/lib/domain/side";
 
 /**
  * The Live Desk server loader — journal rows in, `LiveDeskData` out.
@@ -300,7 +301,7 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
 
   for (const [i, p] of positions.entries()) {
     const t = byId.get(p.id);
-    const isShort = t ? t.sellQty > t.buyQty : false;
+    const isShort = t ? sideOf(t) === "short" : false;
     const sector = sectors.get(p.symbol.toUpperCase()) ?? null;
     const bars = barsBySymbol.get(p.symbol.toUpperCase()) ?? [];
 

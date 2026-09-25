@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { trades as tradesTable, corporateActions, ledgerEntries } from "@/lib/db/schema";
+import { isLongSide, sideOf } from "@/lib/domain/side";
 import { eq, sql } from "drizzle-orm";
 import { splitBonusMultiplier, adjustForSplitOrBonus, dividendIncome } from "@/lib/analytics/corporate-actions";
 import { computeEventTds } from "@/lib/analytics/dividend-tds";
@@ -72,7 +73,10 @@ export function applyCorporateAction(id: number): ApplyResult {
     let adjusted = 0;
     db.transaction((tx) => {
       for (const t of matching) {
-        const isShort = t.sellQty > t.buyQty;
+        // v4.6.0 W6: the OPENING leg by `sideOf`; a split scales only it and
+        // never changes which side opened the row (stated back unchanged).
+        const side = sideOf(t);
+        const isShort = side === "short";
         const before = isShort
           ? { qty: t.sellQty, avgPrice: t.avgSellPrice, slPlanned: t.slPlanned, trailingSl: t.trailingSl, targetPlanned: t.targetPlanned }
           : { qty: t.buyQty, avgPrice: t.avgBuyPrice, slPlanned: t.slPlanned, trailingSl: t.trailingSl, targetPlanned: t.targetPlanned };
@@ -82,6 +86,7 @@ export function applyCorporateAction(id: number): ApplyResult {
           .set(
             isShort
               ? {
+                  side,
                   sellQty: after.qty,
                   avgSellPrice: after.avgPrice,
                   sellValue: Math.round(after.qty * after.avgPrice * 100) / 100,
@@ -91,6 +96,7 @@ export function applyCorporateAction(id: number): ApplyResult {
                   updatedAt: sql`(datetime('now'))`,
                 }
               : {
+                  side,
                   buyQty: after.qty,
                   avgBuyPrice: after.avgPrice,
                   buyValue: Math.round(after.qty * after.avgPrice * 100) / 100,
@@ -128,7 +134,8 @@ export function applyCorporateAction(id: number): ApplyResult {
   // dividend — open long equity holdings only.
   const perShare = action.dividendPerShare ?? 0;
   if (perShare <= 0) return { ok: false, message: "Invalid dividend amount — nothing to post." };
-  const eligible = matching.filter((t) => t.instrumentType === "equity" && t.buyQty >= t.sellQty);
+  // v4.6.0 W6: a long (or flat long) holding by `sideOf` — a short is never paid a dividend.
+  const eligible = matching.filter((t) => t.instrumentType === "equity" && isLongSide(t));
 
   // IND-6 — Section 194 TDS: 10% once this company's aggregate dividend to the
   // shareholder crosses ₹5,000 in the FY. Seed the running total from any

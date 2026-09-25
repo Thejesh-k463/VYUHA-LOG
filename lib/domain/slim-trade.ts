@@ -50,6 +50,11 @@ export const SLIM_TRADE_FIELDS = [
   "avgSellPrice",
   "buyDate",
   "sellDate",
+  // v4.6.0 W6 (migration 0077): which side OPENED the row. A flat (fully
+  // closed) row cannot state it through its quantities, and every client-side
+  // direction read (`tradeDirection`, the dialogs, the table's Entry/Exit
+  // columns) goes through `sideOf`, which reads this on a flat row.
+  "side",
   // P&L columns + view filters (matchesView/countViews read unrealised/closing)
   "buyValue",
   "sellValue",

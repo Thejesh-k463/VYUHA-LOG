@@ -8,6 +8,7 @@ import { getSelectedAccountId } from "./accounts";
 import { getAliasMap } from "./aliases";
 import { getInstruments } from "./instruments";
 import { todayIstIso } from "@/lib/domain/trading-day";
+import { entryDateOf } from "@/lib/domain/side";
 
 /**
  * Everything the /sessions page renders, resolved through the alias map so a
@@ -77,7 +78,7 @@ export function getSessionPlanPage() {
     id: t.id,
     symbol: t.symbol,
     playbookId: t.playbookId,
-    entryDate: t.sellQty > t.buyQty ? t.sellDate : t.buyDate,
+    entryDate: entryDateOf(t),
     entryTime: t.entryTime,
     netPnl: t.netPnl,
   }));

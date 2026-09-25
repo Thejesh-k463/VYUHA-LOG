@@ -4,6 +4,7 @@ import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
 import { dedupLabelFromNotes, withDedupLabelNote } from "@/lib/import/trade-identity";
 import { bundledSymbolByIsin, normalizeCompanyName, securityByCompanyName } from "@/lib/import/isin-symbol";
 import { normalizeDate } from "@/lib/domain/trading-day";
+import { backfillSide } from "@/lib/domain/side";
 import { parseSeededSignalNotes, serializeSignal } from "@/lib/domain/signal";
 import { classifyUnsourcedRisk, repriceCapTrades } from "@/lib/queries/risk-cap";
 
@@ -29,6 +30,7 @@ export const LEG_TRADE_DATE_ISO_FIX = "leg-trade-date-iso-v1";
 export const SIGNAL_NOTES_BACKFILL_FIX = "signal-notes-backfill-v1";
 export const RISK_SOURCE_FIX = "risk-source-v1";
 export const DHAN_GTR_SYMBOL_FIX = "dhan-gtr-symbols-v1";
+export const TRADES_SIDE_FIX = "trades-side-v1";
 
 export interface DataFixResult {
   name: string;
@@ -434,6 +436,41 @@ function applyDhanGtrSymbols(sqlite: Database.Database): DataFixResult {
   return result;
 }
 
+/**
+ * trades-side-v1 (v4.6.0 W6, contract D1) — state WHICH SIDE OPENED every row
+ * migration 0077 left NULL.
+ *
+ * ONE implementation: `backfillSide` (lib/domain/side.ts), the same function
+ * `sideOf` falls back to on a NULL — so a reader and this fix cannot disagree,
+ * and there is no SQL copy. SQL could not be it: a 4.2.x row holds 'DD-MM-YYYY'
+ * dates and a same-day ISO row can carry a time suffix, so a byte compare of
+ * `sell_date < buy_date` labels a long as short (design review R-4).
+ *
+ * `side IS NULL` is what makes it idempotent AND safe on the replay every backup
+ * restore runs (`rerunDataFixesAfterRestore`): a stated side — a writer's, or a
+ * restored post-W6 row's — is never overwritten. Touches `side` and nothing else.
+ *
+ * No quiet `hasColumn` guard, for the reason `signal-notes-backfill-v1` states:
+ * on a pre-0077 connection the SELECT throws, the marker rolls back, and the fix
+ * runs on the next open.
+ */
+function applyTradesSide(sqlite: Database.Database): DataFixResult {
+  const result: DataFixResult = { name: TRADES_SIDE_FIX, applied: true, rekeyed: 0, skippedCollisions: 0 };
+  const rows = sqlite
+    .prepare("SELECT id, buy_qty, sell_qty, buy_date, sell_date, import_notes FROM trades WHERE side IS NULL ORDER BY id")
+    .all() as { id: number; buy_qty: number; sell_qty: number; buy_date: string | null; sell_date: string | null; import_notes: string | null }[];
+  const write = sqlite.prepare("UPDATE trades SET side = ? WHERE id = ?");
+  for (const r of rows) {
+    const side = backfillSide({ buyQty: r.buy_qty, sellQty: r.sell_qty, buyDate: r.buy_date, sellDate: r.sell_date, importNotes: r.import_notes });
+    // Fix wave (finding 2): no signal is no side — a flat, same-day-or-undated
+    // row with no intraday-short note stays NULL rather than a guessed 'long'.
+    if (side == null) continue;
+    write.run(side, r.id);
+    result.rekeyed++;
+  }
+  return result;
+}
+
 const FIXES: { name: string; apply: (sqlite: Database.Database) => DataFixResult }[] = [
   { name: PAYTM_DEDUP_FIX, apply: applyPaytmDedupIsin },
   { name: IPO_ACCOUNT_REHOME_FIX, apply: applyIpoAccountRehome },
@@ -441,6 +478,7 @@ const FIXES: { name: string; apply: (sqlite: Database.Database) => DataFixResult
   { name: SIGNAL_NOTES_BACKFILL_FIX, apply: applySignalNotesBackfill },
   { name: RISK_SOURCE_FIX, apply: applyRiskSource },
   { name: DHAN_GTR_SYMBOL_FIX, apply: applyDhanGtrSymbols },
+  { name: TRADES_SIDE_FIX, apply: applyTradesSide },
 ];
 
 /**

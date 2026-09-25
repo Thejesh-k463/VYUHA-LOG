@@ -4,6 +4,7 @@
 //   node scripts/license-issue.mjs <buyer-email> [sku] [--expires YYYY-MM-DD | --years N | --months N]
 //                                                      [--machine ABCD-EF12-3456]
 //                                                      [--save-dir <folder>]
+//                                                      [--ref <CODE>]
 //
 //   --save-dir (or env VYUHA_KEY_ARCHIVE_DIR) ARCHIVES the key after minting:
 //   writes <keyId>_<email>.txt (key on line 1, then plan/issued/expires/machine/
@@ -46,13 +47,21 @@
 //   the default and what every key issued before this flag existed does.
 //   Trade-off: binding means you cannot pre-issue at checkout — you need the
 //   buyer's Machine ID first, so it is a two-step delivery.
+//
+//   --ref <CODE> records the CREATOR who referred the sale (v4.6.0 W6): the
+//   same code docs/owner/forms/referral-form.gs gives each creator ("RAVI").
+//   Trimmed and upper-cased; blank or NONE means nobody referred it. It goes
+//   into the LEDGER only — never the signed key, so the app never sees it —
+//   and `license-list.mjs --by-ref` sums it per creator at payout time.
 import {
-  mintKey, ledgerLine, appendLedger, archiveKey, defaultPemPath, defaultLedgerPath, addMonths,
+  mintKey, ledgerLine, appendLedger, archiveKey, defaultPemPath, defaultLedgerPath, addMonths, normaliseRef,
 } from "./lib/license-mint.mjs";
 
 const args = process.argv.slice(2);
 let expires = null;
 let machine = null;
+/** The referring creator's code, or null (ledger only — not in the key). */
+let ref = null;
 /** Which term was asked for — drives the plan line printed after the mint. */
 let termKind = null;
 /** EVERY term flag seen. Two of them is a contradiction, never a silent winner. */
@@ -61,6 +70,18 @@ let saveDir = process.env.VYUHA_KEY_ARCHIVE_DIR || null;
 for (let i = args.length - 1; i >= 0; i--) {
   if (args[i] === "--machine" && args[i + 1]) { machine = args[i + 1].trim().toUpperCase(); args.splice(i, 2); }
   else if (args[i] === "--save-dir" && args[i + 1]) { saveDir = args[i + 1]; args.splice(i, 2); }
+  else if (args[i] === "--ref") {
+    // `--ref ""` is a legitimate "nobody", so test for PRESENCE, not truthiness.
+    // A dangling --ref, or one that swallowed a flag or the buyer's email, is a
+    // typo — refuse it rather than record a sale against the wrong creator.
+    const raw = args[i + 1];
+    if (raw === undefined || raw.startsWith("-") || raw.includes("@")) {
+      console.error(`--ref needs a code right after it (the creator's code, e.g. --ref RAVI, or --ref none)${raw === undefined ? "" : `, got "${raw}"`}.`);
+      process.exit(1);
+    }
+    ref = normaliseRef(raw);
+    args.splice(i, 2);
+  }
   else if (args[i] === "--expires" && args[i + 1]) {
     expires = args[i + 1];
     termKind = "expires"; termFlags.push("--expires");
@@ -92,7 +113,7 @@ for (let i = args.length - 1; i >= 0; i--) {
 // after the v2.99.76 reprice retired that bundle.
 const [email, sku = "app"] = args;
 if (!email || !email.includes("@")) {
-  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] (--lifetime | --years N | --months N | --expires YYYY-MM-DD) [--machine ABCD-EF12-3456] [--save-dir <folder>] [--no-payment]");
+  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] (--lifetime | --years N | --months N | --expires YYYY-MM-DD) [--machine ABCD-EF12-3456] [--save-dir <folder>] [--ref <CODE>] [--no-payment]");
   console.error("");
   console.error("  A TERM is required — there is no default:");
   console.error("    Journal — Lifetime ₹29,999 : license-issue.mjs buyer@x.com app --lifetime");
@@ -102,6 +123,8 @@ if (!email || !email.includes("@")) {
   console.error("  A PAYMENT REFERENCE is required — set VYUHA_LICENSE_NOTE to the UTR:");
   console.error('    VYUHA_LICENSE_NOTE="UTR 123456789012, ₹7,999 UPI 2026-08-22" node scripts/license-issue.mjs …');
   console.error("    (or --no-payment for a genuine freebie: review copy, reissue, your own machine)");
+  console.error("");
+  console.error("  Referred by a creator? Add --ref <CODE> (their referral-form code; ledger only, not in the key).");
   process.exit(1);
 }
 if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)) {
@@ -194,6 +217,7 @@ const record = ledgerLine({
   machine,
   key,
   note: note ?? (freebie ? "no payment (--no-payment)" : null),
+  ref,
 });
 appendLedger(ledgerPath, record);
 
@@ -227,6 +251,7 @@ const planLine = !expires
 console.error(`  plan   : ${planLine}  (sku ${sku})`);
 console.error(`  buyer  : ${email}`);
 console.error(`  machine: ${machine ?? "unbound — activates on any computer"}`);
+console.error(`  ref    : ${ref ?? "none"}`);
 console.error(`  ledger : ${ledgerPath} — back this up with ${pemPath}`);
 if (archived) {
   console.error(`  archive: ${archived.keyFile}`);

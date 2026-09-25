@@ -35,6 +35,10 @@ const row = (over: Partial<Required<CloseSource>>): Required<CloseSource> => ({
   sellValue: 0,
   buyOrderCount: 1,
   sellOrderCount: 1,
+  // v4.6.0 W6: the side reading's inputs (unstated → the legs decide).
+  side: null,
+  buyDate: null,
+  sellDate: null,
   ...over,
 });
 

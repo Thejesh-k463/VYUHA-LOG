@@ -6,9 +6,10 @@ import { reviewSession } from "@/lib/analytics/session-review";
 import { getAliasMap } from "./aliases";
 import { getTrades } from "./trades";
 import { getSelectedAccountId } from "./accounts";
+import { entryDateOf } from "@/lib/domain/side";
 
 export function getSessionsWithReview() {
-  const allTrades = getTrades().map((t) => ({ id: t.id, symbol: t.symbol, playbookId: t.playbookId, entryDate: t.sellQty > t.buyQty ? t.sellDate : t.buyDate, entryTime: t.entryTime, netPnl: t.netPnl }));
+  const allTrades = getTrades().map((t) => ({ id: t.id, symbol: t.symbol, playbookId: t.playbookId, entryDate: entryDateOf(t), entryTime: t.entryTime, netPnl: t.netPnl }));
   const accountId = getSelectedAccountId();
   const q = db.select().from(tradingSessions);
   // Alias map on BOTH review paths — without it an aliased symbol scores as

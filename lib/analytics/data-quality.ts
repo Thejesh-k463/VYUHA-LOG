@@ -1,5 +1,6 @@
 import { DEDUP_ALIAS_PREFIX, STALE_CLOSE_NOTE, lotIdentityHashes } from "@/lib/import/close-open-lots";
 import { normalizeDate, todayIstIso } from "@/lib/domain/trading-day";
+import { OVERNIGHT_SHORT_NOTE, sideOf, statedSideOf } from "@/lib/domain/side";
 import { etfClass } from "@/lib/engine/etf-class";
 import { calendarCoverage } from "@/lib/domain/market-calendar";
 
@@ -70,6 +71,8 @@ export interface QualityTrade {
   staged?: boolean;
   /** M2 (wave 2G) — read only to tell a lot the Data Quality join closed (`closedByStaleJoin`). */
   importNotes?: string | null;
+  /** v4.6.0 W6 — which side opened the row; read only through `sideOf`. */
+  side?: string | null;
   /**
    * v4.5.0 wave 3a — read only by `etfClassUndetermined`. Optional, so a caller
    * that hands in the fields above gets exactly the report it got before.
@@ -556,7 +559,19 @@ export interface StaleOpenPair {
    * `closeStaleLot` refuses it (STAGED).
    */
   staged: boolean;
+  /**
+   * v4.6.0 W6 (contract D5) — the lot is an OPENING SALE (`acquisition
+   * 'unknown'`) of a contract that can be short, and the row beside it is the
+   * later purchase: the two rows a pre-4.6 import made of ONE overnight F&O
+   * short. Listed with `LEGACY_SHORT_PAIR_NOTE`; never joined automatically —
+   * the join is the user's, through the same confirmation as every pair.
+   */
+  legacyShort: boolean;
 }
+
+/** v4.6.0 W6 (D5): the sentence a pre-4.6 overnight-short pair is listed with. */
+export const LEGACY_SHORT_PAIR_NOTE =
+  "Sold before bought — two rows from a pre-4.6 import. The sale and the later purchase of this contract are one overnight short; join them here and the sale's basis is the purchase. If the contract was in fact held before the file began, leave them as they are.";
 
 /**
  * W2-DQ P3 — did the USER record this row's basis? `acquisition` set to
@@ -617,13 +632,23 @@ const sameQty = (a: number, b: number) => Math.abs(a - b) < 1e-9;
  * `StaleOpenPair.staged`.
  */
 function isStaleLot(r: BookRow, side: "long" | "short"): boolean {
-  if (!r.isOpen) return false;
-  if (side === "long") return r.buyQty > r.sellQty;
-  // A short is admitted only where a short can exist, and never as a sale
-  // whose basis the book could not state: that row is a sale of a holding the
-  // file never showed, and pairing a purchase against it would fabricate a
-  // P&L (invariant 6; tests/auto-close-off.test.ts case 8).
-  return r.sellQty > r.buyQty && !NO_SHORT_SEGMENTS.has(r.segment) && r.acquisition == null;
+  if (!r.isOpen || r.buyQty === r.sellQty) return false;
+  // v4.6.0 W6: the ONE reading (`sideOf` — an open lot is lopsided, so its
+  // quantities say which side it holds).
+  if (side === "long") return sideOf(r) === "long";
+  // A short is admitted only where a short can exist (a delivery/MTF sale with
+  // no buy is a sale of a holding the file never showed, and pairing a purchase
+  // against it would fabricate a P&L — invariant 6; tests/auto-close-off.test.ts
+  // case 8). An `acquisition 'unknown'` sale IS admitted outside
+  // NO_SHORT_SEGMENTS (contract D5, design review R-5): that is how a pre-W6
+  // import filed an overnight F&O short — an opening sell plus a separate open
+  // long — and the pair is listed so the user can join it (never automatically;
+  // `isLegacyShortPair` names the other reading).
+  return (
+    sideOf(r) === "short" &&
+    !NO_SHORT_SEGMENTS.has(r.segment) &&
+    (r.acquisition == null || r.acquisition === "unknown")
+  );
 }
 
 function saleDay(r: BookRow, side: "long" | "short"): { date: string; stated: boolean } | null {
@@ -663,13 +688,24 @@ const byDateThenId = (a: { date: string; row: BookRow }, b: { date: string; row:
  */
 function closedLotEntry(r: BookRow, side: "long" | "short", sameDay: "evidence" | "possible"): string | null {
   if (r.isOpen) return null;
-  const buy = isoDay(r.buyDate);
-  const sell = isoDay(r.sellDate);
   const noShort = NO_SHORT_SEGMENTS.has(r.segment);
-  const sameDayCounts = sameDay === "possible" || noShort;
-  if (side === "long") return r.buyQty > 0 && buy && (!sell || buy < sell || (buy === sell && sameDayCounts)) ? buy : null;
-  if (noShort) return null;
-  return r.sellQty > 0 && sell && (!buy || sell < buy || (sell === buy && sameDay === "possible")) ? sell : null;
+  if (side === "short" && noShort) return null;
+  if (!((side === "long" ? r.buyQty : r.sellQty) > 0)) return null;
+  // The lot's ENTRY: a long opens on its purchase, a short on its sale.
+  const entry = isoDay(side === "long" ? r.buyDate : r.sellDate);
+  if (!entry) return null;
+  // v4.6.0 W6 fix wave (finding 4): a row that STATES which side opened it —
+  // its quantities, `trades.side`, two dated legs, or the intraday-short note
+  // (`statedSideOf`) — is a closed lot of that side and of no other. This used
+  // to be `buy < sell` on aliased names: a same-day covered short that STATES
+  // short counted as neither side, and the scan could not see it.
+  const stated = statedSideOf(r);
+  if (stated) return stated === side ? entry : null;
+  // No stated side: flat and same-day or undated, no note — the pre-W6
+  // reading, unchanged. With no other leg dated it is a lot of this side; on
+  // the same day it is one only where it MAY be (N12), or where no short can be.
+  if (!isoDay(side === "long" ? r.sellDate : r.buyDate)) return entry;
+  return sameDay === "possible" || noShort ? entry : null;
 }
 
 /**
@@ -842,6 +878,7 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
         ambiguous,
         closedLotIds,
         saleStaged: !!s.row.staged,
+        legacyShort: side === "short" && lot.row.acquisition === "unknown",
       });
     }
   }
@@ -1511,6 +1548,11 @@ export function scoreIssues(issues: QualityIssue[]): number {
 export function assessDataQuality(i: QualityInputs): QualityReport {
   const issues: QualityIssue[] = [];
   const add = (issue: QualityIssue, ids: number[] = []) => { if (issue.count > 0) issues.push({ ...issue, ids: ids.slice(0, 100) }); };
+
+  // v4.6.0 W6 (contract D4) — an overnight F&O short read from a file names the
+  // other reading; listed for review, never changed (no action, no one-click).
+  const overnight = i.trades.filter((t) => (t.importNotes ?? "").includes(OVERNIGHT_SHORT_NOTE));
+  add({ code: "overnight_short", severity: "info", title: "Overnight shorts read from an import", detail: "These positions were sold first and bought back on a later day of the same file, so they are recorded as one closed short. The file cannot rule out the other reading — the contract held before the file began, sold, then bought again — which would be an opening sale plus an open long. If that is what happened, edit the legs in Trades.", count: overnight.length, href: "/trades" }, overnight.map((t) => t.id));
 
   const basis = i.trades.filter((t) => t.acquisition != null && (!t.acquisitionPrice || t.acquisitionPrice <= 0));
   add({ code: "unknown_basis", severity: "critical", title: "Unknown acquisition cost", detail: "These sales cannot produce trustworthy P&L, tax, expectancy, or ROM until their basis is confirmed.", count: basis.length, href: "/trades?basis=unknown" }, basis.map((t) => t.id));

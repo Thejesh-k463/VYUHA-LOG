@@ -8,6 +8,7 @@ import { licenseKeyId } from "@/lib/license";
 import { skuById, upgradeCredit } from "@/lib/domain/pricing";
 import {
   mintKey, ledgerLine, appendLedger, readLedger, archiveKey, archiveFileName, keyIdOf, addMonths,
+  normaliseRef, summariseByRef, formatByRefLine,
 } from "../scripts/lib/license-mint.mjs";
 import { readLifetimeLaunchPrice, upgradeDue } from "../scripts/lib/upgrade-credit.mjs";
 
@@ -84,8 +85,9 @@ describe("scripts/lib/license-mint.mjs", () => {
   it("ledger shape is frozen and round-trips through append/read", () => {
     const p = path.join(tmp, "shape.jsonl");
     const line = ledgerLine({ keyId: "AAAA-BBBB-CC", email: "a@b.com", sku: "app", issued: "2026-08-15", key: "VYUHA-x.y" });
-    expect(Object.keys(line)).toEqual(["keyId", "email", "sku", "issued", "expires", "machine", "key", "note"]);
+    expect(Object.keys(line)).toEqual(["keyId", "email", "sku", "issued", "expires", "machine", "key", "note", "ref"]);
     expect(line.expires).toBeNull();
+    expect(line.ref).toBeNull();
     appendLedger(p, line);
     appendLedger(p, { ...line, keyId: "AAAA-BBBB-CD" });
     expect(readLedger(p).map((r: { keyId: string }) => r.keyId)).toEqual(["AAAA-BBBB-CC", "AAAA-BBBB-CD"]);
@@ -104,6 +106,115 @@ describe("scripts/lib/license-mint.mjs", () => {
     expect(path.basename(snapshot)).toBe("license-ledger.2026-08-15.jsonl");
     expect(fs.existsSync(snapshot)).toBe(true);
     expect(() => archiveKey({ dir, record: rec, ledgerPath: path.join(tmp, "shape.jsonl") })).toThrow(/Refusing to overwrite/);
+  });
+});
+
+/**
+ * REFERRAL CODES (v4.6.0 W6, row 9 item 7). One code per CREATOR — the same
+ * string docs/owner/forms/referral-form.gs hands out — recorded in the LEDGER
+ * only (the owner's sales record). It is never in the signed payload: the app
+ * never sees it.
+ */
+describe("referral codes — --ref into the ledger, --by-ref out of it", () => {
+  it("normaliseRef trims and upper-cases; blank and NONE mean no referrer", () => {
+    expect(normaliseRef(" abc ")).toBe("ABC");
+    expect(normaliseRef("Trader_Ravi")).toBe("TRADER_RAVI");
+    expect(normaliseRef("none")).toBeNull();
+    expect(normaliseRef(" NoNe ")).toBeNull();
+    expect(normaliseRef("")).toBeNull();
+    expect(normaliseRef("   ")).toBeNull();
+    expect(normaliseRef(null)).toBeNull();
+    expect(normaliseRef(undefined)).toBeNull();
+  });
+
+  it("a ledger line carries ref AFTER note; an old line without ref reads as null", () => {
+    const line = ledgerLine({ keyId: "AAAA-BBBB-CC", email: "a@b.com", sku: "app", issued: "2026-09-25", key: "VYUHA-x.y", note: "UTR 1", ref: " abc " });
+    expect(Object.keys(line).slice(-2)).toEqual(["note", "ref"]);
+    expect(line.ref).toBe("ABC");
+    const p = path.join(tmp, "ref-old.jsonl");
+    // A line written before --ref existed: no ref field at all (append-only — never rewritten).
+    fs.writeFileSync(p, JSON.stringify({ keyId: "OLD0-0000-00", email: "o@b.com", sku: "app", issued: "2026-08-01", expires: null, machine: null, key: "VYUHA-o.o", note: "UTR 0" }) + "\n");
+    appendLedger(p, line);
+    const [old, fresh] = readLedger(p) as { ref: string | null }[];
+    expect(old.ref).toBeNull();
+    expect("ref" in old).toBe(true);
+    expect(fresh.ref).toBe("ABC");
+  });
+
+  it("license-issue --ref writes the normalised code to the ledger and NOT into the signed key", () => {
+    const a = run("license-issue.mjs", ["ref1@x.com", "app", "--years", "1", "--ref", " abc "], { VYUHA_LICENSE_NOTE: "UTR r1" });
+    expect(a.status, a.err).toBe(0);
+    const recA = readLedger(ledgerPath).find((x: { email: string }) => x.email === "ref1@x.com") as { ref: string | null };
+    expect(recA.ref).toBe("ABC");
+    const payload = keyVerifies(a.out);
+    expect(payload).not.toBeNull();
+    expect("ref" in payload).toBe(false);
+    expect(a.err).toContain("ref    : ABC");
+
+    const b = run("license-issue.mjs", ["ref2@x.com", "app", "--years", "1", "--ref", "none"], { VYUHA_LICENSE_NOTE: "UTR r2" });
+    expect(b.status, b.err).toBe(0);
+    expect((readLedger(ledgerPath).find((x: { email: string }) => x.email === "ref2@x.com") as { ref: string | null }).ref).toBeNull();
+
+    const c = run("license-issue.mjs", ["ref3@x.com", "app", "--years", "1", "--ref", ""], { VYUHA_LICENSE_NOTE: "UTR r3" });
+    expect(c.status, c.err).toBe(0);
+    expect((readLedger(ledgerPath).find((x: { email: string }) => x.email === "ref3@x.com") as { ref: string | null }).ref).toBeNull();
+
+    // A dangling --ref is a typo, never a silent "no referrer".
+    const d = run("license-issue.mjs", ["ref4@x.com", "app", "--years", "1", "--ref"], { VYUHA_LICENSE_NOTE: "UTR r4" });
+    expect(d.status).toBe(1);
+    expect(d.err).toContain("--ref needs a code");
+  });
+
+  // Two referrers + one unreferred (an OLD line, no ref field) + one expired.
+  const fixture = [
+    { keyId: "AAAA-0001-01", email: "l@x.com", sku: "app", issued: "2026-08-01", expires: null, machine: null, key: "VYUHA-a.1", note: "UTR 1", ref: "ALPHA" },
+    { keyId: "AAAA-0002-02", email: "y@x.com", sku: "app", issued: "2026-09-01", expires: "2099-01-01", machine: null, key: "VYUHA-a.2", note: "UTR 2", ref: "ALPHA" },
+    { keyId: "BBBB-0003-03", email: "e@x.com", sku: "app", issued: "2019-01-01", expires: "2020-01-01", machine: null, key: "VYUHA-b.3", note: "UTR 3", ref: "BETA" },
+    { keyId: "CCCC-0004-04", email: "n@x.com", sku: "app", issued: "2026-09-10", expires: "2099-01-01", machine: null, key: "VYUHA-c.4", note: "UTR 4" },
+  ];
+
+  it("summariseByRef counts keys / active / lifetime / yearly / latest per referrer, keys desc", () => {
+    const s = summariseByRef(fixture, { today: new Date("2026-09-25T12:00:00") });
+    expect(s).toEqual([
+      { ref: "ALPHA", keys: 2, active: 2, lifetime: 1, yearly: 1, latest: "2026-09-01" },
+      { ref: null, keys: 1, active: 1, lifetime: 0, yearly: 1, latest: "2026-09-10" },
+      { ref: "BETA", keys: 1, active: 0, lifetime: 0, yearly: 1, latest: "2019-01-01" },
+    ]);
+    expect(formatByRefLine(s[1])).toMatch(/^\(none\)\s+keys 1\s+active 1\s+lifetime 0\s+yearly 1\s+latest 2026-09-10$/);
+    // A revoked key is not active (a refunded sale earns no one a referral).
+    const r = summariseByRef(fixture, { today: new Date("2026-09-25T12:00:00"), revoked: ["AAAA-0001-01"] });
+    expect(r[0]).toMatchObject({ ref: "ALPHA", keys: 2, active: 1 });
+  });
+
+  it("license-list --by-ref prints the summary, and --by-ref CODE lists that referrer's keys", () => {
+    const p = path.join(tmp, "by-ref.jsonl");
+    fs.writeFileSync(p, fixture.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const sum = run("license-list.mjs", ["--by-ref"], { VYUHA_LICENSE_LEDGER: p });
+    expect(sum.status, sum.err).toBe(0);
+    const lines = sum.out.split("\n").filter((l) => /\skeys \d/.test(l));
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatch(/^ALPHA\s+keys 2\s+active 2\s+lifetime 1\s+yearly 1\s+latest 2026-09-01$/);
+    expect(lines[1]).toMatch(/^\(none\)\s+keys 1\s+active 1\s+lifetime 0\s+yearly 1\s+latest 2026-09-10$/);
+    expect(lines[2]).toMatch(/^BETA\s+keys 1\s+active 0\s+lifetime 0\s+yearly 1\s+latest 2019-01-01$/);
+    expect(sum.out).not.toContain("VYUHA-");
+
+    const one = run("license-list.mjs", ["--by-ref", "alpha"], { VYUHA_LICENSE_LEDGER: p });
+    expect(one.status, one.err).toBe(0);
+    expect(one.out).toContain("AAAA-0001-01");
+    expect(one.out).toContain("AAAA-0002-02");
+    expect(one.out).not.toContain("BBBB-0003-03");
+    expect(one.out).not.toContain("VYUHA-a.1");
+    expect(one.out).toContain("2 key(s)");
+
+    const full = run("license-list.mjs", ["--by-ref", "ALPHA", "--full"], { VYUHA_LICENSE_LEDGER: p });
+    expect(full.out).toContain("VYUHA-a.1");
+    const fullSum = run("license-list.mjs", ["--full", "--by-ref"], { VYUHA_LICENSE_LEDGER: p });
+    expect(fullSum.out).toMatch(/^ALPHA\s+keys 2/m);
+    expect(fullSum.out).not.toContain("VYUHA-");
+
+    const none = run("license-list.mjs", ["--by-ref", "none"], { VYUHA_LICENSE_LEDGER: p });
+    expect(none.out).toContain("CCCC-0004-04");
+    expect(none.out).not.toContain("AAAA-0001-01");
   });
 });
 
@@ -248,5 +359,38 @@ describe("scripts/license-upgrade.mjs", () => {
     const r = run("license-upgrade.mjs", ["two@x.com", "--paid", "9999"]);
     expect(r.status).toBe(1);
     expect(r.err).toContain("name the key id");
+  });
+
+  it("--confirm carries the ORIGINAL key's ref forward; an old line without ref upgrades to null", () => {
+    // Own ledger AND own revocation copies: the --confirm case above pins the
+    // shared copies to exactly one revoked id.
+    const dir = path.join(tmp, "upgrade-ref");
+    fs.mkdirSync(dir, { recursive: true });
+    const led = path.join(dir, "ledger.jsonl");
+    const revoked = path.join(dir, "license-revoked.mjs");
+    const lib = path.join(dir, "license.ts");
+    fs.copyFileSync(path.join(root, "scripts", "license-revoked.mjs"), revoked);
+    fs.copyFileSync(path.join(root, "lib", "license.ts"), lib);
+    fs.writeFileSync(led, [
+      { keyId: "ABCD-0001-A1", email: "refd@x.com", sku: "app", issued: "2026-09-01", expires: "2099-01-01", machine: null, key: "VYUHA-r.1", note: "UTR 1", ref: "ALPHA" },
+      // Written before --ref existed: no ref field at all.
+      { keyId: "ABCD-0002-A2", email: "plain@x.com", sku: "app", issued: "2026-09-01", expires: "2099-01-01", machine: null, key: "VYUHA-r.2", note: "UTR 2" },
+    ].map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const e = { VYUHA_LICENSE_LEDGER: led, VYUHA_REVOKED_MJS: revoked, VYUHA_LICENSE_TS: lib };
+
+    const a = run("license-upgrade.mjs", ["ABCD-0001-A1", "--paid", "7999", "--confirm", "UTR 11"], e);
+    expect(a.status, a.err).toBe(0);
+    const upA = readLedger(led).at(-1) as { email: string; expires: null; ref: string | null };
+    expect(upA.email).toBe("refd@x.com");
+    expect(upA.expires).toBeNull();
+    expect(upA.ref).toBe("ALPHA");
+
+    const b = run("license-upgrade.mjs", ["ABCD-0002-A2", "--paid", "7999", "--confirm", "UTR 22"], e);
+    expect(b.status, b.err).toBe(0);
+    const upB = readLedger(led).at(-1) as { email: string; ref: string | null };
+    expect(upB.email).toBe("plain@x.com");
+    expect(upB.ref).toBeNull();
+    // Written as an explicit null on disk, not merely filled in by readLedger.
+    expect(JSON.parse(fs.readFileSync(led, "utf8").trim().split("\n").at(-1)!)).toHaveProperty("ref", null);
   });
 });

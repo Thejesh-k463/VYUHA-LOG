@@ -21,6 +21,7 @@ import { parseShelf } from "@/lib/domain/strategy-shelf";
 import { sebiRealityLine } from "@/lib/domain/options-help";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
 import { hasRecordedBasis } from "@/lib/analytics/data-quality";
+import { sideOf } from "@/lib/domain/side";
 
 /** The cash-equity segments a sell-only row can never be a short in (M-3). */
 const DELIVERY_SEGMENTS = new Set(["eq_delivery", "eq_mtf", "eq_intraday"]);
@@ -72,7 +73,7 @@ export default function StrategiesPage() {
     else byAccount.set(accountId, [leg]);
   };
   for (const t of optionRows) {
-    const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
+    const side: "long" | "short" = sideOf(t);
     const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
     fileUnder(optionLegsByAccount, t.accountId, {
       symbol: t.symbol,

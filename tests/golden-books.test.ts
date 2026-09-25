@@ -41,7 +41,7 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  *      ₹0.01 (or the file's own charge columns do), or the file carries none
  *      and the engine's estimate is what the commit pins.
  *   5. COMMIT: one account per row, `commitParsedFile`, select that account,
- *      and `tradeStatsOf(getJournalTrades())` must equal the pinned figures to
+ *      and `getTradeStatsSql()` (the /trades KPI strip since v4.6.0 W6) must equal the pinned figures to
  *      the paisa — count = positions, open = open + opening sells (an opening
  *      sell is stored `isOpen`), and what the preview promised.
  *
@@ -658,7 +658,7 @@ GOLDEN.forEach((row, i) => {
       expect(res.skipped).toBe(0);
       expect(res.shape).toMatchObject({ sourceRows: row.shape.sourceRows, positions, open: row.shape.open, openingSells: row.shape.openingSells });
 
-      const stats = tradesMod.tradeStatsOf(tradesMod.getJournalTrades());
+      const stats = tradesMod.getTradeStatsSql();
       expect(stats).toEqual({ count: positions, open: row.shape.open + row.shape.openingSells, ...row.commit });
       // …and it is exactly what the preview promised and what the parser summed.
       expect(stats.net).toBe(r2(preview.summary.netPnl));
@@ -866,7 +866,7 @@ describe("Zerodha: both tax P&Ls into ONE account — the exit date owns the FY"
     const rows = tradesMod.getJournalTrades();
     expect(rows).toHaveLength(232); // 206 + 26 positions, none duplicated across the two files
     // Re-pinned 2026-09-04: 37,584.59 = 34,315.18 + 3,269.41, both files conserved to their columns (was 37,584.66).
-    expect(tradesMod.tradeStatsOf(rows)).toEqual({ count: 232, open: 0, net: -305362.59, gross: -267778, charges: 37584.59 });
+    expect(tradesMod.getTradeStatsSql()).toEqual({ count: 232, open: 0, net: -305362.59, gross: -267778, charges: 37584.59 });
   });
 
   it("the NIFTY2540323750CE position entered 2025-03-28 lands in FY25-26 by its exit dates", () => {

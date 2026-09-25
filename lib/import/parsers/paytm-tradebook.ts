@@ -90,7 +90,7 @@ import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
 import { extractTime } from "../time-parse";
 import { corroborate, inferProduct, productReason, splitMixedRow } from "../product-signature";
-import { pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
+import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.]/g, "");
 
@@ -538,7 +538,14 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
     ]);
   }
 
-  const paired = pairLegs(legs);
+  // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header);
+  // read on the label the row is filed under, as commit classifies it.
+  const paired = pairLegs(legs, {
+    shortable: (key) => {
+      const { security } = splitKey(key);
+      return isShortableSymbol(displayOf.get(security) ?? security);
+    },
+  });
   const check = summarisePairing(legs, paired);
 
   const totalCharges = fileTotals.brokerage + fileTotals.exchangeTxn + fileTotals.gst +
@@ -577,12 +584,15 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
     // re-entered scrip gets its own ladder rather than its whole history.
     // (A split scrip-day's fills appear on both of its positions: the file
     // does not say which fill fed which half.)
+    // A closed short's window runs from its sale to its buy-back (v4.6.0 W6).
+    const fillSide = fillSidesOf(p);
+    const [from, to] = fillSide.entry === "sell" ? [p.sellDate, p.buyDate] : [p.buyDate, p.sellDate];
     const executions = fills
       .filter(
         (f) =>
           f.key === p.symbol &&
-          (p.buyDate == null || f.date >= p.buyDate) &&
-          (p.sellDate == null || f.date <= p.sellDate),
+          (from == null || f.date >= from) &&
+          (to == null || f.date <= to),
       )
       .map<Execution>((f) => ({ side: f.side, qty: f.qty, price: f.price, date: f.date, time: f.time }));
 
@@ -621,8 +631,8 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
       unrealisedPnl: 0,
       buyDate: p.buyDate,
       sellDate: p.sellDate,
-      entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
-      exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+      entryTime: executions.find((e) => e.side === fillSide.entry)?.time ?? null,
+      exitTime: [...executions].reverse().find((e) => e.side === fillSide.exit)?.time ?? null,
       productHint: stated ?? toHint(p.product),
       exchangeHint: (p.exchange as Exchange | null) ?? null,
       sourceFile: ctx.filename,
@@ -631,6 +641,7 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
       basisUnknown: p.basisUnknown,
       productDerived: stated == null,
       importNotes: notes.length > 0 ? notes : null,
+      side: p.side,
     };
   });
 

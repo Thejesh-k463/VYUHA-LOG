@@ -199,6 +199,16 @@ export const trades = sqliteTable(
     suggestedBasisPrice: real("suggested_basis_price"),
     /** Provenance notes written by the importer (product derived, mixed bill…). */
     importNotes: text("import_notes"),
+    /**
+     * WHICH SIDE OPENED THE ROW (v4.6.0 W6, migration 0077): 'long' | 'short',
+     * NULL until stated. A flat (fully closed) row cannot say this through its
+     * quantities. NEVER read directly — `sideOf` (lib/domain/side.ts) reads the
+     * quantities first and this column only on a flat row, with `backfillSide`
+     * on NULL (the `trades-side-v1` data fix writes the same function). Every
+     * insert/update that sets a leg quantity sets this in the same statement
+     * (tests/readers-follow-writers.test.ts).
+     */
+    side: text("side").$type<"long" | "short">(),
 
     // Charges breakdown
     brokerage: moneyPaise("brokerage_paise").notNull().default(0),

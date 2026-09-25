@@ -22,6 +22,14 @@ import {
   type ShareStats,
 } from "@/lib/analytics/share-card";
 
+/**
+ * The footer's funnel line — the BUYER landing page (GitHub Pages), the link
+ * every other outward surface uses; never the source repo. No scheme, no
+ * trailing slash. No per-user referral code: codes are per CREATOR and live in
+ * the licence ledger, so the card is the plain buyer funnel.
+ */
+export const SHARE_FUNNEL_LINE = "Vyuha · desktop or web · thejesh-k463.github.io/VYUHA-LOG";
+
 const DEFAULT_METRICS: ShareMetricId[] = ["netPnl", "winRate", "profitFactor", "avgR", "trades", "expectancy"];
 
 export function ShareCard({ stats, capital, period }: { stats: ShareStats; capital: number; period?: string }) {
@@ -109,7 +117,7 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
     ctx.fillStyle = mut;
     ctx.font = "10px Inter, system-ui, sans-serif";
     ctx.fillText(SHARE_WATERMARK, 28, H - 34);
-    ctx.fillText("Vyuha · desktop or web · github.com/Thejesh-k463/VYUHA-LOG", 28, H - 20);
+    ctx.fillText(SHARE_FUNNEL_LINE, 28, H - 20);
 
     canvas.toBlob((blob) => {
       if (!blob) return;

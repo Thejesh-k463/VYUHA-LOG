@@ -10,6 +10,7 @@ import { latestBhavcopyDate, previousTradingDay } from "@/lib/domain/market-cale
 import { getMtmMap } from "@/lib/queries/mtm";
 import { detectBreaches, type AlertPositionInput, type Breach } from "@/lib/risk/alerts";
 import { storedMarkFor } from "@/lib/analytics/positions";
+import { sideOf } from "@/lib/domain/side";
 
 // T3.8 — opt-in EOD auto-MTM. The user's toggle in Settings is the ONLY thing
 // that allows a network fetch; everything fails silently offline (offline-first
@@ -177,7 +178,7 @@ export function scanBreaches(scope?: BreachScanScope): Breach[] {
     .all();
   const mtm = getMtmMap();
   const inputs: AlertPositionInput[] = open.map((t) => {
-    const isShort = t.sellQty > t.buyQty;
+    const isShort = sideOf(t) === "short";
     return {
       id: t.id,
       symbol: t.symbol,

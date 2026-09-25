@@ -1,5 +1,6 @@
 import type { Trade } from "@/lib/db/schema";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
+import { sideOf } from "@/lib/domain/side";
 
 /**
  * The fields this module actually reads — a structural subset of `Trade`, so
@@ -135,7 +136,7 @@ export function deriveOpenPositions(
       // open leg on sellQty with buyQty still 0 — same convention used by
       // exposure.ts/app/risk/page.tsx and closePosition in lib/import/commit.ts.
       // MTF is long-only in India, so isMtf below is unaffected by this branch.
-      const isShort = t.sellQty > t.buyQty;
+      const isShort = sideOf(t) === "short";
       const qty = Math.abs(t.buyQty - t.sellQty) || (isShort ? t.sellQty : t.buyQty);
       const avgPrice = isShort ? t.avgSellPrice : t.avgBuyPrice;
       const invested = qty * avgPrice;
@@ -179,7 +180,8 @@ export function deriveOpenPositions(
         ? null
         : t.buyQty <= 0
           ? "sellToOpen"
-          : t.sellQty >= t.buyQty
+          : // A QUANTITY fact (sold at least what was bought), not a direction read.
+            t.sellQty >= t.buyQty // side-scan: quantity
             ? "overSold"
             : t.sellQty > 0
               ? "partlySold"

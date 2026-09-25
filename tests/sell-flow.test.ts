@@ -228,4 +228,20 @@ describe("npm run sell — end to end on a throwaway ledger", () => {
     expect(lapsed.status).toBe(2); // non-zero so a scheduled run can alert
     expect(lapsed.out).toMatch(/LAPSED 9d ago/);
   });
+
+  // Last in the describe: the renewals case above reads the FIRST annual key.
+  it("--ref reaches the ledger line through the guided sale (normalised), and a dangling --ref mints nothing", () => {
+    const n = readLedger(ledgerPath).length;
+    const bad = sell(["refbad@example.com", "--lifetime", "--utr", "444455556666", "--name", "Ref Bad", "--today", "2026-08-23", "--ref"]);
+    expect(bad.status).not.toBe(0);
+    expect(bad.err).toContain("--ref needs a code");
+    expect(readLedger(ledgerPath)).toHaveLength(n);
+
+    const r = sell(["referred@example.com", "--lifetime", "--utr", "555566667777", "--name", "Referred Buyer", "--today", "2026-08-23", "--ref", " ravi "]);
+    expect(r.status, r.err).toBe(0);
+    const rec = readLedger(ledgerPath).at(-1) as { email: string; ref: string | null };
+    expect(rec.email).toBe("referred@example.com");
+    expect(rec.ref).toBe("RAVI");
+    expect(r.err).toContain("ref     : RAVI");
+  });
 });

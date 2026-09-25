@@ -1,15 +1,17 @@
 import { inr } from "@/lib/format";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
+import { sideOf } from "@/lib/domain/side";
 
 /** `segment` and `tradingsymbol` are optional so the existing fixtures keep
  *  compiling; when present they make the drill-down rows deep-link precisely
  *  (`/trades?symbol=&segment=`), when absent the row still links by symbol. */
-export interface SellerTrade { id: number; symbol: string; tradingsymbol?: string; segment?: string; sellQty: number; buyQty: number; avgSellPrice: number; avgBuyPrice: number; netPnl: number; riskAmount: number | null; entryIv: number | null; exitIv: number | null; entryDte: number | null; hedgeStatus: string | null; expiryOutcome: string | null; adjustmentGroup: string | null; isOpen: boolean; }
+export interface SellerTrade { id: number; symbol: string; tradingsymbol?: string; segment?: string; side?: string | null; buyDate?: string | null; sellDate?: string | null; sellQty: number; buyQty: number; avgSellPrice: number; avgBuyPrice: number; netPnl: number; riskAmount: number | null; entryIv: number | null; exitIv: number | null; entryDte: number | null; hedgeStatus: string | null; expiryOutcome: string | null; adjustmentGroup: string | null; isOpen: boolean; }
 export interface SellerRow { id: number; symbol: string; premiumSold: number; premiumCaptured: number; capturePct: number | null; ivChange: number | null; returnOnRiskPct: number | null; }
 /** The seller filter, shared by the report and the drill-downs so both count
  *  exactly the same set of contracts. */
 function sellerTrades(trades: SellerTrade[]): SellerTrade[] {
-  return trades.filter((t) => t.sellQty > 0 && (t.sellQty >= t.buyQty || t.avgSellPrice > 0));
+  // v4.6.0 W6: opened by selling (`sideOf`), or carrying a sale price.
+  return trades.filter((t) => t.sellQty > 0 && (sideOf(t) === "short" || t.avgSellPrice > 0));
 }
 
 export function optionsSellerReport(trades: SellerTrade[]) {

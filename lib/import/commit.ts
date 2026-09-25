@@ -25,6 +25,15 @@ import { pricingDate, ratesForTrade, resolvePlan, type PlanAccount, type RatesMa
 import { planAccountOf } from "@/lib/queries/broker-plan";
 import { todayIstIso, normalizeDate, storedDateProblem, calendarDaysHeld, sameDay } from "@/lib/domain/trading-day";
 import { closingAggregate } from "@/lib/domain/close-aggregate";
+import { sideAfterEdit, sideOf } from "@/lib/domain/side";
+import {
+  joinedShortHash,
+  legacyShortDuplicateReason,
+  legacyShortGroupRefusals,
+  legacyShortLegMatch,
+  withDedupAlias,
+  type LegacyGroupRefusal,
+} from "./legacy-short";
 import { classifyStoredSignal, SIGNAL_TOMBSTONE } from "@/lib/domain/signal";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
@@ -165,6 +174,13 @@ function keptRisk(
 ): { riskAmount: number | null; followsCap: boolean } {
   if (row.riskSource === "cap") return { riskAmount: resolvePerTradeCap(capRows, bucket, segment), followsCap: true };
   return { riskAmount: row.riskAmount, followsCap: false };
+}
+
+/** Row index → the group refusal it belongs to (fix wave, finding 1). */
+function legacyGroupIndex(groups: LegacyGroupRefusal[]): Map<number, LegacyGroupRefusal> {
+  const m = new Map<number, LegacyGroupRefusal>();
+  for (const g of groups) for (const i of g.rows) m.set(i, g);
+  return m;
 }
 
 /** Apply auto-classification + any persisted override, then compute charges. */
@@ -414,6 +430,9 @@ function closedTradeOf(
     executions: null,
     reportedCharges: { ...parts, total },
     importNotes: null,
+    // v4.6.0 W6: the LOT's side — a close never flips it (design review R-8:
+    // a same-day cover of a short lot is flat and would otherwise read long).
+    side: c.side,
   };
 }
 
@@ -664,9 +683,10 @@ function loadOverrides(broker: string): Map<string, Override> {
  */
 function orderExecutions(t: NormalizedTrade): Execution[] {
   const ex = t.executions ?? [];
-  // sellQty > buyQty, not buyQty === 0 — a partially covered short has
-  // buyQty > 0 and must not be ordered as a long (fix A6).
-  const isShort = t.sellQty > t.buyQty;
+  // The side that OPENED it (v4.6.0 W6, `sideOf`), not buyQty === 0 — a
+  // partially covered short has buyQty > 0 and must not be ordered as a long
+  // (fix A6), and a covered short is FLAT and states its side in `side`.
+  const isShort = sideOf(t) === "short";
   const opening = isShort ? "sell" : "buy";
   return [...ex]
     .map((e, i) => ({ e, i }))
@@ -1052,6 +1072,12 @@ export interface PreviewRow {
   netPnl: number;
   isOpen: boolean;
   isDuplicate: boolean;
+  /**
+   * v4.6.0 W6 (contract D5): why a row is a duplicate when its hash is not held —
+   * a closed overnight short whose legs a pre-4.6 import stored as two rows.
+   * Absent on every other row.
+   */
+  duplicateReason?: string;
 }
 
 export interface PreviewResult {
@@ -1220,8 +1246,19 @@ export function previewParsedFile(
       resolvePlan(planAccount, row.broker, day, rates),
     );
 
+  const legacyReasons: string[] = [];
+  // Fix wave (finding 1): a symbol group already in the book under its PRE-W6
+  // pairing is refused WHOLE — the commit runs the same function.
+  const legacyGroups = legacyGroupIndex(legacyShortGroupRefusals(built.map((e) => e.t), existingRows));
+  for (const g of new Set(legacyGroups.values())) legacyReasons.push(g.reason);
   for (const [i, { t, b }] of built.entries()) {
-    const isDuplicate = existing.has(b.dedup);
+    // v4.6.0 W6 (R-6): the pre-4.6 two-row shape of this closed short, per leg.
+    const legacy = existing.has(b.dedup) ? null : legacyShortLegMatch(t, existingRows);
+    const legacyDup = legacy != null && (legacy.saleId != null || legacy.purchaseId != null);
+    const group = existing.has(b.dedup) ? undefined : legacyGroups.get(i);
+    const duplicateReason = legacyDup ? legacyShortDuplicateReason(t.tradingsymbol, legacy!) : group?.reason;
+    if (legacyDup) legacyReasons.push(duplicateReason!);
+    const isDuplicate = existing.has(b.dedup) || legacyDup || group != null;
     if (isDuplicate) dupCount++;
     else if (snapshot?.supersede.has(i)) supersededCount++;
 
@@ -1336,6 +1373,7 @@ export function previewParsedFile(
       netPnl: rowNet,
       isOpen: rowOpen,
       isDuplicate,
+      ...(duplicateReason ? { duplicateReason } : {}),
     });
   }
 
@@ -1344,7 +1382,7 @@ export function previewParsedFile(
     broker: parsed.broker,
     format: parsed.format,
     // W2a: the same sentences the commit will say, from the same pure function.
-    warnings: autoClose ? [...parsed.warnings, ...autoCloseSentences(counters)] : parsed.warnings,
+    warnings: [...(autoClose ? [...parsed.warnings, ...autoCloseSentences(counters)] : parsed.warnings), ...legacyReasons],
     ...(autoClose ? { autoClose: counters } : {}),
     rawText: parsed.rawText,
     supersededByBook: supersededByBookNow(db, parsed, accountId),
@@ -1625,6 +1663,9 @@ type EnrichCandidate = {
   entryTime: string | null;
   exitTime: string | null;
   instrumentType: string | null;
+  /** v4.6.0 W6 fix wave (finding 3): which side opened the row — a short opens on its sale. */
+  side: string | null;
+  importNotes: string | null;
 };
 
 /**
@@ -1717,6 +1758,8 @@ function applyEnrichments(
       entryTime: tradesTable.entryTime,
       exitTime: tradesTable.exitTime,
       instrumentType: tradesTable.instrumentType,
+      side: tradesTable.side,
+      importNotes: tradesTable.importNotes,
     })
     .from(tradesTable)
     .where(and(
@@ -1735,9 +1778,13 @@ function applyEnrichments(
 
   const write = (c: EnrichCandidate, g: EnrichGroup, first: string | null, last: string | null): boolean => {
     const patch: Record<string, unknown> = {};
-    const isBuy = g.side === "buy";
-    if (isBuy && first && c.entryTime == null) patch.entryTime = first;
-    if (!isBuy && last && c.exitTime == null) patch.exitTime = last;
+    // v4.6.0 W6 fix wave (finding 3): the OPENING side's fills give the entry
+    // time (the first) and the closing side's the exit (the last). A short
+    // opens on its sale and closes on the buy-back (`sideOf`); reading every
+    // buy as the entry recorded a closed short's cover as its entry.
+    const opens = g.side === (sideOf(c) === "short" ? "sell" : "buy");
+    if (opens && first && c.entryTime == null) patch.entryTime = first;
+    if (!opens && last && c.exitTime == null) patch.exitTime = last;
     if (
       (g.instrumentType === "option" || g.instrumentType === "future")
       && c.instrumentType === "equity"
@@ -1895,6 +1942,13 @@ export function commitParsedFile(
         acquisition: tradesTable.acquisition,
         acquisitionPrice: tradesTable.acquisitionPrice,
         acquisitionDate: tradesTable.acquisitionDate,
+        // v4.6.0 W6 (R-6): the legs the legacy-short check reads.
+        broker: tradesTable.broker,
+        isin: tradesTable.isin,
+        avgBuyPrice: tradesTable.avgBuyPrice,
+        buyValue: tradesTable.buyValue,
+        avgSellPrice: tradesTable.avgSellPrice,
+        sellValue: tradesTable.sellValue,
         notes: tradesTable.notes,
         playbookId: tradesTable.playbookId,
         emotionTag: tradesTable.emotionTag,
@@ -1945,6 +1999,11 @@ export function commitParsedFile(
     const batchId = batch!.id;
 
     let added = 0, skipped = 0, netPnl = 0, openCount = 0, openingSells = 0;
+    const legacySkips: string[] = [];
+    // Fix wave (finding 1): decided ONCE, against the book as it stands before
+    // any write — the preview's function over the preview's rows.
+    const legacyGroups = legacyGroupIndex(legacyShortGroupRefusals(built.map((e) => e.t), heldRows));
+    const legacyGroupsSaid = new Set<LegacyGroupRefusal>();
     const seenInThisFile = new Set<string>();
 
     // ── The book wins over the reference ───────────────────────────────────
@@ -1957,7 +2016,7 @@ export function commitParsedFile(
 
     const writeLadder = (tradeId: number, t: NormalizedTrade) => {
       let seq = 1;
-      const isShort = t.sellQty > t.buyQty; // must match orderExecutions (fix A6)
+      const isShort = sideOf(t) === "short"; // must match orderExecutions (fix A6)
       for (const ex of orderExecutions(t)) {
         const opening = isShort ? ex.side === "sell" : ex.side === "buy";
         tx.insert(tradeLegs)
@@ -2059,6 +2118,8 @@ export function commitParsedFile(
             ? withExecBillNote(withLotCloseNote(row.importNotes, b.dedup), execBill)
             : withExecBillNote(withClosedByNote(withAutoClosedLotNote(row.importNotes), b.dedup), execBill);
           const patch = {
+            // v4.6.0 W6: the lot's own side — the close never flips it.
+            side: c.side,
             buyQty: closed.buyQty,
             avgBuyPrice: closed.avgBuyPrice,
             buyValue: closed.buyValue,
@@ -2114,6 +2175,7 @@ export function commitParsedFile(
             ...(long
               ? { buyQty: rem.qty, buyValue: rem.value }
               : { sellQty: rem.qty, sellValue: rem.value }),
+            side: c.side,
             chargesTotal: bill.total,
             grossPnl: 0,
             netPnl: r2m(0 - bill.total),
@@ -2162,6 +2224,8 @@ export function commitParsedFile(
               expiry: cb.classification.expiry,
               strike: cb.classification.strike,
               optionType: cb.classification.optionType,
+              // v4.6.0 W6 (R-8): the slice is the LOT's side, from the plan.
+              side: c.side,
               buyQty: closed.buyQty,
               avgBuyPrice: closed.avgBuyPrice,
               buyValue: closed.buyValue,
@@ -2264,6 +2328,23 @@ export function commitParsedFile(
         skipped++;
         continue;
       }
+      // v4.6.0 W6 (R-6): the preview's per-leg refusal, the same function.
+      const legacy = legacyShortLegMatch(t, heldRows);
+      if (legacy.saleId != null || legacy.purchaseId != null) {
+        skipped++;
+        legacySkips.push(legacyShortDuplicateReason(t.tradingsymbol, legacy));
+        continue;
+      }
+      // Fix wave (finding 1): the whole symbol group, against its pre-W6 pairing.
+      const group = legacyGroups.get(i);
+      if (group) {
+        skipped++;
+        if (!legacyGroupsSaid.has(group)) {
+          legacyGroupsSaid.add(group);
+          legacySkips.push(group.reason);
+        }
+        continue;
+      }
       seenInThisFile.add(b.dedup);
 
       // W2a — does this execution close something the book holds? (dormant)
@@ -2322,6 +2403,9 @@ export function commitParsedFile(
           const staged = stagedFromExecutions(t);
           const patch = {
             isin: t.isin,
+            // v4.6.0 W6: the side the file paired, else the superseded row's
+            // (the R-7 rule — the same position, restated by its broker).
+            side: t.side ?? sideAfterEdit(t, before),
             buyQty: t.buyQty,
             avgBuyPrice: t.avgBuyPrice,
             buyValue: t.buyValue,
@@ -2401,6 +2485,9 @@ export function commitParsedFile(
           expiry: b.classification.expiry,
           strike: b.classification.strike,
           optionType: b.classification.optionType,
+          // v4.6.0 W6: the side the parser paired; a pre-aggregated row states
+          // none and is read by its legs (`sideOf` → `backfillSide`).
+          side: sideOf(t),
           buyQty: t.buyQty,
           avgBuyPrice: t.avgBuyPrice,
           buyValue: t.buyValue,
@@ -2498,6 +2585,8 @@ export function commitParsedFile(
     // W2a — R14/R15/R31: what the import did to the book's open positions, in
     // the ONE wording the preview uses too (`autoCloseSentences`, pure).
     for (const s of autoCloseSentences(counters)) commitWarnings.push(s);
+    // v4.6.0 W6 (R-6): the legacy two-row shorts refused above, each by name.
+    for (const s of legacySkips) commitWarnings.push(s);
     const referenceRows = parsed.reference?.length ? parsed.reference : referenceFromReported(parsed.reported);
     const referenceStored = referenceRows.length
       ? persistReference(tx, referenceRows, accountId, parsed.broker, parsed.sourceId, batchId)
@@ -2687,7 +2776,7 @@ export function commitManualTrade(
   );
   const netPnl = Math.round((t.grossPnl - charges.total) * 100) / 100;
   // Short-open (sell-to-open, e.g. writing a CE/PE): the entry leg is the SELL side.
-  const isShortOpen = isOpen && t.sellQty > t.buyQty;
+  const isShortOpen = isOpen && sideOf(t) === "short";
   const entryPrice = isShortOpen ? t.avgSellPrice : t.avgBuyPrice;
   // Risk = explicit amount, else derived from SL (|entry − SL| × qty), else the cap.
   // D1 (v4.4.0): the first two are the user's ('set'); the cap is THE resolver's
@@ -2718,6 +2807,8 @@ export function commitManualTrade(
       strike: cls.strike,
       optionType: cls.optionType,
       lotSize: fields.lotSize ?? null,
+      // v4.6.0 W6: the side of the entered legs (a flat one by its dates).
+      side: sideOf(t),
       buyQty: t.buyQty,
       avgBuyPrice: t.avgBuyPrice,
       buyValue: t.buyValue,
@@ -2972,6 +3063,9 @@ export function closePosition(
   db.update(tradesTable)
     .set({
       ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
+      // v4.6.0 W6: a close never flips the side — the row closes FLAT and
+      // states here which leg opened it (`closingAggregate` read it by `sideOf`).
+      side: isShort ? "short" : "long",
       buyQty,
       avgBuyPrice,
       buyValue,
@@ -3213,9 +3307,9 @@ export function unCloseExecution(
       execParts = add(execParts, bill as unknown as StaleChargeParts);
       execTotal = r2m(execTotal + bill.total);
       // The piece's CLOSING leg is the execution's; the other leg is the lot's.
-      // A closed piece states its direction through its dates: the exit is the
-      // later leg (the ONE definition, `readsLong` in close-open-lots).
-      const long = p.buyDate != null && p.sellDate != null ? p.buyDate <= p.sellDate : p.buyQty > 0;
+      // v4.6.0 W6: a closed piece states its side in `side` (`sideOf`, the ONE
+      // reading) — the old date rule read a same-day auto-closed SHORT as a long.
+      const long = sideOf(p) === "long";
       const qty = long ? p.sellQty : p.buyQty;
       execSide = long ? "sell" : "buy";
       execPrice = long ? p.avgSellPrice : p.avgBuyPrice;
@@ -3242,7 +3336,7 @@ export function unCloseExecution(
     // 1 — every reduced lot gets its quantity and its own half of the bill back.
     for (const slice of slices) {
       const bill = execBillFromNotes(slice.importNotes)!;
-      const long = slice.buyDate != null && slice.sellDate != null ? slice.buyDate <= slice.sellDate : slice.buyQty > 0;
+      const long = sideOf(slice) === "long";
       const openQty = long ? slice.buyQty : slice.sellQty;
       const openValue = long ? slice.buyValue : slice.sellValue;
       const openPrice = long ? slice.avgBuyPrice : slice.avgSellPrice;
@@ -3264,6 +3358,7 @@ export function unCloseExecution(
         ...(long
           ? { buyQty: r2m(lot.buyQty + openQty), buyValue: r2m(lot.buyValue + openValue) }
           : { sellQty: r2m(lot.sellQty + openQty), sellValue: r2m(lot.sellValue + openValue) }),
+        side: long ? ("long" as const) : ("short" as const),
         chargesTotal: lotTotal,
         grossPnl: 0,
         netPnl: r2m(0 - lotTotal),
@@ -3282,7 +3377,7 @@ export function unCloseExecution(
     // 2 — a lot consumed WHOLE reads open again; there is no slice to remove.
     if (converted) {
       const bill = execBillFromNotes(converted.importNotes)!;
-      const long = converted.buyDate != null && converted.sellDate != null ? converted.buyDate <= converted.sellDate : converted.buyQty > 0;
+      const long = sideOf(converted) === "long";
       const lotParts = add(billOf(converted), bill as unknown as StaleChargeParts, -1);
       const lotTotal = sum(lotParts);
       const before = { isOpen: false, buyQty: converted.buyQty, sellQty: converted.sellQty, chargesTotal: converted.chargesTotal, netPnl: converted.netPnl, importNotes: converted.importNotes };
@@ -3290,6 +3385,7 @@ export function unCloseExecution(
         ...(long
           ? { sellQty: 0, sellValue: 0, avgSellPrice: 0, sellDate: null }
           : { buyQty: 0, buyValue: 0, avgBuyPrice: 0, buyDate: null }),
+        side: long ? ("long" as const) : ("short" as const),
         isOpen: true,
         grossPnl: 0,
         unrealisedPnl: 0,
@@ -3330,6 +3426,8 @@ export function unCloseExecution(
         expiry: model.expiry,
         strike: model.strike,
         optionType: model.optionType,
+        // v4.6.0 W6: the execution comes back single-sided — its own side.
+        side: sells ? "short" : "long",
         buyQty: sells ? 0 : execQty,
         avgBuyPrice: sells ? 0 : execPrice,
         buyValue: sells ? 0 : execValue,
@@ -3559,7 +3657,14 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       const rMultiple = kept.followsCap
         ? capR(netPnl, kept.riskAmount)
         : lot.riskAmount && lot.riskAmount > 0 ? Math.round((netPnl / lot.riskAmount) * 100) / 100 : lot.rMultiple;
-      const importNotes = withStaleCloseNote(lot.importNotes, sale.dedupHash);
+      // v4.6.0 W6 (contract D5, R-5/R-6) — the pre-4.6 overnight F&O short: an
+      // opening sale (acquisition 'unknown') joined to the purchase that covered
+      // it. The join states the basis (the purchase) and so clears 'unknown', and
+      // records the hash a post-W6 re-import of the same file gives the closed
+      // short, so that re-import is a plain duplicate of this row.
+      const legacyShort = isShort && lot.acquisition === "unknown" && lot.buyQty === 0 && sale.sellQty === 0;
+      const joinedNotes = withStaleCloseNote(lot.importNotes, sale.dedupHash);
+      const importNotes = legacyShort ? withDedupAlias(joinedNotes, joinedShortHash(lot, sale)) : joinedNotes;
       const what = isShort ? "purchase" : "sale";
 
       // 4 — S leaves through the one delete path (snapshot + audit).
@@ -3568,6 +3673,9 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
 
       tx.update(tradesTable)
         .set({
+          // v4.6.0 W6: the pair's side — the joined row is flat and states it here.
+          side: pair.side,
+          ...(legacyShort ? { acquisition: null } : {}),
           buyQty,
           avgBuyPrice,
           buyValue,
@@ -3939,7 +4047,13 @@ export function updateManualTrade(
   // states its direction only through its dates (the exit is the later one),
   // so the buy leg counts too unless the row reads long. An edit that touches
   // no exit-leg field (notes, tags, levels, the other leg of a long) keeps it.
-  const readsLong = t.buyQty > t.sellQty || (t.buyQty === t.sellQty && !!t.buyDate && !!t.sellDate && t.buyDate < t.sellDate);
+  // v4.6.0 W6: the stored row's side through `sideOf` (a flat row states it in
+  // `side`; the old date rule read a same-day short as neither).
+  const readsLong = sideOf(t) === "long";
+  // …and the side the EDITED row keeps (contract D3, rule R-7): lopsided → the
+  // quantities; flat with two different days → the earlier leg opened it; flat
+  // and same-day or undated → the side it was stored with.
+  const nextSide = sideAfterEdit({ buyQty, sellQty, buyDate, sellDate }, t);
   // D4 (wave 2P): a date is "changed" when the DAY it states moved (`sameDay`),
   // not when a legacy '05-01-2026' is re-stored as '2026-01-05' by this save.
   const sellLegChanged = sellQty !== t.sellQty || avgSellPrice !== t.avgSellPrice || !sameDay(sellDate, t.sellDate);
@@ -3983,6 +4097,7 @@ export function updateManualTrade(
 
   db.update(tradesTable)
     .set({
+      side: nextSide,
       buyQty,
       avgBuyPrice,
       buyValue,

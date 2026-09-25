@@ -285,6 +285,7 @@ const IDENTITY_COLS = {
   sellQty: trades.sellQty,
   buyDate: trades.buyDate,
   sellDate: trades.sellDate,
+  side: trades.side,
 };
 type IdentityRow = { id: number; broker: string; tradingsymbol: string; dedupHash: string; importNotes: string | null } & RowLegs;
 
@@ -295,13 +296,12 @@ type IdentityRow = { id: number; broker: string; tradingsymbol: string; dedupHas
 const rowKind = (x: RowLegs) => (x.sellQty > 0 && x.buyQty === 0 ? "sale" : x.buyQty > 0 && x.sellQty === 0 ? "purchase" : "trade");
 
 /**
- * The leg a row was CLOSED with, named only where the row states its direction
- * (lib/trash.ts's reading, same words): a long closes on its sale, a short on
- * its purchase, and a closed row with no ordered dates stays a "trade" rather
- * than a guessed side.
+ * The leg a row was CLOSED with (lib/trash.ts's reading, same words): a long
+ * closes on its sale, a short on its purchase. v4.6.0 W6: by `sideOf` through
+ * `readsLong` — a flat row states its side in the `side` column now, so the
+ * old "trade" fallback for a closed row with no ordered dates is gone.
  */
-const closingWord = (x: RowLegs) =>
-  readsLong(x) ? "sale" : x.sellQty > x.buyQty || (!!x.buyDate && !!x.sellDate && x.sellDate < x.buyDate) ? "purchase" : "trade";
+const closingWord = (x: RowLegs) => (readsLong(x) ? "sale" : "purchase");
 
 /** Does this row carry BOTH its legs — a leg the other row's identity cannot record? */
 const twoLegged = (x: RowLegs) => x.buyQty > 0 && x.sellQty > 0;

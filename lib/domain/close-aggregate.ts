@@ -11,6 +11,8 @@
 // Values are RUPEES (the column converts to paise — invariant 1, never here); the
 // average is a level and stays REAL and unrounded.
 
+import { sideOf } from "./side";
+
 /** The legs a close reads. Order counts are REQUIRED (T2): brokerage is per
  *  order, and a caller that could omit them — the Trades wire row once did —
  *  previews a bill the save does not store. A stored 0 reads as the settings
@@ -22,10 +24,14 @@ export interface CloseSource {
   sellValue: number;
   buyOrderCount: number;
   sellOrderCount: number;
+  /** Which side opened the row (migration 0077) — read only through `sideOf`, on a flat row. */
+  side?: string | null;
+  buyDate?: string | null;
+  sellDate?: string | null;
 }
 
 export interface CloseRemainder {
-  /** Sell-to-open (sellQty > buyQty): the close BUYS to cover. */
+  /** A short (`sideOf`: the larger sell leg, or a flat row stated short): the close BUYS to cover. */
   isShort: boolean;
   /** The quantity still open — or the whole position when the row states no remainder. */
   qty: number;
@@ -48,10 +54,11 @@ export interface DefaultOrders {
 }
 
 /** Which side closes, and how much of the position is still open. */
-export function closeRemainder(row: Pick<CloseSource, "buyQty" | "sellQty">): CloseRemainder {
+export function closeRemainder(row: Pick<CloseSource, "buyQty" | "sellQty" | "side" | "buyDate" | "sellDate">): CloseRemainder {
   // Short (sell-to-open) has the open leg on sellQty — closing means BUYING to
-  // cover, not selling. Long (the common case) closes by selling.
-  const isShort = row.sellQty > row.buyQty;
+  // cover, not selling. Long (the common case) closes by selling. v4.6.0 W6: the
+  // ONE reading, `sideOf` — a flat row states its side in the `side` column.
+  const isShort = sideOf(row) === "short";
   const qty = Math.abs(row.buyQty - row.sellQty) || (isShort ? row.sellQty : row.buyQty);
   return { isShort, qty };
 }

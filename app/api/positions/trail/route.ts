@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { entryLegOf } from "@/lib/domain/side";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
   let trailingSl: number;
   if (mode === "breakeven") {
     // Short (sell-to-open) has its entry on the sell leg (avgBuyPrice is unset until covered).
-    trailingSl = t.sellQty > t.buyQty ? t.avgSellPrice : t.avgBuyPrice;
+    trailingSl = entryLegOf(t).price;
   } else {
     return NextResponse.json({ ok: false, message: "Unknown trail mode" }, { status: 400 });
   }

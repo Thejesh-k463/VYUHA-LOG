@@ -9,6 +9,7 @@ import { toIst } from "@/lib/domain/trading-day";
 import { shouldSendDigest } from "@/lib/telegram/digest-gate";
 import { formatEodDigest, type EodDigestInput } from "@/lib/telegram/format";
 import { sendTelegram, type SendResult } from "@/lib/telegram/send";
+import { sideOf } from "@/lib/domain/side";
 
 // Opt-in Telegram EOD digest job (v3.6, decision #6) — the auto-MTM shape:
 // fired in the background on app open by TelegramRunner, no-ops unless every
@@ -60,7 +61,7 @@ export function buildDigestInput(today: string): EodDigestInput {
 
   const open = rows.filter((t) => t.isOpen);
   const positions = open.map((t) => {
-    const isShort = t.sellQty > t.buyQty;
+    const isShort = sideOf(t) === "short";
     return {
       symbol: t.tradingsymbol,
       side: (isShort ? "short" : "long") as "short" | "long",

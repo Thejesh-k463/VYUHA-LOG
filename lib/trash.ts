@@ -21,6 +21,7 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { recordAudit, type AuditInput } from "@/lib/audit";
 import { heldIdentityHashes, readsLong, type RowLegs } from "@/lib/import/close-open-lots";
+import { backfillSide } from "@/lib/domain/side";
 // L6 (wave 2L): ONE pairing for a record and the holding it became — the restore
 // acts on it only where it is unambiguous, Data Quality asks about the rest.
 import { uniqueIpoRelinks } from "@/lib/analytics/data-quality";
@@ -110,7 +111,19 @@ const legsOf = (row: Record<string, unknown>): RowLegs => ({
   sellQty: typeof row.sellQty === "number" ? row.sellQty : 0,
   buyDate: typeof row.buyDate === "string" ? row.buyDate : null,
   sellDate: typeof row.sellDate === "string" ? row.sellDate : null,
+  side: typeof row.side === "string" ? row.side : null,
+  importNotes: typeof row.importNotes === "string" ? row.importNotes : null,
 });
+
+/**
+ * v4.6.0 W6 (contract D3) — a snapshot row that states no `side` (a pre-0077
+ * envelope) lands with `backfillSide`'s answer. A Trash restore runs no data fix
+ * and `trades-side-v1`'s marker is already set, so this is the fill; it is the
+ * same function `sideOf` falls back to on a NULL, so nothing can disagree.
+ */
+export function withSide<R extends Record<string, unknown>>(row: R): R {
+  return row.side === "long" || row.side === "short" ? row : { ...row, side: backfillSide(legsOf(row)) };
+}
 
 /**
  * Write the snapshot for a delete that is about to happen.
@@ -499,14 +512,10 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   // apply ONLY against a row ALREADY STORED in the journal.
   {
     type Holder = RowLegs & { id: number; tradingsymbol: string; planned: boolean };
-    // The closing leg's name only where the row states its direction; a closed
-    // row with no ordered dates stays a "trade" rather than a guessed side.
-    const closingWord = (x: Holder) =>
-      readsLong(x)
-        ? "sale"
-        : x.sellQty > x.buyQty || (!!x.buyDate && !!x.sellDate && x.sellDate < x.buyDate)
-          ? "purchase"
-          : "trade";
+    // The closing leg's name by the row's side (v4.6.0 W6: `sideOf` through
+    // `readsLong` — a flat row states its side in the `side` column, so the
+    // old "trade" fallback for a closed row with no ordered dates is gone).
+    const closingWord = (x: Holder) => (readsLong(x) ? "sale" : "purchase");
     const indexByBook = new Map<string, { own: Map<string, Holder>; alias: Map<string, Holder> }>();
     const indexOf = (accountId: number, broker: string) => {
       const key = `${accountId}|${broker}`;
@@ -517,7 +526,7 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           .select({
             id: trades.id, tradingsymbol: trades.tradingsymbol, dedupHash: trades.dedupHash,
             importNotes: trades.importNotes, buyQty: trades.buyQty, sellQty: trades.sellQty,
-            buyDate: trades.buyDate, sellDate: trades.sellDate,
+            buyDate: trades.buyDate, sellDate: trades.sellDate, side: trades.side,
           })
           .from(trades)
           .where(and(eq(trades.accountId, accountId), eq(trades.broker, broker)))
@@ -525,7 +534,7 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
         for (const s of stored) {
           const holder: Holder = {
             id: s.id, tradingsymbol: s.tradingsymbol, buyQty: s.buyQty, sellQty: s.sellQty,
-            buyDate: s.buyDate, sellDate: s.sellDate, planned: false,
+            buyDate: s.buyDate, sellDate: s.sellDate, side: s.side, importNotes: s.importNotes, planned: false,
           };
           const own = s.dedupHash.toLowerCase();
           if (!index.own.has(own)) index.own.set(own, holder);
@@ -674,7 +683,7 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
         }
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          tx.insert(trades).values(row as any).run();
+          tx.insert(trades).values(withSide(row) as any).run();
           landed.add(row.id);
           restored++;
           // Y1: a row landing HERE never makes a later row of the same snapshot

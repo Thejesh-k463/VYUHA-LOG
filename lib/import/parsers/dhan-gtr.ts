@@ -34,7 +34,7 @@ import type { ParseContext, ParsedFile } from "../types";
 import type { ChargeBreakdown, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import { inferProduct, corroborate, splitMixedRow, productReason } from "../product-signature";
-import { pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
+import { isShortableSymbol, pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
 import { deriveBasisFromFooter } from "@/lib/analytics/acquisition";
 import { parseInstrumentName } from "@/lib/engine/classify";
 import { securityByCompanyName } from "../isin-symbol";
@@ -361,7 +361,8 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   }
 
   const legs = rows.flatMap(rowToLegs);
-  const paired = pairLegs(legs);
+  // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header).
+  const paired = pairLegs(legs, { shortable: isShortableSymbol });
   const check = summarisePairing(legs, paired);
 
   /**
@@ -451,6 +452,7 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
         p.basisUnknown && suggestedBasis?.symbol === p.symbol ? suggestedBasis.pricePerShare : null,
       productDerived: p.product !== "unknown",
       importNotes: notes.length ? notes : null,
+      side: p.side,
     };
   });
 

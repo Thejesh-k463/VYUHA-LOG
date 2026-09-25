@@ -41,6 +41,7 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { sideOf, statedSideOf } from "@/lib/domain/side";
 
 export const dynamic = "force-dynamic";
 
@@ -156,7 +157,7 @@ export default function ArjunsEyePage() {
   // ── MAE/MFE coverage (EOD bars), shared by the SL and Exits tabs ────────
   const aliasMap = getAliasMap();
   const maeInputs: MaeTradeInput[] = closed.map((t) => {
-    const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
+    const side: "long" | "short" = sideOf(t);
     const qty = Math.max(t.buyQty, t.sellQty);
     return {
       id: t.id,
@@ -198,19 +199,21 @@ export default function ArjunsEyePage() {
   const tsl = tslReport(slTrades);
 
   // ── Stop migration, mined from the audit log ────────────────────────────
-  // Direction per trade is knowable from the flat row ONLY while the position
-  // is lopsided (open or partially closed): a FULLY-CLOSED trade has
-  // sellQty === buyQty, and the flat row cannot say which side entered first.
+  // Direction per trade: a lopsided row states it through its quantities, and
+  // since v4.6.0 W6 a FULLY-CLOSED row states it in `trades.side` (`statedSideOf`).
   // The old `sellQty > buyQty ? "short" : "long"` read every flat short as a
   // long, and widen/tighten INVERTS with direction — a short's stop raised
-  // 130→160 (a real widening) classified as a tightening. Flat rows are left
-  // OUT of the map, fall to the mining code's unknown-direction drop path, and
-  // are counted (`mined.noDirection`) — surfaced on the Trailing tab so the
-  // shrunken coverage is stated, never guessed. The intersection with this
-  // page's scoped trade ids is what account-scopes the unscoped audit read.
+  // 130→160 (a real widening) classified as a tightening. A flat row with NO
+  // stated side (`statedSideOf` null: same-day or undated, no intraday-short
+  // note — the backfill leaves it NULL rather than guess) is still left OUT of the map, falls to the mining code's
+  // unknown-direction drop path, and is counted (`mined.noDirection`) —
+  // surfaced on the Trailing tab so the coverage is stated, never guessed. The
+  // intersection with this page's scoped trade ids is what account-scopes the
+  // unscoped audit read.
   const directionByTrade = new Map<number, "long" | "short">();
   for (const t of trades) {
-    if (t.sellQty !== t.buyQty) directionByTrade.set(t.id, t.sellQty > t.buyQty ? "short" : "long");
+    const side = statedSideOf(t);
+    if (side) directionByTrade.set(t.id, side);
   }
   const mined = extractStopEdits(getTradeStopEditEntries(), directionByTrade);
   const migration = stopMigration(mined.edits, new Map(closed.map((t) => [t.id, t.netPnl])));

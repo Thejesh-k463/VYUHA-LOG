@@ -38,7 +38,7 @@
 
 import Papa from "papaparse";
 import { extractDate, extractTime } from "../time-parse";
-import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
+import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg } from "../pair-legs";
 import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
@@ -194,7 +194,9 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
     const legs = [...g.legs.values()].sort(
       (a, b) => a.date.localeCompare(b.date) || (g.firstTime.get(a) ?? "99:99").localeCompare(g.firstTime.get(b) ?? "99:99"),
     );
-    const paired = pairLegs(legs);
+    // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header).
+    const shortable = legs.length > 0 && isShortableSymbol(legs[0].symbol);
+    const paired = pairLegs(legs, { shortable });
     allLegs.push(...legs);
     allPaired.push(...paired);
     // Each leg's fills oldest-first (the file is newest-first), then cut per
@@ -202,13 +204,14 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
     // Σ executions per side = the position's qty (invariant 5). A date-window
     // filter over-counted every day-leg split across two positions.
     for (const [leg, fs] of g.fillsOf) g.fillsOf.set(leg, [...fs].sort((a, b) => (a.time ?? "").localeCompare(b.time ?? "")));
-    const allocs = allocateSymbolLegs(legs);
+    const allocs = allocateSymbolLegs(legs, { shortable });
     const cut = executionsByAllocation(allocs, g.fillsOf);
     const matched = matchAllocations(paired, allocs);
     paired.forEach((pos, i) => {
       const a = matched[i];
       if (!a) unallocated++;
       const executions = a ? cut.get(a) ?? [] : [];
+      const fillSide = fillSidesOf(pos);
       trades.push({
         broker: "fyers",
         tradingsymbol: pos.symbol,
@@ -225,8 +228,8 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
         unrealisedPnl: 0,
         buyDate: pos.buyDate,
         sellDate: pos.sellDate,
-        entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
-        exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+        entryTime: executions.find((e) => e.side === fillSide.entry)?.time ?? null,
+        exitTime: [...executions].reverse().find((e) => e.side === fillSide.exit)?.time ?? null,
         productHint: g.hint,
         // No exchange column: the classifier resolves SENSEX/BANKEX to BSE and
         // everything else to NSE from the contract name itself.
@@ -235,6 +238,7 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
         executions: executions.length > 0 ? executions : null,
         basisUnknown: pos.basisUnknown,
         importNotes: pos.notes.length > 0 ? pos.notes : null,
+        side: pos.side,
       });
     });
   }

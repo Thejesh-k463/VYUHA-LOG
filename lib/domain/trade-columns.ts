@@ -3,14 +3,16 @@
 // The /trades table shows Entry / Exit PRICES, a Qty and an Invested figure
 // rather than the raw buy-value / sell-value totals. Every one of those is a
 // function of the row's two legs plus its direction, and direction follows the
-// convention already used by /strategies, /risk and the Instrument cell:
-// whichever leg carries the larger quantity opened the position, so
-// short = sellQty > buyQty. Kept here so the maths is unit-tested without a
+// ONE reading, `sideOf` (lib/domain/side.ts, v4.6.0 W6): whichever leg carries
+// the larger quantity opened the position, and a FLAT row reads its stored
+// `side`. Kept here so the maths is unit-tested without a
 // table around it, and so a missing side reads as `null` ("—"), never as 0 —
 // an opening sell has no buy price, and 0 would look like a real fill.
 //
 // Money on a Trade row is ALREADY rupees at runtime (`moneyPaise` converts at
 // the column boundary) — nothing here divides or multiplies by 100.
+
+import { sideOf } from "./side";
 
 /** The slice of a trade row these helpers read. Structural, so a SlimTrade,
  *  a full Trade, or a hand-built fixture all satisfy it. */
@@ -26,13 +28,25 @@ export interface TradeLegs {
   segment: string;
   /** Rupees the broker funded on an MTF position; null until resolved. */
   mtfFundedAmount?: number | null;
+  /** Which side opened the row (migration 0077) — read only through `sideOf`. */
+  side?: string | null;
+  buyDate?: string | null;
+  sellDate?: string | null;
 }
 
 export type TradeDirection = "long" | "short";
 
-/** Short iff the sell leg carries more quantity than the buy leg. */
-export function tradeDirection(t: Pick<TradeLegs, "buyQty" | "sellQty">): TradeDirection {
-  return t.sellQty > t.buyQty ? "short" : "long";
+/** The fields the direction reading needs: the legs plus, for a FLAT row, the stored side. */
+type DirectionInput = Pick<TradeLegs, "buyQty" | "sellQty" | "side" | "buyDate" | "sellDate">;
+
+/**
+ * The side that OPENED the row — delegates to `sideOf` (lib/domain/side.ts,
+ * v4.6.0 W6): the larger leg on a lopsided row, the stored `side` on a flat one.
+ * Before W6 this was `sellQty > buyQty`, which read every fully-closed short as
+ * a long.
+ */
+export function tradeDirection(t: DirectionInput): TradeDirection {
+  return sideOf(t);
 }
 
 /**
@@ -41,7 +55,7 @@ export function tradeDirection(t: Pick<TradeLegs, "buyQty" | "sellQty">): TradeD
  * short shows "—" under Exit too (its exit is the eventual buy-back).
  */
 export function entryExitPrices(
-  t: Pick<TradeLegs, "buyQty" | "sellQty" | "avgBuyPrice" | "avgSellPrice">,
+  t: DirectionInput & Pick<TradeLegs, "avgBuyPrice" | "avgSellPrice">,
 ): { entry: number | null; exit: number | null } {
   const buy = t.buyQty > 0 ? t.avgBuyPrice : null;
   const sell = t.sellQty > 0 ? t.avgSellPrice : null;
@@ -49,7 +63,7 @@ export function entryExitPrices(
 }
 
 /** Position size: the opening leg's quantity. */
-export function tradeQty(t: Pick<TradeLegs, "buyQty" | "sellQty">): number {
+export function tradeQty(t: DirectionInput): number {
   return tradeDirection(t) === "short" ? t.sellQty : t.buyQty;
 }
 

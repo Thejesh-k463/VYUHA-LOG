@@ -200,7 +200,7 @@ export interface OraclePersonFigures {
 /** One view of the book: its ACCOUNT-scoped half, and its person's half. */
 export interface OracleView {
   capital: { equityRealised: number; activeRealised: number; ipoRealised: number; totalRealised: number };
-  /** The /trades KPI strip: tradeStatsOf(getJournalTrades()) — account-scoped. */
+  /** The /trades KPI strip: getTradeStatsSql() (v4.6.0 W6; was tradeStatsOf(getJournalTrades())) — account-scoped. */
   kpi: { count: number; open: number; net: number };
   /** getIpoRealisedNet() with NO countedTradeIds — account-scoped, the IPO book alone. */
   ipoBookNet: number;
@@ -306,7 +306,8 @@ export async function readOracleView(t: TempDb, accountId: number): Promise<Orac
   // Exactly the call /reports/tax makes (app/reports/tax/page.tsx:112) — on
   // `taxRows`, which carries the resolved assetClass, not the raw page rows.
   const fyRows = tax.taxByFy([...base.taxRows, ...base.ipoTaxRows], settings.getSettings()?.fyStartMonth ?? 4);
-  const kpi = trades.tradeStatsOf(trades.getJournalTrades());
+  // Exactly the call /trades makes for its KPI strip (app/trades/page.tsx, v4.6.0 W6).
+  const kpi = trades.getTradeStatsSql();
   const ais = await aisRead();
 
   return {
@@ -623,7 +624,7 @@ export async function seedOracleBook(t: TempDb): Promise<OracleBook> {
  * (The a1 / a2 AIS lines are what those BOOKS hold; from v4.5.0 the route reads
  * the PERSON, so both views state P1's 51000 / 32100.)
  *
- * /trades KPI (`tradeStatsOf` sums EVERY row, open included):
+ * /trades KPI (`getTradeStatsSql` sums EVERY row, open included):
  *   a1  8 rows, 5 open, net 490.25+192+0+115+0+0+194+4970        = 5961.25
  *   a2  2 rows, 0 open, net 490.25 + 490.25                      =  980.50
  *   a3  1 row,  0 open, net 990.00                               =  990.00

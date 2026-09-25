@@ -216,6 +216,15 @@ node scripts/license-list.mjs --full             # include the full key text
 
 `--expiring 30`, run monthly, **is your renewal campaign**. Nothing else will remind you.
 
+**Referrals (v4.6.0).** When a sale came through a creator, add `--ref <CODE>` to `license-issue.mjs` — the
+same code their Creator Kit and `docs/owner/forms/referral-form.gs` use (`--ref RAVI`; trimmed and upper-cased,
+`--ref none` or blank = nobody). It is written to the ledger's `ref` field only, never into the signed key, so
+the app never sees it; ledger lines from before this flag read as unreferred. At payout time,
+`node scripts/license-list.mjs --by-ref` prints one line per creator — `CODE  keys N  active N  lifetime N
+yearly N  latest YYYY-MM-DD`, unreferred keys under `(none)`, most keys first (active = not expired and not
+revoked; yearly = any key with an expiry, monthly included) — and `--by-ref RAVI` lists that creator's keys in
+the usual rows. Neither prints a full key unless you add `--full`.
+
 ---
 
 ## 3. Support: "my key doesn't work"

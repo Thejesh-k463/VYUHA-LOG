@@ -21,6 +21,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analytics/win-loss";
+import { sideOf } from "@/lib/domain/side";
 
 // v4.6.0 W3 — the body of the old /reports/edge screen, now the Edge Clinic's
 // Setups tab. The hub page (../page.tsx) owns the page header and the Pro gate.
@@ -45,7 +46,7 @@ export function SetupsTab() {
   const maeInputs: MaeTradeInput[] = trades
     .filter((t) => !t.isOpen)
     .map((t) => {
-      const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
+      const side: "long" | "short" = sideOf(t);
       const qty = Math.max(t.buyQty, t.sellQty);
       return {
         id: t.id,

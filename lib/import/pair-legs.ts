@@ -91,7 +91,52 @@
  * Reporting it as a 100% gain because buyValue is zero would be a fabrication,
  * so it is marked and the caller is expected to exclude it from statistics
  * until a basis is supplied.
+ *
+ * ── `shortable`: an OVERNIGHT F&O short is only ever COVERED, never assumed ──
+ *
+ * (v4.6.0 W6, contract D4, LEDGER D-8.) A derivative CAN be carried short
+ * overnight, and a sell on day N covered by a buy on day N+1 used to be filed as
+ * an opening sell (basis unknown, P&L 0) plus a separate open long — two wrong
+ * rows. Under `shortable: true` (the callers pass it for every segment that is
+ * not `eq_*`, from `classify(tradingsymbol)`), a sell with no long lot to consume
+ * becomes a PENDING short lot, not a short. A LATER buy of the same contract in
+ * the same file covers pending short lots first (FIFO, weighted average — the
+ * staged rule of invariant 4 mirrored), producing ONE `closed` row with
+ * `side: 'short'`, sellDate = the oldest covered sale, buyDate = the covering
+ * buy, a known basis and `OVERNIGHT_SHORT_NOTE`; the rest of that buy opens long
+ * lots as today. A pending lot NO later buy covers is still the opening sell it
+ * always was, byte for byte — the owner's Fyers file sells COFORGE26AUG1500CE
+ * with no buy in the window, a long bought before the file, pinned against
+ * Fyers' realised figure (tests/golden-books.test.ts) — and it is what the
+ * seeded second pass is sized by. Long and short lots never coexist: a buy
+ * covers pending shorts before it opens a long, and a sell consumes longs before
+ * it pends. `shortable: false` (the default) is the pre-W6 output exactly.
  */
+
+import { INTRADAY_SHORT_NOTE, OVERNIGHT_SHORT_NOTE } from "@/lib/domain/side";
+import { classify } from "@/lib/engine/classify";
+
+export { INTRADAY_SHORT_NOTE, OVERNIGHT_SHORT_NOTE };
+
+/**
+ * Can this contract be carried short overnight? Every segment that is not
+ * `eq_*` — read through `classify`, the SAME pure function commit files the row
+ * with (never a second grammar). What each caller passes as `shortable`.
+ */
+export function isShortableSymbol(tradingsymbol: string): boolean {
+  return !classify({ tradingsymbol }).segment.startsWith("eq_");
+}
+
+/**
+ * Which fill side OPENED and which CLOSED a paired position — what a parser's
+ * entryTime (first opening fill) and exitTime (last closing fill) read. A closed
+ * short opened on its sale and closed on the buy-back; everything else — a long,
+ * an open lot, and an opening sale (the EXIT of a holding bought before the
+ * file, whose entry the file never shows) — opens on a buy and closes on a sale.
+ */
+export function fillSidesOf(pos: Pick<PairedPosition, "kind" | "side">): { entry: LegSide; exit: LegSide } {
+  return pos.kind === "closed" && pos.side === "short" ? { entry: "sell", exit: "buy" } : { entry: "buy", exit: "sell" };
+}
 
 export type LegSide = "buy" | "sell";
 
@@ -134,6 +179,22 @@ export interface PairedPosition {
   /** True when no purchase leg exists in the file — cost basis unknowable. */
   basisUnknown: boolean;
   notes: string[];
+  /**
+   * Which side OPENED the position (v4.6.0 W6): 'short' for a covered short
+   * (intraday — the `INTRADAY_SHORT_NOTE` row — or overnight under `shortable`)
+   * and for an opening sell (its quantities read short); 'long' otherwise.
+   * Commit stores it as `trades.side`.
+   */
+  side: "long" | "short";
+}
+
+export interface PairOptions {
+  /**
+   * True for a contract that can be carried short overnight (not `eq_*`,
+   * `isShortableSymbol`). `pairLegs` also takes a per-symbol predicate, for a
+   * file that pairs several instruments in one call.
+   */
+  shortable?: boolean | ((symbol: string) => boolean);
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -146,12 +207,10 @@ function chronological(a: Leg, b: Leg): number {
   return a.side === "buy" ? -1 : 1;
 }
 
-/**
- * The one fixed note a covered intraday short carries. See the header: this is
- * a presentation fact read off file order, not a change of arithmetic.
- */
-export const INTRADAY_SHORT_NOTE =
-  "Intraday short: sold before buying on the same day, covered by the later buy.";
+// INTRADAY_SHORT_NOTE — the one fixed note a covered intraday short carries —
+// is defined in lib/domain/side.ts (the side backfill reads it) and re-exported
+// above. See the header: a presentation fact read off file order, not a change
+// of arithmetic.
 
 /**
  * How much of each sell leg was a COVERED SHORT — sold with no lot to deliver
@@ -303,8 +362,9 @@ function resolveProduct(products: (Leg["product"] | undefined)[]): PairedPositio
  * across a date boundary keeps its real entry and exit dates, which is what
  * makes the holding period real rather than assumed.
  */
-export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
+export function pairSymbolLegs(legsIn: Leg[], opts: PairOptions = {}): PairedPosition[] {
   const legs = [...legsIn].sort(chronological);
+  const shortable = typeof opts.shortable === "function" ? legs.length > 0 && opts.shortable(legs[0].symbol) : opts.shortable === true;
   if (legs.length === 0) return [];
 
   const symbol = legs[0].symbol;
@@ -376,7 +436,83 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
     const orphanSells: Leg[] = [];
     let orphanQty = 0;
 
+    // `shortable` only (header): PENDING short lots, oldest first, and per sell
+    // leg what no long lot matched — the seeded pre-file part and the pending
+    // lot — so ONE opening-sell row per leg is emitted at the end, exactly as
+    // the non-shortable path emits it, for whatever no later buy covered.
+    type ShortLot = Lot & { leg: Leg };
+    const shorts: ShortLot[] = [];
+    let shortHead = 0;
+    const orphanOf = new Map<Leg, { openingTaken: number; pending: ShortLot | null }>();
+
     for (const leg of legs) {
+      if (leg.side === "buy" && shortable && leg.qty > 0) {
+        // Cover pending short lots first, FIFO — weighted average over the
+        // lots covered, entry (the sale) at the OLDEST of them.
+        let remaining = leg.qty;
+        const covered: ShortLot[] = [];
+        while (remaining > 0) {
+          while (shortHead < shorts.length && shorts[shortHead].qty <= 0) shortHead++;
+          if (shortHead >= shorts.length) break;
+          const lot = shorts[shortHead];
+          const take = Math.min(remaining, lot.qty);
+          const share = lot.qty > 0 ? take / lot.qty : 0;
+          covered.push({ ...lot, qty: take, value: r2(lot.value * share), charges: r2(lot.charges * share), venues: scaleVenues(lot.venues, share) });
+          lot.qty -= take;
+          lot.value = r2(lot.value * (1 - share));
+          lot.venues = scaleVenues(lot.venues, 1 - share);
+          lot.charges = r2(lot.charges * (1 - share));
+          remaining -= take;
+        }
+        if (covered.length > 0) {
+          const matchedQty = covered.reduce((s, c) => s + c.qty, 0);
+          const portion = matchedQty / leg.qty;
+          const buyValue = r2((leg.value / leg.qty) * matchedQty);
+          const oldestFirst = [...covered].sort((a, b) => a.date.localeCompare(b.date));
+          const notes = [OVERNIGHT_SHORT_NOTE];
+          const xNote = crossExchangeNote(
+            leg.venues ? Object.keys(leg.venues) : [leg.exchange ?? ""],
+            covered.flatMap((c) => (c.venues ? Object.keys(c.venues) : [c.exchange ?? ""])),
+          );
+          if (xNote) notes.push(xNote);
+          out.push({
+            symbol,
+            kind: "closed",
+            // Tie: the covering (closing) leg's venue, then the sales oldest-first.
+            exchange: rowVenue(
+              [...covered.flatMap((c) => venueParts(c.exchange, c.value, c.venues)), ...venueParts(leg.exchange, buyValue, scaleVenues(leg.venues, portion))],
+              [leg.exchange, ...oldestFirst.map((c) => c.exchange)],
+              securityExchange,
+            ),
+            buyQty: matchedQty,
+            buyValue,
+            sellQty: matchedQty,
+            sellValue: r2(covered.reduce((s, c) => s + c.value, 0)),
+            buyDate: leg.date,
+            sellDate: oldestFirst[0].date,
+            charges: r2(covered.reduce((s, c) => s + c.charges, 0) + leg.charges * portion),
+            product: resolveProduct([...covered.map((c) => c.product), leg.product]),
+            basisUnknown: false,
+            notes,
+            side: "short",
+          });
+          // The rest of the buy opens a long lot, as any buy does.
+          if (remaining > 0) {
+            const rest = remaining / leg.qty;
+            pushLot({
+              date: leg.date,
+              qty: remaining,
+              value: r2(leg.value * rest),
+              charges: r2(leg.charges * rest),
+              product: leg.product,
+              exchange: leg.exchange ?? null,
+              venues: scaleVenues(leg.venues, rest),
+            });
+          }
+          continue;
+        }
+        // Nothing pending: an ordinary buy, below.
+      }
       if (leg.side === "buy") {
         if (leg.qty > 0) {
           pushLot({
@@ -486,7 +622,33 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
           product,
           basisUnknown: false,
           notes,
+          // The covered intraday short (the note) opened on its sale.
+          side: shortQty > 0 ? "short" : "long",
         });
+      }
+
+      if (shortable) {
+        // What no long lot matched: the seeded part stays the opening sale it
+        // is, and the rest PENDS as a short lot for a later buy to cover.
+        if (openingTaken > 0 || remaining > 0) {
+          const o = { openingTaken, pending: null as ShortLot | null };
+          if (remaining > 0) {
+            const part = remaining / leg.qty;
+            o.pending = {
+              leg,
+              date: leg.date,
+              qty: remaining,
+              value: r2(perShare * remaining),
+              charges: r2(sellCharges * part),
+              product: leg.product,
+              exchange: leg.exchange ?? null,
+              venues: scaleVenues(leg.venues, part),
+            };
+            shorts.push(o.pending);
+          }
+          orphanOf.set(leg, o);
+        }
+        continue;
       }
 
       const unmatched = openingTaken + remaining;
@@ -496,6 +658,19 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
         const portion = leg.qty > 0 ? unmatched / leg.qty : 1;
         orphanSells.push({ ...leg, qty: unmatched, value: r2(perShare * unmatched), charges: r2(sellCharges * portion) });
       }
+    }
+
+    // `shortable`: a pending lot NO later buy covered is the opening sale it
+    // always was — one row per sell leg, built exactly as the path above builds
+    // it — and only that part counts as newly measured for the seeded pass.
+    for (const [leg, o] of orphanOf) {
+      const uncovered = o.pending ? o.pending.qty : 0;
+      const unmatched = o.openingTaken + uncovered;
+      if (unmatched <= 0) continue;
+      orphanQty += uncovered;
+      const perShare = leg.qty > 0 ? leg.value / leg.qty : 0;
+      const portion = leg.qty > 0 ? unmatched / leg.qty : 1;
+      orphanSells.push({ ...leg, qty: unmatched, value: r2(perShare * unmatched), charges: r2(leg.charges * portion) });
     }
 
     for (const s of orphanSells) {
@@ -516,6 +691,8 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
         notes: [
           "Sold without a matching purchase in this file — acquired earlier. Often an IPO allotment. Cost basis unknown until you set it.",
         ],
+        // Its quantities read short (a sale with no purchase); a basis write makes it long.
+        side: "short",
       });
     }
 
@@ -536,6 +713,7 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
         product: lot.product ?? "unknown",
         basisUnknown: false,
         notes: [],
+        side: "long",
       });
     }
 
@@ -550,7 +728,9 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
 }
 
 /** Pair every symbol in a file. Order is stable by symbol then entry date. */
-export function pairLegs(legs: Leg[]): PairedPosition[] {
+// The ENTRY date by side: a short opened on its sale (identical to buyDate ?? sellDate for every pre-W6 shape).
+const entryOf = (p: PairedPosition) => (p.side === "short" ? (p.sellDate ?? p.buyDate) : (p.buyDate ?? p.sellDate)) ?? "";
+export function pairLegs(legs: Leg[], opts: PairOptions = {}): PairedPosition[] {
   const bySymbol = new Map<string, Leg[]>();
   for (const l of legs) {
     const arr = bySymbol.get(l.symbol) ?? [];
@@ -565,13 +745,13 @@ export function pairLegs(legs: Leg[]): PairedPosition[] {
   // failure, not a slowdown. Pinned by tests/load/c8-pairing-depth at 190,000
   // legs on one symbol (it threw at ~123,000 positions).
   for (const [, arr] of bySymbol) {
-    for (const pos of pairSymbolLegs(arr)) out.push(pos);
+    for (const pos of pairSymbolLegs(arr, opts)) out.push(pos);
   }
 
   return out.sort(
     (a, b) =>
       a.symbol.localeCompare(b.symbol) ||
-      (a.buyDate ?? a.sellDate ?? "").localeCompare(b.buyDate ?? b.sellDate ?? ""),
+      entryOf(a).localeCompare(entryOf(b)),
   );
 }
 

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { SHARE_FUNNEL_LINE } from "@/components/reports/share-card";
 import {
   buildShareCard,
   extremeTrades,
@@ -125,6 +128,20 @@ describe("share card integrity", () => {
   it("watermark states self-reported and never claims broker verification", () => {
     expect(SHARE_WATERMARK).toMatch(/self-reported/i);
     expect(SHARE_WATERMARK).toMatch(/not broker-verified/i);
+  });
+
+  // The card is the BUYER funnel (v4.6.0 W6, row 9 item 7): it names the
+  // landing page every other outward surface uses, never the source repo, and
+  // carries no per-user referral code (codes are per creator, in the ledger).
+  it("footer funnel line names the buyer landing page, not the source repo", () => {
+    expect(SHARE_FUNNEL_LINE).toBe("Vyuha · desktop or web · thejesh-k463.github.io/VYUHA-LOG");
+    expect(SHARE_FUNNEL_LINE).not.toMatch(/github\.com\//i);
+    expect(SHARE_FUNNEL_LINE).not.toMatch(/https?:\/\/|\/$/);
+    expect(SHARE_FUNNEL_LINE).not.toMatch(/macos/i);
+    // …and it is the line actually drawn, not a dead constant beside a literal.
+    const src = fs.readFileSync(path.join(process.cwd(), "components", "reports", "share-card.tsx"), "utf8");
+    expect(src).toContain("ctx.fillText(SHARE_FUNNEL_LINE,");
+    expect(src).not.toContain("github.com/Thejesh-k463/VYUHA-LOG");
   });
 
   it("every declared metric is renderable", () => {

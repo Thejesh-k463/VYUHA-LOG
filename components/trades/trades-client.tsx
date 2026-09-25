@@ -54,6 +54,7 @@ import {
 } from "@/lib/domain/trades-paging";
 import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, Paperclip, Lock, Undo2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { entryLegOf, sideOf } from "@/lib/domain/side";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -600,7 +601,7 @@ export function TradesClient({
         const isDerivative = t.instrumentType === "option" || t.instrumentType === "future";
         // Same buyQty/sellQty convention as /strategies and /risk: whichever leg
         // carries the open quantity decides direction (short = sell-to-open).
-        const isShort = isDerivative && t.isOpen && t.sellQty > t.buyQty;
+        const isShort = isDerivative && t.isOpen && sideOf(t) === "short";
         const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
         const lots = t.lotSize && t.lotSize > 0 ? Math.round(qty / t.lotSize) : null;
         const dte = t.isOpen && t.expiry ? daysBetween(today, t.expiry) : null;
@@ -678,8 +679,7 @@ export function TradesClient({
       id: "targetRR", header: "Target R:R", meta: { align: "right" },
       cell: ({ row }) => {
         const t = row.original;
-        const isShort = t.sellQty > t.buyQty;
-        const entry = isShort ? t.avgSellPrice : t.avgBuyPrice;
+        const entry = entryLegOf(t).price;
         const v = plannedRewardRisk(entry, t.slPlanned, t.targetPlanned);
         return v == null ? "—" : `1:${v.toFixed(2)}`;
       },
