@@ -9743,3 +9743,74 @@ six places); run 2 EXIT 0 — `Test Files 505 passed (505)`, `Tests 11879 passed
 **Prose pass (bounded doc-auditor on Opus): 9 files / 6 findings (3 CONFIRMED + 3 PLAUSIBLE) / 44 tool calls (the harness billed 45; three were refused by the read-only guard) — all six FIXED in the close-out commit:** README's e2e count 141 → 142 in four places (Builder B's z-help case; `drift:close-out` does not derive the e2e count — a candidate check: compare against `npx playwright test --list`); "six sites" → "eight surfaces" for the overnight-short FY (DECISIONS + LEDGER F-36) and `fmvTotalOf` "at all six sites" → "every consumer (four production call sites + the invariants script)" (DECISIONS + LEDGER F-35/L-42 wording); STATE's preamble date 2026-09-25 → 2026-09-26; STATE §1 "Windows + macOS" → "Windows; no macOS build" (the selling rule); STATE §2-published's "still the live release" heading → HISTORY. Not verified by the pass and dropped from §0: "50 help cards" (`HELP_TASKS` has 43 entries; 51 `steps:` blocks) — §0 now says "the task-first cards".
 
 **CI on the fix wave `1c8b393`: run 36219088249 = 5/6 — the Windows unit job red on ONE test, `tests/copy-pins-v46.test.ts` CL-2/DC-2 "expected '> **v4.0.0 — the Live Desk.** …' not to match /median/i", green on the LF working copy.** The runner checks out CRLF, so the block terminator `"\n>\n"` never matched, `indexOf` returned −1 and the slice ran to the end of the file, where W5's Atlas copy says "median". A TEST bug (the pin and the doc are right): the file's `read` helper now normalises `\r\n` → `\n` (`3cdde8d`), reproduced on a CRLF copy of README (terminator −1 → 17097; matches → does not) — **FAIL-AI** in STATE §0.3: a doc/copy pin red on the Windows job only is CRLF; normalise in the test's read helper, never touch the doc or the pin. CI on `3cdde8d`: run 36219858147 SUCCESS 6/6 (first pass). Close-out: STATE §0 rewritten (the twenty-ninth block archived, sha-checked), `npm run drift:close-out` 21 PASS / 0 FAIL / 3 SKIP (the archive-append-only FAIL self-healed), this session's close-out docs commit sits on `3cdde8d`. The RELEASE itself (bump → help:shots → the release skill → `release:verify --deep` → STOP) is the next session's whole work; its inputs are §0's "Owed outside the build" paragraph and the "Owed at the BUMP" list above.
+
+## 2026-09-26 — v4.6.0 TAGGED (the thirty-first session): the bump, the release copy, the build, the perf A/B against v4.5.0, the draft release; the OWNER publishes
+
+**Sequence, as run:** gate first (HEAD `1dfaa24`, tag v4.5.0, `releases/latest` v4.5.0, CI 36220544070 green, `npm run drift` 11 PASS / 0 FAIL / 1 SKIP) →
+`npm run bump-version 4.6.0` (four files; footer → v4.6) + `cargo update -p vyuha --offline` (Cargo.lock one line) + the two package-lock root fields by
+hand (`git diff --numstat` 2/2, npm never ran) → ONE Opus `vyuha-builder` wrote the release copy in the ten doc files from LEDGER U-1…U-17 / F-1…F-50 and
+the audit entry (CHANGELOG v4.6.0, README quote + "Now: v4.6.0" + the 0075–0078 upgrade line, client README "New in v4.6.0" with the Paytm/Groww
+old-ladder notice, INSTALLATION_GUIDE eight brokers + first-launch 280 rate rows / 16 margin rows, TERMS/PRIVACY/REFUND applies-to, deck chips, landing
+pill + chip + every six-broker site, brochure pill; "No dependency changes" → `@radix-ui/react-accordion`); the broker count came from
+`lib/import/registry-meta.ts` `IMPORT_SOURCES` (8), never from memory; its scoped tests (33 files) + `npm run drift` green; ONE doc fix on the way (the
+`privacy-feed-disclosure` pin: the OpenAlgo row must state the loopback default) → `npm run help:shots` AFTER the bump (14 webp, `settings.webp` read back
+with the footer "Vyuha Desktop · v4.6" — L-19 discharged) → `npm run desktop:build` EXIT 0 (`desktop-dist/.next/BUILD_ID` 11:12:23 IST this session,
+`ladder_mismatch` in 4 server chunks — `fmvIsMixed` is minified away, so the string literal is the marker; the local `.sig` decoded to key id
+`4FF85F3BBE1DA21D` = `tauri.conf.json`'s pubkey; the built seed `desktop-dist/vyuha.seed.sqlite`: 79 migrations, charge_config fyers 140 + nuvama 140,
+margin_config 8 + 8) → `npm run client:docx` (both twins regenerated) + `npm run client:package` (installer SHA-256
+`08F481E17E55796D8000EB2D2027B1A59AAE1DFADCBC801A6177BA667928DD8F`) → gate (`vyuha-verifier` alone, ONE run): EXIT 0 — `Test Files 505 passed (505)`,
+`Tests 11879 passed | 35 skipped (11914)`, lint 0 errors / 6 warnings, "Compiled successfully in 10.7s", 137.39 s, lock unchanged → commit `37408e3`
+("version bump and release copy", the 4.5.0 precedent), CI 36222263293 SUCCESS 6/6 first pass → annotated tag `v4.6.0` = `37408e3`, pushed → release run
+36223372445 (Windows x64, macOS ×2).
+
+**The upgrade path on a copy of the OWNER's real journal (the L-25 item):** `better-sqlite3` `.backup()` of the live file (read-only on the source; 75
+migrations, 1,347 trades) + its `vault.key` into the scratchpad; `next start` on it threw SQLITE_ERROR on a page (a column 0077 adds) because `next start`
+runs no migration — the launcher does (L-52). `VYUHA_DB_PATH=<copy> npm run db:migrate`: 75 → 79, `trades-side-v1` 161 rows re-keyed / 0 collisions,
+integrity ok, margin_config fyers/nuvama 16; then the launcher's `refreshRateCards(sqlite, seedTemplate)` called as the launcher calls it: "rate cards:
+280 added, 0 refreshed, 0 removed", "margin rates: 0 added (existing rows kept)". `/atlas` on that copy with `VYUHA_LICENSE_PEM` set: 230 ms cold,
+84–96 ms warm (`atlas_daily` 0 rows — the owner's book has no cached bars, so L-25's 10 s first compute does not arise); `/trades` 40 ms.
+
+**The perf sweep and its A/B (LEDGER L-51, R-13, D-16):** the coord hook refused the first attempt while HUB was active ("needs an idle machine"); a
+retry minutes later ran. Two v4.6.0 sweeps (prod build, `data/perf.sqlite` re-seeded to 79 migrations, 43 routes × 3): overall median 915 / 955 ms,
+`/trades` 815 / 822, `/atlas` 900 / 955, 0 console errors, THREE routes over the 1,500 ms budget both times — `/` 1,863 / 1,950, `/strategies`
+1,661 / 1,769, `/settings` 1,597 / 1,688. Server time by curl: `/` 0.78–0.85 s for **13.1 MB of HTML** (all 25,001 `DashTrade` rows serialised to the
+dashboard client — `app/page.tsx:30-33`, a 2026-08-29 design), `/strategies` 0.5–0.7 s for 6.0 MB, `/settings` 0.4–0.6 s for 1.0 MB; `/trades` 0.08 s
+for 0.66 MB. To attribute it, v4.5.0 was built from its tag in a worktree (`_v450-perf`, deleted after; Turbopack refused a node_modules junction three
+ways and `--webpack` died on `node:` imports — robocopy from PowerShell) and swept on port 3007 against the SAME DB minutes before a third v4.6.0 sweep on
+3100: **v4.5.0 `/` 1,938 (12.7 MB), `/settings` 1,667, `/risk` 1,528 over budget; `/trades` 1,028; `/strategies` 1,323; overall 782** — **v4.6.0 (third)
+`/` 1,638, `/strategies` 1,522, `/settings` 1,457, `/risk` 1,339, `/trades` 772, overall 865.** The `/` and `/settings` breaches predate the release;
+`/strategies` moved 1,323 → 1,522–1,769 (ONE v4.5.0 sample — up to ~450 ms, recorded as a 4.7.0 candidate, D-16); `/trades` improved 1,028 → 772 (W6's lever, now proven at the page level). Ruling
+(decision policy): NOT a stop-ship — recorded as a v4.7.0 candidate (the dashboard payload), STATE §0.1 row 19.
+
+**Why not the obvious thing:** pulling the tag on the breach — the breach is at v4.5.0 on the same machine; a "fix" of the dashboard payload in the
+release session — the audit's stopping rule reopens on product defects, and a pre-existing perf shape with correct numbers is not one; trusting the sweep's
+budget line without the A/B — the 2026-09-04 entry already recorded a load-shift false alarm, and this one was the opposite (real, but old); timing
+`/atlas` on `data/smoke-v460/` — its fresh `vault.key` refuses the Pro tabs, and a backup-API copy of the live file costs one command.
+
+**The release run and the deep verify:** run 36223372445 SUCCESS 3/3 (Windows x64 14 min, macOS Apple silicon 11 min, macOS Intel 26 min); the DRAFT holds 8 assets + latest.json. `npm run release:verify v4.6.0 -- --deep`: EXIT 0 — 3 signatures, key id `4FF85F3BBE1DA21D`, each "verifies over" the published bytes (35.1 / 62.6 / 65.0 MB, prehashed), "Safe to publish". The draft URL is the
+GitHub "untagged-…" release page under `Thejesh-k463/VYUHA-LOG` (`gh release view v4.6.0 --json url`); `gh release list` shows v4.6.0 as Draft
+and v4.5.0 as Latest; `revocations` `isPrerelease=true`. **The session STOPPED here (ruling 2026-09-23) — the OWNER flips the draft to Latest.**
+`vyuha-release-steward` (Opus, read-only, 28 tool calls): 0 stop-the-line; the lock's 64/2 since v4.5.0 is the W4 accordion hand-merge
+(`6a4b966`, 62/0) plus the two root lines; claims audit over README, client README, INSTALLATION_GUIDE, landing, brochure and the CHANGELOG section:
+0 contradictions (one loose wording at landing:629, "no API of their own — … Kotak", recorded, not changed); the Pages deploy on `37408e3` already shows
+v4.6.0 on the public landing page while `releases/latest` is v4.5.0 — the v4.5.0 precedent's transient, closed by publishing. NOT done, the owner's:
+the publish click, the non-build-machine install + smoke, WDSI, winget (the manifest needs the GitHub asset digest and is generated HELD by the next session).
+
+```
+## WDSI submission (standing owner instruction, release skill section 9)
+File name:            Vyuha_4.6.0_x64-setup.exe
+SHA-256 (installer inside the client ZIP): 08F481E17E55796D8000EB2D2027B1A59AAE1DFADCBC801A6177BA667928DD8F
+Category:             Incorrectly detected as malware/malicious
+Detection name:       N/A - no detection (if Defender flags it, use the exact detection name — precedent: Bearfoos.B!ml)
+Definition version:   (blank — pre-emptive submission)
+Additional information:
+Vyuha 4.6.0 is a desktop trading journal for Indian retail traders, made by a single independent developer (publisher "Thejesh K").
+This file is its unsigned NSIS installer (Tauri shell plus a bundled Node.js server), built by GitHub Actions from a public workflow
+and delivered to customers directly. It is submitted pre-emptively because it is new and unsigned, not because anything detected it.
+The journal database stays on the user's computer; the only network use is the signed-update check and the broker data feeds or
+end-of-day NSE download the user switches on. This version adds no network host. What changed in 4.6.0: trade-file import for two
+more brokers (Fyers and Nuvama), a bundled market calendar and a stock-industry snapshot (both build-time data files), rearranged
+analytics screens and a rewritten Help section, recording which side opened a trade, tax-report fixes, and four local database migrations.
+```
+
+**Prose pass:** prose pass (bounded doc-auditor on Opus): 10 files / 6 findings (4 CONFIRMED + 2 PLAUSIBLE) / 40 tool calls — all six fixed in this commit (13.1 MB at v4.6.0 vs 12.7 MB at v4.5.0 stated per version in LEDGER L-51/D-16 and STATE §0.1/§0.4; D-16 scoped to over-budget routes with /atlas +223–278 ms and /trades −256 ms named; /strategies' move recorded as a 4.7.0 candidate, not "inside its spread"; L-51 says coord listed HUB active while the overall median matched idle; the WDSI label reads "installer inside the client ZIP"; the paste block trimmed to 15 lines). **Close-out:** STATE §0 rewritten (the thirtieth block archived byte-for-byte, sha256 23ddb704…2532, 18,413 bytes), LEDGER L-51/L-52/R-13/D-16, SESSION-LOG entry + a 15-line paste block; drift:close-out 21 PASS / 0 FAIL / 3 SKIP (run LAST, after every doc edit); this close-out docs commit sits on 37408e3 (the tag).
