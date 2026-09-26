@@ -5,7 +5,7 @@ import { brokerReference, trades as tradesTable } from "@/lib/db/schema";
 import { getSelectedAccountId } from "./accounts";
 import { getSettings } from "./settings";
 import { withinTolerance } from "@/lib/analytics/ais";
-import { currentFy } from "@/lib/analytics/tax";
+import { currentFy, fyDateOf } from "@/lib/analytics/tax";
 import type { ReferenceScope } from "@/lib/import/types";
 import type { Segment } from "@/lib/domain/constants";
 
@@ -167,6 +167,12 @@ export interface ReconcileTrade {
    * reads as zero, which is what a projection that does not select them means.
    */
   buyDate?: string | null;
+  /** Which side opened a flat row, and the note an intraday short carries —
+   *  read through `fyDateOf` so a closed short's P&L is filed in the year of
+   *  its COVER (the tax pack's rule, v4.6.0 fix wave SEAM-V46-2). Optional on
+   *  the type for the same reason as the charge columns. */
+  side?: string | null;
+  importNotes?: string | null;
   brokerage?: number;
   sttCtt?: number;
   exchangeTxn?: number;
@@ -402,6 +408,12 @@ export function reconcileFrom(
     const family = familyOf(t.segment);
     if (!family) unclassified.set(t.segment, (unclassified.get(t.segment) ?? 0) + 1);
     const fy = fyOf(t.sellDate, fyStartMonth, fallbackFy);
+    // The CLOSED-P&L year is the tax pack's: the closing leg's day (`fyDateOf`).
+    // A short's sellDate is its ENTRY, so filing its P&L by the sale put an
+    // overnight short sold 30 Mar / covered 1 Apr in the wrong year beside the
+    // broker's own FY figure. The DP fee and the unpriced-sale count below stay
+    // on the SALE's year — each is a fact about the sale itself.
+    const closedFy = t.isOpen ? fy : fyOf(fyDateOf(t), fyStartMonth, fallbackFy);
 
     // A DP fee is levied on a DELIVERY SALE, so the sale's year owns it. An
     // open position has not incurred one, and `fyOf(null)` would file it under
@@ -454,9 +466,9 @@ export function reconcileFrom(
       openAll.count++; openAll.qty += Math.abs(t.buyQty - t.sellQty);
       continue;
     }
-    const fyAcc = vyuhaByFy.get(fy) ?? emptyFigures();
+    const fyAcc = vyuhaByFy.get(closedFy) ?? emptyFigures();
     addTrade(fyAcc, t);
-    vyuhaByFy.set(fy, fyAcc);
+    vyuhaByFy.set(closedFy, fyAcc);
     if (family) {
       const famAcc = vyuhaByFamily.get(family) ?? emptyFigures();
       addTrade(famAcc, t);
@@ -1009,6 +1021,8 @@ export function reconcile(accountId?: number): Reconciliation {
     isOpen: tradesTable.isOpen,
     acquisition: tradesTable.acquisition,
     buyDate: tradesTable.buyDate,
+    side: tradesTable.side,
+    importNotes: tradesTable.importNotes,
     brokerage: tradesTable.brokerage,
     sttCtt: tradesTable.sttCtt,
     exchangeTxn: tradesTable.exchangeTxn,

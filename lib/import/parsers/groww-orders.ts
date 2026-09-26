@@ -32,7 +32,8 @@ import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
-import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg } from "../pair-legs";
+import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
+import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 import { extractTime } from "../time-parse";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.]/g, "");
@@ -142,7 +143,8 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
   const skippedStatuses = new Map<string, number>();
   const unreadable: string[] = [];
   const legs: Leg[] = [];
-  const fills = new Map<string, Execution[]>();
+  /** Each leg IS one executed order, so its fills are exactly that order (MO-4). */
+  const fillsOf = new Map<Leg, Execution[]>();
   const isinOf = new Map<string, string | null>();
 
   for (const r of dataRows) {
@@ -170,16 +172,40 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
       continue;
     }
 
-    legs.push({ symbol, side, date, qty, value, charges: 0, exchange: (r[cExch] || "").toUpperCase() || null, product: "unknown" });
+    const leg: Leg = { symbol, side, date, qty, value, charges: 0, exchange: (r[cExch] || "").toUpperCase() || null, product: "unknown" };
+    legs.push(leg);
     isinOf.set(symbol, cIsin >= 0 ? r[cIsin] || null : null);
-    const f = fills.get(symbol) ?? [];
-    f.push({ side, qty, price: value / qty, date, time: extractTime(cWhen >= 0 ? r[cWhen] : null) });
-    fills.set(symbol, f);
+    fillsOf.set(leg, [{ side, qty, price: value / qty, date, time: extractTime(cWhen >= 0 ? r[cWhen] : null) }]);
   }
 
   // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header).
   const paired = pairLegs(legs, { shortable: isShortableSymbol });
   const check = summarisePairing(legs, paired);
+
+  // v4.6.0 fix wave (MO-4) — each position's executions are the orders FIFO
+  // actually took, by quantity (lib/import/leg-allocation.ts, as Zerodha and
+  // Fyers do). The DATE-WINDOW filter this replaces handed an order split across
+  // two positions to BOTH (AEQUS: parent 2,000, ladder 10,000). Per symbol, under
+  // the SAME shortable predicate pairLegs used; an order split between two
+  // positions is sliced pro rata by quantity at its own price. A position no
+  // allocation matches keeps no ladder, and the warning below counts it.
+  const legsBySymbol = new Map<string, Leg[]>();
+  for (const l of legs) legsBySymbol.set(l.symbol, [...(legsBySymbol.get(l.symbol) ?? []), l]);
+  const pairedBySymbol = new Map<string, PairedPosition[]>();
+  for (const p of paired) pairedBySymbol.set(p.symbol, [...(pairedBySymbol.get(p.symbol) ?? []), p]);
+  const executionsOf = new Map<PairedPosition, Execution[] | null>();
+  let unallocated = 0;
+  for (const [symbol, symbolLegs] of legsBySymbol) {
+    const allocs = allocateSymbolLegs(symbolLegs, { shortable: isShortableSymbol(symbol) });
+    const cut = executionsByAllocation(allocs, fillsOf);
+    const own = pairedBySymbol.get(symbol) ?? [];
+    const matched = matchAllocations(own, allocs);
+    own.forEach((p, i) => {
+      const a = matched[i];
+      if (!a) unallocated++;
+      executionsOf.set(p, a ? cut.get(a) ?? [] : null);
+    });
+  }
   const r2 = (n: number) => Math.round(n * 100) / 100;
 
   const trades: NormalizedTrade[] = paired.map((p) => {
@@ -188,18 +214,9 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
     const sameDay = p.kind === "closed" && p.buyDate != null && p.buyDate === p.sellDate;
     const hint: ProductHint = sameDay ? "intraday" : "delivery";
 
-    // Give each position only the fills inside its own window, so a staged
-    // ladder is built from its own executions rather than the symbol's whole
-    // history. Approximate for re-entered symbols; the aggregate stays exact.
-    // A closed short's window runs from its sale to its buy-back (v4.6.0 W6).
+    // The orders FIFO actually took for THIS position (the allocation above, MO-4).
     const fillSide = fillSidesOf(p);
-    const [from, to] = fillSide.entry === "sell" ? [p.sellDate, p.buyDate] : [p.buyDate, p.sellDate];
-    const all = fills.get(p.symbol) ?? [];
-    const executions = all.filter(
-      (e) =>
-        (from == null || (e.date ?? "") >= from) &&
-        (to == null || (e.date ?? "") <= to),
-    );
+    const executions = executionsOf.get(p) ?? [];
 
     return {
       broker: "groww",
@@ -243,6 +260,9 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
     warnings.push(
       `${unreadable.length} row${unreadable.length === 1 ? "" : "s"} had no readable side, quantity, value or date and ${unreadable.length === 1 ? "was" : "were"} refused rather than guessed: ${[...new Set(unreadable)].slice(0, 5).join(", ")}.`,
     );
+  }
+  if (unallocated > 0) {
+    warnings.push(`${unallocated} position${unallocated === 1 ? "" : "s"} could not be traced to the orders behind ${unallocated === 1 ? "it" : "them"}, so ${unallocated === 1 ? "it carries" : "they carry"} no execution ladder — please report this file.`);
   }
   if (!check.conserved) {
     warnings.push(`Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta} against a ${check.valueTolerance} rounding tolerance) — please report this file.`);

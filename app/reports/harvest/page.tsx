@@ -9,7 +9,8 @@ import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { daysBetween, fyWindowFor, type OpenLot } from "@/lib/analytics/harvest";
-import { classifyGain, MTF_NOT_DEDUCTED_NOTE } from "@/lib/analytics/capital-gains";
+import { closedOnOrAfter, fyDateOf } from "@/lib/analytics/tax";
+import { classifyGain, fmvTotalOf, MTF_NOT_DEDUCTED_NOTE } from "@/lib/analytics/capital-gains";
 import { assetClassFor, heldMoreThanMonths, holdingMonthsFor } from "@/lib/analytics/cg-heads";
 import {
   sttSplit,
@@ -101,7 +102,8 @@ export default async function HarvestPage({
   // either one would make the harvesting arithmetic confidently wrong.
   let realisedUndetermined = 0;
   for (const t of realised) {
-    if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
+    // v4.6.0 fix wave (CC-2) — the FY window files a row by its CLOSING leg.
+    if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !closedOnOrAfter(t, fyStart)) continue;
     const g = classifyGain({
       segment: t.segment,
       assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
@@ -110,13 +112,14 @@ export default async function HarvestPage({
       pledgeCharges: t.pledgeCharges,
       buyDate: t.buyDate,
       sellDate: t.sellDate,
+      fyDate: fyDateOf(t),
       buyValue: t.buyValue,
       sellValue: t.sellValue,
       netPnl: t.netPnl,
       // fmv31Jan2018 is stored PER SHARE (schema); classifyGain wants the
       // same TOTAL units as buyValue/sellValue — the exact scaling
       // lib/queries/tax-itr.ts uses, so both tax surfaces agree.
-      fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
+      fmv31Jan2018: fmvTotalOf(t),
     });
     if (g?.bucket === "ltcg112A" || g?.bucket === "ltcg112") realisedLtcg += g.taxableGain;
     else if (g?.bucket === "stcg111A" || g?.bucket === "stcgOther") realisedStcg += g.taxableGain;
@@ -126,7 +129,9 @@ export default async function HarvestPage({
   // ── Tax levers (v3.3.0) ────────────────────────────────────────────────
   // Everything here is (A): computable exactly from executed trades. Nothing
   // recommends a transaction. See lib/analytics/tax-levers.ts.
-  const fyClosed = realised.filter((t) => !t.isOpen && t.sellDate != null && t.sellDate >= fyStart);
+  // v4.6.0 fix wave (CC-2) — realised THIS FY means CLOSED this FY: a short's
+  // sellDate is its entry, so a short sold 28 Mar and covered 2 Apr belongs here.
+  const fyClosed = realised.filter((t) => !t.isOpen && closedOnOrAfter(t, fyStart));
 
   // v4.6.0 W7 (D2) — the parent id, symbol and fill leg ride along so a
   // staged ladder's realised rows count as ONE trade, its fills listed beneath.

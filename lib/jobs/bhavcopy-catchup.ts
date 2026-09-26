@@ -188,20 +188,31 @@ export async function runBhavcopyCatchup(deps: CatchupDeps = {}): Promise<Catchu
 
     let fetched = 0;
     let applied = 0;
+    // A6 (iii): consent is re-read from the DATABASE at every point the run is
+    // about to act — before the pace sleep, AFTER it and right before the fetch,
+    // and again before the apply (v4.6.0 audit SG-2: a withdrawal during the
+    // 1.5 s sleep, or during the fetch, used to still fetch and apply one file).
+    const consentWithdrawn = (date: string): CatchupOutcome | null => {
+      if (isAutoMtmEnabled()) return null;
+      progress = { ...progress, status: "aborted", message: `Stopped at ${date} — auto-MTM was turned off.` };
+      writeBackfillProgress(progress);
+      return { ok: true, progress, plan, fetched, applied, aborted: true };
+    };
     for (const date of plan.plan) {
       // A6 (iii): consent AND abort are re-read from the DATABASE before every file.
-      if (!isAutoMtmEnabled()) {
-        progress = { ...progress, status: "aborted", message: `Stopped at ${date} — auto-MTM was turned off.` };
-        writeBackfillProgress(progress);
-        return { ok: true, progress, plan, fetched, applied, aborted: true };
-      }
+      const off = consentWithdrawn(date);
+      if (off) return off;
       if (progress.abortRequested || readBackfillProgress().abortRequested) {
         progress = { ...progress, status: "aborted", abortRequested: true, message: `Stopped at ${date} — you asked it to stop.` };
         writeBackfillProgress(progress);
         return { ok: true, progress, plan, fetched, applied, aborted: true };
       }
 
-      if (fetched > 0) await sleep(BACKFILL_RATE_LIMIT_MS);
+      if (fetched > 0) {
+        await sleep(BACKFILL_RATE_LIMIT_MS);
+        const offAfterSleep = consentWithdrawn(date);
+        if (offAfterSleep) return offAfterSleep;
+      }
       fetched++;
 
       // HEARTBEAT before the fetch (see the backfill's loop): the stamp used to
@@ -221,6 +232,9 @@ export async function runBhavcopyCatchup(deps: CatchupDeps = {}): Promise<Catchu
         persist();
         continue;
       }
+      // …and once more before the apply: the fetch awaited the network.
+      const offBeforeApply = consentWithdrawn(date);
+      if (offBeforeApply) return offBeforeApply;
       const result = applyBhavcopyMtm(got.text);
       if (result.ok) applied++;
       progress = {

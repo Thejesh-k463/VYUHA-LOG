@@ -7,6 +7,7 @@ import { pairLegs, type Leg, type PairedPosition } from "@/lib/import/pair-legs"
 import { dedupHash } from "@/lib/import/dedup";
 import { legacyShortGroupRefusals, legacyShortLegMatch } from "@/lib/import/legacy-short";
 import { staleSaleRows, type QualityTrade } from "@/lib/analytics/data-quality";
+import { todayIstIso } from "@/lib/domain/trading-day";
 
 /**
  * v4.6.0 W6 — `trades.side` (migration 0077). Contract D1–D3, D5.
@@ -506,6 +507,36 @@ describe("v4.6.0 W6 — sequences on stored rows", () => {
     expect(un.ok, un.message).toBe(true);
     const back = rowsOf().map((r) => [r.side, r.buyQty, r.sellQty, r.isOpen]).sort();
     expect(back).toEqual([["long", 25, 0, true], ["short", 0, Q, true]].sort());
+    clear();
+  });
+
+  // MO-2 + design review A6 (v4.6.0 fix wave) — NO SIGNAL IS NO SIDE at EVERY
+  // writer, not only in the backfill: a flat, same-day row with no intraday-short
+  // note (an OpenAlgo / Kite pull states none) is stored NULL by a fresh import,
+  // kept NULL by an editor save, and kept NULL by a same-day re-pull that
+  // supersedes it under another hash. Before the fix all three wrote a STATED
+  // 'long' the stop-migration map then trusted.
+  it("a flat same-day row with no signal: import → editor save → same-day re-pull supersede all keep NULL (= the backfill)", () => {
+    clear();
+    const day = todayIstIso();
+    const snap = { supersedeSnapshot: { fileName: `zerodha-api-${day}` } };
+    const flat = (px: number) =>
+      nt({ buyQty: Q, avgBuyPrice: 90, buyValue: 90 * Q, buyDate: day, sellQty: Q, avgSellPrice: px, sellValue: px * Q, sellDate: day, grossPnl: (px - 90) * Q });
+    expect(commit.commitParsedFile(file([flat(100)]), snap.supersedeSnapshot.fileName, null, 1, snap).added).toBe(1);
+    const [row] = rowsOf();
+    expect(backfillSide(row), "what the trades-side-v1 backfill writes for this row").toBeNull();
+    expect(row.side, "fresh import").toBeNull();
+    const ed = commit.updateManualTrade(row.id, { setupTag: "breakout" });
+    expect(ed.ok, ed.message).toBe(true);
+    expect(sideById(row.id), "editor save").toBeNull();
+    const res = commit.commitParsedFile(file([flat(104)]), snap.supersedeSnapshot.fileName, null, 1, snap);
+    expect(commit.supersededFromWarnings(res.warnings), "the re-pull replaced the row in place").toBe(1);
+    expect(rowsOf().map((r) => [r.id, r.avgSellPrice, r.side]), "same-day re-pull supersede").toEqual([[row.id, 104, null]]);
+    clear();
+    // The manual-entry writer (commitManualTrade) follows the same rule.
+    const man = commit.commitManualTrade(flat(101), { setupTag: "manual" }, 1);
+    expect(man.id).not.toBeNull();
+    expect(sideById(man.id!), "manual entry").toBeNull();
     clear();
   });
 });

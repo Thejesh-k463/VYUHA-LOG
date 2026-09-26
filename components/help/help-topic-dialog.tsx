@@ -15,7 +15,8 @@ import { GlossaryText } from "./glossary-text";
  * Radix Dialog supplies the focus trap and Esc. The dialog is OPEN exactly
  * while the URL carries this topic's `#topic-…` fragment (the caller derives
  * `topic` from the hash), so closing it — Esc, the ×, a click outside — calls
- * `onClose`, which clears the fragment. Related topics swap in place.
+ * `onClose`, which clears the fragment. Related topics swap in place. Focus
+ * lands on the title when it opens and returns to the topic's card on close.
  */
 export function HelpTopicDialog({
   topic,
@@ -34,9 +35,38 @@ export function HelpTopicDialog({
   return (
     <Dialog open={topic != null} onOpenChange={(open) => (open ? undefined : onClose())}>
       {topic && (
-        <DialogContent className="text-lg sm:max-w-3xl" data-testid="help-topic-dialog">
+        <DialogContent
+          className="text-lg sm:max-w-3xl"
+          data-testid="help-topic-dialog"
+          // Focus the TITLE on open (v4.6.0 audit UI-2). Radix's default is the
+          // first tabbable — in 41 of 50 topics a glossary <button>, whose
+          // tooltip opens on focus and covers the dialog, and whose Esc then
+          // closes the tooltip rather than the dialog (shortcuts.ts: one Esc).
+          onOpenAutoFocus={(e) => {
+            // The event is dispatched ON the content element; the shared
+            // DialogTitle takes no ref, so the title is found inside it.
+            const content = e.currentTarget as HTMLElement | null;
+            const title = content?.querySelector<HTMLElement>("[data-help-topic-title]");
+            if (!title) return;
+            e.preventDefault();
+            title.focus();
+          }}
+          // …and on close hand focus back to the topic's card (UI-3). The dialog
+          // has no Trigger, so Radix's default lands on <body>. `topic` here is
+          // the last topic this content rendered; closeTopic keeps its group
+          // expanded, so the card is in the DOM. A card that is not (a search
+          // hit, a deep link) keeps Radix's default.
+          onCloseAutoFocus={(e) => {
+            const card = document.getElementById(topic.id);
+            if (!card) return;
+            e.preventDefault();
+            card.focus();
+          }}
+        >
           <DialogHeader>
-            <DialogTitle className="pr-8 text-2xl">{topic.title}</DialogTitle>
+            <DialogTitle data-help-topic-title tabIndex={-1} className="pr-8 text-2xl focus-visible:outline-none">
+              {topic.title}
+            </DialogTitle>
             {/* The shared description stays text-sm (tests/seams-v43.test.ts S1
                 pins every DialogDescription); the 18px reading size is the span's. */}
             <DialogDescription>

@@ -6,7 +6,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { recordAuditMany } from "@/lib/audit";
 import { resolveTaxScope } from "@/lib/queries/tax-scope";
 import { isGrandfatherEligible } from "@/lib/analytics/cg-heads";
-import { grandfatherKey } from "@/lib/analytics/grandfather-groups";
+import { fmvIsMixed, grandfatherKey } from "@/lib/analytics/grandfather-groups";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,11 @@ const bad = (message: string) => NextResponse.json({ ok: false, message }, { sta
  *      FMV on an ineligible lot, so this refuses a write the UI never makes.
  *      An OPEN lot is allowed: a partly-sold pre-2018 ladder has realised rows
  *      the readers already apply its FMV to;
- *   6. fmv blank → null (clear), else a finite price > 0.
+ *   6. fmv blank → null (clear), else a finite price > 0;
+ *   7. a blank over a MIXED group (`fmvIsMixed` — the lots' stored values
+ *      differ, NULL counting as a value) is refused: it would wipe the values
+ *      that exist. A uniform group still clears in one Save (v4.6.0 fix wave,
+ *      SG-1 — only the editor refused it, so a crafted POST nulled every lot).
  *
  * The write is ONE transaction: an UPDATE per lot (the FMV and updatedAt; no
  * quantity, so `side` is untouched) and one audit row PER TRADE, both snapshots
@@ -76,6 +80,11 @@ export async function POST(req: Request) {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const lots = ids.map((id) => byId.get(id)!);
   const n = lots.length;
+  if (fmv == null && fmvIsMixed(lots)) {
+    return bad(
+      `These ${n} lots hold different FMVs, so a blank would wipe the values that exist. Enter one value to set all ${n} lots; to clear them, set one value first, then save blank.`,
+    );
+  }
   db.transaction((tx) => {
     for (const r of lots) {
       tx.update(trades).set({ fmv31Jan2018: fmv, updatedAt: sql`(datetime('now'))` }).where(eq(trades.id, r.id)).run();

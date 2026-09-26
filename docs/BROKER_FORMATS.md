@@ -749,10 +749,11 @@ What changed per broker:
 - Workbook decode is memoised once per `ParseContext` (the ≤8-decode load
   bound had broken at 11 when the new detectors landed).
 
-Still not built (as of 2026-09-17): a Zerodha ledger parser (Console Funds statement), a Groww ledger
-parser (Client Fund Ledger), and Groww / Upstox contract-note parsers — the real exports arrived 2026-09-16/17
-(`VYUHA/BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md`; the parser wave is STATE §0.1 row 15). The three items
-this line used to name are done: the Paytm P&L parser and short-sell / cross-exchange pairing shipped in v3.9.0,
+Built since this line last listed them (v4.4.0 parser wave, 2026-09-18): the Zerodha ledger parser
+(`zerodha-ledger`, Console Funds statement), the Groww ledger parser (`groww-ledger`, Client Fund Ledger) and the
+Groww / Upstox contract-note parsers (`groww-contract-note`, `upstox-contract-note`) — built from the real exports
+of 2026-09-16/17 (`VYUHA/BROKER-FILES-FOR-TESTING/RECEIVED-2026-09-16.md`). The three items
+this line named before that are done too: the Paytm P&L parser and short-sell / cross-exchange pairing shipped in v3.9.0,
 and the Dhan MTF Report was ruled out of existence (DECISIONS 2026-08-30). Kotak Neo, Sahi, Paytm F&O and Groww F&O are CLOSED (no account / no such trading). **Fyers and Nuvama OPENED 2026-09-25 and are BUILT (v4.6.0 W9)**: the owner filed real exports (`FYERS_tradebook_…csv`, `FYERS_realised_p&l_…csv`, `NUVAMA_PnL_Report_23-Sep-26.xlsx`); parsers `fyers-tradebook`, `fyers-realised-pnl`, `nuvama-pnl-report` — see the `## Fyers` and `## Nuvama` sections (F&O/MCX verified, equity rows UNVERIFIED), and a Kotak Neo native API pull is v4.7.0 C6 — its FILE formats stay unpublished.
 
 ## Status (2026-08-20)

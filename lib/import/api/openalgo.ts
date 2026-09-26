@@ -777,9 +777,20 @@ export function openAlgoImportSource(creds: OpenAlgoCredentials): ApiImportSourc
 /** Wrap an OpenAlgo pull in the ParsedFile shape preview/commit expects. */
 export function toParsedFile(broker: Broker, result: OpenAlgoNormalizeResult): ParsedFile {
   const warnings: string[] = [];
-  if (result.trades.length === 0) {
+  // v4.6.0 audit DA-8: "no executions" is said only when NOTHING was refused.
+  // When every row was refused, the day had executions — the lines below say
+  // why each was dropped, and this line must not contradict them.
+  const refusedRows =
+    result.refused +
+    Object.values(result.refusedByExchange ?? {}).reduce((a, n) => a + n, 0) +
+    (result.refusedMcxNoQuantity ?? 0);
+  if (result.trades.length === 0 && refusedRows === 0) {
     warnings.push(
       "OpenAlgo returned no executions for today — /tradebook only covers the current trading day. Use the file import for older trades.",
+    );
+  } else if (result.trades.length === 0) {
+    warnings.push(
+      `OpenAlgo returned executions for today, but ${refusedRows === 1 ? "its one row was" : `all ${refusedRows} rows were`} refused — nothing can be imported from this pull. The reasons follow.`,
     );
   }
   if (result.repaired > 0) {

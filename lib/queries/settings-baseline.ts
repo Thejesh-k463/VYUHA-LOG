@@ -7,7 +7,7 @@ import {
   type SettingsBaseline, type BaselineSettingsField,
 } from "@/lib/domain/settings-baseline";
 import { recordAudit } from "@/lib/audit";
-import { refreshChargeConfig, seedRiskConfig } from "@/lib/db/seed-core";
+import { refreshChargeConfig, refreshMarginConfig, seedRiskConfig } from "@/lib/db/seed-core";
 import { repriceCapTrades } from "@/lib/queries/risk-cap";
 
 /**
@@ -99,6 +99,11 @@ export function restoreBaseline(): { ok: boolean; message: string } {
       refreshChargeConfig(tx);
       tx.delete(marginConfig).run();
       for (const r of b.marginConfig) tx.insert(marginConfig).values(r as never).run();
+      // SM-1 (v4.6.0 fix wave): a snapshot saved on 4.5.0 holds no Fyers /
+      // Nuvama rows, and the DELETE above just wiped the ones 0078 added. Re-add
+      // every shipped row the snapshot lacks (INSERT OR IGNORE — the snapshot's
+      // own rows are untouched), in this transaction.
+      refreshMarginConfig(tx);
       tx.delete(riskConfig).run();
       for (const r of b.riskConfig) tx.insert(riskConfig).values(r as never).run();
       // D1 (v4.4.0): a snapshot captured before migration 0073 lacks the three

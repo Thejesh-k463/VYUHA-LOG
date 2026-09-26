@@ -178,4 +178,22 @@ describe("purchaseRows — R-1: split ONLY while the legs still state the parent
       ["2026-03-10", 4460, null],
     ]);
   });
+
+  // TI-7 (v4.6.0 fix wave) — the VALUE condition on its own. The mutant run
+  // turned it into `if (false)` and 76 tests stayed green: every existing case
+  // failed the qty or the date condition first. Here qty AND date match the
+  // parent and only Σ r2(qty × price) disagrees (a basis write of ₹120/share
+  // over legs bought at ₹100/₹101) — without the value guard `settle` would push
+  // the whole ₹1,950 difference onto the LAST purchase row (rows still sum).
+  it("TI-7: qty and date match, Σ leg value ≠ parent.buyValue → ONE row at the parent, never a settled-away difference", () => {
+    const legs = ladder(entry(50, 100, "2026-03-02"), entry(50, 101, "2026-04-06"));
+    const { parent, ladders } = build(legs, "long", { buyQty: 100, buyValue: 12000, buyDate: "2026-03-02" });
+    const rows = purchaseRows([parent], ladders);
+    expect(rows.map((r) => [r.buyDate, r.buyQty, r.buyValue, r.entryLegId, r.purchaseQty])).toEqual([
+      ["2026-03-02", 100, 12000, null, 100],
+    ]);
+    // …and inside the tolerance (₹0.01 × (n+1)) the ladder still splits.
+    const ok = build(legs, "long", { buyQty: 100, buyValue: 10050.02, buyDate: "2026-03-02" });
+    expect(purchaseRows([ok.parent], ok.ladders).map((r) => [r.buyDate, r.buyValue])).toEqual([["2026-03-02", 5000], ["2026-04-06", 5050.02]]);
+  });
 });

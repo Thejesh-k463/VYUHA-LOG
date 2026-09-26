@@ -547,6 +547,13 @@
       "when": 1788801100000,
       "tag": "0077_trades-side",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1788801200000,
+      "tag": "0078_margin-config-fyers-nuvama",
+      "breakpoints": true
     }
   ]
 }

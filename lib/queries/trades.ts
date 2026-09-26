@@ -580,6 +580,11 @@ const TAX_FIELDS = [
   // ladder into one realised row per fill, so the tax base needs to know which
   // rows have a ladder behind them. COLUMNS ONLY, no new WHERE.
   "staged",
+  // v4.6.0 fix wave (SEAM-V46-2) — which side opened a row, so the tax base
+  // files it by its CLOSING leg (`fyDateOf`): a short's sellDate is its entry.
+  // `sideOf` reads the quantities first, the column on a flat row, and the
+  // intraday-short note on a NULL one — so all four ride together. COLUMNS ONLY.
+  "sellQty", "side", "importNotes",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type TaxPageTrade = Pick<Trade, (typeof TAX_FIELDS)[number]>;
@@ -623,6 +628,9 @@ const HARVEST_FIELDS = [
   // `lib/queries/realised-rows.ts`, which splits a STAGED ladder per fill.
   // COLUMNS ONLY, no new WHERE (the open-lot side still reads the parent row).
   "staged",
+  // v4.6.0 fix wave (SEAM-V46-2 / CC-2) — the realised FY window files a row by
+  // its CLOSING leg (`closedOnOrAfter`), which needs the side. Columns only.
+  "side", "importNotes",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;

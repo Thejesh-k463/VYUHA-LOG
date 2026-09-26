@@ -132,4 +132,30 @@ describe("POST /api/trades/fmv — one FMV, one scrip", () => {
     expect(r, r.message).toMatchObject({ status: 200, ok: true });
     expect([fmvOf(id.ladder), fmvOf(id.infy1)]).toEqual([1050, 1050]);
   });
+
+  // SG-1 (v4.6.0 fix wave) — the ROUTE refuses a blank over a MIXED group, with
+  // the same `fmvIsMixed` the editor disables Save on; before, only the client
+  // did, and a crafted POST nulled every lot. Refused BEFORE the transaction: no
+  // write, no audit row. A uniform group still clears (the "blank clears the
+  // whole group" case above: its two lots both held 1100).
+  it("a blank over a MIXED group → 400 before the transaction (no write, no audit); one NULL beside equal values is mixed too", async () => {
+    const setFmv = (tid: number, v: number | null) => t.sqlite.prepare("UPDATE trades SET fmv_31jan2018 = ? WHERE id = ?").run(v, tid);
+    setFmv(id.infy2, 999);
+    const before = auditCount();
+    const r = await post({ ids: [id.infy1, id.infy2], fmv: "" });
+    expect([r.status, r.ok]).toEqual([400, false]);
+    expect(r.message).toContain("set one value first, then save blank");
+    expect([fmvOf(id.infy1), fmvOf(id.infy2)]).toEqual([1050, 999]);
+    expect(auditCount(), "no audit row on a refusal").toBe(before);
+    // One lot without an FMV beside two that agree: still mixed, still refused.
+    setFmv(id.infy2, null);
+    const r2 = await post({ ids: [id.ladder, id.infy1, id.infy2], fmv: "" });
+    expect(r2.status).toBe(400);
+    expect([fmvOf(id.ladder), fmvOf(id.infy1), fmvOf(id.infy2)]).toEqual([1050, 1050, null]);
+    // …and the path the copy names works: one value first, then a blank clears.
+    expect((await post({ ids: [id.ladder, id.infy1, id.infy2], fmv: "1050" })).status).toBe(200);
+    const cleared = await post({ ids: [id.ladder, id.infy1, id.infy2], fmv: "" });
+    expect(cleared, cleared.message).toMatchObject({ status: 200, ok: true });
+    expect([fmvOf(id.ladder), fmvOf(id.infy1), fmvOf(id.infy2)]).toEqual([null, null, null]);
+  });
 });

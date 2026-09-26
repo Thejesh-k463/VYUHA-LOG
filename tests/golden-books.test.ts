@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { buildContext, rankParsers } from "@/lib/import/detect";
 import type { ParsedFile } from "@/lib/import/types";
@@ -1338,4 +1339,77 @@ describe("v4.6.0 W9 · Fyers and Nuvama books against the broker's own statement
     expect(scrips.find((r) => r.key === "PIIND-OPT-29Sep2026-CE-2400-NSE")?.figures).toMatchObject({ closeQty: 175, netUnrealisedPnl: -4468.73 });
     expect(scrips.every((r) => r.asOf === "2026-09-22" && r.fy === "2026-27")).toBe(true);
   });
+});
+
+/**
+ * MO-4 (v4.6.0 fix wave) — Paytm and Groww ladders were built by a DATE-WINDOW filter over a
+ * scrip's fills, so a day-leg split across two positions landed on both (PARAS parent 2,000 with
+ * 3,001 bought on its ladder; AEQUS 2,000 with 10,000). Both parsers now cut each position's
+ * executions by the quantity FIFO actually took (lib/import/leg-allocation.ts, as Zerodha and Fyers
+ * do since F-15). Allocation touches NO parent figure — quantities, values, dates, product, venue,
+ * side and the stated charge slices come from pairLegs and the charge split, not from the fills.
+ *
+ * THE PARENT DIGEST below was computed against the PRE-FIX parsers (HEAD 3657793, 2026-09-26) and
+ * pinned BEFORE either parser changed, so it cannot agree with the change by construction.
+ * Measured then: Paytm 793 positions, 653 staged (ladders), 469 with Σ executions ≠ parent;
+ * Groww 483 positions, 97 staged, 93 ≠ parent. AFTER the fix: 0 ≠ parent on both, 0 positions
+ * without a ladder match, and the ladder count falls to Paytm 497 / Groww 5 — a position that
+ * borrowed another's fills was "staged" (riskSource 'frozen') only because of them; it now
+ * commits flat (riskSource 'cap'). Parents do not move; entry/exit times follow the fills taken.
+ */
+describe("MO-4 · Paytm and Groww: parents byte-identical, every ladder sums to its parent", () => {
+  const MO4 = [
+    { file: "paytm-tradebook-2026-04-01_2026-08-28.xlsx", positions: 793, staged: 497, digest: "77cf51a70fc1c02bba43fee9357e6866db54d451e7cbeee768fcbeb45fb4960e" },
+    { file: "groww-orders-2025-04-01_2026-03-31.xlsx", positions: 483, staged: 5, digest: "7e36974085cd19ff72ac4bd5ad3b64bfb05b14b69b3e5c8c58e0c30eb861a051" },
+  ] as const;
+  const parsed = new Map<string, ParsedFile>();
+  // The five-month Paytm tradebook parses in 1.3–1.7 s locally (the hook above measured it);
+  // the raised timeout is for the Windows runner (AGENTS.md § Testing).
+  beforeAll(async () => {
+    for (const { file } of MO4) {
+      const ctx = buildContext(file, fs.readFileSync(path.join(DIR, file)));
+      parsed.set(file, await rankParsers(ctx)[0].parse(ctx));
+    }
+  }, 60_000);
+  const parentOf = (t: ParsedFile["trades"][number]) => [
+    t.tradingsymbol, t.isin, t.buyQty, t.avgBuyPrice, t.buyValue, t.sellQty, t.avgSellPrice, t.sellValue,
+    t.grossPnl, t.buyDate, t.sellDate, t.productHint, t.exchangeHint, t.side ?? null, t.basisUnknown ?? null,
+    t.reportedCharges ?? null, t.importNotes ?? null,
+  ];
+
+  for (const { file, positions, staged, digest } of MO4) {
+    it(`${file}: the parent rows are byte-identical to the pre-fix parser (${positions} positions)`, () => {
+      const p = parsed.get(file)!;
+      expect(p.trades).toHaveLength(positions);
+      expect(createHash("sha256").update(JSON.stringify(p.trades.map(parentOf))).digest("hex")).toBe(digest);
+    });
+
+    it(`${file}: every position's Σ executions per side = its buyQty / sellQty; 0 untraced; ${staged} ladders`, () => {
+      const p = parsed.get(file)!;
+      const off: string[] = [];
+      for (const t of p.trades) {
+        const ex = t.executions ?? [];
+        const b = ex.filter((e) => e.side === "buy").reduce((s, e) => s + e.qty, 0);
+        const s = ex.filter((e) => e.side === "sell").reduce((s, e) => s + e.qty, 0);
+        if (Math.abs(b - t.buyQty) > 1e-9 || Math.abs(s - t.sellQty) > 1e-9) off.push(`${t.tradingsymbol} ${t.buyDate}→${t.sellDate} parent ${t.buyQty}/${t.sellQty} execs ${b}/${s}`);
+      }
+      expect(off.slice(0, 5), `${off.length} positions whose ladder is not their parent`).toEqual([]);
+      // 0 untraced, read two ways that can each fail: the parser's own warning is
+      // absent, AND every side a position traded carries at least one execution of
+      // that side (an untraced position commits with executions null — flat).
+      expect(p.warnings.filter((w) => /could not be traced/.test(w)), "the untraced-position warning").toEqual([]);
+      const bare = p.trades.filter((t) => {
+        const ex = t.executions ?? [];
+        return (t.buyQty > 0 && !ex.some((e) => e.side === "buy")) || (t.sellQty > 0 && !ex.some((e) => e.side === "sell"));
+      });
+      expect(bare.map((t) => `${t.tradingsymbol} ${t.buyDate}→${t.sellDate}`).slice(0, 5), `${bare.length} positions with a traded side and no fill`).toEqual([]);
+      // The ladder count (commit stages a row when a SIDE filled more than once) — recorded in DECISIONS.
+      const ladders = p.trades.filter((t) => {
+        const ex = t.executions ?? [];
+        const buys = ex.filter((e) => e.side === "buy").length;
+        return ex.length >= 2 && (buys > 1 || ex.length - buys > 1);
+      });
+      expect(ladders).toHaveLength(staged);
+    });
+  }
 });

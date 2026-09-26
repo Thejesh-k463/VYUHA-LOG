@@ -9636,3 +9636,106 @@ three pass alone in 16 s): `npm run verify` EXIT 0 — **499 files / 11791 passe
 
 **Invalidated if:** AIS ever states purchase consideration NET of charges (then `purchaseRows` adds the leg's `chargesTotal`); or a reader starts applying
 `fmv31Jan2018` to a post-2018 lot (then the route's eligibility refusal is wrong, not the reader).
+
+## 2026-09-26 — v4.6.0 release-level audit (ONE run, every lens) and its ONE fix wave: 52 candidates → 51 confirmed → all fixed or recorded; migration 0078; the release path continues
+
+**Why now:** W7 was the last v4.6.0 wave (2026-09-26). The `vyuha-audit` skill §1a release-level form ran ONCE over `v4.5.0..HEAD`
+(b6b8863..3657793, 380 files), every lens on Opus (owner ruling 2026-09-25, no Haiku), Fable orchestrating by owner exception:
+upgrade on a copy of the owner's live DB (PASS: +3/+0 migrations, 280 rate rows, 161 sides, live sha unchanged, routes 200), the
+release-claims draft FIRST (50 claims, 45 with file:line — the bump's inputs, `scratchpad/release-claims-v460.md`), the seam pass
+(`tests/seams-v46-release.test.ts`, 8 boundaries, 3 defects), six dimensions × two lenses (refute-first / reproduce-trace), ruling
+conformance (64 rulings: 0 DIVERGE, 3 UNPINNED), 14 user journeys, mutation on money paths (33 mutants by reading + 18 run in a
+worktree: 7 + 3 survived), the completeness critic (3 more), then the skeptic over the union: **52 ids → 51 survive** (CL-1
+REFUTED — Fyers/Paytm/Groww OpenAlgo parity is deliberate; DA-4 = UI-1). Stopping rule applied: 22 PRODUCT (1 HIGH, 9 MEDIUM,
+12 LOW — every one reopens work), 14 TEST-ONLY (5 MEDIUM reopen; 9 LOW recorded), 15 DOCS.
+
+**The four that mattered most (all pre-existing or W6-class, none introduced by W7):**
+- **MO-3 HIGH** — `/reports/itr` passed `fmv31Jan2018` (PER SHARE, schema.ts:120) raw into `grandfatheredCost`, which takes a TOTAL;
+  every other reader multiplied by qty. 100 sh @ ₹100 (2016), FMV 250, sold ₹30,000: gain 5,000 on /reports/tax, **20,000** on the
+  ITR pack, Schedule CG/CFL and the export. W7's editor made the input easy to enter. Fix: ONE `fmvTotalOf` at all six sites, a pure
+  `itrPageInputs()`, and a readers-follow-writers rule `fmv-per-share`. (LEDGER L-42, F-35)
+- **SEAM-V46-2 + CC-2 MEDIUM** — a short's `sellDate` is its ENTRY, so an overnight F&O short spanning 31 March was filed in the
+  wrong FY at six sites (tax, set-off, ITR pack, schedule, export, harvest, advance-tax, reconcile). Fix: a REQUIRED `fyDate`
+  (= `exitDateOf ?? entryDateOf`, never defaulted) on every tax row type; `TAX_FIELDS` gains `sellQty`/`side`/`importNotes`
+  (`exitDateOf` misreads a row without `sellQty` as a lopsided long). The AIS route stays on `sellDate` on purpose (delivery only).
+  (L-43, F-36)
+- **DA-2 MEDIUM** — the FMV editor said "closing price on 31-Jan-2018"; s.55(2)(ac) Explanation says the HIGHEST price quoted. Users
+  were told to enter too low a figure (LTCG overstated). Copy fixed. (F-43)
+- **SM-1 + OBS MEDIUM** — an UPGRADED 4.5.0 DB never received the Fyers/Nuvama `margin_config` rows (seeded on fresh install only;
+  `settings-baseline` wipes them too) → `pct = 100` on futures/intraday/options (5×–10× off, MTF/delivery unaffected); and the Atlas
+  AMFI cap band resolved ISIN→symbol through the user's instruments table only → EMPTY on a fresh install. Fix: migration **0078**
+  (16 INSERT OR IGNORE rows) + ONE `refreshMarginConfig` from the seed, restore, baseline and sidecar; per-SYMBOL band resolution
+  (instruments ISIN first, else `bundledIsinBySymbol` NSE > Emerge > BSE, a shared ticker takes its owner's band). (L-46, F-41, F-42, U-17)
+
+**Also fixed (LEDGER F-37…F-50):** ROM and the signal book never read `side` (a same-day covered short option priced at its premium,
+₹6,000 vs ₹2,25,000 capital); import/manual/editor writers stored a STATED long on a flat no-signal row (`statedSideOf` now, NULL like
+the backfill); `setAcquisitionAction` refuses a basis write on a staged row (the D-14 follow-up) and reads in the viewing scope; the
+FMV route refuses a blank over a MIXED group through ONE `fmvIsMixed` shared with the editor (a uniform clear stays); the editor is
+keyed on `scope.personKey`; the tax note follows `grandfatherLotsOf`; Nuvama Elite `eq_mtf` = Elite's delivery rate (owner answer);
+**Paytm and Groww ladders through `leg-allocation.ts`** (owner: fix now, not 4.7.0) — Σ executions = parent for all 793 + 483 fixture
+positions (was 469 + 93 off), parent digests byte-identical, ladders 653 → 497 and 97 → 5 (156 + 92 positions now commit flat with
+riskSource `cap`), a `ladder_mismatch` Data Quality line for existing books (dedup is parent-only, so only delete + re-import heals
+them); the help topic dialog opens on its title (41 of 50 topics opened WITH a glossary tooltip and needed two Escapes) and returns
+focus to the card; the getting-started "Charges plan set" step follows `getAccountsWithoutPlan()` and an explicit default plan is
+stored as `"default"` (it could never tick before); the Atlas catch-up re-reads consent after its 1.5 s wait; broker and reconcile-feed
+counts are DERIVED from the registry (the /pricing page said "6" parsers, the help said "seven files" — 8 and 11); the OpenAlgo
+"no executions" line distinguishes refused-all; `--by-ref` says "with expiry"; the OpenAlgo setup-guide docx GENERATOR gains the
+2.0.2.6 section (the docx had none while its HTML twin did); README's v4.0.0 quote and the client README's v4.0.0 row restored to the
+v4.5.0 wording (W5 had rewritten history); BROKER_FORMATS' "still not built" list; five test pins (TI-1 nearest-declaration in
+`field-rules`, TI-7 the purchase VALUE guard, MU-1 `orderByCumulative`, MU-2 Fyers CNC → delivery, RC-1 the ₹0.50 × N bound) + TI-8/TI-9.
+
+**Process:** the plan (two Opus builders on disjoint sets — Builder A identity/tax/money end to end, Builder B UI/copy/docs) went to the
+owner with the two scope calls (MO-4 now vs 4.7.0; MO-1 rule vs fallback) — approved, fix MO-4 now, follow the rule. `vyuha-design-reviewer`
+(Opus) reviewed A1–A10 BEFORE the builder: **REVISE on A2, A5, A6, A7, A8, A9** (`exitDateOf` misreads a row without `sellQty`;
+`TAX_FIELDS` lacked the side columns; the AcquisitionPanel would loop on the refusal and the action read with no scope; `sideAfterEdit`
+was a third stated-long writer; `settings-baseline` wipes margin rows; ISIN→symbol over every banded ISIN gives a shared ticker the
+wrong band; blank-over-mixed must be ONE predicate) and REVISE on MO-4 (Paytm legs are scrip-day aggregates, not fills; `staged`/
+riskSource move; existing books need the Data Quality line). Builder A hit its 150-turn limit twice and was RESUMED (never re-spawned)
+with a checkpoint-first rule; Builder B once for follow-ups. The scoped skeptic re-check (Opus, in-memory reverts through a Vite load
+plugin — no tree writes) graded every id FIXED with 20 red-on-revert runs quoted, verified the MO-4 parent digests against the OLD
+parsers, and found three loose ends (DA-1's explicit default, an unfailable golden assertion, `order-invariants.mjs` stale) — all fixed.
+
+**Decisions (session, under the decision policy; the owner may overrule):**
+- `fyDate` is REQUIRED and never defaulted on `TaxTrade`/`CapitalGainsTrade`/`ItrTrade`/the schedule input (the `assetClass` pattern);
+  `sold`, the holding term and `sectionOn` keep `sellDate`; `reference.ts` files the closed-P&L bucket by `fyDateOf` while the unpriced-sale
+  count and DP fee stay on `sellDate`; `bf-losses.ts:97` recorded LOW; a closed row with no `sellDate` now files in its entry-date FY
+  (it fell to the current FY on /reports/tax before) — /reports/tax now agrees with the ITR pack.
+- `sideAfterEdit` returns `Side | null`; all four trade writers store `statedSideOf`.
+- The Data Quality ladder predicate checks QUANTITIES only: the value half of the L-36 guard flags 203 of 497 CORRECT Paytm ladders
+  because the new ladder keeps each fill's own price while `pairLegs` values a lot split across two positions at the leg's average
+  (PARAS 1,712,318.99 vs 1,712,645.20, the next position off by the opposite ₹326). `purchaseRows` keeps the FULL guard.
+- The delete → re-import proof is seam case 9c over the real Groww book, not a new book-op (a new op would add a sequence per pair
+  across the whole harness table).
+- An explicit default plan is stored as the literal `"default"` (`resolvePlan` treats `!plan || plan === "default"` identically);
+  the account audit summary still says "the free plan" for it.
+- Atlas `bandView` (atlas.ts ~610) keeps the instruments-only join (it shows its own "no instrument dump" reason, never a wrong number) — recorded.
+- `/reports/itr` leaves out exited IPOs while `/reports/tax` folds them in (tax-itr.ts:128) — OBSERVED, recorded, not changed.
+- The client README's v4.1.0 row is kept current by ruling S6b (`tests/seams-v41-fix2.test.ts:903-906`) — DC-3 STRUCK; the repo README's
+  v4.1.0 row is history and says 15:31.
+- Recorded, not fixed (LOW, test-only or pre-existing): TI-2 (`atlas-cohort.test.ts:140` agrees with itself), TI-3 (the MTF-short test
+  passes for an unrelated reason; `mtf-accrual` has no side guard), TI-4 (`side-column.test.ts:382` 446 ms with no comment; the ×15
+  projection did not reproduce), TI-5 (`ledger-fix-tests` SKIPs on a malformed table), RC-2 (AGENTS.md now says the BUILD refuses a
+  missing anchor — `anchor()` runs at the script's top level), RC-3 (`capUnmatched` unpinned), DA-6 (8 of 35 glossary terms used by no
+  card — the owner's H4 review), `lib/analytics/ais.ts:81` `fyOfDate` reads the month in LOCAL time (behind UTC, 1 April files under
+  the previous FY; invisible on IST/UTC CI), `lib/analytics/cockpit.ts` `entryDateOf` sorts date strings as bytes (L-31 class),
+  `lib/import/generic-map.ts` re-spreads the fills array per row (quadratic per symbol), a Fyers same-minute buy+sell can tie and
+  read as an intraday short (label only). The 0076 migration header's "Reset to defaults returns it to NULL" is imprecise (the
+  baseline restore returns the baseline's value) — an APPLIED migration is never edited.
+- Owed at the BUMP (this session, next): six-broker counts (landing-page.html:290,537,550,613,623; brochure.html:202;
+  INSTALLATION_GUIDE.md:79-82,219), PRIVACY.md:3 "Applies to v4.5.0", the CHANGELOG v4.6.0 section from the claims draft,
+  `npm run help:shots` (two webp still show "v4.5"), the client package rebuild (the docx changed). The release template's
+  "No dependency changes" would be FALSE (`@radix-ui/react-accordion`).
+- Release-day note: the smoke copy `data/smoke-v460/` has a FRESH `vault.key`, so the Pro tabs show "the stored secret does not
+  decrypt" there — the perf sweep of `/atlas` on the real DB needs `VYUHA_LICENSE_PEM` or the live data dir read-only. The bundled
+  `desktop-dist/vyuha.seed.sqlite` is the 4.5.0 seed (no Fyers/Nuvama, no 0078) — `desktop:build` regenerates it; verify after the build.
+
+**Why not the obvious thing:** fixing only the introduced defects — the owner's stopping rule reopens on ANY product defect and the
+HIGH one was pre-existing; deferring MO-4 to 4.7.0 — the owner chose now; a value check in the ladder Data Quality line — 203 false
+flags on a correct import; a book-op for delete → re-import — the pairwise table would grow by a row per pair; editing 0076's
+comment — never an applied migration; a second seed for margins — one `refreshMarginConfig` reaches every path.
+
+**Gate (vyuha-verifier, alone): run 1 EXIT 1 — `Test Files 1 failed | 504 passed (505)`, `Tests 1 failed | 11878 passed | 35 skipped (11914)`,
+the ONE red = `tests/readme-claims.test.ts` "expected 499 to be 505" (README's own count, fixed: 499 → 505 files, 11791 → 11878 tests in
+six places); run 2 EXIT 0 — `Test Files 505 passed (505)`, `Tests 11879 passed | 35 skipped (11914)` (11879: the README test itself now passes), Duration 135.54 s, `next build` "Compiled successfully in 11.9s"; README set to 505 / 11879.** `package-lock.json` unchanged (`npm ls esbuild` resolves); lint 0 errors / 6 pre-existing warnings.
+
+**Prose pass:** the bounded doc-auditor pass runs after the fix-wave commit and is cited in the close-out paragraph appended below.

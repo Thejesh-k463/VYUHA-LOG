@@ -5,7 +5,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { getTrades } from "@/lib/queries/trades";
 import { getMarginRates } from "@/lib/queries/margin";
 import { getPlaybooks } from "@/lib/queries/playbooks";
-import { romReport, capitalEfficiencyVerdict, type RomTrade, type RomGroup } from "@/lib/analytics/rom";
+import { romReport, romTradeOf, capitalEfficiencyVerdict, type RomTrade, type RomGroup } from "@/lib/analytics/rom";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { inr, num, signedPct } from "@/lib/format";
 import { TriangleAlert, Info } from "lucide-react";
@@ -66,29 +66,9 @@ export function RomTab() {
 
   // Closed trades only — an open position has not finished using its capital,
   // so including it would report a return on money still at work.
-  const closed: RomTrade[] = trades
-    .filter((t) => !t.isOpen)
-    .map((t) => ({
-      id: t.id,
-      symbol: t.symbol,
-      broker: t.broker,
-      bucket: t.bucket,
-      segment: t.segment,
-      instrumentType: t.instrumentType,
-      optionType: t.optionType,
-      strike: t.strike,
-      buyQty: t.buyQty,
-      avgBuyPrice: t.avgBuyPrice,
-      buyValue: t.buyValue,
-      sellQty: t.sellQty,
-      avgSellPrice: t.avgSellPrice,
-      sellValue: t.sellValue,
-      netPnl: t.netPnl,
-      buyDate: t.buyDate,
-      sellDate: t.sellDate,
-      playbookId: t.playbookId,
-      setupTag: t.setupTag,
-    }));
+  // v4.6.0 fix wave (CC-1) — through the ONE mapping, which carries `side` and
+  // `importNotes`: a same-day covered short option is priced at its MARGIN.
+  const closed: RomTrade[] = trades.filter((t) => !t.isOpen).map((t) => romTradeOf(t));
 
   const report = romReport(closed, rates, {
     segmentLabels: SEGMENT_LABELS as Record<string, string>,

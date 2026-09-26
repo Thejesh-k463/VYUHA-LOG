@@ -229,7 +229,7 @@ export function BrokerCompareTab() {
                     once per contract note at the broker (owner answer Q2:
                     accepted and explained, no engine change). */}
                 <p className="px-4 py-2 text-[0.6875rem] text-muted-foreground">
-                  STT/CTT and stamp duty are rounded to the rupee per trade row here (per fill on a staged ladder); a
+                  STT/CTT and stamp duty are rounded to the rupee per trade row here; a
                   contract note rounds each head once, so a day with N rows can differ from your bill by up to ₹0.50 × N
                   per head.
                 </p>

@@ -180,7 +180,7 @@ describe("referral codes — --ref into the ledger, --by-ref out of it", () => {
       { ref: null, keys: 1, active: 1, lifetime: 0, yearly: 1, latest: "2026-09-10" },
       { ref: "BETA", keys: 1, active: 0, lifetime: 0, yearly: 1, latest: "2019-01-01" },
     ]);
-    expect(formatByRefLine(s[1])).toMatch(/^\(none\)\s+keys 1\s+active 1\s+lifetime 0\s+yearly 1\s+latest 2026-09-10$/);
+    expect(formatByRefLine(s[1])).toMatch(/^\(none\)\s+keys 1\s+active 1\s+lifetime 0\s+with expiry 1\s+latest 2026-09-10$/);
     // A revoked key is not active (a refunded sale earns no one a referral).
     const r = summariseByRef(fixture, { today: new Date("2026-09-25T12:00:00"), revoked: ["AAAA-0001-01"] });
     expect(r[0]).toMatchObject({ ref: "ALPHA", keys: 2, active: 1 });
@@ -193,9 +193,9 @@ describe("referral codes — --ref into the ledger, --by-ref out of it", () => {
     expect(sum.status, sum.err).toBe(0);
     const lines = sum.out.split("\n").filter((l) => /\skeys \d/.test(l));
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(/^ALPHA\s+keys 2\s+active 2\s+lifetime 1\s+yearly 1\s+latest 2026-09-01$/);
-    expect(lines[1]).toMatch(/^\(none\)\s+keys 1\s+active 1\s+lifetime 0\s+yearly 1\s+latest 2026-09-10$/);
-    expect(lines[2]).toMatch(/^BETA\s+keys 1\s+active 0\s+lifetime 0\s+yearly 1\s+latest 2019-01-01$/);
+    expect(lines[0]).toMatch(/^ALPHA\s+keys 2\s+active 2\s+lifetime 1\s+with expiry 1\s+latest 2026-09-01$/);
+    expect(lines[1]).toMatch(/^\(none\)\s+keys 1\s+active 1\s+lifetime 0\s+with expiry 1\s+latest 2026-09-10$/);
+    expect(lines[2]).toMatch(/^BETA\s+keys 1\s+active 0\s+lifetime 0\s+with expiry 1\s+latest 2019-01-01$/);
     expect(sum.out).not.toContain("VYUHA-");
 
     const one = run("license-list.mjs", ["--by-ref", "alpha"], { VYUHA_LICENSE_LEDGER: p });

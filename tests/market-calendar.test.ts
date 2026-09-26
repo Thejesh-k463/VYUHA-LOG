@@ -132,6 +132,23 @@ describe("trading days — holidays, special sessions, coverage", () => {
     expect(previousTradingDay("2026-10-05")).toBe("2026-10-01"); // Mon → past Fri 10-02 holiday
   });
 
+  // v4.6.0 audit TI-9: `isCovered`'s `<= CALENDAR_COVERS_THROUGH` → `<` survived,
+  // because no case asked about the LAST covered day itself. It is a weekday in
+  // this snapshot (checked below, so the pin cannot go vacuous on a weekend
+  // coversThrough), and it must answer from the list — verified.
+  it("the LAST covered day answers from the bundled list (verified); the day after does not", () => {
+    const last = CALENDAR_COVERS_THROUGH;
+    const weekday = new Date(`${last}T00:00:00Z`).getUTCDay();
+    expect([0, 6], `coversThrough ${last} is a weekend — the pin needs a weekday`).not.toContain(weekday);
+    const status = tradingDayStatus(last);
+    expect(status.verified).toBe(true);
+    expect(["session", "holiday"]).toContain(status.reason);
+    const next = new Date(`${last}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    const after = tradingDayStatus(next.toISOString().slice(0, 10));
+    if (after.reason !== "weekend") expect(after).toMatchObject({ verified: false, reason: "unverified" });
+  });
+
   it("past coversThrough a weekday is a session but NOT verified; a weekend is still closed", () => {
     expect(tradingDayStatus("2027-01-04")).toEqual({ trading: true, verified: false, reason: "unverified", name: null });
     expect(isTradingDay("2027-01-02")).toBe(false);

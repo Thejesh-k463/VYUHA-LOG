@@ -40,6 +40,29 @@ test.describe("Help Desk (W4)", () => {
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe("");
   });
 
+  // v4.6.0 audit UI-2 + UI-3: a topic WITH a glossary term (Tax Summary's steps
+  // link "FMV"). Radix's default autofocus landed on that term's <button>, its
+  // tooltip opened over the dialog and the first Esc only closed the tooltip;
+  // and with no Trigger, focus fell to <body> on close.
+  test("a topic with a glossary term opens with focus on its title, one Esc closes it, focus returns to the card", async ({ page }) => {
+    await gotoHydrated(page, "/help");
+    const main = page.locator("main");
+    await main.getByRole("button", { name: /^Tax\s*\d+ topics?$/ }).click();
+    const card = page.locator("#topic-reports-tax");
+    // By keyboard, with the pointer parked in a corner, so nothing hovers a term open.
+    await page.mouse.move(0, 0);
+    await card.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "Tax Summary" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("button.cursor-help").first()).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Tax Summary" })).toBeFocused();
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id ?? "")).toBe("topic-reports-tax");
+  });
+
   test("#topic-dashboard deep link opens the dialog on load", async ({ page }) => {
     await gotoHydrated(page, "/help#topic-dashboard");
     await expect(page.getByRole("dialog", { name: "Dashboard" })).toBeVisible();

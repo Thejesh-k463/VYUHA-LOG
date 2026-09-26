@@ -82,8 +82,11 @@ export default async function TradesPage({
     sellQty: t.sellQty, netPnl: t.netPnl, chargesTotal: t.chargesTotal, sellDate: t.sellDate,
     acquisition: t.acquisition, acquisitionPrice: t.acquisitionPrice, acquisitionDate: t.acquisitionDate,
   }));
+  // A STAGED row is not offered (fix wave, design review A5(a)): its basis is
+  // refused by setAcquisitionAction (invariant 5 — it is added as an entry leg on
+  // the ladder), so listing it here would only loop the user into that refusal.
   const pending: PendingBasisTrade[] = panelRows
-    .filter((t) => !hasKnownBasis(t))
+    .filter((t) => !hasKnownBasis(t) && !t.staged)
     .map((t) => ({
       id: t.id, symbol: t.symbol, sellQty: t.sellQty, sellValue: t.sellValue,
       sellDate: t.sellDate, chargesTotal: t.chargesTotal,

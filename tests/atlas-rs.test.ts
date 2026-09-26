@@ -87,6 +87,23 @@ describe("relative strength vs the cross-sectional median (AQ9 / AQ20)", () => {
     expect(rs.weights).toEqual([0.5, 0.3, 0.2]);
   });
 
+  // v4.6.0 audit TI-8: every fixture above has an ODD eligible count, so the
+  // even branch of the median (the mean of the two middle returns) was unpinned —
+  // a shifted rs_ppm would be written to the snapshot with every rank unchanged.
+  it("an EVEN eligible count takes the mean of the two middle returns as the median", () => {
+    const up2 = series("UP2", linear(N, 100, 2));
+    const rs = computeRelativeStrength([up, flat, down, up2]);
+    expect(rs.eligible).toBe(4);
+    let flatRs = 0;
+    RS_WINDOWS.forEach((w, i) => {
+      // Sorted DOWN < FLAT (0) < UP < UP2: the middle pair is FLAT and UP.
+      const mid = Math.round((0 + symbolReturnPpm(up, w)!) / 2);
+      expect(rs.medians[String(w)]).toBe(mid);
+      flatRs += RS_WEIGHTS[i] * (0 - mid);
+    });
+    expect(rs.bySymbol.get("FLAT")!.rsPpm).toBe(Math.round(flatRs));
+  });
+
   it("applies every floor, names the reason, and keeps the ineligible out of the median", () => {
     const cheap = series("CHEAP", linear(N, 10, 0.05)); // close < 20
     const thin = series("THIN", linear(N, 100, 1), 10); // turnover 100×10 = ₹1,000

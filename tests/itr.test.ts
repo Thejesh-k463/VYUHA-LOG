@@ -1,20 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { itrPackByFy, auditVerdict, AUDIT_LIMIT_DIGITAL, type ItrTrade } from "../lib/analytics/itr";
 
-const t = (over: Partial<ItrTrade>): ItrTrade => ({
-  segment: "eq_intraday",
-  // v4.5.0 — REQUIRED, never defaulted: the head follows the ASSET CLASS, not
-  // the segment. These fixtures trade ordinary listed shares.
-  assetClass: "share",
-  buyDate: "2026-05-01",
-  sellDate: "2026-05-01",
-  grossPnl: 0,
-  netPnl: 0,
-  sellValue: 0,
-  chargesTotal: 0,
-  isOpen: false,
-  ...over,
-});
+const t = (over: Partial<ItrTrade>): ItrTrade => {
+  const r: Omit<ItrTrade, "fyDate"> = {
+    segment: "eq_intraday",
+    // v4.5.0 — REQUIRED, never defaulted: the head follows the ASSET CLASS, not
+    // the segment. These fixtures trade ordinary listed shares.
+    assetClass: "share",
+    buyDate: "2026-05-01",
+    sellDate: "2026-05-01",
+    grossPnl: 0,
+    netPnl: 0,
+    sellValue: 0,
+    chargesTotal: 0,
+    isOpen: false,
+    ...over,
+  };
+  // v4.6.0 fix wave (SEAM-V46-2) — `fyDate` is REQUIRED; a fixture files by the
+  // date it filed by before the fix (r.sellDate ?? r.buyDate) unless it states one.
+  return { ...r, fyDate: "fyDate" in over ? (over.fyDate ?? null) : r.sellDate ?? r.buyDate };
+};
 
 describe("itrPackByFy — head segregation", () => {
   it("splits speculative / non-speculative / capital gains correctly", () => {

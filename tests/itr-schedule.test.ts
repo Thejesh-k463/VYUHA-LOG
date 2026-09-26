@@ -37,21 +37,26 @@ import { section } from "@/lib/analytics/statute";
  *    default is AY 2027-28, whose codes are deliberately BLANK (invariant 6)
  *    and is pinned as such in "Schedule CG item codes" below.
  */
-const trade = (over: Partial<ItrScheduleTrade> = {}): ItrScheduleTrade => ({
-  segment: "eq_delivery",
-  assetClass: "share",
-  buyDate: "2025-05-01",
-  sellDate: "2025-06-01",
-  buyValue: 100000,
-  sellValue: 110000,
-  grossPnl: 10000,
-  netPnl: 9800,
-  chargesTotal: 200,
-  sttCtt: 110,
-  fmv31Jan2018: null,
-  isOpen: false,
-  ...over,
-});
+const trade = (over: Partial<ItrScheduleTrade> = {}): ItrScheduleTrade => {
+  const r: Omit<ItrScheduleTrade, "fyDate"> = {
+    segment: "eq_delivery",
+    assetClass: "share",
+    buyDate: "2025-05-01",
+    sellDate: "2025-06-01",
+    buyValue: 100000,
+    sellValue: 110000,
+    grossPnl: 10000,
+    netPnl: 9800,
+    chargesTotal: 200,
+    sttCtt: 110,
+    fmv31Jan2018: null,
+    isOpen: false,
+    ...over,
+  };
+  // v4.6.0 fix wave (SEAM-V46-2) — `fyDate` is REQUIRED; a fixture files by the
+  // date it filed by before the fix (r.sellDate ?? r.buyDate) unless it states one.
+  return { ...r, fyDate: "fyDate" in over ? (over.fyDate ?? null) : r.sellDate ?? r.buyDate };
+};
 
 const lineOf = (packs: ReturnType<typeof itrScheduleByFy>, code: string) =>
   packs.flatMap((p) => p.lines).find((l) => l.code === code);
@@ -353,7 +358,7 @@ describe("Schedule BP — business heads", () => {
     const rows = taxByFy([
       {
         segment: "index_option", assetClass: "share", instrumentType: "option",
-        buyDate: "2025-05-01", sellDate: "2025-06-01",
+        buyDate: "2025-05-01", sellDate: "2025-06-01", fyDate: "2025-06-01",
         grossPnl: 8500, netPnl: 8000, buyValue: 100000, sellValue: 120000,
         chargesTotal: 200, isOpen: false,
       },

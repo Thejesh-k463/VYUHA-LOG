@@ -51,8 +51,54 @@ import fs from "node:fs";
  *
  * Returns { added, refreshed, removed }, or { skipped: reason } when it cannot
  * run safely.
+ *
+ * THE MARGIN HALF (v4.6.0 fix wave, SM-1) runs after it, on its own ATTACH, and
+ * reports on its own line: `refreshMarginRows` below. The return value stays the
+ * charge half's, so every caller and pin of it reads what it always read.
  */
 export function refreshRateCards(sqlite, templatePath, log = console.log) {
+  const charge = refreshChargeRows(sqlite, templatePath, log);
+  refreshMarginRows(sqlite, templatePath, log);
+  return charge;
+}
+
+/**
+ * Add every margin_config row the template ships that the user database lacks —
+ * INSERT OR IGNORE on the (broker, segment) unique key, so an existing row
+ * (edited or not, a hand-added one included) is never touched and a second run
+ * adds 0. Parity with `refreshMarginConfig` (lib/db/seed-core.ts), which the two
+ * restore paths call inside their transactions: a 4.5.0 database, backup or
+ * baseline has no Fyers / Nuvama rows, and `capitalBlocked` then assumed 100% of
+ * notional for their derivatives. Only columns both databases have are copied.
+ *
+ * Returns { added }, or { skipped: reason }.
+ */
+export function refreshMarginRows(sqlite, templatePath, log = console.log) {
+  const skip = (reason) => {
+    log(`[vyuha] margin rates: skipped — ${reason}`);
+    return { skipped: reason };
+  };
+  if (!templatePath || !fs.existsSync(templatePath)) return skip("no seed template bundled");
+  const cols = sqlite.prepare("PRAGMA main.table_info(margin_config)").all().map((c) => c.name);
+  if (cols.length === 0) return skip("no margin_config table");
+  sqlite.prepare("ATTACH ? AS seedtpl").run(templatePath);
+  try {
+    const tplCols = new Set(sqlite.prepare("PRAGMA seedtpl.table_info(margin_config)").all().map((c) => c.name));
+    // The row id and its own stamp are the user database's, never the template's.
+    const own = new Set(["id", "updated_at"]);
+    const shared = cols.filter((c) => tplCols.has(c) && !own.has(c));
+    if (!shared.includes("broker") || !shared.includes("segment")) return skip("template lacks a key column");
+    const list = shared.map((c) => `"${c.replace(/"/g, '""')}"`).join(", ");
+    const added = sqlite.prepare(`INSERT OR IGNORE INTO main.margin_config (${list}) SELECT ${list} FROM seedtpl.margin_config`).run().changes;
+    log(`[vyuha] margin rates: ${added} added (existing rows kept)`);
+    return { added };
+  } finally {
+    sqlite.exec("DETACH seedtpl");
+  }
+}
+
+/** The charge_config half of `refreshRateCards` — see its comment above. */
+function refreshChargeRows(sqlite, templatePath, log) {
   const skip = (reason) => {
     log(`[vyuha] rate cards: skipped — ${reason}`);
     return { skipped: reason };

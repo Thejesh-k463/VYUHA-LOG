@@ -102,6 +102,19 @@ export function grandfatherLotsOf(
 }
 
 /**
+ * THE mixed-group test, shared by the editor (Save disabled on a blank) and the
+ * route (a blank refused, 400, before its transaction): the lots do not all
+ * carry the same stored FMV. NULL counts as a VALUE — one lot without an FMV
+ * beside others that agree is mixed — because a blank Save over it would wipe
+ * the values that exist (v4.6.0 fix wave, SG-1: only the client refused it, and
+ * a crafted POST nulled every lot). A uniform group — every lot the same value,
+ * or every lot blank — is not mixed, so clearing it stays one Save.
+ */
+export function fmvIsMixed(lots: readonly { fmv31Jan2018?: number | null }[]): boolean {
+  return new Set(lots.map((l) => l.fmv31Jan2018 ?? null)).size > 1;
+}
+
+/**
  * Group the eligible lots per `grandfatherKey`. A lot whose buy date is not
  * eligible (on/after 1-Feb-2018, or unreadable) is left out — the readers
  * ignore an FMV on it anyway. Groups are ordered by symbol, then ISIN; lots by
@@ -122,8 +135,7 @@ export function groupGrandfatherLots(rows: readonly FmvLot[]): FmvGroup[] {
   for (const [key, entries] of byKey) {
     entries.sort((a, b) => (a.iso !== b.iso ? (a.iso < b.iso ? -1 : 1) : a.lot.id - b.lot.id));
     const lots = entries.map((e) => e.lot);
-    const values = new Set(lots.map((l) => l.fmv31Jan2018));
-    const fmv: FmvGroup["fmv"] = values.size === 1 ? [...values][0] : "mixed";
+    const fmv: FmvGroup["fmv"] = fmvIsMixed(lots) ? "mixed" : lots[0].fmv31Jan2018;
     groups.push({
       key,
       symbol: lots[0].symbol.toUpperCase(),

@@ -331,34 +331,78 @@ export type PurchaseRow<T> = T & { entryLegId: number | null; purchaseQty: numbe
  *
  * Never throws.
  */
+/**
+ * THE L-36 GUARD for the PURCHASE side (see `splitPurchases` above): the ladder's
+ * purchase legs state the parent's buyQty (4 dp), its buyValue (Σ r2(qty × price)
+ * within ₹0.01 × (n+1)) and its buyDate (the day `parentAggregate` would write),
+ * every leg on a readable day. The legs it judged, their ISO days and raw values
+ * on success; null when they do not state the parent (or there are none).
+ */
+function purchaseLegsOf(parent: RealisedParent, legs: Leg[], direction: StagedPosition["direction"]) {
+  if (parent.buyValue == null || parent.buyQty == null) return null;
+  const buyKind = direction === "long" ? "entry" : "exit";
+  const bought = sortLegs(legs).filter((l) => l.kind === buyKind && l.qty > 0);
+  if (bought.length === 0) return null;
+
+  // The QUANTITY condition is the shared predicate's purchase side.
+  if (!sideStatesParent(parent, legs, direction, buyKind)) return null;
+  const raw = bought.map((l) => l.qty * l.price);
+  const stated = raw.reduce((s, v) => s + r2(v), 0);
+  if (Math.abs(stated - parent.buyValue) > 0.01 * (bought.length + 1) + 1e-9) return null;
+
+  // Every purchase leg must state a READABLE day, or the ladder is not split.
+  const days = bought.map((l) => normalizeDate(l.tradeDate ?? null));
+  if (days.some((d) => d == null)) return null;
+  // The DATE condition: the parent's buyDate is the one `parentAggregate` would
+  // write from these legs — the FIRST entry of a long, the LAST exit of a short.
+  const buySide = sortLegs(legs).filter((l) => l.kind === buyKind);
+  const anchor = direction === "long" ? buySide[0] : buySide[buySide.length - 1];
+  const anchorDay = normalizeDate(anchor?.tradeDate ?? null);
+  if (anchorDay == null || normalizeDate(parent.buyDate ?? null) !== anchorDay) return null;
+  return { bought, days: days as string[], raw };
+}
+
+const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
+
+/**
+ * THE ONE PREDICATE "a staged row's legs state its parent's QUANTITIES" (v4.6.0
+ * fix wave, MO-4; the quantity half of the LEDGER L-36 guard): which side does
+ * NOT — "entry" (Σ entry-leg qty ≠ the parent's entry qty: buyQty for a long,
+ * sellQty for a short) or "exit" (Σ exit-leg qty ≠ the exit qty) — or null when
+ * both do (to 4 dp). `purchaseRows` reads it as its quantity condition (then adds
+ * the value and date conditions of L-36); Data Quality's `ladder_mismatch` line
+ * reads it alone, listing the 4.5.x Paytm / Groww ladders the date-window filter
+ * over-counted (remedy: delete, then re-import).
+ *
+ * QUANTITY ONLY, on purpose, for that line: a ladder cut by allocation keeps each
+ * fill at its OWN price while pairLegs values a lot split across two positions at
+ * the leg's AVERAGE — so a correct ladder's Σ qty × price can differ from its
+ * parent's buyValue (203 of the 497 freshly imported Paytm fixture ladders), and
+ * a value condition here would list every one of them as broken.
+ */
+export function ladderMismatch(parent: RealisedParent, legs: Leg[], direction: StagedPosition["direction"]): "entry" | "exit" | null {
+  if (!sideStatesParent(parent, legs, direction, "entry")) return "entry";
+  if (!sideStatesParent(parent, legs, direction, "exit")) return "exit";
+  return null;
+}
+
+/** One side of `ladderMismatch`: Σ that kind's leg qty = the parent's qty on that side (4 dp). */
+function sideStatesParent(parent: RealisedParent, legs: Leg[], direction: StagedPosition["direction"], kind: Leg["kind"]): boolean {
+  const buys = (direction === "long") === (kind === "entry");
+  const want = buys ? parent.buyQty ?? 0 : parent.sellQty ?? 0;
+  return r4(legs.filter((l) => l.kind === kind && l.qty > 0).reduce((s, l) => s + l.qty, 0)) === r4(want);
+}
+
 function splitPurchases<T extends RealisedParent>(
   parent: T,
   legs: Leg[],
   position: StagedPosition,
 ): PurchaseRow<T>[] {
-  if (parent.buyValue == null || parent.buyQty == null) return [];
-  const buyKind = position.direction === "long" ? "entry" : "exit";
-  const bought = sortLegs(legs).filter((l) => l.kind === buyKind && l.qty > 0);
-  if (bought.length === 0) return [];
+  const judged = purchaseLegsOf(parent, legs, position.direction);
+  if (!judged) return [];
+  const { bought, days, raw } = judged;
 
-  const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
-  const qty = bought.reduce((s, l) => s + l.qty, 0);
-  if (r4(qty) !== r4(parent.buyQty)) return [];
-  const raw = bought.map((l) => l.qty * l.price);
-  const stated = raw.reduce((s, v) => s + r2(v), 0);
-  if (Math.abs(stated - parent.buyValue) > 0.01 * (bought.length + 1) + 1e-9) return [];
-
-  // Every purchase leg must state a READABLE day, or the ladder is not split.
-  const days = bought.map((l) => normalizeDate(l.tradeDate ?? null));
-  if (days.some((d) => d == null)) return [];
-  // The DATE condition: the parent's buyDate is the one `parentAggregate` would
-  // write from these legs — the FIRST entry of a long, the LAST exit of a short.
-  const buySide = sortLegs(legs).filter((l) => l.kind === buyKind);
-  const anchor = position.direction === "long" ? buySide[0] : buySide[buySide.length - 1];
-  const anchorDay = normalizeDate(anchor?.tradeDate ?? null);
-  if (anchorDay == null || normalizeDate(parent.buyDate ?? null) !== anchorDay) return [];
-
-  const values = settle(raw, parent.buyValue);
+  const values = settle(raw, parent.buyValue!);
   return bought.map((l, i) => {
     const row = { ...parent } as unknown as Record<string, unknown>;
     if ("buyDate" in parent) row.buyDate = days[i];

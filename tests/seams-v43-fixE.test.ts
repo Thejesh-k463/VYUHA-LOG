@@ -9,7 +9,8 @@ import { STALE_CLOSE_NOTE } from "@/lib/import/close-open-lots";
 import * as crossSource from "@/lib/import/cross-source";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
-import { taxByFy, type TaxTrade } from "@/lib/analytics/tax";
+import { fyDateOf, taxByFy, type TaxTrade } from "@/lib/analytics/tax";
+import type { SideInput } from "@/lib/domain/side";
 import { assetClassFor } from "@/lib/analytics/cg-heads";
 
 /**
@@ -20,8 +21,10 @@ import { assetClassFor } from "@/lib/analytics/cg-heads";
  * S.111A/S.112A. Every fixture below trades ordinary shares, and this resolves
  * to `"share"` for them from the row's own ISIN and symbol.
  */
+// v4.6.0 fix wave (SEAM-V46-2) — `fyDate` is REQUIRED: filled the way every
+// production boundary fills it (`fyDateOf`, the closing leg's day).
 const taxRowsOf = (rows: readonly { segment: string; isin?: string | null; symbol?: string | null }[]): TaxTrade[] =>
-  rows.map((r) => ({ ...(r as unknown as TaxTrade), assetClass: assetClassFor(r) }));
+  rows.map((r) => ({ ...(r as unknown as TaxTrade), assetClass: assetClassFor(r), fyDate: fyDateOf(r as unknown as SideInput) }));
 
 /**
  * v4.3.0 FIX WAVE 2H — THE SEAMS OF A SIX-BUILDER WAVE.

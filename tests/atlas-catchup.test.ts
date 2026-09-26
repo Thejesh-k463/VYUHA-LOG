@@ -236,6 +236,53 @@ describe("the run — consent, envelope, abort", () => {
     expect(out.progress.message).toContain("auto-MTM was turned off");
   });
 
+  // v4.6.0 audit SG-2: the window the test above never exercised. The sleep here
+  // REALLY yields (a timer), and the toggle is turned off by a task that runs
+  // while the run is parked in it — the shape of a user clicking the switch
+  // during the 1.5 s pace. The next file must be neither fetched nor applied.
+  it("SG-2: consent withdrawn DURING the pace sleep stops the run before the next fetch", async () => {
+    enableAutoMtm();
+    const asked: string[] = [];
+    const out = await cu.runBhavcopyCatchup({
+      now: NOW,
+      sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 15)),
+      fetchOne: async (d) => {
+        asked.push(d);
+        // Queued now, runs while the loop awaits the sleep that follows this file.
+        if (asked.length === 1) setTimeout(() => t.sqlite.prepare("UPDATE settings SET auto_mtm_enabled = 0").run(), 0);
+        return { text: csvFor(d), source: "udiff", url: "test://x" };
+      },
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(asked).toHaveLength(1);
+    expect(out.applied).toBe(1);
+    expect(out.aborted).toBe(true);
+    expect(out.progress.message).toContain("auto-MTM was turned off");
+    expect(priceRows()).toBe(2); // one file × two symbols
+  });
+
+  it("SG-2: consent withdrawn DURING the fetch — the fetched file is not applied", async () => {
+    enableAutoMtm();
+    let calls = 0;
+    const out = await cu.runBhavcopyCatchup({
+      now: NOW,
+      sleep: async () => {},
+      fetchOne: async (d) => {
+        calls++;
+        await new Promise((resolve) => setTimeout(resolve, 0)); // the network
+        if (calls === 2) t.sqlite.prepare("UPDATE settings SET auto_mtm_enabled = 0").run();
+        return { text: csvFor(d), source: "udiff", url: "test://x" };
+      },
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(calls).toBe(2);
+    expect(out.applied).toBe(1);
+    expect(out.aborted).toBe(true);
+    expect(priceRows()).toBe(2); // file 1 only; file 2 was fetched and dropped
+  });
+
   it("a FRESH running envelope (a live backfill) blocks the catch-up", async () => {
     enableAutoMtm();
     bf.writeBackfillProgress({ ...bf.IDLE_PROGRESS, status: "running" }); // updatedAt = now

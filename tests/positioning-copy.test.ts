@@ -157,7 +157,7 @@ describe("positioning copy — 'local-first / 100% local & offline' is retired",
     expect(keys, "API_BROKERS must still list OpenAlgo for the subtraction to mean anything").toContain("openalgo");
     const brokerApis = keys.filter((k) => k !== "openalgo").length;
 
-    const pricing = /indianBrokers: "[^"]*?(\d+) broker-API pulls"/.exec(read("lib/domain/pricing-comparison.ts"));
+    const pricing = /indianBrokers: ["`][^"`]*?(\d+) broker-API pulls["`]/.exec(read("lib/domain/pricing-comparison.ts"));
     expect(pricing, "pricing-comparison.ts indianBrokers no longer states a broker-API pull count").not.toBeNull();
 
     const pages: [string, string][] = [["docs/sales/landing-page.html", read("docs/sales/landing-page.html")]];
@@ -223,5 +223,57 @@ describe("positioning copy — 'local-first / 100% local & offline' is retired",
         });
     }
     expect(offenders, `web platform promised rather than described:\n${offenders.join("\n")}`).toEqual([]);
+  });
+});
+
+/**
+ * v4.6.0 audit DC-1 / DA-3 / UI (instrument-manager): every in-app COUNT of
+ * what can be imported is derived, never hand-written. The pricing row read "6"
+ * while the registry held 8 brokers; Broker Truth's help said "seven statement
+ * files" after four more feeds landed; the instrument panel said "~1,150 NSE
+ * symbols" over a 1,379-symbol map. The sources: `brokersWithNativeParser()`
+ * (lib/import/registry-meta.ts, AGENTS: the ONLY source of truth for imports)
+ * and `RECONCILE_FEEDS` (lib/analytics/reconcile.ts, "the ONE list").
+ */
+describe("import counts in the app derive from the registry", () => {
+  const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+
+  it("the in-app pricing row states the registry's broker count", async () => {
+    const { brokersWithNativeParser } = await import("@/lib/import/registry-meta");
+    const { VYUHA_ROW } = await import("@/lib/domain/pricing-comparison");
+    expect(VYUHA_ROW.indianBrokers).toMatch(new RegExp(`^${brokersWithNativeParser().length} brokers auto-detected \\+ column mapper`));
+  });
+
+  it("the dashboard's empty-state hint counts the registry, and hand-writes no broker count", async () => {
+    const src = read("components/dashboard/dashboard-client.tsx");
+    expect(src).toContain("${brokersWithNativeParser().length} brokers auto-detect");
+    const words = NUMBER_WORDS.join("|");
+    expect(src).not.toMatch(new RegExp(`\\b(\\d+|${words}) brokers auto-detect`, "i"));
+  });
+
+  it("Broker Truth's help counts and names RECONCILE_FEEDS", async () => {
+    const { RECONCILE_FEEDS } = await import("@/lib/analytics/reconcile");
+    const { HELP_TOPICS } = await import("@/lib/domain/help-content");
+    const topic = HELP_TOPICS.find((t) => t.href === "/reports/reconcile")!;
+    expect(topic.steps[0]).toBe(`Import one of the ${RECONCILE_FEEDS.length} statement files, such as a Dhan Realised P&L.`);
+    const para = topic.body.find((b) => b.includes("files fill it in"))!;
+    expect(para.startsWith(`${RECONCILE_FEEDS.length} files fill it in: `)).toBe(true);
+    for (const f of RECONCILE_FEEDS) expect(para).toContain(f.label.split(/ \(| — /)[0]);
+  });
+
+  it("the Import help's 'N brokers auto-detected (…)' names exactly the registry's brokers", async () => {
+    const { brokersWithNativeParser } = await import("@/lib/import/registry-meta");
+    const { BROKER_LABELS } = await import("@/lib/domain/constants");
+    const { HELP_ENTRIES } = await import("@/lib/domain/help-content");
+    const brokers = brokersWithNativeParser();
+    const line = HELP_ENTRIES.flatMap((e) => e.body).find((b) => / brokers auto-detected \(/.test(b));
+    expect(line, "help-content.ts no longer states 'N brokers auto-detected (…)'").toBeDefined();
+    const m = /^(\w+) brokers auto-detected \(([^)]*)\)/.exec(line!)!;
+    expect(NUMBER_WORDS.indexOf(m[1].toLowerCase())).toBe(brokers.length);
+    expect(m[2].split(", ").sort()).toEqual(brokers.map((b) => BROKER_LABELS[b]).sort());
+  });
+
+  it("the instrument panel hand-writes no NSE symbol count", () => {
+    expect(read("components/system/instrument-manager.tsx")).not.toMatch(/~?\d[\d,]* NSE symbols/);
   });
 });

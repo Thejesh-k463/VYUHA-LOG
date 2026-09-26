@@ -6,11 +6,12 @@ import { ChallanEditor, type ChallanEditorRow } from "@/components/reports/chall
 import { getHarvestTrades } from "@/lib/queries/trades";
 import { getRealisedRows } from "@/lib/queries/realised-rows";
 import { getMtmMap } from "@/lib/queries/mtm";
-import { classifyGain, MTF_NOT_DEDUCTED_NOTE } from "@/lib/analytics/capital-gains";
+import { classifyGain, fmvTotalOf, MTF_NOT_DEDUCTED_NOTE } from "@/lib/analytics/capital-gains";
 import { assetClassFor, heldMoreThanMonths, holdingMonthsFor } from "@/lib/analytics/cg-heads";
 import { getSettings } from "@/lib/queries/settings";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
 import { computeAdvanceTax } from "@/lib/analytics/advance-tax";
+import { closedOnOrAfter, fyDateOf } from "@/lib/analytics/tax";
 import { section } from "@/lib/analytics/statute";
 import { advanceTaxFyWindow, challanTotalsByFy, findDuplicateChallan, getChallans, todayIstIso } from "@/lib/queries/challans";
 import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
@@ -77,7 +78,8 @@ export default async function AdvanceTaxPage({
   // Realised net P&L booked this FY (closed, dated trades) — all segments,
   // because the calculator estimates TOTAL tax, not capital gains alone.
   const realisedFy = realised
-    .filter((t) => !t.isOpen && t.sellDate && t.sellDate >= fyStart)
+    // v4.6.0 fix wave (CC-2) — closed this FY: a short closes on its buy-back.
+    .filter((t) => !t.isOpen && closedOnOrAfter(t, fyStart))
     .reduce((s, t) => s + t.netPnl, 0);
 
   // ── Harvest link (v3.5.0) ────────────────────────────────────────────────
@@ -104,7 +106,8 @@ export default async function AdvanceTaxPage({
   /** Realised this FY with NO determinable head — excluded from both, stated. */
   let realisedUndetermined = 0;
   for (const t of realised) {
-    if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
+    // v4.6.0 fix wave (CC-2) — the FY window files a row by its CLOSING leg.
+    if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !closedOnOrAfter(t, fyStart)) continue;
     const g = classifyGain({
       segment: t.segment,
       assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
@@ -113,12 +116,13 @@ export default async function AdvanceTaxPage({
       pledgeCharges: t.pledgeCharges,
       buyDate: t.buyDate,
       sellDate: t.sellDate,
+      fyDate: fyDateOf(t),
       buyValue: t.buyValue,
       sellValue: t.sellValue,
       netPnl: t.netPnl,
       // Per-share in the column, TOTAL units into classifyGain — same
       // scaling as tax-itr.ts and /reports/harvest.
-      fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
+      fmv31Jan2018: fmvTotalOf(t),
     });
     if (g?.bucket === "ltcg112A" || g?.bucket === "ltcg112") realisedLtcg += g.taxableGain;
     else if (g?.bucket === "stcg111A" || g?.bucket === "stcgOther") realisedStcg += g.taxableGain;

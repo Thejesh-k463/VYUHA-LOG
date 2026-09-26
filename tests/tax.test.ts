@@ -5,23 +5,28 @@ import { itrPackByFy, type ItrTrade } from "@/lib/analytics/itr";
 // lib/analytics/tax.ts is the module behind the primary /reports/tax FY table and
 // was the ONLY tax module without a test file when the v3.2.1 audit ran.
 
-const t = (over: Partial<TaxTrade> = {}): TaxTrade => ({
-  segment: "eq_delivery",
-  // v4.5.0 — REQUIRED and never defaulted in product code: a gold/debt ETF unit
-  // is not an equity share and must never reach s.111A/s.112A. These fixtures
-  // are about ordinary listed shares, so they say so.
-  assetClass: "share",
-  instrumentType: "equity",
-  buyDate: "2026-05-01",
-  sellDate: "2026-06-01",
-  grossPnl: 0,
-  netPnl: 0,
-  buyValue: 0,
-  sellValue: 0,
-  chargesTotal: 0,
-  isOpen: false,
-  ...over,
-});
+const t = (over: Partial<TaxTrade> = {}): TaxTrade => {
+  const r: Omit<TaxTrade, "fyDate"> = {
+    segment: "eq_delivery",
+    // v4.5.0 — REQUIRED and never defaulted in product code: a gold/debt ETF unit
+    // is not an equity share and must never reach s.111A/s.112A. These fixtures
+    // are about ordinary listed shares, so they say so.
+    assetClass: "share",
+    instrumentType: "equity",
+    buyDate: "2026-05-01",
+    sellDate: "2026-06-01",
+    grossPnl: 0,
+    netPnl: 0,
+    buyValue: 0,
+    sellValue: 0,
+    chargesTotal: 0,
+    isOpen: false,
+    ...over,
+  };
+  // v4.6.0 fix wave (SEAM-V46-2) — `fyDate` is REQUIRED; a fixture files by the
+  // date it filed by before the fix (r.sellDate) unless it states one.
+  return { ...r, fyDate: "fyDate" in over ? (over.fyDate ?? null) : r.sellDate };
+};
 
 describe("taxByFy — head segregation", () => {
   it("routes each segment to the head the Act puts it in", () => {
@@ -189,6 +194,7 @@ describe("turnover agrees across /reports/tax and /reports/itr", () => {
       assetClass: "share", // F&O rows: the class never reaches a head, but the field is required
       buyDate: "2026-05-01",
       sellDate: "2026-06-01",
+      fyDate: "2026-06-01",
       grossPnl: s.grossPnl,
       netPnl: s.netPnl,
       sellValue: s.sellValue,

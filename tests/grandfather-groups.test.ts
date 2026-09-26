@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
+  fmvIsMixed,
   grandfatherKey,
   grandfatherLotsOf,
   groupGrandfatherLots,
@@ -59,6 +60,19 @@ describe("groupGrandfatherLots", () => {
     expect(groupGrandfatherLots([lot({ id: 1 }), lot({ id: 2 })])[0].fmv).toBeNull();
     expect(groupGrandfatherLots([lot({ id: 1, fmv31Jan2018: 1100 }), lot({ id: 2 })])[0].fmv).toBe("mixed");
     expect(groupGrandfatherLots([lot({ id: 1, fmv31Jan2018: 1100 }), lot({ id: 2, fmv31Jan2018: 1090 })])[0].fmv).toBe("mixed");
+  });
+
+  it("fmvIsMixed — THE test the route and the editor share: NULL counts as a value; uniform (all equal, all blank) is not mixed", () => {
+    expect(fmvIsMixed([{ fmv31Jan2018: 1100 }, { fmv31Jan2018: 1100 }])).toBe(false);
+    expect(fmvIsMixed([{ fmv31Jan2018: null }, { fmv31Jan2018: null }])).toBe(false);
+    expect(fmvIsMixed([{ fmv31Jan2018: 1100 }, { fmv31Jan2018: 1100 }, { fmv31Jan2018: null }])).toBe(true);
+    expect(fmvIsMixed([{ fmv31Jan2018: 1100 }, { fmv31Jan2018: 1090 }])).toBe(true);
+    expect(fmvIsMixed([{ fmv31Jan2018: 1100 }])).toBe(false);
+    // Both doors read it — never a second, drifting copy.
+    for (const f of ["../app/api/trades/fmv/route.ts", "../components/reports/fmv-editor.tsx"]) {
+      const src = readFileSync(path.resolve(__dirname, f), "utf8");
+      expect(src, f).toMatch(/fmvIsMixed\(/);
+    }
   });
 
   it("eligibility is read through the DATE, never the bytes: DD-MM-YYYY 2019 out, DD-MM-YYYY 2017 in", () => {
@@ -170,7 +184,13 @@ describe("FmvEditor — a blank Save never wipes values that exist", () => {
     expect(g[0].fmv).toBe("mixed");
     const markup = html(g);
     expect(saveButton(markup), "the Save button").toMatch(/\sdisabled=""/);
-    expect(markup).toContain("Enter a value to set all 2 lots, or clear one lot at a time");
+    // v4.6.0 fix wave (UI-1): the copy states the path that exists — no screen
+    // clears one lot at a time.
+    expect(markup).toContain("Enter a value to set all 2 lots; to clear a mixed group, set one value first, then save blank");
+    expect(markup).not.toContain("one lot at a time");
+    // DA-2: s.55(2)(ac) Explanation — the FMV is the HIGHEST price quoted on 31-Jan-2018, not the close.
+    expect(markup).toContain("highest price quoted on 31-Jan-2018");
+    expect(markup).not.toContain("closing price");
   });
 
   it("a group with one shared value shows it, and Save is enabled; an all-blank group can Save", () => {
@@ -187,6 +207,10 @@ describe("FmvEditor — a blank Save never wipes values that exist", () => {
     const editor = readFileSync(path.resolve(__dirname, "../components/reports/fmv-editor.tsx"), "utf8");
     expect(editor, "no useState initialiser reads the groups prop").not.toMatch(/useState[^;]*\bgroups\b/);
     const page = readFileSync(path.resolve(__dirname, "../app/reports/tax/page.tsx"), "utf8");
-    expect(page).toMatch(/<FmvEditor\s+key=\{person \?\? "all"\}/);
+    // UJ-3 (fix wave): keyed on the RESOLVED person, not the ?person= param.
+    expect(page).toMatch(/<FmvEditor\s+key=\{scope\.personKey\}/);
+    // DA-9 (fix wave): the footnote pointing at the card is conditioned on the card's own groups.
+    expect(page).toMatch(/const hasPreGrandfatherLot = grandfatherGroups\.length > 0;/);
+    expect(page).not.toMatch(/cgTrades\.some\(\(t\) => isGrandfatherEligible/);
   });
 });

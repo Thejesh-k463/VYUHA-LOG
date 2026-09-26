@@ -110,7 +110,7 @@ describe("classifyTerm", () => {
     expect(isGrandfatherEligible("20-02-2017")).toBe(true);
     expect(isGrandfatherEligible("2017-02-31")).toBe(false);
     // fyOf (module-private) through the aggregate: a day-first sell date used to land in "NaN-aN".
-    const rows = aggregateTradesByFy([{ segment: "eq_delivery", assetClass: "share", buyDate: "2024-02-20", sellDate: "02-03-2026", buyValue: 1000, sellValue: 1500, netPnl: 500 }], 4, "2027-28");
+    const rows = aggregateTradesByFy([{ segment: "eq_delivery", assetClass: "share", buyDate: "2024-02-20", sellDate: "02-03-2026", fyDate: "02-03-2026", buyValue: 1000, sellValue: 1500, netPnl: 500 }], 4, "2027-28");
     expect(rows.map((r) => r.fy)).toEqual(["2025-26"]);
   });
 });
@@ -146,7 +146,7 @@ describe("grandfathering", () => {
 });
 
 describe("classifyGain — per-trade bucketing", () => {
-  const base: CapitalGainsTrade = { segment: "eq_delivery", assetClass: "share", buyDate: "2025-01-01", sellDate: "2025-06-01", buyValue: 1000, sellValue: 1200, netPnl: 200 };
+  const base: CapitalGainsTrade = { segment: "eq_delivery", assetClass: "share", buyDate: "2025-01-01", sellDate: "2025-06-01", fyDate: "2025-06-01", buyValue: 1000, sellValue: 1200, netPnl: 200 };
 
   it("buckets equity delivery under 12m as s.111A short-term", () => {
     const g = classifyGain(base)!;
@@ -185,14 +185,14 @@ describe("classifyGain — per-trade bucketing", () => {
   });
   it("applies grandfathering for a pre-2018 ltcg lot with FMV supplied", () => {
     const t: CapitalGainsTrade = {
-      segment: "eq_delivery", assetClass: "share", buyDate: "2017-06-01", sellDate: "2026-01-01",
+      segment: "eq_delivery", assetClass: "share", buyDate: "2017-06-01", sellDate: "2026-01-01", fyDate: "2026-01-01",
       buyValue: 100, sellValue: 250, netPnl: 150, fmv31Jan2018: 300,
     };
     // grandfathered cost = min(300,250)=250 -> taxableGain = 150 - (250-100) = 0
     expect(classifyGain(t)).toEqual({ bucket: "ltcg112A", head: expect.objectContaining({ cell: "E-LT125", grandfatherEligible: true }), taxableGain: 0, addedBackStt: 0, addedBackMtf: 0 });
   });
   it("skips grandfathering when no FMV given even if pre-2018", () => {
-    const t: CapitalGainsTrade = { segment: "eq_delivery", assetClass: "share", buyDate: "2017-06-01", sellDate: "2026-01-01", buyValue: 100, sellValue: 250, netPnl: 150 };
+    const t: CapitalGainsTrade = { segment: "eq_delivery", assetClass: "share", buyDate: "2017-06-01", sellDate: "2026-01-01", fyDate: "2026-01-01", buyValue: 100, sellValue: 250, netPnl: 150 };
     expect(classifyGain(t)!.taxableGain).toBe(150);
     expect(classifyGain(t)!.bucket).toBe("ltcg112A");
   });
@@ -247,7 +247,7 @@ describe("classifyGain — per-trade bucketing", () => {
 describe("aggregateTradesByFy — straddling-FY rate weighting", () => {
   it("gives a pure pre-cutover FY the old rate", () => {
     const trades: CapitalGainsTrade[] = [
-      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-01-01", sellDate: "2024-05-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
+      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-01-01", sellDate: "2024-05-01", fyDate: "2024-05-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
     ];
     const rows = aggregateTradesByFy(trades, 4, "2026-27");
     expect(rows[0].fy).toBe("2024-25");
@@ -256,7 +256,7 @@ describe("aggregateTradesByFy — straddling-FY rate weighting", () => {
 
   it("gives a pure post-cutover FY the new rate", () => {
     const trades: CapitalGainsTrade[] = [
-      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-08-01", sellDate: "2024-12-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
+      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-08-01", sellDate: "2024-12-01", fyDate: "2024-12-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
     ];
     const rows = aggregateTradesByFy(trades, 4, "2026-27");
     expect(rows[0].stcgRate).toBeCloseTo(0.20, 6);
@@ -265,8 +265,8 @@ describe("aggregateTradesByFy — straddling-FY rate weighting", () => {
   it("blends a straddling FY2024-25 by gain-weighted average, not a flat FY-end rate", () => {
     // Pre-cutover gain 100 @ 15%, post-cutover gain 300 @ 20% -> weighted = (100*0.15+300*0.20)/400 = 0.1875
     const trades: CapitalGainsTrade[] = [
-      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-01-01", sellDate: "2024-06-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
-      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-01-01", sellDate: "2024-09-01", buyValue: 1000, sellValue: 1300, netPnl: 300 },
+      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-01-01", sellDate: "2024-06-01", fyDate: "2024-06-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
+      { segment: "eq_delivery", assetClass: "share", buyDate: "2024-01-01", sellDate: "2024-09-01", fyDate: "2024-09-01", buyValue: 1000, sellValue: 1300, netPnl: 300 },
     ];
     const rows = aggregateTradesByFy(trades, 4, "2026-27");
     expect(rows[0].fy).toBe("2024-25");
@@ -283,10 +283,10 @@ describe("aggregateTradesByFy — straddling-FY rate weighting", () => {
    */
   it("reports notDeductedMtf and sttAddedBack as plain sums over the FY's CG rows", () => {
     const rows = aggregateTradesByFy([
-      { segment: "eq_mtf", assetClass: "share", buyDate: "2025-01-01", sellDate: "2025-06-01", buyValue: 1000, sellValue: 1100, netPnl: 100, sttCtt: 10, mtfInterest: 40, pledgeCharges: 5 },
-      { segment: "eq_delivery", assetClass: "share", buyDate: "2025-02-01", sellDate: "2025-07-01", buyValue: 1000, sellValue: 1100, netPnl: 100, sttCtt: 2.5 },
+      { segment: "eq_mtf", assetClass: "share", buyDate: "2025-01-01", sellDate: "2025-06-01", fyDate: "2025-06-01", buyValue: 1000, sellValue: 1100, netPnl: 100, sttCtt: 10, mtfInterest: 40, pledgeCharges: 5 },
+      { segment: "eq_delivery", assetClass: "share", buyDate: "2025-02-01", sellDate: "2025-07-01", fyDate: "2025-07-01", buyValue: 1000, sellValue: 1100, netPnl: 100, sttCtt: 2.5 },
       // A business row carrying the same fields contributes NOTHING to either.
-      { segment: "future", assetClass: "share", buyDate: "2025-02-01", sellDate: "2025-07-01", buyValue: 1000, sellValue: 1100, netPnl: 100, sttCtt: 99, mtfInterest: 99 },
+      { segment: "future", assetClass: "share", buyDate: "2025-02-01", sellDate: "2025-07-01", fyDate: "2025-07-01", buyValue: 1000, sellValue: 1100, netPnl: 100, sttCtt: 99, mtfInterest: 99 },
     ], 4, "2026-27");
     expect(rows[0].fy).toBe("2025-26");
     expect(rows[0].notDeductedMtf).toBe(45); // 40 + 5
@@ -297,8 +297,8 @@ describe("aggregateTradesByFy — straddling-FY rate weighting", () => {
 
   it("a slab-rate or undetermined row is weighted into NO rate and blanks the year", () => {
     const rows = aggregateTradesByFy([
-      { segment: "eq_delivery", assetClass: "share", buyDate: "2025-01-01", sellDate: "2025-06-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
-      { segment: "eq_delivery", assetClass: "undetermined", buyDate: "2025-01-01", sellDate: "2025-06-01", buyValue: 1000, sellValue: 1100, netPnl: 900 },
+      { segment: "eq_delivery", assetClass: "share", buyDate: "2025-01-01", sellDate: "2025-06-01", fyDate: "2025-06-01", buyValue: 1000, sellValue: 1100, netPnl: 100 },
+      { segment: "eq_delivery", assetClass: "undetermined", buyDate: "2025-01-01", sellDate: "2025-06-01", fyDate: "2025-06-01", buyValue: 1000, sellValue: 1100, netPnl: 900 },
     ], 4, "2026-27");
     expect(rows[0].stcg111A).toBe(100);
     expect(rows[0].cgUndetermined).toBe(900);

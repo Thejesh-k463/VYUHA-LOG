@@ -5,7 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync }
 import { sql } from "drizzle-orm";
 import { db, sqlite, schema } from "@/lib/db";
 import { rerunDataFixesAfterRestore } from "@/lib/db/data-fixes";
-import { refreshChargeConfig } from "@/lib/db/seed-core";
+import { refreshChargeConfig, refreshMarginConfig } from "@/lib/db/seed-core";
 import { attachmentsDir } from "@/lib/db";
 import {
   BACKUP_VERSION,
@@ -304,6 +304,10 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
       // that did not carry charge_config left the table as it was, so it is
       // left as it was.
       if (tables.charge_config !== undefined) refreshChargeConfig(tx);
+      // SM-1 (v4.6.0 fix wave): the margin rows this build ships that the
+      // envelope lacked (a 4.5.0 backup has no Fyers / Nuvama rows) are added
+      // here, in this transaction. INSERT OR IGNORE: every restored row stands.
+      refreshMarginConfig(tx);
 
       // Re-apply the machine's own licence/trial state over whatever the
       // envelope carried — restoring a journal must neither install someone

@@ -143,11 +143,18 @@ export function exitLegOf(t: PricedInput): LegView {
  * same-day or undated → the side it was stored with. So an opening sell given
  * its buy leg in the editor reads long when the buy precedes the sale, and a
  * wrong side on a flat row is fixed by editing its legs.
+ *
+ * NO SIGNAL IS NO SIDE here too (v4.6.0 fix wave, MO-2 / design review A6): the
+ * last branch answers what the stored row STATES (`statedSideOf`), so a flat,
+ * same-day row that states nothing stays NULL through an editor save or a
+ * same-day re-pull supersede — exactly what the `trades-side-v1` backfill leaves.
+ * Answering `sideOf(stored)` there wrote a guessed 'long' as a stated one, and
+ * the stop-migration direction map then read it as a fact.
  */
-export function sideAfterEdit(next: SideInput, stored: SideInput): Side {
+export function sideAfterEdit(next: SideInput, stored: SideInput): Side | null {
   if (next.buyQty !== next.sellQty) return next.sellQty > next.buyQty ? "short" : "long";
   const b = normalizeDate(next.buyDate ?? null);
   const s = normalizeDate(next.sellDate ?? null);
   if (b && s && s !== b) return s < b ? "short" : "long";
-  return sideOf(stored);
+  return statedSideOf(stored);
 }

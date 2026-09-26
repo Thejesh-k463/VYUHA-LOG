@@ -43,6 +43,23 @@ export interface PlanAccountLite {
   brokerPlanFrom: string | null;
 }
 
+/**
+ * What Save stores. The default plan is stored as its own id, "default" — NOT
+ * as null (v4.6.0 audit DA-1): null means "never chosen", which Data Quality
+ * (`getAccountsWithoutPlan`) flags on a multi-plan broker and the dashboard's
+ * "Charges plan set" step reads, so a user who explicitly chose the free plan
+ * was flagged forever. Pricing cannot tell them apart: `resolvePlan`
+ * (lib/engine/rates.ts) returns "default" for null and for "default" alike.
+ */
+export function planFields(plan: string, from: string): { brokerPlan: string; brokerPlanFrom: string | null } {
+  return { brokerPlan: plan, brokerPlanFrom: from.trim() === "" ? null : from.trim() };
+}
+
+/** Is there anything to save? A never-chosen (null) plan is savable as the default — that IS the choice. */
+export function planChanged(account: Pick<PlanAccountLite, "brokerPlan" | "brokerPlanFrom">, plan: string, from: string): boolean {
+  return account.brokerPlan !== plan || (account.brokerPlanFrom ?? "") !== from;
+}
+
 export function AccountPlanEditor({ account, options }: { account: PlanAccountLite; options: PlanChoice[] }) {
   const router = useRouter();
   const [plan, setPlan] = React.useState(account.brokerPlan ?? "default");
@@ -50,7 +67,7 @@ export function AccountPlanEditor({ account, options }: { account: PlanAccountLi
   const [busy, setBusy] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
 
-  const changed = (account.brokerPlan ?? "default") !== plan || (account.brokerPlanFrom ?? "") !== from;
+  const changed = planChanged(account, plan, from);
 
   async function post(body: Record<string, unknown>) {
     const res = await fetch("/api/accounts", {
@@ -67,10 +84,7 @@ export function AccountPlanEditor({ account, options }: { account: PlanAccountLi
     };
   }
 
-  const fields = {
-    brokerPlan: plan === "default" ? null : plan,
-    brokerPlanFrom: from.trim() === "" ? null : from.trim(),
-  };
+  const fields = planFields(plan, from);
 
   async function save() {
     setBusy(true);

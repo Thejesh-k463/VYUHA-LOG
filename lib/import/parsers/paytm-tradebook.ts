@@ -91,6 +91,7 @@ import { workbookOf } from "../types";
 import { extractTime } from "../time-parse";
 import { corroborate, inferProduct, productReason, splitMixedRow } from "../product-signature";
 import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
+import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.]/g, "");
 
@@ -540,13 +541,85 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
 
   // v4.6.0 W6: a derivative can be carried short overnight (pair-legs.ts header);
   // read on the label the row is filed under, as commit classifies it.
-  const paired = pairLegs(legs, {
-    shortable: (key) => {
-      const { security } = splitKey(key);
-      return isShortableSymbol(displayOf.get(security) ?? security);
-    },
-  });
+  const shortableKey = (key: string) => {
+    const { security } = splitKey(key);
+    return isShortableSymbol(displayOf.get(security) ?? security);
+  };
+  const paired = pairLegs(legs, { shortable: shortableKey });
   const check = summarisePairing(legs, paired);
+
+  // ── Each position's EXECUTIONS: the fills of the legs FIFO actually took ──
+  //
+  // v4.6.0 fix wave (MO-4). The ladder commit writes (`trade_legs`) must sum to
+  // the parent row on each side (invariant 5). A position used to take every fill
+  // of its key inside its DATE WINDOW, so a day-leg split across two positions
+  // landed on BOTH (PARAS: parent 2,000, ladder 3,001 bought). Now, per KEY
+  // (security + stated product — the same key pairLegs groups by, never the
+  // display label), `allocateSymbolLegs` replays pairLegs' quantity rule under the
+  // SAME shortable predicate and `executionsByAllocation` hands each position the
+  // fills of exactly the leg quantities it consumed (lib/import/leg-allocation.ts,
+  // as Zerodha and Fyers do).
+  //
+  // Paytm's legs are SCRIP-DAY AGGREGATES, not orders: a mixed day is two
+  // same-side legs on one date (intraday first, then delivery — the push order
+  // above). So for each (key, date, side) the legs of that side, IN PUSH ORDER,
+  // take that day-side's fills in TIME order; a fill that straddles two legs is
+  // sliced pro rata by quantity at its own price. Which fill fed which half of a
+  // split day is not in the file — this is a stated rule, and every slice keeps
+  // its own price, so Σ executions per side = the position's quantity exactly.
+  // A position no allocation matches keeps NO ladder (a flat row) and the
+  // warning below counts it — never a guessed set of fills.
+  const daySideKey = (key: string, date: string, side: string) => `${key}${SEP}${date}${SEP}${side}`;
+  const fillsByDaySide = new Map<string, Execution[]>();
+  for (const f of fills) {
+    const k = daySideKey(f.key, f.date, f.side);
+    fillsByDaySide.set(k, [...(fillsByDaySide.get(k) ?? []), { side: f.side, qty: f.qty, price: f.price, date: f.date, time: f.time }]);
+  }
+  for (const [k, list] of fillsByDaySide) fillsByDaySide.set(k, [...list].sort((a, b) => (a.time ?? "99:99").localeCompare(b.time ?? "99:99")));
+  const fillsOf = new Map<Leg, Execution[]>();
+  const legsByDaySide = new Map<string, Leg[]>();
+  const legsByKey = new Map<string, Leg[]>();
+  for (const l of legs) {
+    const k = daySideKey(l.symbol, l.date, l.side);
+    legsByDaySide.set(k, [...(legsByDaySide.get(k) ?? []), l]);
+    legsByKey.set(l.symbol, [...(legsByKey.get(l.symbol) ?? []), l]);
+  }
+  for (const [k, dayLegs] of legsByDaySide) {
+    const pool = fillsByDaySide.get(k) ?? [];
+    let i = 0;
+    let used = 0;
+    for (const leg of dayLegs) {
+      const out: Execution[] = [];
+      let need = leg.qty;
+      while (need > 1e-9 && i < pool.length) {
+        const f = pool[i];
+        const q = Math.min(need, f.qty - used);
+        out.push(Math.abs(q - f.qty) < 1e-9 ? f : { ...f, qty: q });
+        need -= q;
+        used += q;
+        if (used >= f.qty - 1e-9) {
+          i++;
+          used = 0;
+        }
+      }
+      fillsOf.set(leg, out);
+    }
+  }
+  const pairedByKey = new Map<string, PairedPosition[]>();
+  for (const p of paired) pairedByKey.set(p.symbol, [...(pairedByKey.get(p.symbol) ?? []), p]);
+  const executionsOf = new Map<PairedPosition, Execution[] | null>();
+  let unallocated = 0;
+  for (const [key, keyLegs] of legsByKey) {
+    const allocs = allocateSymbolLegs(keyLegs, { shortable: shortableKey(key) });
+    const cut = executionsByAllocation(allocs, fillsOf);
+    const own = pairedByKey.get(key) ?? [];
+    const matched = matchAllocations(own, allocs);
+    own.forEach((p, i) => {
+      const a = matched[i];
+      if (!a) unallocated++;
+      executionsOf.set(p, a ? cut.get(a) ?? [] : null);
+    });
+  }
 
   const totalCharges = fileTotals.brokerage + fileTotals.exchangeTxn + fileTotals.gst +
     fileTotals.sttCtt + fileTotals.sebi + fileTotals.stampDuty;
@@ -580,21 +653,9 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
     // had one anywhere, else the code (commit resolves that via the ISIN).
     const symbol = displayOf.get(security) ?? security;
 
-    // Only this group's fills, narrowed to the position's own window — a
-    // re-entered scrip gets its own ladder rather than its whole history.
-    // (A split scrip-day's fills appear on both of its positions: the file
-    // does not say which fill fed which half.)
-    // A closed short's window runs from its sale to its buy-back (v4.6.0 W6).
+    // The fills FIFO actually took for THIS position (the allocation above, MO-4).
     const fillSide = fillSidesOf(p);
-    const [from, to] = fillSide.entry === "sell" ? [p.sellDate, p.buyDate] : [p.buyDate, p.sellDate];
-    const executions = fills
-      .filter(
-        (f) =>
-          f.key === p.symbol &&
-          (from == null || f.date >= from) &&
-          (to == null || f.date <= to),
-      )
-      .map<Execution>((f) => ({ side: f.side, qty: f.qty, price: f.price, date: f.date, time: f.time }));
+    const executions = executionsOf.get(p) ?? [];
 
     const notes: string[] = [...p.notes];
     if (stated == null) {
@@ -674,6 +735,9 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
     warnings.push(
       `${check.openingSells} holding${check.openingSells === 1 ? " was" : "s were"} sold without a matching purchase in this window — acquired earlier, often an IPO allotment. Cost basis is unknown until you set it, and they are excluded from win rate and expectancy meanwhile.`,
     );
+  }
+  if (unallocated > 0) {
+    warnings.push(`${unallocated} position${unallocated === 1 ? "" : "s"} could not be traced to the fills behind ${unallocated === 1 ? "it" : "them"}, so ${unallocated === 1 ? "it carries" : "they carry"} no execution ladder — please report this file.`);
   }
   if (!check.conserved) {
     warnings.push(

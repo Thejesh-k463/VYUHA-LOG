@@ -51,6 +51,9 @@ export const getSignalTrades = cache((): SignalTradeRow[] => {
       sellDate: trades.sellDate,
       isOpen: trades.isOpen,
       netPnl: trades.netPnl,
+      // v4.6.0 fix wave (SEAM-V46-1) — the side of a FLAT row, read by sideOf.
+      side: trades.side,
+      importNotes: trades.importNotes,
       signalJson: trades.signalJson,
     })
     .from(trades)

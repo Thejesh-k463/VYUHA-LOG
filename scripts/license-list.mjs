@@ -8,10 +8,10 @@
 //   node scripts/license-list.mjs --by-ref        # one line per referring creator
 //   node scripts/license-list.mjs --by-ref RAVI   # that creator's keys (--by-ref none = unreferred)
 //
-// --by-ref with no code prints `CODE  keys N  active N  lifetime N  yearly N
+// --by-ref with no code prints `CODE  keys N  active N  lifetime N  with expiry N
 // latest YYYY-MM-DD` per referrer (the --ref code license-issue.mjs recorded),
 // unreferred keys under "(none)", sorted by keys desc. active = not expired
-// today and not revoked; yearly = any key WITH an expiry (annual, monthly,
+// today and not revoked; with expiry = any key WITH an expiry (annual, monthly,
 // custom). The code, when given, must follow --by-ref directly. The summary
 // never prints a key; the per-code list prints one only under --full.
 //

@@ -71,7 +71,7 @@ export async function POST(req:Request){const body=await req.json().catch(()=>nu
   if(id)db.update(accounts).set({...write,updatedAt:new Date().toISOString()}).where(eq(accounts.id,id)).run();else entityId=db.insert(accounts).values(write).returning({id:accounts.id}).get()!.id;
   // …and re-accrued immediately after it, one audit row each, so the figure the
   // user confirmed is the figure stored and the daily job finds nothing to move.
-  const reaccrued=planMoves&&planMoves.rows.length>0?applyPlanChange(id!,planMoves,values.brokerPlan??"the free plan"):0;
+  const reaccrued=planMoves&&planMoves.rows.length>0?applyPlanChange(id!,planMoves,values.brokerPlan&&values.brokerPlan!=="default"?values.brokerPlan:"the free plan"):0;
   // Archiving the SELECTED account used to strand the user: the switcher
   // filters archived accounts out of its options while every scoped read kept
   // filtering on the archived id — a select with no matching option and no UI

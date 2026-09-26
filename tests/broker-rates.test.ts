@@ -389,9 +389,20 @@ describe("Fyers and Nuvama — their own cards, never the Groww fallthrough", ()
     expect(brokerage("nuvama", "index_option", 500_000, "elite")).toBeCloseTo(150, 2);
     const d = get("nuvama", "eq_delivery", "NSE", "elite")!;
     expect([d.dpCharge, d.dpPct, d.subscriptionMonthly, d.planLabel]).toEqual([20, 0.0002, 0, "Nuvama Elite"]);
-    // Commodity and MTF are not stated for Elite and fall through to Lite Plus.
+    // Commodity and MTF INTEREST are not stated for Elite and fall through to Lite Plus.
     expect(brokerage("nuvama", "commodity_option", 500_000, "elite")).toBeCloseTo(60, 2);
     expect(get("nuvama", "eq_mtf", "NSE", "elite")?.mtfRateUnknown).toBe(true);
+  });
+
+  // MO-1 (v4.6.0 fix wave, owner answer): MTF BROKERAGE is not stated for Elite,
+  // so it follows Elite's own DELIVERY rate — the recorded rule Fyers Prime
+  // already follows — never the Lite Plus min(₹20, 2%) fallback, which billed a
+  // ₹5,00,000 MTF buy ₹20 instead of ₹1,500.
+  it("Nuvama Elite MTF brokerage = Elite delivery (0.30%, ₹25 floor), as Fyers Prime MTF = Prime delivery", () => {
+    expect(brokerage("nuvama", "eq_mtf", 500_000, "elite")).toBeCloseTo(3000, 2); // ₹1,500 a side
+    expect(brokerage("nuvama", "eq_mtf", 2_000, "elite")).toBeCloseTo(50, 2); // the ₹25 floor
+    expect(brokerage("nuvama", "eq_mtf", 500_000, "elite")).toBeCloseTo(brokerage("nuvama", "eq_delivery", 500_000, "elite"), 2);
+    expect(brokerage("fyers", "eq_mtf", 500_000, "prime")).toBeCloseTo(brokerage("fyers", "eq_delivery", 500_000, "prime"), 2);
   });
 
   it("each of the two brokers carries exactly the two published plans — never the owner's negotiated card", () => {

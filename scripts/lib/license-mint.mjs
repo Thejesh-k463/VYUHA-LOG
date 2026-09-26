@@ -168,11 +168,13 @@ export function summariseByRef(records, { today = new Date(), revoked = [] } = {
 }
 
 /**
- * One summary line: `CODE  keys N  active N  lifetime N  yearly N  latest YYYY-MM-DD`.
+ * One summary line: `CODE  keys N  active N  lifetime N  with expiry N  latest YYYY-MM-DD`.
+ * Printed "with expiry", not "yearly" (v4.6.0 audit DA-10): the count is every key
+ * carrying an expiry — annual, monthly on request, custom — not the annual plan alone.
  * @param {ReturnType<typeof summariseByRef>[number]} s
  */
 export function formatByRefLine(s) {
-  return `${(s.ref ?? "(none)").padEnd(14)}  keys ${s.keys}  active ${s.active}  lifetime ${s.lifetime}  yearly ${s.yearly}  latest ${s.latest || "-"}`;
+  return `${(s.ref ?? "(none)").padEnd(14)}  keys ${s.keys}  active ${s.active}  lifetime ${s.lifetime}  with expiry ${s.yearly}  latest ${s.latest || "-"}`;
 }
 
 /** `<keyId>_<email with @ and dots as _>.txt` — the archive filename for a key. */

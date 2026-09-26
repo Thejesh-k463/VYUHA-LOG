@@ -96,10 +96,10 @@ describe("tax summary scaffold", () => {
   // are ordinary listed shares, so they say so rather than letting a default
   // tax a fund unit at S.111A/S.112A.
   const trades: TaxTrade[] = [
-    { segment: "eq_delivery", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-01", buyDate: "2026-05-30", grossPnl: 1100, netPnl: 1000, buyValue: 49000, sellValue: 50000, chargesTotal: 100, isOpen: false },
-    { segment: "eq_intraday", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-02", buyDate: "2026-06-02", grossPnl: -400, netPnl: -500, buyValue: 20000, sellValue: 19600, chargesTotal: 100, isOpen: false },
-    { segment: "index_option", assetClass: "share", instrumentType: "option", sellDate: "2026-06-03", buyDate: "2026-06-03", grossPnl: 2100, netPnl: 2000, buyValue: 10000, sellValue: 12000, chargesTotal: 100, isOpen: false },
-    { segment: "eq_delivery", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-01", buyDate: "2025-01-01", grossPnl: 5200, netPnl: 5000, buyValue: 40000, sellValue: 45000, chargesTotal: 200, isOpen: false },
+    { segment: "eq_delivery", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-01", fyDate: "2026-06-01", buyDate: "2026-05-30", grossPnl: 1100, netPnl: 1000, buyValue: 49000, sellValue: 50000, chargesTotal: 100, isOpen: false },
+    { segment: "eq_intraday", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-02", fyDate: "2026-06-02", buyDate: "2026-06-02", grossPnl: -400, netPnl: -500, buyValue: 20000, sellValue: 19600, chargesTotal: 100, isOpen: false },
+    { segment: "index_option", assetClass: "share", instrumentType: "option", sellDate: "2026-06-03", fyDate: "2026-06-03", buyDate: "2026-06-03", grossPnl: 2100, netPnl: 2000, buyValue: 10000, sellValue: 12000, chargesTotal: 100, isOpen: false },
+    { segment: "eq_delivery", assetClass: "share", instrumentType: "equity", sellDate: "2026-06-01", fyDate: "2026-06-01", buyDate: "2025-01-01", grossPnl: 5200, netPnl: 5000, buyValue: 40000, sellValue: 45000, chargesTotal: 200, isOpen: false },
   ];
   it("classifies STCG/LTCG/intraday/F&O per FY with turnover", () => {
     const fy = taxByFy(trades, 4, "2026-27");

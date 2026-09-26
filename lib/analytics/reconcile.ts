@@ -272,13 +272,22 @@ export const RECONCILE_CHARGE_SOURCE_IDS = [
 ] as const;
 
 /**
+ * The BOOKS that also state the broker's own figures (v4.6.0 audit: the Nuvama
+ * P&L Report imports its trades AND stores its Summary lines as reference rows
+ * — lib/import/parsers/nuvama-pnl-report.ts). Kept out of RECONCILE_SOURCE_IDS
+ * because that list is commit.ts's book-vs-reference gate, and this file IS the
+ * book; it belongs in the feed list because its figures reach this screen.
+ */
+export const RECONCILE_BOOK_SOURCE_IDS = ["nuvama-pnl-report"] as const;
+
+/**
  * EVERY file that puts a figure on Broker Truth, named from the import
  * registry so the empty state cannot advertise a file the app cannot read
  * (the drift `dropzoneHint()` exists to prevent). The empty state, the help
  * text and the docs all count this ONE list.
  */
 export const RECONCILE_FEEDS: { sourceId: string; label: string }[] =
-  [...RECONCILE_SOURCE_IDS, ...RECONCILE_CHARGE_SOURCE_IDS].map((id) => ({
+  [...RECONCILE_SOURCE_IDS, ...RECONCILE_CHARGE_SOURCE_IDS, ...RECONCILE_BOOK_SOURCE_IDS].map((id) => ({
     sourceId: id,
     label: sourceLabel(id),
   }));

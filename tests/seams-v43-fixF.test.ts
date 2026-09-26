@@ -3414,6 +3414,9 @@ describe("F34 · a basis typed on the /trades acquisition panel (app/trades/acti
       .returning({ id: t.schema.trades.id })
       .get()!.id;
     const untouched = row(saleId)!;
+    // v4.6.0 fix wave (design review A5(b), invariant 8): the action reads the row
+    // in the VIEWING scope, as the /trades panel that posts it does.
+    selectAccount(F34_ACC);
 
     const post = async (acquisitionDate: string) => {
       const fd = new FormData();

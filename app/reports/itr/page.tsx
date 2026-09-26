@@ -9,12 +9,11 @@ import { needsPersonChoice, resolveTaxScope, taxScopeHeader } from "@/lib/querie
 import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { getSettings } from "@/lib/queries/settings";
 import { ProGate } from "@/components/system/pro-gate";
-import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy } from "@/lib/analytics/itr";
+import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy, itrPageInputs } from "@/lib/analytics/itr";
 import { section } from "@/lib/analytics/statute";
 import { itrScheduleByFy, scheduleExportRows, taxesPaidByFy, taxesPaidExportRows } from "@/lib/analytics/itr-schedule";
 import { getChallans } from "@/lib/queries/challans";
 import { aggregateTradesByFy, computeTaxTimeline, MTF_NOT_DEDUCTED_NOTE, type CarryForwardLot } from "@/lib/analytics/capital-gains";
-import { assetClassFor } from "@/lib/analytics/cg-heads";
 import { currentFy as deriveCurrentFy } from "@/lib/analytics/tax";
 import { getBfLossRows, toSeedLots } from "@/lib/queries/bf-losses";
 import { inr } from "@/lib/format";
@@ -87,36 +86,17 @@ export default async function ItrPackPage({
   // no financial year at all, and then whole in the year it closed.
   // lib/analytics/realised-rows.ts owns that rule.
   const realised = getRealisedRows(rawTrades);
-  // The asset class is resolved ONCE, here, and threaded into all three
-  // builders below. Every one of them used to re-derive the head from the
-  // segment, so a gold ETF was a 112A gain on three different tables.
-  const trades = realised.map((t) => ({
-    ...t,
-    assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
-  }));
-  const packs = itrPackByFy(
-    trades.map((t) => ({
-      segment: t.segment, assetClass: t.assetClass, buyDate: t.buyDate, sellDate: t.sellDate,
-      grossPnl: t.grossPnl, netPnl: t.netPnl, sellValue: t.sellValue,
-      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
-      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges, isOpen: t.isOpen,
-    })),
-    fyStartMonth,
-  );
+  // The asset class is resolved ONCE and the per-share FMV scaled to a total
+  // ONCE, inside the pure `itrPageInputs` (lib/analytics/itr.ts), and threaded
+  // into all three builders below — tests/itr-page-fmv.test.ts calls the same
+  // function, so the page and its pin cannot drift apart.
+  const inputs = itrPageInputs(realised);
+  const packs = itrPackByFy(inputs.pack, fyStartMonth);
 
   // Carry-forward comes from the SAME set-off engine the Tax Summary uses, so
   // Schedule CFL cannot drift from the figures on that page.
   const currentFy = packs[packs.length - 1]?.fy ?? "2026-27";
-  const byFy = aggregateTradesByFy(
-    trades.filter((t) => !t.isOpen).map((t) => ({
-      segment: t.segment, assetClass: t.assetClass, buyDate: t.buyDate, sellDate: t.sellDate,
-      buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
-      sttCtt: t.sttCtt, mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
-      fmv31Jan2018: t.fmv31Jan2018,
-    })),
-    fyStartMonth,
-    currentFy,
-  );
+  const byFy = aggregateTradesByFy(inputs.capitalGains, fyStartMonth, currentFy);
   // Pre-journal b/f losses seed here too — same seed AND same SeedGuard as
   // the Tax Summary (a lot whose FY the journal covers is excluded on both
   // surfaces by construction), so Schedule CFL cannot drift from it.
@@ -129,14 +109,7 @@ export default async function ItrPackPage({
   );
 
   const schedules = itrScheduleByFy(
-    trades.map((t) => ({
-      segment: t.segment, assetClass: t.assetClass, buyDate: t.buyDate, sellDate: t.sellDate,
-      buyValue: t.buyValue, sellValue: t.sellValue,
-      grossPnl: t.grossPnl, netPnl: t.netPnl,
-      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
-      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
-      fmv31Jan2018: t.fmv31Jan2018, isOpen: t.isOpen,
-    })),
+    inputs.schedule,
     fyStartMonth,
     currentFy,
     carryForwardByFy,

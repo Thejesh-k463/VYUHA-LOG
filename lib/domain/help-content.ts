@@ -12,6 +12,13 @@
 import { OPTIONS_HELP, searchOptionsHelp, type OptionsHelpEntry } from "@/lib/domain/options-help";
 import { hubForHref, hubTabHref, type Hub } from "@/lib/domain/hubs";
 import { HELP_TASKS } from "@/lib/domain/help-topics";
+import { RECONCILE_FEEDS } from "@/lib/analytics/reconcile";
+
+/** Broker Truth's feeds by their registry names, short form ("Dhan DP Charges (XLS) — …" → "Dhan DP Charges"). */
+function reconcileFileList(): string {
+  const names = RECONCILE_FEEDS.map((f) => f.label.split(/ \(| — /)[0]);
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 /**
  * v4.6.0 W3 — seven screens became TABS of three analytics hubs. Each keeps its
@@ -335,7 +342,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "Your broker's stated figures beside Vyuha's, per segment, per financial year and per scrip, with the difference and what accounts for it. Nothing is averaged or corrected into anything else: the two sides stay two sides, and the delta is shown as it falls.",
       "Every reason is a counted fact from your own book — unpriced sales and what they sold for, charges the file states nothing about, quantity still open against a scrip the broker calls realised, a product the file files elsewhere. A gap with no knowable cause is shown with no cause.",
       "Charges the broker states is its own table: a DP fee per financial year, a contract note’s charges for one trading day, a ledger’s own charge tables. Each line is one broker’s statement against that broker’s own trades, and a fee your book has no column for — or a year that broker sold nothing in — is shown with no Vyuha side and no difference at all.",
-      "Seven files fill it in: a Dhan Realised P&L, a Paytm Money Realized P&L, an Angel One P&L statement, a Dhan demat holding summary, a Dhan DP charges report, a Dhan contract note and an Angel One account statement. Those files import no trades — they are the broker’s numbers, kept beside yours.",
+      // Named and counted from RECONCILE_FEEDS (v4.6.0 audit DA-3: "Seven files" outlived four new feeds).
+      `${RECONCILE_FEEDS.length} files fill it in: ${reconcileFileList()}. The figures they state are the broker’s numbers, kept beside yours — never merged into your trades.`,
     ],
     keywords: ["reconcile", "broker truth", "reconciliation", "realised pnl", "statement", "delta", "holdings", "mismatch", "broker figures"],
   },

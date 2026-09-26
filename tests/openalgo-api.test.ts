@@ -205,6 +205,19 @@ describe("toParsedFile", () => {
     expect(p.warnings.join(" ")).toMatch(/current trading day/i);
   });
 
+  // v4.6.0 audit DA-8: a pull whose every row was REFUSED had executions; the
+  // "no executions for today" line contradicted the refusal lines under it.
+  it.each([
+    ["an unusable row", { refused: 2, refusedByExchange: {}, refusedMcxNoQuantity: 0 }, "all 2 rows were refused"],
+    ["an unpriceable exchange", { refused: 0, refusedByExchange: { NCDEX: 1 }, refusedMcxNoQuantity: 0 }, "its one row was refused"],
+    ["an MCX row with no quantity", { refused: 0, refusedByExchange: {}, refusedMcxNoQuantity: 3 }, "all 3 rows were refused"],
+  ])("refused-all (%s) is not 'no executions for today'", (_label, counts, said) => {
+    const p = toParsedFile("zerodha", { trades: [], repaired: 0, notes: [], ...counts });
+    const text = p.warnings.join("\n");
+    expect(text).not.toMatch(/no executions for today/);
+    expect(text).toContain(`OpenAlgo returned executions for today, but ${said}`);
+  });
+
   it("surfaces repairs and refusals as warnings the user must read", () => {
     const p = toParsedFile("dhan", {
       trades: normalizeOpenAlgoTrades([row({})], "dhan", DATE).trades,

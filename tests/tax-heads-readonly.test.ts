@@ -106,7 +106,7 @@ describe("(b) the add-backs are arithmetic, never a write", () => {
     );
     const sched = schedule.itrScheduleByFy(
       base.cgTrades.map((r) => ({
-        segment: r.segment, assetClass: r.assetClass, buyDate: r.buyDate, sellDate: r.sellDate,
+        segment: r.segment, assetClass: r.assetClass, buyDate: r.buyDate, sellDate: r.sellDate, fyDate: r.fyDate,
         buyValue: r.buyValue, sellValue: r.sellValue, grossPnl: 0, netPnl: r.netPnl,
         chargesTotal: 0, sttCtt: r.sttCtt ?? 0, mtfInterest: r.mtfInterest, pledgeCharges: r.pledgeCharges,
         isOpen: false,

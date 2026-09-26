@@ -600,8 +600,27 @@ export async function setAcquisitionAction(_prev: ActionState, formData: FormDat
     return { ok: false, message: "Pick how these shares were acquired." };
   }
 
+  // Invariant 8 (fix wave, design review A5(b)) — the row is read in the
+  // VIEWING scope, as the IPO push below reads its holding: a stale tab cannot
+  // write a basis into a book the user is not in.
+  const viewing = getSelectedAccountId();
   const row = db.select().from(trades).where(eq(trades.id, id)).get();
-  if (!row) return { ok: false, message: "Trade not found." };
+  if (!row || (viewing > 0 && row.accountId !== viewing)) return { ok: false, message: "Trade not found." };
+
+  // Invariant 5 (fix wave, SEAM-V46-3; LEDGER D-14 "recorded, not built") — a
+  // basis write rewrites the parent's buyQty / buyValue / buyDate / side with no
+  // knowledge of legs, so on a STAGED row the parent would stop being the sum of
+  // its ladder: the AIS purchase side stated the typed basis while the realised
+  // rows stated the ladder's. Refused exactly as the IPO push refuses it
+  // (`hasLadder`, the ONE leg-count predicate), before anything is written.
+  if (hasLadder(row, id)) {
+    return {
+      ok: false,
+      code: "STAGED",
+      message:
+        "This is a staged position built from more than one fill, so its cost basis is not set here: a basis would rewrite the parent row and leave the ladder unsummed. Add the purchase as an entry leg on the ladder in Trades instead. Nothing was changed.",
+    };
+  }
 
   const rawPrice = formData.get("acquisitionPrice");
   const hasPrice = rawPrice != null && String(rawPrice).trim() !== "";

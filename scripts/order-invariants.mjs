@@ -65,9 +65,11 @@ const { getArjunTrades, getHarvestTrades } = await import("../lib/queries/trades
 const { getTradesPage } = await import("../lib/queries/trades-page.ts");
 const { TRADES_PAGE_SIZE, EMPTY_TRADE_FILTERS } = await import("../lib/domain/trades-filter.ts");
 const { getTaxBase } = await import("../lib/queries/tax-itr.ts");
-const { taxByFy, currentFy: deriveCurrentFy } = await import("../lib/analytics/tax.ts");
+const { taxByFy, currentFy: deriveCurrentFy, closedOnOrAfter, fyDateOf } = await import("../lib/analytics/tax.ts");
+const { assetClassFor } = await import("../lib/analytics/cg-heads.ts");
+const { getRealisedRows } = await import("../lib/queries/realised-rows.ts");
 const { holdingClock } = await import("../lib/analytics/exit-behaviour.ts");
-const { classifyGain } = await import("../lib/analytics/capital-gains.ts");
+const { classifyGain, fmvTotalOf } = await import("../lib/analytics/capital-gains.ts");
 const { fyWindowFor } = await import("../lib/analytics/harvest.ts");
 const { getSettings } = await import("../lib/queries/settings.ts");
 const { todayIstIso } = await import("../lib/domain/trading-day.ts");
@@ -94,9 +96,12 @@ function snapshotForSelectedAccount() {
   const fyStartMonth = settings?.fyStartMonth ?? 4;
 
   // /reports/tax — the exact call the page makes.
-  const { trades: taxTrades, ipoTaxRows } = getTaxBase();
-  const tax = taxByFy([...taxTrades, ...ipoTaxRows], fyStartMonth, deriveCurrentFy(fyStartMonth))
-    .map((r) => ({ ...r, stcg: r2(r.stcg), ltcg: r2(r.ltcg), intradaySpeculative: r2(r.intradaySpeculative), fnoBusiness: r2(r.fnoBusiness), fnoTurnover: r2(r.fnoTurnover), charges: r2(r.charges), totalRealised: r2(r.totalRealised) }))
+  // v4.6.0 fix wave: `taxRows` (the realised, classified rows the page feeds
+  // taxByFy since v4.5.0), not the raw `trades` projection; and the five heads
+  // taxByFy has returned since v4.5.0 (`stcg` / `ltcg` no longer exist).
+  const { taxRows, ipoTaxRows } = getTaxBase();
+  const tax = taxByFy([...taxRows, ...ipoTaxRows], fyStartMonth, deriveCurrentFy(fyStartMonth))
+    .map((r) => ({ ...r, stcg111A: r2(r.stcg111A), stcgOther: r2(r.stcgOther), ltcg112A: r2(r.ltcg112A), ltcg112: r2(r.ltcg112), cgUndetermined: r2(r.cgUndetermined), intradaySpeculative: r2(r.intradaySpeculative), fnoBusiness: r2(r.fnoBusiness), fnoTurnover: r2(r.fnoTurnover), charges: r2(r.charges), totalRealised: r2(r.totalRealised) }))
     .sort((a, b) => a.fy.localeCompare(b.fy));
 
   // /reports/harvest — the open-lot list in rendered order, plus both realised sums.
@@ -111,15 +116,20 @@ function snapshotForSelectedAccount() {
   const { fyStart } = fyWindowFor(today, fyStartMonth);
   let realisedStcg = 0;
   let realisedLtcg = 0;
-  for (const t of harvest) {
-    if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
+  // v4.6.0 fix wave: the page's realised book (one row per fill of a staged
+  // ladder), windowed by the CLOSING leg (`closedOnOrAfter`), classified by
+  // asset class and summed on the five heads — the page's own rules.
+  for (const t of getRealisedRows(harvest)) {
+    if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !closedOnOrAfter(t, fyStart)) continue;
     const g = classifyGain({
-      segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+      segment: t.segment, assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
+      sttCtt: t.sttCtt, mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
+      buyDate: t.buyDate, sellDate: t.sellDate, fyDate: fyDateOf(t),
       buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
-      fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
+      fmv31Jan2018: fmvTotalOf(t),
     });
-    if (g?.bucket === "ltcg") realisedLtcg += g.taxableGain;
-    else if (g?.bucket === "stcg") realisedStcg += g.taxableGain;
+    if (g?.bucket === "ltcg112A" || g?.bucket === "ltcg112") realisedLtcg += g.taxableGain;
+    else if (g?.bucket === "stcg111A" || g?.bucket === "stcgOther") realisedStcg += g.taxableGain;
   }
 
   // /arjuns-eye — the holding clock, and the first 15 symbols it measures, in

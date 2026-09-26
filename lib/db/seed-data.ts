@@ -870,9 +870,14 @@ const PAID_PLANS: Partial<Record<Broker, PaidPlan[]>> = {
    * floor is a constant: an order under ₹1,000 (where 2.5% < ₹25) is
    * OVER-estimated. Intraday and futures 0.03%, no cap stated. Options ₹75 PER
    * LOT, seeded as ₹75 per ORDER (no per-lot column — a multi-lot order is
-   * under-estimated). Commodity, MTF brokerage and MTF interest are not stated
-   * for Elite and fall through to Lite Plus. DP on a sell is the higher of
-   * 0.02% and ₹20 ("within Nuvama").
+   * under-estimated). MTF brokerage is NOT stated for Elite — it follows Elite's
+   * own DELIVERY rate (0.30%, ₹25 floor), the recorded rule for an unstated MTF
+   * brokerage (Fyers Prime above, the Kotak Neo precedent; owner answer MO-1,
+   * v4.6.0 fix wave — this comment once called the Lite Plus fallback, min(₹20,
+   * 2%), deliberate, which contradicted that rule: a ₹5,00,000 MTF buy billed
+   * ₹20 instead of ₹1,500). Commodity and MTF interest are not stated for Elite
+   * and fall through to Lite Plus. DP on a sell is the higher of 0.02% and ₹20
+   * ("within Nuvama").
    */
   nuvama: [
     {
@@ -881,6 +886,7 @@ const PAID_PLANS: Partial<Record<Broker, PaidPlan[]>> = {
       monthly: 0,
       brokerage: {
         eq_delivery: { flat: null, pct: 0.003, cap: null, floor: 25 }, // 0.30%, min ₹25
+        eq_mtf: { flat: null, pct: 0.003, cap: null, floor: 25 }, // not stated: Elite's delivery rate (MO-1)
         eq_intraday: { flat: null, pct: 0.0003, cap: null, floor: 0 }, // 0.03%
         future: { flat: null, pct: 0.0003, cap: null, floor: 0 }, // 0.03%
         index_option: { flat: 75, pct: 0, cap: null, floor: 0 }, // ₹75 per lot, seeded per order

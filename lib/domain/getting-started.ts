@@ -5,7 +5,8 @@
 //
 //   account   an account exists                      (accounts, global)
 //   trades    the selected book holds a trade         (trades, scoped — invariant 8)
-//   plan      the selected account states its plan   (accounts.broker_plan)
+//   plan      no account in scope is flagged by getAccountsWithoutPlan()
+//             (Data Quality's list — the default plan is stored as NULL)
 //   stop      a trade in the book records its stop   (trades.sl_planned, scoped)
 //   backup    a backup was downloaded ON THIS MACHINE (a localStorage marker —
 //             the database records no backup anywhere, so this is the one step

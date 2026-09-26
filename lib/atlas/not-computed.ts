@@ -43,7 +43,7 @@ export const NOT_COMPUTED: readonly NotComputedFamily[] = [
     family: "Opening gaps and opening-range statistics",
     why: "needs an intraday feed",
     status: "later",
-    note: "The open and the first minutes are in the file, but ranges through the day are not.",
+    note: "A bhavcopy carries each day's open, high, low and close, but no minutes, so the opening range cannot be measured from it.",
   },
   {
     family: "Institutional buying and selling (foreign and domestic)",

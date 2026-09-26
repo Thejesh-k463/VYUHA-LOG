@@ -12,7 +12,8 @@
  *
  * Copy rules for anything user-facing (same as the HTML guide): no outcome
  * claims, no "guarantee", never the word "ret*rns" outside the verbatim
- * troubleshooting row, no version strings, and nothing about invite-only
+ * troubleshooting row, no Vyuha version strings (OpenAlgo's minimum version,
+ * 2.0.2.6, is a fact the guide must state — the HTML twin's #version section), and nothing about invite-only
  * chart tooling — tests/no-indicators-in-client-docs.test.ts walks this
  * folder (it skips the .docx binary, but the generator source is greppable).
  */
@@ -38,6 +39,7 @@ const CONTENT = [
   { t: "li", x: [{ b: "Your broker credentials go into OpenAlgo, not Vyuha." }, " Vyuha stores only the OpenAlgo API key and the address of your instance — both revocable from OpenAlgo's own screen without touching your broker account."] },
   { t: "li", x: [{ b: "The risk is real but small, and you should understand it:" }, " you are running one more program that holds a broker credential. The data itself only ever flows from your broker to your machine — OpenAlgo is a medium in between, not a service in the cloud. Keep it on 127.0.0.1 (Vyuha warns you before saving any non-local address, because at that moment your trade data would leave your computer)."] },
   { t: "li", x: [{ b: "Vyuha's pull is read-only" }, ": it calls one endpoint (/api/v1/tradebook), imports through the same preview → charges → duplicate-check pipeline as every file, and computes charges from your rate card — it never places, modifies or cancels an order."] },
+  { t: "li", x: [{ b: "Vyuha needs OpenAlgo 2.0.2.6 or later" }, " and refuses to pull from anything older, for every broker — see “OpenAlgo version and upgrading” in section 2."] },
   { t: "li", x: ["Because of all of the above, the integration is ", { b: "off by default" }, ". You switch it on yourself in Settings → Integrations (advanced), after an in-app disclosure that states exactly this list. Your acceptance is recorded in the Audit Log."] },
 
   { t: "h1", x: "2 · Install OpenAlgo on Windows" },
@@ -53,9 +55,14 @@ const CONTENT = [
   { t: "step", x: ["Start it: ", { c: "uv run app.py" }, " — the first run takes several minutes while uv downloads and builds the whole environment. Later starts are quick."] },
   { t: "step", x: ["Open the dashboard at ", { c: "http://127.0.0.1:5000" }, ", create your OpenAlgo login, and complete the broker login (client id / PIN / TOTP as your broker requires). The dashboard should show your broker's name and ", { b: "Live Mode" }, "."] },
   { t: "step", x: ["Sanity-check before touching Vyuha: open OpenAlgo's own ", { b: "Tradebook" }, " page on a day you traded — your fills should be there. If they are not, Vyuha cannot see them either; fix the OpenAlgo side first."] },
-  { t: "h2", x: "Updating OpenAlgo later" },
-  { t: "li", x: ["Run ", { c: "install\\update.bat" }, " from the OpenAlgo folder."] },
-  { t: "li", x: ["Some upgrades also need a database migration: ", { c: "cd upgrade" }, " then ", { c: "uv run migrate_all.py" }] },
+  // v4.6.0 audit DC-4: the minimum-version section of the HTML guide (#version), same facts.
+  { t: "h2", x: "OpenAlgo version and upgrading" },
+  { t: "p", x: [{ b: "Vyuha needs OpenAlgo 2.0.2.6 or later" }, " (released 2026-09-22). Before every pull it reads the running version from ", { c: "/auth/app-info" }, " — the check OpenAlgo's own upgrade procedure tells you to make — and refuses to pull from an older release, whichever broker sits behind it. Why that release: before 2.0.2.4 the Groww plugin reported every fill above ₹100 at one hundredth of its price; before 2.0.2.6 the Zerodha plugin reported MCX quantity in contracts rather than units; and 2.0.0.6, 2.0.1.8 and 2.0.2.2 fixed security holes. A release older than 2.0.0.0 has no ", { c: "/auth/app-info" }, " and is refused as older. The Live Desk keeps pricing from an old instance but says, beside “Feed OK”, that pulls are refused."] },
+  { t: "step", x: [{ b: "Stop OpenAlgo and back up its folder" }, " — at least the ", { c: "db" }, " folder and ", { c: ".env" }, "."] },
+  { t: "step", x: [{ b: "Update:" }, " run ", { c: "install\\update.bat" }, " from the OpenAlgo folder — or by hand: ", { c: "git pull" }, ", ", { c: "uv sync" }, ", ", { c: "uv run upgrade/migrate_all.py" }, ". (2.0.2.6 needs its database migration.)"] },
+  { t: "step", x: [{ b: "Never copy .sample.env over an existing .env" }, " — that wipes your broker keys. If a release adds settings, copy just those lines across."] },
+  { t: "step", x: [{ b: "Check it:" }, " start OpenAlgo and open ", { c: "http://127.0.0.1:<port>/auth/app-info" }, " — it should say ", { c: "\"version\": \"2.0.2.6\"" }, " or later. Log into your broker, then Preview pull in Vyuha."] },
+  { t: "p", x: [{ b: "Tested against:" }, " Vyuha's OpenAlgo checks were built against OpenAlgo 2.0.2.6's own source and documented responses (25 Sep 2026). The last live pulls through OpenAlgo used its Dhan and Upstox plugins (Aug 2026); a live pull on 2.0.2.6 has not been checked yet."] },
   { t: "note", x: ["Full official documentation for every step: docs.openalgo.in → Getting Started / Connect Brokers."] },
 
   { t: "h1", x: "3 · The .env file, decoded" },
@@ -139,12 +146,13 @@ const CONTENT = [
   { t: "table", header: ["Symptom", "Cause and fix"], rows: [
     ["\"Cannot reach OpenAlgo at …\"", "The instance is not running, or the port in Vyuha's Host field is not the port in the instance's .env. Check the OpenAlgo console banner — it prints its real address."],
     ["\"wrong API key?\" on save", "The key is the OTHER instance's, or was regenerated. Copy it again from that instance's API Key page."],
+    ["\"Your OpenAlgo is …, older than 2.0.2.6\"", "Upgrade it (OpenAlgo version and upgrading, section 2). Nothing was pulled, so nothing needs undoing."],
     ["A pull returns no fills on a trading day", "Log into the OpenAlgo web UI first — broker sessions expire daily and the tradebook is empty until the day's login."],
     ["A row is REFUSED with \"suspect symbol\"", "OpenAlgo's broker plugin mislabelled a contract (it has happened: a stock option arrived named as a silver option). Vyuha refuses to book a trade under a corrupt identity — import that one trade from the broker's own file or API instead."],
     ["A warning says a quantity was \"recovered from trade value\"", "Some OpenAlgo broker plugins report quantity 0 on real fills. Vyuha recovers the size from value ÷ price, tells you, and refuses any row it cannot recover. Check those against your contract note once."],
   ] },
 
-  { t: "p", x: "Vyuha — trade journal & analytics · record-keeping, not investment advice · OpenAlgo setup guide · As of Aug 2026" },
+  { t: "p", x: "Vyuha — trade journal & analytics · record-keeping, not investment advice · OpenAlgo setup guide · As of Sep 2026 (OpenAlgo 2.0.2.6)" },
 ];
 
 // ── render ─────

@@ -31,8 +31,10 @@ import {
   turnoverContribution,
 } from "./turnover";
 import { section, STATUTE_CUTOVER_FY } from "./statute";
-import { bucketFor, resolveCgHead, type CgAssetClass } from "./cg-heads";
-import { currentFy } from "./tax";
+import { assetClassFor, bucketFor, resolveCgHead, type CgAssetClass } from "./cg-heads";
+import { currentFy, fyDateOf } from "./tax";
+import { fmvTotalOf, type CapitalGainsTrade } from "./capital-gains";
+import type { ItrScheduleTrade } from "./itr-schedule";
 
 export { TURNOVER_BASIS, BROKER_TURNOVER_BASIS };
 
@@ -42,6 +44,9 @@ export interface ItrTrade {
   assetClass: CgAssetClass;
   buyDate: string | null;
   sellDate: string | null;
+  /** The date that files this row in an FY — REQUIRED, never defaulted: `fyDateOf(t)`
+   *  (lib/analytics/tax.ts), the CLOSING leg's day. See `TaxTrade.fyDate`. */
+  fyDate: string | null;
   grossPnl: number;
   netPnl: number;
   /** Sell-side consideration — the option premium half of turnover. Required. */
@@ -186,7 +191,7 @@ export function itrPackByFy(
     // WHICH rows reach here is decided in lib/analytics/realised-rows.ts (a
     // staged ladder arrives as one row per fill, each already `isOpen: false`).
     if (t.isOpen) continue;
-    const fy = fyOf(t.sellDate ?? t.buyDate, fyStartMonth, fallbackFy);
+    const fy = fyOf(t.fyDate, fyStartMonth, fallbackFy);
     const b = map.get(fy) ?? {
       spec: emptyHead(),
       fno: emptyHead(),
@@ -236,4 +241,74 @@ export function itrPackByFy(
       };
     })
     .sort((a, b) => a.fy.localeCompare(b.fy));
+}
+
+/** The slice of a REALISED row (lib/analytics/realised-rows.ts) the ITR pack's
+ *  three builders read. Structural — a `Trade` satisfies it. */
+export interface ItrPageRow {
+  segment: string;
+  isin: string | null;
+  symbol: string;
+  buyDate: string | null;
+  sellDate: string | null;
+  buyQty: number;
+  sellQty: number;
+  /** Which side opened a flat row (`sideOf`) — decides the CLOSING leg's day. */
+  side: string | null;
+  importNotes: string | null;
+  buyValue: number;
+  sellValue: number;
+  grossPnl: number;
+  netPnl: number;
+  chargesTotal: number;
+  sttCtt: number;
+  mtfInterest: number;
+  pledgeCharges: number;
+  /** PER SHARE, as stored — converted to a total by `fmvTotalOf`, once. */
+  fmv31Jan2018: number | null;
+  isOpen: boolean;
+}
+
+/**
+ * THE mapping /reports/itr hands its three builders (the head-wise pack, the
+ * set-off engine and the schedule), lifted out of the page so a test calls the
+ * page's own code rather than a re-typed copy of it. The asset class is
+ * resolved ONCE per row and threaded into all three; the FMV is scaled to a
+ * total ONCE, through `fmvTotalOf` — the page passed the per-share figure raw
+ * until the v4.6.0 fix wave (MO-3), so a grandfathered lot's LTCG on this page
+ * disagreed with /reports/tax by the whole FMV uplift.
+ */
+export function itrPageInputs(realised: readonly ItrPageRow[]): {
+  pack: ItrTrade[];
+  capitalGains: CapitalGainsTrade[];
+  schedule: ItrScheduleTrade[];
+} {
+  const rows = realised.map((t) => ({
+    t,
+    assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
+    fmv: fmvTotalOf(t),
+    fyDate: fyDateOf(t),
+  }));
+  return {
+    pack: rows.map(({ t, assetClass, fyDate }) => ({
+      segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
+      grossPnl: t.grossPnl, netPnl: t.netPnl, sellValue: t.sellValue,
+      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
+      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges, isOpen: t.isOpen,
+    })),
+    capitalGains: rows.filter(({ t }) => !t.isOpen).map(({ t, assetClass, fmv, fyDate }) => ({
+      segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
+      buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
+      sttCtt: t.sttCtt, mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
+      fmv31Jan2018: fmv,
+    })),
+    schedule: rows.map(({ t, assetClass, fmv, fyDate }) => ({
+      segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
+      buyValue: t.buyValue, sellValue: t.sellValue,
+      grossPnl: t.grossPnl, netPnl: t.netPnl,
+      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
+      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
+      fmv31Jan2018: fmv, isOpen: t.isOpen,
+    })),
+  };
 }

@@ -2,7 +2,8 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { atlasDaily, atlasMetric, atlasStaleness, priceHistory, settings } from "@/lib/db/schema";
+import { atlasDaily, atlasMetric, atlasStaleness, instruments, priceHistory, settings } from "@/lib/db/schema";
+import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
 import {
   alignToAnchor,
   buildGapMap,
@@ -499,19 +500,35 @@ export function classificationOfFn(): (symbol: string) => ClassificationRef | nu
 }
 
 /**
- * AMFI's band per SYMBOL (ruling U2), through the ISIN → symbol join the
- * instruments table provides — a ticker is not an identity. Null when unbanded
- * (Emerge, a post-period listing, an ETF) or when no instrument list exists.
+ * AMFI's band per SYMBOL (ruling U2). A ticker is not an identity, so the
+ * symbol is resolved to ONE ISIN first and the band is read off that ISIN:
+ *
+ *   1. the user's instruments row for the symbol, when it states an ISIN (the
+ *      user wins — the sector chain's rule);
+ *   2. else the bundled listing's owner of the ticker (`bundledIsinBySymbol`:
+ *      NSE > Emerge > BSE, the ranking lib/analytics/instruments.ts uses).
+ *
+ * v4.6.0 fix wave (audit OBS, design review A8): this used to walk EVERY banded
+ * ISIN back to a symbol through the instruments table alone, so a fresh install
+ * (0 instrument rows) had sectors but no cap band at all. Resolving per symbol —
+ * never ISIN → symbol over the whole band list — also keeps a BSE-only company
+ * that shares a ticker (SEL, MAL…) from lending the NSE owner its band.
+ * Null when the resolved ISIN is unbanded (Emerge, a post-period listing, an ETF).
  */
 export function capBandOfFn(): (symbol: string) => string | null {
   const bands = getCapBandMap();
-  const symbolByIsin = getSymbolsByIsin([...bands.keys()]);
-  const bandOf = new Map<string, string>();
-  for (const [isin, info] of bands) {
-    const symbol = symbolByIsin.get(isin);
-    if (symbol) bandOf.set(symbol.toUpperCase(), info.band);
+  const userIsin = new Map<string, string>();
+  for (const r of db.select({ symbol: instruments.symbol, isin: instruments.isin }).from(instruments).all()) {
+    const symbol = String(r.symbol ?? "").trim().toUpperCase();
+    const isin = String(r.isin ?? "").trim().toUpperCase();
+    if (symbol && isin && !userIsin.has(symbol)) userIsin.set(symbol, isin);
   }
-  return (symbol) => bandOf.get(symbol.toUpperCase()) ?? null;
+  return (symbol) => {
+    const key = String(symbol ?? "").trim().toUpperCase();
+    if (!key) return null;
+    const isin = userIsin.get(key) ?? bundledIsinBySymbol(key);
+    return isin ? bands.get(isin)?.band ?? null : null;
+  };
 }
 
 // ---------------------------------------------------------------------------

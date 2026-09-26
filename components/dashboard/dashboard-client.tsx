@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
+import { brokersWithNativeParser } from "@/lib/import/registry-meta";
 import { EquityCurve, SegmentBars } from "./charts";
 import { CalendarHeatmap } from "./calendar-heatmap";
 import { Section, SectionStack } from "@/components/layout/section-stack";
@@ -227,7 +228,7 @@ export function DashboardClient({
         <EmptyState
           variant="chart"
           title="Nothing journalled yet"
-          hint="Import a broker file and this screen comes alive — P&L, expectancy, the equity curve, the daily calendar. Eight brokers auto-detect; any other broker's CSV imports by mapping its columns once."
+          hint={`Import a broker file and this screen comes alive — P&L, expectancy, the equity curve, the daily calendar. ${brokersWithNativeParser().length} brokers auto-detect; any other broker's CSV imports by mapping its columns once.`}
           action={
             <Button asChild size="sm">
               <Link href="/import">Import a broker file</Link>

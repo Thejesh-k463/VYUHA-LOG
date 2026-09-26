@@ -8,6 +8,7 @@ import { trashedTradeIds } from "@/lib/trash";
 import {
   assessDataQuality,
   planPricingNotice,
+  scoreIssues,
   saleJournalFields,
   staleFillsNote,
   staleJournalNote,
@@ -24,6 +25,8 @@ import { collectIdChunks } from "./delete";
 import { taxPersonKey } from "@/lib/domain/tax-person";
 import { BROKER_LABELS } from "@/lib/domain/constants";
 import { todayIstIso } from "@/lib/domain/trading-day";
+import { ladderMismatch } from "@/lib/analytics/realised-rows";
+import { getStagedViews, toDomainLegs } from "./staged";
 
 /**
  * THE ONE PREDICATE FOR "this account is priced on a plan it never stated"
@@ -276,5 +279,43 @@ export function getDataQualityReport(now = new Date()) {
   const duplicateBfLots = [...lotGroups.values()]
     .filter((g) => g.accounts.size > 1)
     .map((g) => ({ person: g.person, fy: g.fy, head: g.head, accounts: [...g.accounts].sort((a, b) => a - b).map((id) => nameOf.get(id) ?? `#${id}`) }));
-  return assessDataQuality({ today: todayIstIso(), trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords(), accountsWithoutPlan, duplicateBfLots });
+  const report = assessDataQuality({ today: todayIstIso(), trades: all, markedTradeIds, knownSymbols, ipoLinkedTradeIds, staleMtmCount, missingAttachmentFiles, unlinkedIpoRecords: getUnlinkedExitedIpoRecords(), accountsWithoutPlan, duplicateBfLots });
+  // v4.6.0 fix wave (MO-4) — STAGED rows whose legs do not state their parent
+  // (invariant 5), judged by the ONE predicate `ladderMismatch` (the L-36 guard
+  // purchaseRows splits on, plus the sale side). A Paytm or Groww book imported
+  // before 4.6.0 carries ladders the date-window filter over-counted (PARAS:
+  // parent 2,000, ladder 3,001 bought). Re-importing the same file is SKIPPED as
+  // a duplicate (dedup hashes the parent, which did not change), so the remedy is
+  // named, never applied: delete the row, then re-import the file. The same
+  // scope as every other issue here (`getTrades()`, invariant 8).
+  const mismatched = ladderMismatchIds(all);
+  if (mismatched.length === 0) return report;
+  const issues = [
+    ...report.issues,
+    {
+      code: "ladder_mismatch",
+      severity: "warning" as const,
+      title: "Staged positions whose fills do not add up to the position",
+      detail:
+        "These positions carry an execution ladder whose entries or exits do not sum to the position itself — an import from before v4.6.0 handed a fill split across two positions to both. The position's own quantities, values and P&L are right; its ladder, its fills list and the per-fill tax rows are not. Delete the position, then re-import the same file: this version writes a ladder that sums to it.",
+      count: mismatched.length,
+      href: "/trades",
+      ids: mismatched.slice(0, 100),
+    },
+  ];
+  return { ...report, issues, score: scoreIssues(issues), affected: new Set(issues.flatMap((x) => x.ids ?? [])).size };
+}
+
+/** Ids of the staged rows (in the caller's scope) whose ladder does not state the parent. */
+export function ladderMismatchIds(rows: readonly { id: number; staged: boolean | null; buyQty: number; sellQty: number; buyValue: number; buyDate: string | null }[]): number[] {
+  const staged = rows.filter((t) => t.staged);
+  if (staged.length === 0) return [];
+  const views = getStagedViews(staged.map((t) => t.id));
+  const out: number[] = [];
+  for (const t of staged) {
+    const view = views.get(t.id);
+    if (!view || view.legs.length === 0) continue;
+    if (ladderMismatch({ ...t, isOpen: false }, toDomainLegs(view.legs), view.position.direction) != null) out.push(t.id);
+  }
+  return out;
 }

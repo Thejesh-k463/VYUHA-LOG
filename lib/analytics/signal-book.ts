@@ -43,6 +43,12 @@ export interface SignalTradeRow {
   sellDate: string | null;
   isOpen: boolean;
   netPnl: number;
+  /** v4.6.0 fix wave (SEAM-V46-1) — REQUIRED: which side opened a FLAT row, and
+   *  the note a pre-W6 intraday short carries (a restored pre-W6 Trash row keeps
+   *  it). Without them a same-day covered short read LONG and was judged as a
+   *  long's exit. */
+  side: string | null;
+  importNotes: string | null;
   signal: TradeSignal;
 }
 
@@ -105,7 +111,7 @@ const r4 = (x: number) => Math.round(x * 10000) / 10000;
  * (`normalizeDate`, D4/wave 2P).
  */
 function signalSide(t: SignalTradeRow): "long" | "short" {
-  return sideOf({ buyQty: t.buyQty, sellQty: t.sellQty, buyDate: normalizeDate(t.buyDate), sellDate: normalizeDate(t.sellDate) });
+  return sideOf({ buyQty: t.buyQty, sellQty: t.sellQty, buyDate: normalizeDate(t.buyDate), sellDate: normalizeDate(t.sellDate), side: t.side, importNotes: t.importNotes });
 }
 
 /** Closed rows only — an open position has no exit to judge. */

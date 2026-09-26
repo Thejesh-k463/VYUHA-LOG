@@ -20,6 +20,7 @@
 // dishonesty the product positions against).
 
 import { formatInr, priceLabel, skuById } from "./pricing";
+import { brokersWithNativeParser } from "@/lib/import/registry-meta";
 
 /** The date every competitor cell was last read from its source. */
 export const COMPARISON_AS_OF = "2026-08-15";
@@ -128,7 +129,10 @@ export const VYUHA_ROW = {
   model: `Monthly ${MONTHLY} first month then ${MONTHLY_THEN}/mo · Annual ${ANNUAL} · Lifetime ${LIFETIME} once`,
   cheapestPaid: `${MONTHLY} first month (then ${MONTHLY_THEN}/mo) · ${ANNUAL} — or ${LIFETIME} ever`,
   dataLocation: "Your own PC with Vyuha Desktop; a web platform is in development",
-  indianBrokers: "6 auto-detected parsers + column mapper + 4 broker-API pulls",
+  // The broker count is the import registry's (v4.6.0 audit DC-1: it read "6"
+  // while the registry held 8). The API-pull count is pinned against the pull
+  // route by tests/positioning-copy.test.ts, which the registry cannot state.
+  indianBrokers: `${brokersWithNativeParser().length} brokers auto-detected + column mapper + 4 broker-API pulls`,
   chargesEngine: "Computes STT/CTT, stamp duty, GST, exchange & SEBI charges from configurable rates",
   limits: "Core journal never gated — no trade or account caps",
 } as const;

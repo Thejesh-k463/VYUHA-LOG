@@ -27,6 +27,8 @@ export interface SeedReport {
   /** Non-edited epochs removed because a user-edited window of the same key covers their start (v4.3.0 R54). */
   chargeRemoved: number;
   riskAdded: number;
+  /** margin_config rows this build ships that the table lacked (INSERT OR IGNORE). */
+  marginAdded: number;
 }
 
 /**
@@ -50,6 +52,7 @@ function seedAll(log: boolean): SeedReport {
     chargeRefreshed: 0,
     chargeRemoved: 0,
     riskAdded: 0,
+    marginAdded: 0,
   };
   const say = (m: string) => log && console.log(m);
 
@@ -107,42 +110,8 @@ function seedAll(log: boolean): SeedReport {
   report.riskAdded = seedRiskConfig();
   say(`✓ risk_config: ${report.riskAdded} added`);
 
-  // Margin-rate approximations (% of notional) for the /risk margin gauge and
-  // the MTF own-capital auto-estimate — editable in Settings; ballparks, not
-  // statutory. Broker-specific because real leverage varies: eq_mtf own-margin
-  // % below matches each broker's OWN advertised leverage (Dhan "4X leverage"
-  // — dhan.co/margin-trading-facility; Zerodha "up to 5x" —
-  // zerodha.com/calculators/mtf-calculator; Groww "up to 4x" —
-  // groww.in/blog/mtf-interest-rates). Other segments share one ballpark across
-  // brokers for now (no strong per-broker research yet) but the schema
-  // supports differentiating any of them later via the same editor.
-  const EQ_MTF_OWN_MARGIN_BY_BROKER: Record<string, number> = {
-    dhan: 25, zerodha: 20, groww: 25, angelone: 25, upstox: 25,
-    // kotakneo.com/pricing "up to 4X", paytmmoney 4x, sahi 4x — same ballpark,
-    // and without a row these three fell back to the global default silently.
-    kotakneo: 25, paytm: 25, sahi: 25,
-    // v4.6.0 W9: Fyers and Nuvama take the same 25 the other three use —
-    // neither is researched per broker yet, and a missing row falls back silently.
-    fyers: 25, nuvama: 25,
-  };
-  const SEGMENT_MARGIN_DEFAULTS = [
-    { segment: "eq_delivery", marginPct: 100, note: "full value deployed" },
-    { segment: "eq_intraday", marginPct: 20, note: "5x intraday leverage" },
-    { segment: "index_option", marginPct: 12, note: "short-option SPAN approx" },
-    { segment: "stock_option", marginPct: 20, note: "short-option SPAN approx" },
-    { segment: "future", marginPct: 15, note: "SPAN+exposure approx" },
-    { segment: "commodity_future", marginPct: 10, note: "SPAN+exposure approx" },
-    { segment: "commodity_option", marginPct: 12, note: "short-option SPAN approx" },
-  ] as const;
-  const marginRows: { broker: string; segment: string; marginPct: number; note: string }[] = [];
-  for (const broker of Object.keys(EQ_MTF_OWN_MARGIN_BY_BROKER)) {
-    marginRows.push({ broker, segment: "eq_mtf", marginPct: EQ_MTF_OWN_MARGIN_BY_BROKER[broker], note: `${broker}'s advertised MTF leverage` });
-    for (const row of SEGMENT_MARGIN_DEFAULTS) marginRows.push({ broker, ...row });
-  }
-  for (const row of marginRows) {
-    db.insert(marginConfig).values(row).onConflictDoNothing().run();
-  }
-  say("✓ margin_config seeded (broker-specific)");
+  report.marginAdded = refreshMarginConfig();
+  say(`✓ margin_config: ${report.marginAdded} added (broker-specific; existing rows untouched)`);
 
   const rulePacks = [
     { code: "sebi-equity-derivatives", category: "regulatory", version: "2025.09", effectiveFrom: "2025-09-01", title: "SEBI equity-index derivatives monitoring", sourceTitle: "SEBI — Framework for Intraday Position Limits Monitoring", sourceUrl: "https://www.sebi.gov.in/legal/circulars/sep-2025/framework-for-intraday-position-limits-monitoring-for-equity-index-derivatives_97031.html", payload: { weeklyExpiryIndex: { NSE: "NIFTY", BSE: "SENSEX" }, monthlyOnlyIndexes: ["BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"], netIndexLimit: 15000000000, grossIndexLimit: 100000000000, expiryDayElmPct: 2, limitMetric: "future_equivalent" } },
@@ -166,6 +135,72 @@ export interface ChargeRefreshReport {
  * connection (`db.transaction((tx) => …)`), so the pass joins that transaction.
  */
 type ChargeConn = Pick<typeof db, "select" | "insert" | "update" | "run">;
+
+// Margin-rate approximations (% of notional) for the /risk margin gauge and
+// the MTF own-capital auto-estimate — editable in Settings; ballparks, not
+// statutory. Broker-specific because real leverage varies: eq_mtf own-margin
+// % below matches each broker's OWN advertised leverage (Dhan "4X leverage"
+// — dhan.co/margin-trading-facility; Zerodha "up to 5x" —
+// zerodha.com/calculators/mtf-calculator; Groww "up to 4x" —
+// groww.in/blog/mtf-interest-rates). Other segments share one ballpark across
+// brokers for now (no strong per-broker research yet) but the schema
+// supports differentiating any of them later via the same editor.
+const EQ_MTF_OWN_MARGIN_BY_BROKER: Record<string, number> = {
+  dhan: 25, zerodha: 20, groww: 25, angelone: 25, upstox: 25,
+  // kotakneo.com/pricing "up to 4X", paytmmoney 4x, sahi 4x — same ballpark,
+  // and without a row these three fell back to the global default silently.
+  kotakneo: 25, paytm: 25, sahi: 25,
+  // v4.6.0 W9: Fyers and Nuvama take the same 25 the other three use —
+  // neither is researched per broker yet, and a missing row falls back silently.
+  fyers: 25, nuvama: 25,
+};
+const SEGMENT_MARGIN_DEFAULTS = [
+  { segment: "eq_delivery", marginPct: 100, note: "full value deployed" },
+  { segment: "eq_intraday", marginPct: 20, note: "5x intraday leverage" },
+  { segment: "index_option", marginPct: 12, note: "short-option SPAN approx" },
+  { segment: "stock_option", marginPct: 20, note: "short-option SPAN approx" },
+  { segment: "future", marginPct: 15, note: "SPAN+exposure approx" },
+  { segment: "commodity_future", marginPct: 10, note: "SPAN+exposure approx" },
+  { segment: "commodity_option", marginPct: 12, note: "short-option SPAN approx" },
+] as const;
+
+export interface SeedMarginRow {
+  broker: string;
+  segment: string;
+  marginPct: number;
+  note: string;
+}
+
+/**
+ * THE margin_config rows this build ships — one per broker × segment. The seed,
+ * migration 0078 (hand-written; `tests/margin-config-refresh.test.ts` pins its
+ * rows equal to these), both restore paths and the desktop launch refresh all
+ * converge on this list.
+ */
+export const SEED_MARGIN_ROWS: readonly SeedMarginRow[] = Object.keys(EQ_MTF_OWN_MARGIN_BY_BROKER).flatMap((broker) => [
+  { broker, segment: "eq_mtf", marginPct: EQ_MTF_OWN_MARGIN_BY_BROKER[broker], note: `${broker}'s advertised MTF leverage` },
+  ...SEGMENT_MARGIN_DEFAULTS.map((row) => ({ broker, ...row })),
+]);
+
+/**
+ * Add every `SEED_MARGIN_ROWS` row the table lacks — INSERT OR IGNORE on the
+ * (broker, segment) unique key, so an existing row (edited or not, a user's
+ * hand-added Fyers row included) is never touched. Returns the rows added.
+ *
+ * v4.6.0 fix wave (SM-1): the rows were seeded on a FRESH install only, so an
+ * upgraded 4.5.0 database, a 4.5.0 backup restored into 4.6.0 and a default-
+ * settings baseline saved on 4.5.0 (which DELETES the table and re-inserts its
+ * snapshot) all lacked Fyers and Nuvama, and `capitalBlocked` priced their
+ * futures and short options at an assumed 100% of notional (ROM off by up to
+ * 6.7×) — the v2.96.0 kotakneo/paytm/sahi class again. Called by the seed and,
+ * inside their transactions, by `restoreDatabase` (lib/backup.ts) and
+ * `restoreBaseline` (lib/queries/settings-baseline.ts). Opens no transaction.
+ */
+export function refreshMarginConfig(conn: Pick<typeof db, "insert"> = db): number {
+  let added = 0;
+  for (const row of SEED_MARGIN_ROWS) added += conn.insert(marginConfig).values(row).onConflictDoNothing().run().changes;
+  return added;
+}
 
 /**
  * The risk_config rows a fresh install starts with — one per scope Vyuha knows,

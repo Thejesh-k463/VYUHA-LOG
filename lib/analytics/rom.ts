@@ -53,6 +53,29 @@ export interface RomTrade {
   sellDate: string | null;
   playbookId: number | null;
   setupTag: string | null;
+  /** v4.6.0 fix wave (CC-1) — REQUIRED, never defaulted: which side opened a
+   *  FLAT row (`trades.side`) and the note a pre-W6 intraday short carries.
+   *  Without them a same-day covered short option read LONG and was priced at
+   *  its premium instead of its margin (ROM inflated up to ~37×). */
+  side: string | null;
+  importNotes: string | null;
+}
+
+/**
+ * THE mapping from a stored trade row to a `RomTrade` — the Capital hub's ROM
+ * tab calls it, and so does its pin, so the two cannot drift apart. Every field
+ * is handed on unchanged; `side` and `importNotes` ride along for `sideOf`.
+ */
+export function romTradeOf(t: RomTrade): RomTrade {
+  return {
+    id: t.id, symbol: t.symbol, broker: t.broker, bucket: t.bucket, segment: t.segment,
+    instrumentType: t.instrumentType, optionType: t.optionType, strike: t.strike,
+    buyQty: t.buyQty, avgBuyPrice: t.avgBuyPrice, buyValue: t.buyValue,
+    sellQty: t.sellQty, avgSellPrice: t.avgSellPrice, sellValue: t.sellValue,
+    netPnl: t.netPnl, buyDate: t.buyDate, sellDate: t.sellDate,
+    playbookId: t.playbookId, setupTag: t.setupTag,
+    side: t.side, importNotes: t.importNotes,
+  };
 }
 
 export interface RomRow {
@@ -125,7 +148,7 @@ export function daysHeld(buyDate: string | null, sellDate: string | null): numbe
 /** A trade opened by selling is short. v4.6.0 W6: the ONE reading,
  *  `sideOf` in lib/domain/side.ts (quantities, then the stored `side` on a
  *  flat row, then the dates as days) — this name stays for its callers. */
-export function sideOf(t: Pick<RomTrade, "buyQty" | "sellQty" | "buyDate" | "sellDate"> & { side?: string | null }): "long" | "short" {
+export function sideOf(t: Pick<RomTrade, "buyQty" | "sellQty" | "buyDate" | "sellDate"> & { side?: string | null; importNotes?: string | null }): "long" | "short" {
   return sideOfRow(t);
 }
 

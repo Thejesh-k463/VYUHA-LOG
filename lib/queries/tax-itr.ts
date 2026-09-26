@@ -7,10 +7,11 @@ import { getRealisedRows } from "./realised-rows";
 // well, and the two copies drifted into reading the link differently.
 import { getIposComputed, ipoIdsCountedThroughTrades } from "./ipos";
 import { resolveTaxScope } from "./tax-scope";
-import type { TaxTrade } from "@/lib/analytics/tax";
+import { fyDateOf, type TaxTrade } from "@/lib/analytics/tax";
 import { sectionOn } from "@/lib/analytics/statute";
 import {
   classifyGain,
+  fmvTotalOf,
   type CapitalGainsTrade,
 } from "@/lib/analytics/capital-gains";
 import { assetClassFor, type CgAssetClass } from "@/lib/analytics/cg-heads";
@@ -77,6 +78,8 @@ export const getTaxBase = cache((personParam?: string | null) => {
     instrumentType: "equity",
     buyDate: r.allotmentDate ?? r.listingDate ?? r.appliedDate ?? null,
     sellDate: r.exitDate ?? null,
+    // An IPO is a long by construction: its year is the exit's.
+    fyDate: r.exitDate ?? null,
     grossPnl: r.grossPnl,
     netPnl: r.netPnl,
     buyValue: r.investedAllotted,
@@ -97,19 +100,23 @@ export const getTaxBase = cache((personParam?: string | null) => {
       assetClass: assetClassFor({ segment: t.segment, isin: t.isin, symbol: t.symbol }),
       buyDate: t.buyDate,
       sellDate: t.sellDate,
+      // v4.6.0 fix wave (SEAM-V46-2) — the CLOSING leg's day files the row: a
+      // short's sellDate is its entry.
+      fyDate: fyDateOf(t),
       buyValue: t.buyValue,
       sellValue: t.sellValue,
       netPnl: t.netPnl,
       sttCtt: t.sttCtt,
       mtfInterest: t.mtfInterest,
       pledgeCharges: t.pledgeCharges,
-      fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
+      fmv31Jan2018: fmvTotalOf(t),
     })),
     ...ipoTaxRows.map((r) => ({
       segment: r.segment,
       assetClass: r.assetClass,
       buyDate: r.buyDate,
       sellDate: r.sellDate,
+      fyDate: r.fyDate,
       buyValue: r.buyValue,
       sellValue: r.sellValue,
       netPnl: r.netPnl,
@@ -128,6 +135,7 @@ export const getTaxBase = cache((personParam?: string | null) => {
     instrumentType: t.instrumentType,
     buyDate: t.buyDate,
     sellDate: t.sellDate,
+    fyDate: fyDateOf(t),
     grossPnl: t.grossPnl,
     netPnl: t.netPnl,
     buyValue: t.buyValue,

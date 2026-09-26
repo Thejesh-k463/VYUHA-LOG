@@ -14,6 +14,7 @@
 // list; a typo in a hub path or tab id throws at load.
 
 import { hubForHref, hubTabHref } from "@/lib/domain/hubs";
+import { RECONCILE_FEEDS } from "@/lib/analytics/reconcile";
 
 /** The task-first layer of a help topic. Structurally identical to HelpTask in ./help-content.ts. */
 export interface HelpTask {
@@ -281,7 +282,8 @@ export const HELP_TASKS: Record<string, HelpTask> = {
   },
   "/reports/reconcile": {
     steps: [
-      "Import one of the seven statement files, such as a Dhan Realised P&L.",
+      // The count is RECONCILE_FEEDS' own (v4.6.0 audit DA-3: "seven" outlived four new feeds).
+      `Import one of the ${RECONCILE_FEEDS.length} statement files, such as a Dhan Realised P&L.`,
       "Read the broker's figures beside Vyuha's, per segment, financial year and scrip.",
       "Read each difference with the counted reasons that account for it.",
       "Check the charges table for DP fees, contract-note charges and ledger charge tables.",

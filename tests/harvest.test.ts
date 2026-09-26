@@ -186,7 +186,8 @@ describe("harvest page — realised gains are net, matching /reports/tax", () =>
     // PER-SHARE column → TOTAL units for classifyGain (the tax-itr.ts scaling).
     // Passing the raw per-share figure overstated realised LTCG on every
     // pre-2018 lot (audit 2026-09-01) — the ×buyQty IS the fix, pin it.
-    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null");
+    // v4.6.0 fix wave (MO-3) — the per-share → total scaling has ONE home.
+    expect(src).toContain("fmv31Jan2018: fmvTotalOf(t)");
     expect(src).not.toContain("grossPnl");
   });
 
@@ -196,7 +197,8 @@ describe("harvest page — realised gains are net, matching /reports/tax", () =>
     // PER-SHARE column → TOTAL units for classifyGain (the tax-itr.ts scaling).
     // Passing the raw per-share figure overstated realised LTCG on every
     // pre-2018 lot (audit 2026-09-01) — the ×buyQty IS the fix, pin it.
-    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null");
+    // v4.6.0 fix wave (MO-3) — the per-share → total scaling has ONE home.
+    expect(src).toContain("fmv31Jan2018: fmvTotalOf(t)");
   });
 
   it("derives the FY window from settings.fyStartMonth, never a -03-31 literal", () => {

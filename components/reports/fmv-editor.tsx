@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { num } from "@/lib/format";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
-import type { FmvGroup } from "@/lib/analytics/grandfather-groups";
+import { fmvIsMixed, type FmvGroup } from "@/lib/analytics/grandfather-groups";
 
 /**
  * FMV @ 31-Jan-2018 entry for LTCG grandfathering — ONE row per scrip
@@ -32,7 +32,9 @@ export function FmvEditor({ groups, person }: { groups: FmvGroup[]; person?: str
   const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   const shown = (g: FmvGroup): string => edits[g.key] ?? initial(g);
-  const blankOverMixed = (g: FmvGroup): boolean => g.fmv === "mixed" && shown(g).trim() === "";
+  // The route refuses the same thing with the same test (`fmvIsMixed`), so a
+  // disabled button here is never the only guard.
+  const blankOverMixed = (g: FmvGroup): boolean => fmvIsMixed(g.lots) && shown(g).trim() === "";
 
   async function save(g: FmvGroup) {
     if (blankOverMixed(g)) return;
@@ -52,7 +54,7 @@ export function FmvEditor({ groups, person }: { groups: FmvGroup[]; person?: str
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Enter the scrip&apos;s <b>closing price on 31-Jan-2018</b> (per share) — once per scrip; it applies to every
+        Enter the scrip&apos;s <b>highest price quoted on 31-Jan-2018</b> (per share — s.55(2)(ac)) — once per scrip; it applies to every
         pre-2018 lot of it. Grandfathered cost = higher of your actual cost or this FMV (capped at the sale price) — it
         only ever lowers the taxable LTCG. Leave blank to use actual cost.
       </p>
@@ -100,7 +102,7 @@ export function FmvEditor({ groups, person }: { groups: FmvGroup[]; person?: str
                 />
                 {blankOverMixed(g) && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Enter a value to set all {g.lots.length} lots, or clear one lot at a time
+                    Enter a value to set all {g.lots.length} lots; to clear a mixed group, set one value first, then save blank
                   </p>
                 )}
               </ReportTd>

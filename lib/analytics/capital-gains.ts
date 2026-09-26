@@ -115,6 +115,18 @@ export function grandfatheredCost(actualCost: number, fmv31Jan2018: number | nul
   return Math.max(actualCost, cappedFmv);
 }
 
+/**
+ * THE one conversion of the stored FMV into what `grandfatheredCost` reads.
+ * `trades.fmv31Jan2018` is PER SHARE (a level, invariant 1); `buyValue` and
+ * `sellValue` are TOTALS, so a consumer multiplies by the row's `buyQty` — which
+ * on a split realised row is the tranche quantity — exactly ONCE, here. The ITR
+ * pack passed the per-share figure raw until the v4.6.0 fix wave (finding MO-3)
+ * and overstated a grandfathered LTCG by the whole FMV uplift.
+ */
+export function fmvTotalOf(t: { fmv31Jan2018?: number | null; buyQty: number }): number | null {
+  return t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null;
+}
+
 // ---------------------------------------------------------------------------
 // Per-trade classification
 // ---------------------------------------------------------------------------
@@ -130,6 +142,9 @@ export interface CapitalGainsTrade {
   assetClass: CgAssetClass;
   buyDate: string | null;
   sellDate: string | null;
+  /** The date that files this row in an FY — REQUIRED, never defaulted: `fyDateOf(t)`
+   *  (lib/analytics/tax.ts), the CLOSING leg's day. See `TaxTrade.fyDate`. */
+  fyDate: string | null;
   buyValue: number; // actual cost (pre-charge)
   sellValue: number; // pre-charge
   netPnl: number; // post-charge P&L — matches taxByFy's bucketing convention; used for all buckets
@@ -246,7 +261,7 @@ export function aggregateTradesByFy(
   for (const t of trades) {
     const g = classifyGain(t);
     if (!g) continue;
-    const fy = fyOf(t.sellDate, fyStartMonth, fallbackFy);
+    const fy = fyOf(t.fyDate, fyStartMonth, fallbackFy);
     const row = map.get(fy) ?? empty();
     if (g.bucket === "speculative") row.speculative += g.taxableGain;
     else if (g.bucket === "nonSpeculative") row.nonSpeculative += g.taxableGain;

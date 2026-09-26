@@ -6,8 +6,10 @@ import {
   sideOf,
   capitalEfficiencyVerdict,
   presentAnnualised,
+  romTradeOf,
   type RomTrade,
 } from "@/lib/analytics/rom";
+import { INTRADAY_SHORT_NOTE } from "@/lib/domain/side";
 import { marginKey, type MarginRates } from "@/lib/risk/margin";
 
 /** Realistic Indian rate card: 12% for F&O, 20% intraday, 25% MTF own margin,
@@ -41,6 +43,8 @@ function trade(p: Partial<RomTrade> = {}): RomTrade {
     sellDate: "2026-01-11",
     playbookId: null,
     setupTag: null,
+    side: null,
+    importNotes: null,
     ...p,
   };
 }
@@ -354,5 +358,44 @@ describe("presentAnnualised — keeping an honest metric believable", () => {
     expect(rep.overall.annualisedPct).toBeLessThan(-100);       // raw, uncapped
     expect(rep.overall.annualisedDisplayPct).toBe(-100);        // safe for display
     expect(rep.overall.annualisedIsExtrapolation).toBe(true);
+  });
+});
+
+/**
+ * CC-1 (v4.6.0 fix wave, MEDIUM) — the ROM tab mapped `getTrades()` rows into
+ * `RomTrade` WITHOUT `side` / `importNotes`, so a same-day covered short option —
+ * a FLAT row with equal dates — read LONG through `sideOf` and was priced at its
+ * premium paid instead of its margin. The pin runs the tab's own mapping
+ * (`romTradeOf`) on a Zerodha row (a broker WITH margin rows, 12% index_option).
+ *
+ * NIFTY 22500 CE, 75 sold at ₹100 and covered at ₹80 the same day:
+ *   short → 12% × 75 × 22,500 = ₹2,02,500 of margin;
+ *   long (the defect) → premium paid 75 × ₹80 = ₹6,000 (ROM ~34× too high).
+ */
+describe("CC-1 · the ROM tab's mapping carries the side, so a same-day covered short is priced at its margin", () => {
+  const row = {
+    ...trade({
+      symbol: "NIFTY", optionType: "CE", strike: 22500,
+      buyQty: 75, avgBuyPrice: 80, buyValue: 6000,
+      sellQty: 75, avgSellPrice: 100, sellValue: 7500,
+      netPnl: 1400, buyDate: "2026-04-06", sellDate: "2026-04-06",
+    }),
+    // What a stored row carries beyond RomTrade — the mapping drops it.
+    isOpen: false, notes: "stored row",
+  };
+
+  it("side 'short' (a W6 row): capital = 12% of notional, never the premium", () => {
+    const t = romTradeOf({ ...row, side: "short", importNotes: null });
+    expect(sideOf(t)).toBe("short");
+    expect(capitalForTrade(t, rates()).capital).toBe(202_500);
+  });
+
+  it("a pre-W6 row with a NULL side reads short off its intraday-short note", () => {
+    const t = romTradeOf({ ...row, side: null, importNotes: `x | ${INTRADAY_SHORT_NOTE}` });
+    expect(capitalForTrade(t, rates()).capital).toBe(202_500);
+  });
+
+  it("…and a flat same-day row that states nothing stays the pre-W6 long reading (premium paid)", () => {
+    expect(capitalForTrade(romTradeOf({ ...row, side: null, importNotes: null }), rates()).capital).toBe(6_000);
   });
 });

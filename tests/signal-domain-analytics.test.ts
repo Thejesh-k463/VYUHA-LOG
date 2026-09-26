@@ -55,6 +55,8 @@ function row(over: Partial<SignalTradeRow> = {}, sig: Partial<TradeSignal> = {})
     sellDate: "2026-06-11",
     isOpen: false,
     netPnl: 3600,
+    side: null,
+    importNotes: null,
     signal: { ...emptySignal(), t1: 14.48, t2: 19.3, sl: 6.27, exitStatus: "T2_HIT", ...sig },
     ...over,
   };

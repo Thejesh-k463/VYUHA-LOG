@@ -57,6 +57,9 @@ export interface ItrScheduleTrade {
   assetClass: CgAssetClass;
   buyDate: string | null;
   sellDate: string | null;
+  /** The date that files this row in an FY — REQUIRED, never defaulted: `fyDateOf(t)`
+   *  (lib/analytics/tax.ts), the CLOSING leg's day. See `TaxTrade.fyDate`. */
+  fyDate: string | null;
   /** Actual cost, pre-charge. */
   buyValue: number;
   /** Full value of consideration, pre-charge. */
@@ -186,7 +189,7 @@ export function itrScheduleByFy(
 
   for (const t of trades) {
     if (t.isOpen) continue;
-    const fy = fyOf(t.sellDate ?? t.buyDate, fyStartMonth, fallbackFy);
+    const fy = fyOf(t.fyDate, fyStartMonth, fallbackFy);
     const b =
       map.get(fy) ?? { cg: emptyCgBuckets(), spec: emptyBp(), fno: emptyBp(), sellDates: [] };
     if (t.sellDate) b.sellDates.push(t.sellDate);

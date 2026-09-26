@@ -371,11 +371,60 @@ describe("v4.6.0 W6 — the side rules can see the class they guard", () => {
     expect(W(`db.update(tradeLegs).set({ qty: 1, buyQty: 2 }).run();`)).toEqual([]);
   });
 
+  // TI-1 (v4.6.0 fix wave) — a local's literal is its NEAREST PRECEDING
+  // declaration in scope. The scanner used to read the LAST `const <name>` in the
+  // file, so commit.ts's five `const patch` literals were all judged by the one
+  // at the bottom (which states `side`), and deleting `side` from any other was
+  // green. Both directions are pinned: the miss, and the false alarm it implies.
+  it("TI-1: each `const patch` is judged by ITS OWN literal (nearest declaration in scope), not the file's last one", () => {
+    const two = (first: string, second: string) =>
+      `function a() {\n  const patch = { ${first} };\n  db.update(trades).set(patch).run();\n}\nfunction b() {\n  const patch = { ${second} };\n  patch.buyQty = 2;\n  db.update(trades).set(patch).run();\n}`;
+    expect(W(two("buyQty: 1", 'side: "long", sellQty: 1'))).toEqual([3]);
+    expect(W(two('side: "long", buyQty: 1', "sellQty: 1"))).toEqual([8]);
+    // `patch.x =` onto a same-named local in ANOTHER function does not lend it a side.
+    expect(W(`function a() {\n  const patch: Record<string, unknown> = {};\n  patch.side = "long";\n}\nfunction b() {\n  const patch: Record<string, unknown> = { buyQty: 1 };\n  db.update(trades).set(patch).run();\n}`)).toEqual([7]);
+    // The reproduction on the real file: drop `side` from the supersede patch
+    // (commit.ts, the R43 same-day re-pull) and that write is reported.
+    const commitTs = fs.readFileSync("lib/import/commit.ts", "utf8");
+    const sideLine = "            side: t.side ?? sideAfterEdit(t, before),\n";
+    const text = commitTs.replace(/\r\n/g, "\n");
+    expect(text.split(sideLine).length, "the supersede patch states its side once").toBe(2);
+    const hit = scanSource("lib/import/commit.ts", text.replace(sideLine, ""), ["trade-side-writer"]);
+    expect(hit.map((v) => v.expr)).toEqual(["tx.update(tradesTable).set"]);
+    expect(scanSource("lib/import/commit.ts", commitTs, ["trade-side-writer"]), "HEAD's commit.ts is clean").toEqual([]);
+  });
+
   it("a raw side read off a trades select is reported; sideOf, a pass-on and a non-trades side are not", () => {
     expect(R(`const r = db.select().from(trades).get()!;\nconst s = r.side === "short";`)).toEqual([2]);
     expect(R(`const rows = db.select().from(tradesTable).all();\nrows.filter((x) => x.side === "long");`)).toEqual([2]);
     expect(R(`const r = db.select().from(trades).get()!;\nconst s = sideOf(r);\nconst o = { side: r.side };\nconst k = r.side ?? sideOf(r);`)).toEqual([]);
     expect(R(`const r = db.select().from(trades).get()!;\nconst leg = { side: "buy" };\nconst x = leg.side === "buy";`)).toEqual([]);
+  });
+});
+
+describe("v4.6.0 fix wave MO-3 — the per-share FMV reaches a grandfathering consumer as a TOTAL (fmv-per-share)", () => {
+  const F = (src: string) => scanSource("fmv-probe.tsx", src, ["fmv-per-share"]).map((v) => v.line);
+
+  it("the pre-fix ITR page's raw hand-on is reported (both builders), and the fixed shapes are not", () => {
+    // Verbatim from app/reports/itr/page.tsx at 3657793 (:110-:138), trimmed to the two literals.
+    const preFix = `import { aggregateTradesByFy } from "@/lib/analytics/capital-gains";
+const byFy = aggregateTradesByFy(
+  trades.filter((t) => !t.isOpen).map((t) => ({
+    sttCtt: t.sttCtt, mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
+    fmv31Jan2018: t.fmv31Jan2018,
+  })), 4, fy);
+const schedules = itrScheduleByFy(trades.map((t) => ({
+    fmv31Jan2018: t.fmv31Jan2018, isOpen: t.isOpen,
+  })), 4, fy);`;
+    expect(F(preFix)).toEqual([5, 8]);
+    expect(F(`const x = classifyGain({ fmv31Jan2018: (t.fmv31Jan2018 ?? null) as number | null });`)).toEqual([1]);
+    expect(F(`const fmv31Jan2018 = t.fmv31Jan2018;\nconst x = classifyGain({ fmv31Jan2018 });`)).toEqual([2]);
+    // The fixed shapes: the helper, a local bound to it, the explicit × buyQty.
+    expect(F(`const x = classifyGain({ fmv31Jan2018: fmvTotalOf(t) });`)).toEqual([]);
+    expect(F(`const fmv = fmvTotalOf(t);\nconst x: CapitalGainsTrade = { fmv31Jan2018: fmv };`)).toEqual([]);
+    expect(F(`const x = classifyGain({ fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null });`)).toEqual([]);
+    // A per-share list that names no consumer (the FMV editor's lot view) is out of scope.
+    expect(F(`const lot = { fmv31Jan2018: t.fmv31Jan2018 ?? null };`)).toEqual([]);
   });
 });
 
@@ -494,6 +543,15 @@ export function reads(p: P, list: P[]) {
     expect(hits("raw-date"), RULE["raw-date"].forbidden).toEqual([]);
   });
 
+  it("fmv-per-share: every grandfathering consumer's input carries the FMV as a total", () => {
+    expect(hits("fmv-per-share"), RULE["fmv-per-share"].forbidden).toEqual([]);
+    // Not empty-satisfiable: the builders of a consumer's input ARE in the rule's scope.
+    for (const f of ["lib/analytics/itr.ts", "lib/queries/tax-itr.ts", "app/reports/harvest/page.tsx", "app/reports/advance-tax/page.tsx"]) {
+      const text = fs.readFileSync(f, "utf8");
+      expect(text.includes("fmv31Jan2018") && RULE["fmv-per-share"].triggers.some((t) => text.includes(t)), f).toBe(true);
+    }
+  });
+
   /**
    * v4.6.0 W6 (contract D2/D3, design review R-3) — `trades.side`. Every writer
    * that sets a leg quantity states the side in the same statement, and no
@@ -575,7 +633,7 @@ export function reads(p: P, list: P[]) {
   });
 
   it("the registry states a rule, its forbidden shapes and its provenance for every field it guards", () => {
-    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer"]);
+    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer", "fmv-per-share"]);
     for (const r of REGISTRY) {
       expect(r.rule.length, r.id).toBeGreaterThan(40);
       expect(r.forbidden.length, r.id).toBeGreaterThan(20);

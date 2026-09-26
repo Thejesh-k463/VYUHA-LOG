@@ -54,7 +54,8 @@ export type RuleId =
   | "ipo-link-scope"
   | "risk-cap-resolver"
   | "trade-side-reader"
-  | "trade-side-writer";
+  | "trade-side-writer"
+  | "fmv-per-share";
 
 export interface FieldRule {
   id: RuleId;
@@ -239,6 +240,26 @@ export const REGISTRY: FieldRule[] = [
     provenance:
       "v4.6.0 W6 design review R-3 / R-8: `setAcquisitionAction`, the IPO link and the auto-close slice each wrote legs " +
       "without a side, and the slice of a same-day short cover would have read long.",
+  },
+  {
+    id: "fmv-per-share",
+    field: "fmv31Jan2018",
+    rule:
+      "`trades.fmv31Jan2018` is PER SHARE (a level, invariant 1), while every grandfathering consumer " +
+      "(`grandfatheredCost` via `classifyGain`, `aggregateTradesByFy`, `itrScheduleByFy`) reads it as a TOTAL beside " +
+      "`buyValue` / `sellValue`. A file that builds a consumer's input converts it through `fmvTotalOf(t)` (× the row's " +
+      "`buyQty`, exactly once).",
+    forbidden:
+      "`fmv31Jan2018: x.fmv31Jan2018` (or `?? null` / a cast over it, or the shorthand `{ fmv31Jan2018 }`) inside a file " +
+      "that names a total-unit consumer or its input type — the per-share figure handed on as a total",
+    allowed: "`fmv31Jan2018: fmvTotalOf(t)`, a local bound to it, an explicit `× buyQty` expression, `null`, and the per-share figure on a surface that names no consumer (the FMV editor's lot list)",
+    // Structural scope: only a file that builds a total-unit consumer's input can mis-scale it.
+    triggers: ["classifyGain", "aggregateTradesByFy", "itrScheduleByFy", "grandfatheredCost", "CapitalGainsTrade", "ItrScheduleTrade"],
+    roots: ["lib", "app", "components"],
+    provenance:
+      "v4.6.0 fix wave, finding MO-3 (HIGH): app/reports/itr/page.tsx:115/:138 passed `fmv31Jan2018: t.fmv31Jan2018` raw into " +
+      "aggregateTradesByFy and itrScheduleByFy — 100 sh @ ₹100, FMV ₹250, sold ₹30,000 read LTCG ₹20,000 on the ITR pack " +
+      "against ₹5,000 on /reports/tax. Red fixture: HEAD 3657793 app/reports/itr/page.tsx.",
   },
 ];
 
@@ -817,6 +838,13 @@ function scanSideReader(sf: TS.SourceFile, file: string): Violation[] {
   return out;
 }
 
+/** The block a `const`/`let` declaration is visible in (a `var` is treated the same — none is used on a trades write). */
+function declarationScope(d: TS.VariableDeclaration): TS.Node {
+  let p: TS.Node | undefined = d.parent;
+  while (p && !ts.isBlock(p) && !ts.isSourceFile(p) && !ts.isModuleBlock(p) && !ts.isCaseClause(p) && !ts.isDefaultClause(p) && !ts.isFunctionLike(p) && !ts.isForStatement(p) && !ts.isForOfStatement(p) && !ts.isForInStatement(p)) p = p.parent;
+  return p ?? d.getSourceFile();
+}
+
 /** The property names an object-literal-ish expression carries (spreads and ternaries of literals included). */
 function literalKeys(sf: TS.SourceFile, e: TS.Node | undefined, seen = new Set<TS.Node>()): Set<string> | null {
   if (!e || seen.has(e)) return null;
@@ -830,13 +858,29 @@ function literalKeys(sf: TS.SourceFile, e: TS.Node | undefined, seen = new Set<T
   }
   if (ts.isIdentifier(e)) {
     // A local bound to a literal — plus every `local.key = …` assignment onto it.
-    let init: TS.Expression | undefined;
+    //
+    // TI-1 (v4.6.0 fix wave): the binding is the NEAREST PRECEDING declaration
+    // of that name whose block encloses the use — lexical scope, as the compiler
+    // resolves it. The first version took the LAST `const <name>` in the FILE,
+    // so lib/import/commit.ts's five `const patch` literals were all judged by
+    // the one at the bottom, and deleting `side` from any other went green. The
+    // `local.key =` walk is scoped to that declaration's block for the same reason.
+    const use = e.getStart(sf);
+    let decl: TS.VariableDeclaration | undefined;
+    let declScope: TS.Node | undefined;
     walk(sf, (n) => {
-      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === e.text && n.initializer) init = n.initializer;
+      if (!ts.isVariableDeclaration(n) || !ts.isIdentifier(n.name) || n.name.text !== e.text || !n.initializer) return;
+      const scope = declarationScope(n);
+      if (n.getStart(sf) >= use || use < scope.getStart(sf) || use >= scope.getEnd()) return;
+      if (!decl || n.getStart(sf) > decl.getStart(sf)) {
+        decl = n;
+        declScope = scope;
+      }
     });
-    const keys = literalKeys(sf, init, seen);
-    if (!keys) return null;
-    walk(sf, (n) => {
+    const keys = literalKeys(sf, decl?.initializer, seen);
+    if (!keys || !declScope) return null;
+    const inScope = declScope;
+    walk(inScope, (n) => {
       if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left) && ts.isIdentifier(n.left.expression) && n.left.expression.text === e.text) keys.add(n.left.name.text);
     });
     return keys;
@@ -875,6 +919,27 @@ function scanSideWriter(sf: TS.SourceFile, file: string): Violation[] {
   return out;
 }
 
+/** Rule — `fmv31Jan2018` is per share; a consumer's input carries a TOTAL (MO-3). */
+function scanFmvPerShare(sf: TS.SourceFile, file: string): Violation[] {
+  const out: Violation[] = [];
+  const why = "the per-share FMV handed on as a total: a grandfathering consumer reads it beside buyValue — convert it with fmvTotalOf(t)";
+  /** Strip the shapes that hand the same per-share value on: parens, casts, `?? null`. */
+  const bare = (e: TS.Expression): TS.Expression => {
+    if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isNonNullExpression(e) || ts.isSatisfiesExpression(e)) return bare(e.expression);
+    if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) return bare(e.left);
+    return e;
+  };
+  walk(sf, (n) => {
+    if (ts.isShorthandPropertyAssignment(n) && n.name.text === "fmv31Jan2018") {
+      out.push({ rule: "fmv-per-share", file, line: lineOf(sf, n), expr: oneLine(sf, n), why });
+    }
+    if (ts.isPropertyAssignment(n) && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name)) && n.name.text === "fmv31Jan2018" && isFieldRead(bare(n.initializer), "fmv31Jan2018")) {
+      out.push({ rule: "fmv-per-share", file, line: lineOf(sf, n), expr: oneLine(sf, n), why });
+    }
+  });
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -903,6 +968,7 @@ export function scanSource(fileName: string, text: string, only?: RuleId[]): Vio
     if (r.id === "risk-cap-resolver") out.push(...scanRiskCap(parse(), file));
     if (r.id === "trade-side-reader") out.push(...scanSideReader(parse(), file));
     if (r.id === "trade-side-writer") out.push(...scanSideWriter(parse(), file));
+    if (r.id === "fmv-per-share") out.push(...scanFmvPerShare(parse(), file));
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule));
 }

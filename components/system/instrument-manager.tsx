@@ -56,7 +56,7 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
       <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
         <div className="text-xs font-semibold">Fill sectors from the bundled NSE map</div>
         <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
-          Official industry classification + thematic index memberships for ~1,150 NSE symbols,
+          Official industry classification + thematic index memberships for every symbol in NSE&apos;s index lists,
           bundled with the app (snapshot as of <b>{nseMapAsOf}</b> — constituents change at every
           semi-annual rebalance). Names and ISINs are filled in; <b>sectors fill only where empty</b>,
           so anything you tagged yourself stays yours. Refresh anytime by uploading newer

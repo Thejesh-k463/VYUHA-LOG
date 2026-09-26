@@ -337,7 +337,7 @@ describe.skipIf(!HAVE_LIST)("seam 3a x 3b — one instrument identity, one bill 
       segment: "eq_delivery",
       assetClass: h.assetClass,
       buyDate: "2023-06-01",
-      sellDate: "2025-06-10",
+      sellDate: "2025-06-10", fyDate: "2025-06-10",
       buyValue: BUY_VALUE,
       sellValue: SELL_VALUE,
       netPnl: 9800,

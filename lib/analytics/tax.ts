@@ -11,6 +11,8 @@ import {
   turnoverContribution,
 } from "./turnover";
 import { bucketFor, resolveCgHead, type CgAssetClass } from "./cg-heads";
+import { entryDateOf, exitDateOf, type SideInput } from "@/lib/domain/side";
+import { normalizeDate } from "@/lib/domain/trading-day";
 
 export interface TaxTrade {
   segment: string;
@@ -20,6 +22,14 @@ export interface TaxTrade {
   instrumentType: string;
   sellDate: string | null;
   buyDate: string | null;
+  /**
+   * THE date that files this row in a financial year — REQUIRED and never
+   * defaulted (the `assetClass` pattern): the CLOSING leg's day, `fyDateOf(t)`
+   * at every boundary. A short's `sellDate` is its ENTRY (it opens on the sale),
+   * so filing by `sellDate` put an overnight short sold 30 Mar / covered 1 Apr
+   * in the year of the sale (v4.6.0 fix wave, SEAM-V46-2). IPO rows: the exit.
+   */
+  fyDate: string | null;
   grossPnl: number;
   netPnl: number;
   buyValue: number;
@@ -85,6 +95,26 @@ export function currentFy(fyStartMonth: number, today: Date = new Date()): strin
   return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 }
 
+/**
+ * THE date a realised row is filed under for tax: its CLOSING leg (`exitDateOf`
+ * — a short closes on its buy-back), else its opening leg when the row states
+ * no close. Every boundary that builds a `TaxTrade`, `CapitalGainsTrade`,
+ * `ItrTrade` or schedule row fills `fyDate` with this, and the FY windows on
+ * /reports/harvest and /reports/advance-tax read it through `closedOnOrAfter`.
+ * The holding term, the section cited and the export's "sold" column keep the
+ * transfer dates — only the YEAR the income arises in follows the close.
+ */
+export function fyDateOf(t: SideInput): string | null {
+  return exitDateOf(t) ?? entryDateOf(t);
+}
+
+/** A realised row whose filing date (`fyDateOf`) falls on or after `fromIso` —
+ *  compared as the ISO day it states (`normalizeDate`), never as bytes. */
+export function closedOnOrAfter(t: SideInput, fromIso: string): boolean {
+  const d = normalizeDate(fyDateOf(t));
+  return d != null && d >= fromIso;
+}
+
 export function taxByFy(
   trades: TaxTrade[],
   fyStartMonth = 4,
@@ -96,7 +126,7 @@ export function taxByFy(
     // WHICH rows reach here is decided in lib/analytics/realised-rows.ts (a
     // staged ladder arrives as one row per fill, each already `isOpen: false`).
     if (t.isOpen) continue;
-    const fy = fyOf(t.sellDate, fyStartMonth, fallbackFy);
+    const fy = fyOf(t.fyDate, fyStartMonth, fallbackFy);
     const s = map.get(fy) ?? {
       fy, stcg111A: 0, stcgOther: 0, ltcg112A: 0, ltcg112: 0, cgUndetermined: 0,
       intradaySpeculative: 0, fnoBusiness: 0,

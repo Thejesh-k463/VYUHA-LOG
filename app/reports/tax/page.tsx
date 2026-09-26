@@ -30,7 +30,6 @@ import { Info } from "lucide-react";
 import { ProGate } from "@/components/system/pro-gate";
 import { FmvEditor } from "@/components/reports/fmv-editor";
 import { grandfatherLotsOf, groupGrandfatherLots } from "@/lib/analytics/grandfather-groups";
-import { isGrandfatherEligible } from "@/lib/analytics/cg-heads";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -118,7 +117,6 @@ export default async function TaxReportPage({
   // v4.6.0 W7 (D3) — eligibility through the DATE (`isGrandfatherEligible`),
   // never a byte compare against GRANDFATHER_DATE: a DD-MM-YYYY legacy row
   // '15-06-2019' sorts below '2018-02-01' bytewise and '31-12-2017' above it.
-  const hasPreGrandfatherLot = cgTrades.some((t) => isGrandfatherEligible(t.buyDate));
   // The lots the FMV editor targets: the DISTINCT PARENTS behind the realised
   // book (not the closed rows) — a partly-sold pre-2018 staged ladder is open,
   // yet its realised rows already carry its FMV into the tax readers, so it
@@ -126,6 +124,10 @@ export default async function TaxReportPage({
   // The selection is the pure `grandfatherLotsOf` (tests/grandfather-groups.test.ts).
   const grandfatherGroups = groupGrandfatherLots(grandfatherLotsOf(trades, realisedTrades));
   const grandfatherLotCount = grandfatherGroups.reduce((n, g) => n + g.lots.length, 0);
+  // v4.6.0 fix wave (DA-9) — the footnote that points at "the card above" is
+  // conditioned on the card's OWN selection, not on `cgTrades` (which holds
+  // F&O and exited IPOs too): a note with no card was the defect.
+  const hasPreGrandfatherLot = grandfatherGroups.length > 0;
 
   // ITR-schedule export rows are fetched by /api/tax-itr when Export is
   // clicked — shipping all of them as client props serialised ~4.8 MB of
@@ -532,7 +534,11 @@ export default async function TaxReportPage({
             <CardContent>
               {/* Keyed by person: router.refresh() keeps client state, and one
                   person's typed FMV must never sit on another's same scrip. */}
-              <FmvEditor key={person ?? "all"} groups={grandfatherGroups} person={person} />
+              {/* v4.6.0 fix wave (UJ-3): keyed on the RESOLVED tax person — without
+                  ?person= the person follows the selected account and the
+                  switcher only router.refresh()es, so a key of "all" carried an
+                  unsaved typed FMV onto the next person's same-scrip group. */}
+              <FmvEditor key={scope.personKey} groups={grandfatherGroups} person={person} />
             </CardContent>
           </Card>
         )}

@@ -25,7 +25,7 @@ import { pricingDate, ratesForTrade, resolvePlan, type PlanAccount, type RatesMa
 import { planAccountOf } from "@/lib/queries/broker-plan";
 import { todayIstIso, normalizeDate, storedDateProblem, calendarDaysHeld, sameDay } from "@/lib/domain/trading-day";
 import { closingAggregate } from "@/lib/domain/close-aggregate";
-import { sideAfterEdit, sideOf } from "@/lib/domain/side";
+import { sideAfterEdit, sideOf, statedSideOf } from "@/lib/domain/side";
 import {
   joinedShortHash,
   legacyShortDuplicateReason,
@@ -2486,8 +2486,10 @@ export function commitParsedFile(
           strike: b.classification.strike,
           optionType: b.classification.optionType,
           // v4.6.0 W6: the side the parser paired; a pre-aggregated row states
-          // none and is read by its legs (`sideOf` → `backfillSide`).
-          side: sideOf(t),
+          // none and is read by its legs (`backfillSide`). Fix wave (MO-2): what
+          // the row STATES — a flat same-day row with no signal stores NULL, the
+          // value the trades-side-v1 backfill writes, never a guessed 'long'.
+          side: statedSideOf(t),
           buyQty: t.buyQty,
           avgBuyPrice: t.avgBuyPrice,
           buyValue: t.buyValue,
@@ -2808,7 +2810,8 @@ export function commitManualTrade(
       optionType: cls.optionType,
       lotSize: fields.lotSize ?? null,
       // v4.6.0 W6: the side of the entered legs (a flat one by its dates).
-      side: sideOf(t),
+      // Fix wave (MO-2): a flat same-day entry states none → NULL (the backfill's value).
+      side: statedSideOf(t),
       buyQty: t.buyQty,
       avgBuyPrice: t.avgBuyPrice,
       buyValue: t.buyValue,
