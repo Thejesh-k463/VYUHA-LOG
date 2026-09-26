@@ -79,7 +79,10 @@ You have two paths — use either or both:
 2. Drag in your broker export. Supported today: **Zerodha** (tradebook / Console P&L), **Dhan**
    (P&L CSV and the Global Transaction Report), **Groww** (stocks P&L and order history),
    **Angel One** (tradebook, P&L, and the tax P&L), **Upstox** (tradebook or P&L),
-   **Paytm Money** (tradebook). A broker **PDF** can be opened too, but it only extracts the
+   **Paytm Money** (tradebook), **Fyers** (tradebook, plus its Realised P&L as the broker's own
+   figures — the filename must contain "fyers", or the file goes to the column mapper) and
+   **Nuvama** (the P&L report, with the charges Nuvama billed). Fyers and Nuvama equity rows are
+   unverified and import with a warning. A broker **PDF** can be opened too, but it only extracts the
    text for you to enter by hand — it does not import trades. Live **API pulls** work for
    Zerodha, Dhan, Upstox and Angel One (Import → Connect broker) — Angel One runs unattended from your
    TOTP secret, and all API credentials are stored encrypted, bound to this machine, and sent
@@ -143,23 +146,32 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
-**Upgrading from v4.4.x to v4.5.0 — nothing is asked of you.** The v4.5.0 installer runs the
-v4.4.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
+**Upgrading from v4.5.x to v4.6.0 — nothing is asked of you.** The v4.6.0 installer runs the
+v4.5.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
 "Delete the application data" checkbox appears, ticking it still erases the whole data folder, but
 not before your journal database and licence key have been named and copied to
 `Documents\Vyuha-backup-<date>`, and Cancel leaves everything exactly as it is.
 
-**Migrations on first launch of v4.5.0.** **One** database upgrade (0074: the broker plan an account
-is on, and the date it started), applied behind the same automatic
-`backups\pre-migrate-<timestamp>.sqlite` copy described below. It adds columns and changes no money
-figure. **Take your own backup first, as always.** Upgrading from **v4.3.x** applies **0073 and
-0074** in order.
+**Migrations on first launch of v4.6.0.** **Four** database upgrades, applied behind the same
+automatic `backups\pre-migrate-<timestamp>.sqlite` copy described below: **0075** moves a Telegram
+digest send time still at the old **15:35** default to **15:45**, after the F&O close (a time you
+typed yourself is left alone); **0076** adds the Market Atlas regime thresholds (blank = the shipped
+defaults); **0077** adds the column that records which side opened a trade — a one-time data fix
+then states it for your existing trades from their own dates and notes, and leaves it blank where
+they cannot tell; **0078** adds the **16 Fyers and Nuvama margin rows**. The same first start adds
+the **280 Fyers and Nuvama rate rows** to your rate card. None of it touches a row you added or
+edited yourself, and no money figure already stored on a trade moves. **Take your own backup
+first, as always.** Upgrading from **v4.4.x** applies **0074 to 0078** in order.
 
-**What changes in how imports land, with no switch to set.** A sale imported for a holding you
-already hold now **closes that holding FIFO** instead of landing as a second row. Each import
-carries a **"Keep sells as separate rows"** toggle if you would rather it did not, the result card
-names what it closed, and an **Un-close** action on `/trades` puts a closed pair back as it was.
-Nothing already in your journal is changed by the update; this applies to what you import next.
+**What changes in how imports land, with no switch to set.** Paytm Money and Groww fills are now
+allocated to exactly one position each, so a ladder always sums to its position and some positions
+that used to arrive as staged ladders arrive as single rows. **A Paytm Money or Groww book imported
+before v4.6.0 keeps its old ladders** — the update does not rewrite them, and re-importing the same
+file is skipped as a duplicate. **Data Quality** lists them as "Staged positions whose fills do not
+add up to the position"; delete the position, then re-import the same file, to rebuild it. An
+overnight F&O sale covered by a later buy in the same file now lands as one closed short, filed in
+the financial year it was covered. If you use OpenAlgo, it must be version **2.0.2.6** or later,
+and you are asked once to re-acknowledge its disclosure (version 4).
 
 **One thing that happens on its own at first launch, and nothing to switch on.** The desktop
 rate-card refresh had failed on every launch since v3.2.0; 4.3.0 repairs the F&O STT rates for
@@ -216,13 +228,13 @@ removed. Leave the box unticked to keep the data where it is.
 | Antivirus flags the new .exe | Whitelist it — false positive common for new unsigned binaries |
 | Numbers look wrong | Check **Settings → charge config** matches your broker's real rates |
 | F&O shows as equity after import | Re-tag in **Journal → Trades** (segment/strike/expiry/CE-PE) |
-| Import didn't detect my broker | Six brokers auto-detect (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money); any other CSV/XLSX goes through the column mapper — Vyuha asks what the columns mean rather than refusing |
+| Import didn't detect my broker | Eight brokers auto-detect (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money, Fyers, Nuvama) — a Fyers file only when its filename contains "fyers"; any other CSV/XLSX goes through the column mapper — Vyuha asks what the columns mean rather than refusing |
 | Lost everything after a reset | **System → Backup & Restore → Restore** your last export |
 
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_4.5.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.5`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_4.6.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.6`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

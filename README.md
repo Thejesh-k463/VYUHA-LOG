@@ -28,7 +28,43 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v4.5.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v4.6.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v4.6.0 — the market's real clock, two more brokers, the exchange's own
+> industries, and a covered short stored as a short.** **Fyers** and **Nuvama**
+> join the broker list — **eight brokers now auto-detect**: the Fyers tradebook
+> (recognised only when its filename says "fyers") and its Realised P&L as a
+> reference, and Nuvama's P&L report with the charges Nuvama **billed** stored
+> as stated; rate cards for Fyers Standard / Prime and Nuvama Lite Plus / Elite.
+> Their F&O and MCX rows are verified against real exports; their **equity
+> rows are UNVERIFIED** and import with a warning. An **effective-dated market
+> calendar** answers every timing question — the **Closing Auction Session**
+> from 3 August 2026, F&O to **15:40**, the revised pre-open from 7 September
+> 2026, holidays, Budget Sunday and Muhurat — and the day's mark waits for the
+> official close (**15:36** closing-auction stock, **15:31** other stock,
+> **15:45** F&O). A bundled **stock universe** gives **5,450 of 5,482** listed
+> equities the exchanges' own **four-level industry**, and **AMFI's rank** is
+> the cap band (an NSE Emerge stock reads "SME — not ranked by AMFI"). The
+> **Market Atlas** gains industry cohorts, median returns, one rotation table,
+> relative strength against the market median and editable regime thresholds.
+> Analytics regroup into **three hubs** (Edge Clinic · Capital & Expiry ·
+> Costs; ten menu entries → six, every old address still opens its tab).
+> **Help** is rewritten task-first, with a getting-started strip on the
+> dashboard. A trade records **which side opened it**: an overnight F&O sale
+> covered later **in the same file** is one closed short, filed in the
+> **financial year it was covered**. `/trades` no longer reads the whole book
+> for its KPI strip. AIS purchases split per entry fill, Harvest counts one STT
+> split per ladder, and the 2018 **FMV editor** sets one value per scrip.
+> **Fixed:** the ITR pack read the per-share **FMV as a total** and overstated a
+> grandfathered long-term gain (₹20,000 for ₹5,000 in one worked case); Paytm
+> Money and Groww **ladders now sum to their position** — a book imported
+> earlier keeps its old ladders until you delete and re-import it, and **Data
+> Quality names them**. OpenAlgo pulls need **2.0.2.6** or later. **Four
+> database upgrades, 0075–0078**, plus the Fyers and Nuvama rate and margin rows,
+> applied on first launch — take a backup first, as always. One new dependency,
+> `@radix-ui/react-accordion`. Not in this release: **no macOS build**, the
+> installer is still **unsigned** (Windows SmartScreen warns once), and **no
+> network host** is added.
 >
 > **v4.5.0 — the sale that closes the position, and a tax pack that knows
 > whose accounts it is reading.** **Auto-close is ON**: a sale imported for a
@@ -961,13 +997,13 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.4.x to v4.5.0:** the installer runs the v4.4.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migration 0074 runs on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy; upgrading from v4.3.x applies 0073 and 0074 in order. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.5.x to v4.6.0:** the installer runs the v4.5.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0075–0078 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy; upgrading from v4.4.x applies 0074–0078 in order. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v4.5.0**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v4.6.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all eight broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, the Edge Clinic hub (Setups, Discipline, Scaling & Replay), the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and the Capital & Expiry hub (Return on Margin, Expiry), the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), the Costs hub (Charges & MTF Leak, Broker Costs), per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.

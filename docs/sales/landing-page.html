@@ -274,7 +274,7 @@
 
 <header class="hero">
   <div class="wrap">
-    <div class="pill"><span class="dot"></span> v4.5.0 · Windows · Built for Indian retail traders · Desktop or web</div>
+    <div class="pill"><span class="dot"></span> v4.6.0 · Windows · Built for Indian retail traders · Desktop or web</div>
     <h1>Every warrior had a charioteer.<br/><span class="grad">Yours keeps count.</span></h1>
     <p class="lede">
       Your P&amp;L tells you <em>what</em>; Vyuha tells you why. A trade journal and analytics cockpit that
@@ -287,10 +287,10 @@
     </div>
     <div class="trust">
       <span class="chip">🖥 <b>Desktop or web</b> · your choice of where it runs</span>
-      <span class="chip">🇮🇳 <b>6 auto-detected brokers</b> · Zerodha · Dhan · Groww · Angel One · Upstox · Paytm Money — <b>+ any CSV</b> via the column mapper · <b>+ 4 broker APIs</b> · <b>OpenAlgo</b> optional for the rest</span>
+      <span class="chip">🇮🇳 <b>8 auto-detected brokers</b> · Zerodha · Dhan · Groww · Angel One · Upstox · Paytm Money · Fyers · Nuvama —<b>+ any CSV</b> via the column mapper · <b>+ 4 broker APIs</b> · <b>OpenAlgo</b> optional for the rest</span>
       <span class="chip">🎁 <b>7-day full trial</b> · no card</span>
       <span class="chip">♾ <b>Journal free forever</b></span>
-      <span class="chip">🆕 <b>New in v4.5.0</b> · auto-close is on — a sale imported for a holding you already hold closes it FIFO, with a per-import “Keep sells as separate rows” toggle, a result card naming what it closed and an Un-close action on /trades · Upstox pricing is plan-aware (Basic ₹20 / Plus ₹30, set in Settings → Accounts) · tax is filed per tax person, with a picker when “All accounts” spans two of them and the scope on every export · the bundled NSE ETF list (350 ETFs) drives STT and the capital-gains asset class, so a gold or debt ETF is no longer taxed as an equity share · capital-gains heads follow the transfer date from one cited band table and holding periods count in calendar months · a partly-sold staged position’s fills are taxed in the year they were sold</span>
+      <span class="chip">🆕 <b>New in v4.6.0</b> · Fyers and Nuvama import themselves — eight brokers now auto-detect, with Fyers Standard/Prime and Nuvama Lite Plus/Elite rate cards (their equity rows are not yet verified against a real export) · an effective-dated market calendar: the Closing Auction Session, F&amp;O to 15:40, holidays and special sessions, and the day’s mark only after the official close · the exchanges’ own four-level industry for 5,450 of 5,482 listed equities, with AMFI’s rank as the cap band · Market Atlas v3 — industry cohorts, median returns, one rotation table, relative strength against the market median · analytics regrouped into three hubs · Help rewritten task-first · a covered overnight F&amp;O short stored as a short, filed in the year it was covered · the ITR pack’s 2018 grandfathering fixed (it read the per-share FMV as a total) · Paytm Money and Groww ladders now sum to their position</span>
     </div>
     <div class="wins" aria-label="Why it wins">
       <div class="win"><div class="n">₹29,999 once</div><div class="d">vs ≈ ₹47,000–95,000 over three years for the global journals in our comparison, at their current prices.</div></div>
@@ -534,7 +534,7 @@
           <tr><th></th><th class="vy">Vyuha</th><th>Global journals</th><th>Indian journals</th></tr>
           <tr><td>Price</td><td class="vy">₹7,999/yr — or ₹29,999 once, ever</td><td>≈ ₹12,600–31,600/yr, subscription only</td><td>₹999–2,499/yr, freemium subscription</td></tr>
           <tr><td>Where your data lives</td><td class="vy">Your own PC with Vyuha Desktop; a web platform is in development</td><td>Web-hosted</td><td>Web-hosted</td></tr>
-          <tr><td>Indian broker imports</td><td class="vy">6 auto-detected parsers + column mapper for any CSV + 4 broker-API pulls</td><td>Mostly not stated; CSV upload; one lists Zerodha, one has it "coming soon"</td><td>4–5 brokers</td></tr>
+          <tr><td>Indian broker imports</td><td class="vy">8 auto-detected brokers + column mapper for any CSV + 4 broker-API pulls</td><td>Mostly not stated; CSV upload; one lists Zerodha, one has it "coming soon"</td><td>4–5 brokers</td></tr>
           <tr><td>Statutory charges engine</td><td class="vy">Computes STT/CTT, stamp duty, GST, exchange &amp; SEBI charges from configurable rates</td><td>Not stated</td><td>One parses charges from the tradebook; the other not stated</td></tr>
           <tr><td>Limits</td><td class="vy">Core journal never gated — no trade or account caps</td><td>Tier caps — 1 account on a base tier, feature caps, free tiers metered by executions</td><td>Free caps (10 trades/mo on one) or not stated</td></tr>
         </table>
@@ -547,7 +547,7 @@
       <div class="cmp-scroll">
         <table>
           <tr><th>Product</th><th>Cheapest paid tier</th><th>Your data lives</th><th>Indian broker imports</th><th>Indian statutory charges</th></tr>
-          <tr class="vy"><td>Vyuha</td><td>₹7,999/yr · ₹29,999 ever</td><td>Your computer only</td><td>6 parsers + column mapper + 4 API pulls</td><td>Computed — STT, stamp, GST, exchange, SEBI</td></tr>
+          <tr class="vy"><td>Vyuha</td><td>₹7,999/yr · ₹29,999 ever</td><td>Your computer only</td><td>8 brokers + column mapper + 4 API pulls</td><td>Computed — STT, stamp, GST, exchange, SEBI</td></tr>
           <tr><td>TradeZella</td><td>≈ ₹27,700/yr</td><td>Web-hosted</td><td>Zerodha "coming soon"; CSV</td><td>Not stated</td></tr>
           <tr><td>Edgewonk</td><td>≈ ₹17,300/yr</td><td>Web-hosted</td><td>Not stated</td><td>Not stated</td></tr>
           <tr><td>TraderSync†</td><td>≈ ₹15,800/yr</td><td>Web-hosted</td><td>Not stated</td><td>Not stated</td></tr>
@@ -610,7 +610,7 @@
         <b>Update now / Later</b> and waits for you.</p></details>
       <details><summary>What is free, and what am I paying for?</summary>
         <p><b>Your record is free. The intelligence about it is paid.</b> Free forever: recording closed trades,
-        all six broker importers, the dashboard and P&amp;L calendar, staged positions, playbooks, chart
+        all eight broker importers, the dashboard and P&amp;L calendar, staged positions, playbooks, chart
         screenshots, the trade calculator, backups and full CSV/JSON export. Payment unlocks the analytics
         layer (free for your first 7 days, then Pro or lifetime) — the portfolio risk cockpit, Arjun's Eye and
         the edge/discipline reports, the Trade Review Desk (the review queue, the Sunday ritual and the
@@ -620,8 +620,10 @@
         readable, editable and exportable without a key, forever. If you never buy, you still own your journal
         &mdash; not a read-only screenshot of it.</p></details>
       <details><summary>Which brokers can I import from?</summary>
-        <p>Six brokers are auto-detected: Zerodha (tradebook and Console P&amp;L), Dhan, Groww, Angel One, Upstox and
-        Paytm Money — tradebook or aggregated P&amp;L exports. Any other broker's CSV goes through the column mapper,
+        <p>Eight brokers are auto-detected: Zerodha (tradebook and Console P&amp;L), Dhan, Groww, Angel One, Upstox,
+        Paytm Money, Fyers (tradebook — the filename must say “fyers”) and Nuvama (the P&amp;L report, with the charges
+        Nuvama billed) — tradebook or aggregated P&amp;L exports. Fyers and Nuvama equity rows are not yet verified
+        against a real export and import with a warning. Any other broker's CSV goes through the column mapper,
         where you say which column is which. And Zerodha, Dhan, Angel One and Upstox can also be pulled directly
         over their APIs (Import → Connect broker) — one click after market close. Brokers with no API of their own
         — Groww, Paytm Money, Kotak — can pull same-day through <b>OpenAlgo</b>, an open-source bridge you run on

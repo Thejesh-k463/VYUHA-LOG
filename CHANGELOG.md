@@ -1,5 +1,131 @@
 # Changelog
 
+## v4.6.0 — 2026-09-26
+
+*The release where the journal learns the market's real clock, two more brokers
+import themselves, every listed stock carries the exchange's own industry, and
+a covered short is stored as a short.*
+
+- **Fyers and Nuvama join the broker list — eight brokers now auto-detect.**
+  Fyers' tradebook imports as trades (its mirror rows are skipped, never
+  imported), and its Realised P&L file is kept as the broker's own figures for
+  Broker Truth. Nuvama's P&L report imports its realised and unrealised lines
+  as trades, with the charges Nuvama billed stored as stated. Rate cards ship
+  for Fyers Standard (up to ₹20 an order) and Prime (up to ₹15) and for Nuvama Lite Plus and Elite,
+  read from the brokers' own pricing pages; set the plan per account in
+  Settings → Accounts. A Fyers file is recognised only when its **filename
+  contains "fyers"** (the file itself never names the broker) — a renamed file
+  goes to the column mapper. Both brokers' F&O and MCX rows are verified
+  against real exports; **their equity rows are UNVERIFIED** and import with a
+  warning to check them against your contract note.
+- **An effective-dated market calendar.** One bundled calendar now answers
+  every "is the market open, and when is the close" question: the Closing
+  Auction Session from 3 August 2026, the F&O session to 15:40, the revised
+  pre-open from 7 September 2026, the NSE holidays, Budget Sunday and Muhurat.
+  The day's mark waits for the official close — 15:36 for a closing-auction
+  stock, 15:31 for any other stock, 15:45 for an F&O contract. Fills between
+  15:30 and 15:40 are no longer flagged "outside the session", and the sidebar
+  dot is shut on a holiday. `/instruments` shows the calendar's as-of date,
+  what it covers through (31 December 2026) and its sha256.
+- **Every listed stock carries the exchanges' own industry, and AMFI's cap
+  band.** A bundled stock universe gives 5,450 of 5,482 listed equities
+  (99.4%) the NSE/BSE four-level industry classification. AMFI's half-yearly
+  rank is THE cap band (large/mid/small); an NSE Emerge stock shows a blank
+  band with "SME — not ranked by AMFI", and Nifty size-index membership is its
+  own separate lens. A sector you tagged yourself is never overwritten. A
+  stock whose ISIN changed at a face-value split follows to its new ISIN.
+- **Market Atlas v3.** Industry cohorts (falling back to the sector when an
+  industry is too thin, with "n of m priced" stated), median group returns (the
+  mean behind a labelled toggle), one rotation table at sector or industry for
+  1w / 1m / 3m / YTD, relative strength against the market median, breadth per
+  group and per AMFI band, the breadth on the days you opened your positions,
+  an index-membership filter, and a list of what the Atlas does not compute.
+  Below 30% coverage a tile shows its coverage instead of a number. The
+  regime thresholds are editable in Settings. With the end-of-day download
+  switched on, missed sessions are topped up — at most ten files per app
+  open, under the same consent.
+- **Analytics regroup into three hubs**: Edge Clinic (Setups · Discipline ·
+  Scaling & Replay), Capital & Expiry (Return on Margin · Expiry) and Costs
+  (Charges & MTF Leak · Broker Costs) — the Analytics menu goes from ten
+  entries to six, and every old address still opens the right tab.
+- **Help, rewritten task-first.** `/help` is a search box over topics that
+  fold by category; a topic opens in a large-text dialog with steps, a
+  watch-out and related topics. A "?" in every page header opens that page's
+  topic, glossary terms explain themselves on hover, `?` opens a keyboard
+  shortcuts sheet, and the command palette finds help as you type. A
+  getting-started strip on the dashboard (account, trades, charges plan, a
+  stop, a backup) disappears once all five are done or you dismiss it.
+- **A covered short is stored as a short.** A trade now records which side
+  opened it wherever its fills, dates or notes say so. An overnight F&O sale covered by a later buy **in the same
+  file** becomes one closed short (with a Data Quality line naming the other
+  reading), and it is filed in the **financial year it was covered**, on every
+  tax surface. A sale nothing covers stays an opening sell. A short pair
+  imported before v4.6.0 (an opening sell plus an open buy) is listed in Data
+  Quality and joined only when you confirm it.
+  Return on Margin and the Signal book now read the side too — a short option
+  is no longer priced or judged as if it were bought.
+- **`/trades` no longer reads your whole book** to draw its KPI strip and side
+  panels — measured on a 25,001-row book, where that read was the page's
+  largest cost.
+- **Tax follow-ups.** The AIS reconcile states a staged position's purchases
+  per entry fill, each in its own financial year. Harvest's STT split counts
+  one trade per ladder, with its fills listed beneath. The 31-Jan-2018 FMV
+  editor lists **one row per scrip** for the tax person, and one save sets
+  every eligible lot of it — a partly-sold pre-2018 ladder can be edited at
+  last. Upstox's ~₹1 difference from a contract note is explained where it
+  shows (a contract note rounds STT once; Vyuha rounds per trade row).
+- **Fixed — the ITR pack's grandfathering read the per-share FMV as a
+  total**, overstating the long-term gain of a pre-February-2018 lot with an
+  FMV entered (100 shares bought in 2016 at ₹100, FMV ₹250, sold for ₹30,000:
+  ₹20,000 on the ITR pack instead of ₹5,000). `/reports/itr` now agrees with
+  `/reports/tax`. The FMV editor also said "closing price"; the Act says the
+  **highest price quoted on 31-Jan-2018** — if you entered a close, check it.
+- **Fixed — Paytm Money and Groww ladders sum to their position.** A fill
+  split across two positions was handed to both; each fill is now allocated
+  once, so some positions that arrived as staged ladders now arrive as single
+  rows. The positions' own quantities, values and P&L did not change. **A book
+  imported before v4.6.0 keeps its old ladders:** Data Quality lists them as
+  "Staged positions whose fills do not add up to the position" — delete the
+  position and re-import the same file to rebuild it.
+- **Also fixed:** a basis write on a staged position is refused (it would
+  leave the fills contradicting the position); the Atlas cap band resolves on
+  a fresh install; the getting-started "Charges plan set" step can tick; a
+  help topic opens on its title and one Escape closes it; the Atlas catch-up
+  re-checks your consent before every download; the broker counts on screen
+  are derived from the importer list, never typed.
+- **OpenAlgo pulls need OpenAlgo 2.0.2.6 or later.** Vyuha reads the running
+  version from your own OpenAlgo and refuses a pull below it with the upgrade
+  steps; a sandbox (Analyzer-mode) tradebook, an exchange Vyuha cannot price
+  (NCO, NCDEX) and a zero-quantity MCX row are refused rather than guessed.
+  Fyers can be pulled through OpenAlgo; Nuvama cannot. If you use OpenAlgo you
+  are asked once to re-acknowledge its disclosure (version 4). The OpenAlgo
+  setup guide in the client package gains the version-and-upgrade section.
+- **Four database upgrades (0075–0078)**, applied on first launch behind the
+  automatic pre-migration backup — take your own backup first, as always:
+  0075 moves a Telegram digest time still at the old 15:35 default to 15:45
+  (after the F&O close; a time you typed is left alone), 0076 adds the Atlas
+  regime thresholds, 0077 adds the side column (a one-time data fix then
+  states each existing trade's side from its own dates and notes, and leaves
+  it blank where they cannot tell), 0078 adds
+  the 16 Fyers and Nuvama margin rows. The first start also adds the 280
+  Fyers and Nuvama rate rows. A row you added or edited yourself is never
+  touched.
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  The v4.6.0 installer runs the v4.5.0 uninstaller once before it installs, and
+  that one is the guarded one: ticking its "Delete the application data" box
+  erases the whole data folder, but not before your journal and licence key
+  have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel
+  leaves everything as it is.
+- **One new dependency:** `@radix-ui/react-accordion` (MIT), for the Help
+  categories.
+
+Not in this release: no macOS build; the installer is still unsigned (Windows
+SmartScreen warns once); no network host is added (the calendar and the stock
+universe are build-time snapshots). Kotak Neo and Sahi still import through
+the column mapper only. The 2027 NSE holiday list is not yet published, so the
+calendar covers 2026; from 60 days before its end Data Quality says so. The
+Edge Clinic's own Clinic tab arrives in v4.7.0.
+
 ## v4.5.0 — 2026-09-22
 
 *The release where the sale closes the position, and the tax pack knows whose
