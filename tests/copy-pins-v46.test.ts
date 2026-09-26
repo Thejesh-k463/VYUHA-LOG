@@ -15,7 +15,9 @@ import { OPENALGO_MIN_VERSION } from "@/lib/import/api/openalgo";
  */
 
 const ROOT = path.resolve(__dirname, "..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+// CRLF-normalised: the Windows CI runner checks out with CRLF, and a block terminator such as
+// "\n>\n" then never matches — the slice runs to the end of the file and a pin reads the wrong text.
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 
 /** The text of one part of a zip (the .docx), read with no dependency: local headers, stored or deflated. */
 function zipPart(file: string, name: string): string {
