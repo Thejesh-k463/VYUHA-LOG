@@ -157,3 +157,6 @@ git diff --numstat package-lock.json: <numbers or "unchanged">
 Evidence:
 <each command run, then the key output lines>
 ```
+
+## Shell and context rules (fleet-tune 2026-10-01)
+- If the harness reports your context past ~400K tokens, stop at the next green scoped test, write a checkpoint (files touched, what is proven, the exact next step) into the hand-off file your brief names, and END YOUR TURN — the orchestrator resumes you with SendMessage; never keep editing past that point (21 of 43 sessions crossed 400K in the week to 2026-09-30).

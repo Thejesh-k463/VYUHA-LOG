@@ -123,3 +123,6 @@ Not checked, and why: <plainly>
 Evidence:
 <each command run, then the key output lines>
 ```
+
+## Shell and context rules (fleet-tune 2026-10-01)
+- Never feed an interpreter a heredoc (`python - <<'EOF'`, `node - <<'JS'`): the coord hook DENIES it — 82 denials in the week to 2026-09-30, the fleet's top waste — and a heredoc corrupts backslash escapes. Write the script to a file with Write, then run `python <file>`.

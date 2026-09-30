@@ -77,3 +77,7 @@ The seam table (crossing value | producer file:line | consumer file:line | unit 
 per test the quoted red assertion and which side was reverted; scoped `npx vitest run` counts;
 `npx tsc --noEmit -p .` result; seam DEFECTS found (file:line, wrong vs right) — these go straight
 into the audit union as confirmed findings; `git status --short` limited to your file.
+
+## Shell and context rules (fleet-tune 2026-10-01)
+- Never feed an interpreter a heredoc (`python - <<'EOF'`, `node - <<'JS'`): the coord hook DENIES it — 82 denials in the week to 2026-09-30, the fleet's top waste — and a heredoc corrupts backslash escapes. Write the script to a file with Write, then run `python <file>`.
+- If the harness reports your context past ~400K tokens, stop at the next green scoped test, write a checkpoint (files touched, what is proven, the exact next step) into the hand-off file your brief names, and END YOUR TURN — the orchestrator resumes you with SendMessage; never keep editing past that point (21 of 43 sessions crossed 400K in the week to 2026-09-30).

@@ -9814,3 +9814,44 @@ analytics screens and a rewritten Help section, recording which side opened a tr
 ```
 
 **Prose pass:** prose pass (bounded doc-auditor on Opus): 10 files / 6 findings (4 CONFIRMED + 2 PLAUSIBLE) / 40 tool calls — all six fixed in this commit (13.1 MB at v4.6.0 vs 12.7 MB at v4.5.0 stated per version in LEDGER L-51/D-16 and STATE §0.1/§0.4; D-16 scoped to over-budget routes with /atlas +223–278 ms and /trades −256 ms named; /strategies' move recorded as a 4.7.0 candidate, not "inside its spread"; L-51 says coord listed HUB active while the overall median matched idle; the WDSI label reads "installer inside the client ZIP"; the paste block trimmed to 15 lines). **Close-out:** STATE §0 rewritten (the thirtieth block archived byte-for-byte, sha256 23ddb704…2532, 18,413 bytes), LEDGER L-51/L-52/R-13/D-16, SESSION-LOG entry + a 15-line paste block; drift:close-out 21 PASS / 0 FAIL / 3 SKIP (run LAST, after every doc edit); this close-out docs commit sits on 37408e3 (the tag).
+
+## 2026-10-01 — v4.6.0 PUBLISHED (the thirty-second session): the post-publish proofs, the held winget manifest, and v4.7.0 opened at C1 behind the pre-C1 questions
+
+**Sequence, as run:** gate first (HEAD `8a467a0` on `37408e3` = tag `v4.6.0`; `gh release list --limit 2` = **v4.6.0 Latest** + v4.5.0;
+`gh run list --limit 3` all ok, CI 36225136393 on `8a467a0`; `npm run drift` 11 PASS / 0 FAIL / 1 SKIP) → the owner had published on
+2026-09-26 07:43:03 UTC (13:13 IST; `gh release view v4.6.0 --json isDraft,publishedAt`) → the four proofs of the release skill §5:
+`latest.json` at `releases/latest/download/` serves `version 4.6.0` for all six platform keys (windows-x86_64 + -nsis → the exe,
+darwin-aarch64 + -app and darwin-x86_64 + -app → the two app.tar.gz); `revocations` `isPrerelease=true`; the live
+`sales/landing-page.html` (fetched itself — the root is a meta-refresh shell) carries `v4.6.0` twice and no other version →
+`npm run winget:manifest -- --sha 2b5089138ba1b59f6090897f142a6bb3893e639ebf1e17a4f04b976279be2c27` (the GitHub asset digest of
+`Vyuha_4.6.0_x64-setup.exe`, 36,847,868 bytes, from `gh release view --json assets`) → `release-packages/winget/4.6.0/` three YAML files,
+`InstallerSha256 2B5089138BA1B59F6090897F142A6BB3893E639EBF1E17A4F04B976279BE2C27`, **HELD** (the owner submits) → no code touched; the gate
+was NOT re-run (the tree's code is the tagged tree; a docs + manifest session).
+
+**Two installers, two digests (LEDGER L-53):** the exe on GitHub is CI's build (`2B508913…`); the exe inside the client ZIP is the release
+session's LOCAL `desktop:build` (`08F481E1…`, CHECKSUMS.txt, the WDSI form). Same source, same version, different bytes — an NSIS build is not
+reproducible. The winget manifest MUST carry the GitHub digest (its script says so: `--sha` is "the SHA-256 of the PUBLISHED exe"); the WDSI form
+names the ZIP's; a Defender detection on a GitHub download would need the GitHub one. Neither is wrong; using one where the other belongs is.
+
+**v4.7.0 opens at C1 but no code landed:** the paste block said "raise D-16 before C1", so the pre-C1 group went to the owner at the end of the
+session — (a) the D-16 dashboard aggregate as a wave C0 before C1 or a candidate; (b) §0.4 item 11: `/reports/itr` (leaves exited IPOs out) vs
+`/reports/tax` (folds them in) — which is right; (c) the builder model policy now that Sonnet 5.5 exists (a design in the owner's `~/.claude`,
+outside this repo). Decided under the policy, not asked: item 11's Paytm/Groww half stays as documented (re-import; a silent ladder rebuild
+is a data change without consent). C1's shape when it starts: a `researcher` brief pinning the Bailey / López de Prado formulas against the
+paper (R1 §F) BEFORE ONE Opus builder writes the pure `lib/analytics/edge-clinic.ts` with its tests; the UI is C2.
+
+**Why not the obvious thing:** re-running the 137 s gate for a docs session — it would re-prove `37408e3`; starting C1 on the spec alone —
+the block's own rule and the decision policy (ask before feature code) forbid it; putting the client-ZIP hash into the winget manifest because
+it is the one "verified" in the WDSI form — `winget` downloads GitHub's bytes, and `winget-manifest.mjs` refuses nothing, so the wrong hash would
+fail every user's install (the script's header records exactly that risk).
+
+**Outside this repo, answered in the session's reply (not recorded here):** `Thejesh-k463/OPEN-ALGO-CHARTS` PR #1 and #2 — both tips are
+ancestors of that repo's `master` and of upstream `marketcalls/openalgo-charts`; the conflicts are the repo's default branch being the stale
+`docs/interactive-demos-and-readable-previews`.
+
+**Prose pass:** prose pass (bounded doc-auditor on Opus): 9 files / 9 findings (6 CONFIRMED + 3 PLAUSIBLE) / 37 tool calls — all nine fixed in this commit (STATE preamble date 2026-09-26 → 2026-10-01; §0.1 row 19 said C1 adds the tab — C1 is the engine only, C2 adds the tab; the `/` sweep figures cited R-13 but live in L-51 / D-16, fixed in STATE and the session log; the paste block was 16 lines → 15; the release skill §9 told a session to run `winget:manifest` bare (it exits 1 without `--sha`) and to submit to Microsoft — now the OWNER submits, with the GitHub digest for winget and the client-ZIP hash for a pre-emptive WDSI; the invariant-guard file list in §0 and the paste block now matches AGENTS.md's ten paths)
+
+**Fleet-tune 2026-10-01 (the weekly tune, run from this session; report `~/.claude/coord/learnings/reports/2026-09-30.md`; window since 2026-09-23: 43 sessions, 91 hook decisions):** the numbers — **82 of 91 hook decisions were the heredoc-interpreter DENY** (VYUHA + HUB; working as designed, but 82 wasted calls), 21 of 43 sessions crossed 400K context (worst 666K), `general-purpose` used 60× (mostly HUB "Wave N <slice>" build jobs and "Verify …" jobs that `builder` / `skeptic` were built for), `vyuha-release-steward` sat at `model: sonnet` and ATLAS's `atlas-monitor` at `model: haiku` against the 2026-09-25 ruling. EDITED (prompts only): those three model lines → opus; a "Shell and context rules" section appended to the 15 agent files that lacked the heredoc rule (6 global, 6 VYUHA, 3 ATLAS) and a 400K hand-over clause to the 5 builder/planner/seam files; `builder`'s description gains the "Wave N <slice>" phrasing. PROPOSED (not applied): `learn.mjs`'s stale-path check resolves against the pre-move SENTINEL root — its five "stale" citations exist under `SENTINEL/bot` (HOOK-PROPOSALS.md, now 4 `[PENDING]`). Left alone on purpose: the DECISIONS-whole-read and heavy-gate denies (working as designed); `budget-governor`, `coord-doctor`, `vyuha-monitor` at 0× — first 0× week on record here, one more tune before a description rewrite or deletion (the paste block runs their commands inline by design). The model-routing design the owner asked for (Fable 5.1 + Opus 5.5 + Sonnet 5.5) is a PROPOSAL at `~/.claude/MODEL-ROUTING-DESIGN-2026-10-01.md` — nothing in it is applied until the owner rules (§0.4 item 14c).
+
+**Close-out:** LEDGER L-53; STATE §0 rewritten for the thirty-second session (the thirty-first block archived to `VYUHA-STATE-ARCHIVE.md`,
+sha-checked: 6d836053232b99a3f2214b865af4230990d0bfec985e42b0de466a13fd0c175f); the paste block in `22-V460-BUILD/SESSION-LOG.md` rewritten; `npm run drift:close-out` 22 PASS / 0 FAIL / 2 SKIP (run LAST).

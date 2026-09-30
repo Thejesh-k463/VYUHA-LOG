@@ -107,3 +107,6 @@ Anything not verified: state it plainly.
 Evidence:
 <each command run, then the 1-3 output lines that carry the number you quoted>
 ```
+
+## Shell and context rules (fleet-tune 2026-10-01)
+- Never feed an interpreter a heredoc (`python - <<'EOF'`, `node - <<'JS'`): the coord hook DENIES it — 82 denials in the week to 2026-09-30, the fleet's top waste — and a heredoc corrupts backslash escapes. Write the script to a file with Write, then run `python <file>`.

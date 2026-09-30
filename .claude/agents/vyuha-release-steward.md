@@ -1,7 +1,7 @@
 ---
 name: vyuha-release-steward
 description: Walks the VYUHA release skill's 11 steps as read-only checks and reports a numbered checklist of observed values, always ending with the WDSI form content. Use when the user says "release check", "are we ready to tag", "pre-release audit", "walk the release skill", "check the installer", or before publishing any VYUHA release.
-model: sonnet
+model: opus
 tools: [Read, Grep, Glob, Bash]
 maxTurns: 150
 skills: [release]
@@ -145,3 +145,6 @@ NOT OBSERVED: <each, with why>
 Evidence:
 <each command run, then its key output line>
 ```
+
+## Shell and context rules (fleet-tune 2026-10-01)
+- Never feed an interpreter a heredoc (`python - <<'EOF'`, `node - <<'JS'`): the coord hook DENIES it — 82 denials in the week to 2026-09-30, the fleet's top waste — and a heredoc corrupts backslash escapes. Write the script to a file with Write, then run `python <file>`.

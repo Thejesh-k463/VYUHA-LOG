@@ -195,12 +195,13 @@ travels up.**
 
 Both live in `docs/owner/CODE_SIGNING.md`:
 
-1. `npm run winget:manifest`
-2. Submit the installer to Microsoft.
+1. AFTER the owner publishes: `npm run winget:manifest -- --sha <the exe's digest from gh release view <tag> --json assets>`
+   — never the client-ZIP hash (LEDGER L-53); the OWNER submits the manifest.
+2. The OWNER submits the installer to Microsoft (WDSI); the session hands over the form below.
 
 **Standing owner instruction (2026-09-02): hand the owner the WDSI form details
 UNPROMPTED at this step, every release** — file name, the CLIENT ZIP installer's
-SHA-256 (never the GitHub asset's), category ("Incorrectly detected as
+SHA-256 for a pre-emptive submission — if Defender flagged a GitHub download, that file's digest instead (LEDGER L-53) — category ("Incorrectly detected as
 malware/malicious" pre-emptive, detection name "N/A - no detection" unless
 Defender actually flags one — then use the exact detection name, e.g. the
 Bearfoos.B!ml precedent), and the Additional-information paragraph updated to

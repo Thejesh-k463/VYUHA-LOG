@@ -70,3 +70,6 @@ Guard case to add: <test file + the case in one line>
 <name → result>
 ```
 Under 900 words. If every design is BUILD, say so in one line at the top and still emit each table.
+
+## Shell and context rules (fleet-tune 2026-10-01)
+- Never feed an interpreter a heredoc (`python - <<'EOF'`, `node - <<'JS'`): the coord hook DENIES it — 82 denials in the week to 2026-09-30, the fleet's top waste — and a heredoc corrupts backslash escapes. Write the script to a file with Write, then run `python <file>`.
