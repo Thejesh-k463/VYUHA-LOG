@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { tradeRow, type TempDb } from "./temp-db";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
+import type { CapitalGainsTrade } from "@/lib/analytics/capital-gains";
 
 /**
  * THE COUNTED-ONCE ORACLE FIXTURE (v4.3.0 wave 3, guard G1).
@@ -239,6 +240,8 @@ interface Consumers {
   actions: typeof import("@/app/trades/actions");
   del: typeof import("@/lib/queries/delete");
   importer: typeof import("@/lib/import/commit");
+  capitalGains: typeof import("@/lib/analytics/capital-gains");
+  itr: typeof import("@/lib/analytics/itr");
 }
 
 let C: Consumers | null = null;
@@ -260,6 +263,8 @@ export async function loadOracleConsumers(): Promise<Consumers> {
     actions: await import("@/app/trades/actions"),
     del: await import("@/lib/queries/delete"),
     importer: await import("@/lib/import/commit"),
+    capitalGains: await import("@/lib/analytics/capital-gains"),
+    itr: await import("@/lib/analytics/itr"),
   };
   return C;
 }
@@ -295,6 +300,41 @@ async function aisRead(): Promise<{ totals: Record<string, number | null>; heade
   return { totals: Object.fromEntries(recon.fyTotals.map((f) => [`${f.fy} ${f.kind}`, f.journal])), header: scope };
 }
 
+/**
+ * THE SEVENTH CONSUMER (v4.7.0 C0): /reports/itr's capital-gains figures, per
+ * FY, read through `getItrPageInputs` — the page's own input builder — and
+ * required to equal the tax side (/reports/tax's set-off engine over
+ * `getTaxBase().cgTrades`) in EVERY view after EVERY operation this helper is
+ * read after. The ITR page read no IPO at all before C0, so an exited allotment
+ * outside any holding was on the tax pack and missing here (P1: 6829.42 against
+ * 6829.42 + ORACLE-LOOSE).
+ *
+ * Asserted HERE, at the read, rather than returned as a field of
+ * `OraclePersonFigures`: every expectation table in
+ * tests/oracle-counted-once.test.ts deep-equals the person half, so a new field
+ * would need re-stating in each operation's patch — and an identity between two
+ * consumers is not a figure to restate. Both sides are READ; neither is a literal.
+ */
+function assertItrPageCg(where: string, taxCgTrades: CapitalGainsTrade[]): void {
+  const { taxItr, tax, settings, capitalGains, itr } = consumers();
+  const fsm = settings.getSettings()?.fyStartMonth ?? 4;
+  const fallback = tax.currentFy(fsm);
+  const heads = (b: { stcg111A: number; stcgOther: number; ltcg112A: number; ltcg112: number; cgUndetermined: number }) =>
+    [b.stcg111A, b.stcgOther, b.ltcg112A, b.ltcg112, b.cgUndetermined];
+  const taxSide = Object.fromEntries(
+    capitalGains.aggregateTradesByFy(taxCgTrades, fsm, fallback).map((f) => [f.fy, heads(f)]),
+  );
+  const inputs = taxItr.getItrPageInputs();
+  const itrPageCg = Object.fromEntries(
+    capitalGains.aggregateTradesByFy(inputs.capitalGains, fsm, fallback).map((f) => [f.fy, heads(f)]),
+  );
+  const itrPackCg = Object.fromEntries(
+    itr.itrPackByFy(inputs.pack, fsm, fallback).filter((p) => p.capitalGains.trades > 0).map((p) => [p.fy, heads(p.capitalGains)]),
+  );
+  expect(itrPageCg, `${where}: /reports/itr's set-off input (getItrPageInputs) states the tax pack's per-FY CG`).toEqual(taxSide);
+  expect(itrPackCg, `${where}: /reports/itr's head-wise pack states the tax pack's per-FY CG`).toEqual(taxSide);
+}
+
 /** Every consumer, read in the account currently selected. */
 export async function readOracleView(t: TempDb, accountId: number): Promise<OracleView> {
   selectOracleAccount(t, accountId);
@@ -309,6 +349,7 @@ export async function readOracleView(t: TempDb, accountId: number): Promise<Orac
   // Exactly the call /trades makes for its KPI strip (app/trades/page.tsx, v4.6.0 W6).
   const kpi = trades.getTradeStatsSql();
   const ais = await aisRead();
+  assertItrPageCg(`view ${accountId}`, base.cgTrades);
 
   return {
     capital: {

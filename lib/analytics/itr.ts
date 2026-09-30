@@ -32,7 +32,7 @@ import {
 } from "./turnover";
 import { section, STATUTE_CUTOVER_FY } from "./statute";
 import { assetClassFor, bucketFor, resolveCgHead, type CgAssetClass } from "./cg-heads";
-import { currentFy, fyDateOf } from "./tax";
+import { currentFy, fyDateOf, type TaxTrade } from "./tax";
 import { fmvTotalOf, type CapitalGainsTrade } from "./capital-gains";
 import type { ItrScheduleTrade } from "./itr-schedule";
 
@@ -277,8 +277,17 @@ export interface ItrPageRow {
  * total ONCE, through `fmvTotalOf` — the page passed the per-share figure raw
  * until the v4.6.0 fix wave (MO-3), so a grandfathered lot's LTCG on this page
  * disagreed with /reports/tax by the whole FMV uplift.
+ *
+ * v4.7.0 C0 — `ipoRows` are the tax base's EXITED IPOs (`getTaxBase().ipoTaxRows`,
+ * lib/queries/tax-itr.ts — already net of every record counted THROUGH its
+ * linked holding), appended AFTER the trades in the tax base's own order, so
+ * the float sums run in the same order on both surfaces. Each becomes a row
+ * through `ipoCgTrade`, the one mapping the tax base uses too. The page read no
+ * IPO at all before this wave: an allotment sold outside any holding was on
+ * /reports/tax and missing here. Defaulted so a caller with no IPO book (the
+ * MO-3 pin, the v4.6 seam) keeps calling it with the realised rows alone.
  */
-export function itrPageInputs(realised: readonly ItrPageRow[]): {
+export function itrPageInputs(realised: readonly ItrPageRow[], ipoRows: readonly TaxTrade[] = []): {
   pack: ItrTrade[];
   capitalGains: CapitalGainsTrade[];
   schedule: ItrScheduleTrade[];
@@ -289,26 +298,71 @@ export function itrPageInputs(realised: readonly ItrPageRow[]): {
     fmv: fmvTotalOf(t),
     fyDate: fyDateOf(t),
   }));
+  const ipos = ipoRows.map((r) => ({ r, cg: ipoCgTrade(r) }));
   return {
-    pack: rows.map(({ t, assetClass, fyDate }) => ({
-      segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
-      grossPnl: t.grossPnl, netPnl: t.netPnl, sellValue: t.sellValue,
-      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
-      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges, isOpen: t.isOpen,
-    })),
-    capitalGains: rows.filter(({ t }) => !t.isOpen).map(({ t, assetClass, fmv, fyDate }) => ({
-      segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
-      buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
-      sttCtt: t.sttCtt, mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
-      fmv31Jan2018: fmv,
-    })),
-    schedule: rows.map(({ t, assetClass, fmv, fyDate }) => ({
-      segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
-      buyValue: t.buyValue, sellValue: t.sellValue,
-      grossPnl: t.grossPnl, netPnl: t.netPnl,
-      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
-      mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
-      fmv31Jan2018: fmv, isOpen: t.isOpen,
-    })),
+    pack: [
+      ...rows.map(({ t, assetClass, fyDate }) => ({
+        segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
+        grossPnl: t.grossPnl, netPnl: t.netPnl, sellValue: t.sellValue,
+        chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
+        mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges, isOpen: t.isOpen,
+      })),
+      ...ipos.map(({ r, cg }) => ({
+        ...cg, grossPnl: r.grossPnl, chargesTotal: r.chargesTotal, isOpen: r.isOpen,
+      })),
+    ],
+    capitalGains: [
+      ...rows.filter(({ t }) => !t.isOpen).map(({ t, assetClass, fmv, fyDate }) => ({
+        segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
+        buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
+        sttCtt: t.sttCtt, mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
+        fmv31Jan2018: fmv,
+      })),
+      ...ipos.map(({ cg }) => cg),
+    ],
+    schedule: [
+      ...rows.map(({ t, assetClass, fmv, fyDate }) => ({
+        segment: t.segment, assetClass, buyDate: t.buyDate, sellDate: t.sellDate, fyDate,
+        buyValue: t.buyValue, sellValue: t.sellValue,
+        grossPnl: t.grossPnl, netPnl: t.netPnl,
+        chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
+        mtfInterest: t.mtfInterest, pledgeCharges: t.pledgeCharges,
+        fmv31Jan2018: fmv, isOpen: t.isOpen,
+      })),
+      // The schedule's `sttCtt` is required; an IPO row states none, so 0 — the
+      // same add-back of nothing the tax pack applies (the IPO STT s.48 add-back
+      // is a recorded follow-up that would move BOTH surfaces, not this one).
+      ...ipos.map(({ r, cg }) => ({
+        ...cg, grossPnl: r.grossPnl, chargesTotal: r.chargesTotal, sttCtt: r.sttCtt ?? 0, isOpen: r.isOpen,
+      })),
+    ],
+  };
+}
+
+/**
+ * THE one mapping from an exited IPO's tax row (`getTaxBase().ipoTaxRows`) to a
+ * capital-gains row — called by the tax base (lib/queries/tax-itr.ts, which
+ * feeds /reports/tax, the set-off engine and the ITR export) AND by
+ * `itrPageInputs` (/reports/itr), so the two IPO halves cannot drift apart.
+ *
+ * `sttCtt`, `mtfInterest` and `pledgeCharges` are deliberately ABSENT (the IPO
+ * row states none; the STT s.48 add-back is a recorded follow-up), and the FMV
+ * is `null`, not a guess: an IPO allotment has no 31-Jan-2018 FMV on record
+ * (grandfathering a pre-2018 IPO lot needs an FMV column — a follow-up).
+ * `null` and absent price identically (`fmv31Jan2018 ?? null`), so the tax
+ * pack's figures do not move; the explicit `null` is what lets a deep-equal
+ * seam tell this mapping from a hand-typed copy of it.
+ */
+export function ipoCgTrade(r: TaxTrade): CapitalGainsTrade {
+  return {
+    segment: r.segment,
+    assetClass: r.assetClass,
+    buyDate: r.buyDate,
+    sellDate: r.sellDate,
+    fyDate: r.fyDate,
+    buyValue: r.buyValue,
+    sellValue: r.sellValue,
+    netPnl: r.netPnl,
+    fmv31Jan2018: null,
   };
 }

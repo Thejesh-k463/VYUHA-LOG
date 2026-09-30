@@ -1,7 +1,7 @@
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
-import { DashboardClient, type DashTrade } from "@/components/dashboard/dashboard-client";
+import { DashboardClient } from "@/components/dashboard/dashboard-client";
 import { AutoMtmRunner } from "@/components/system/auto-mtm-runner";
 import { TelegramRunner } from "@/components/system/telegram-runner";
 import { AutoPullRunner } from "@/components/system/auto-pull-runner";
@@ -13,24 +13,61 @@ import { SectionArrangeProvider } from "@/components/layout/section-stack";
 import { RearrangeControls } from "@/components/layout/rearrange-controls";
 import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
-import { getDashboardTrades } from "@/lib/queries/trades";
+import { getDashboardTrades, getDashboardAggregate } from "@/lib/queries/trades";
+import { parseDashboardFilters } from "@/lib/analytics/dashboard-aggregate";
 import { getSettings, getGlobalRisk } from "@/lib/queries/settings";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { getGoalView, getAggregateGoalProgress } from "@/lib/queries/goals";
 import { goalProgress } from "@/lib/analytics/goal";
 import { dailyPnl } from "@/lib/analytics/metrics";
 import { inrCompact } from "@/lib/format";
-import { asWorkspace } from "@/lib/domain/workspace";
+import { asWorkspace, defaultBucket, type Workspace } from "@/lib/domain/workspace";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+/**
+ * The cockpit's figures. v4.7.0 C0 (LEDGER L-51 / D-16): the page used to hand
+ * DashboardClient EVERY `DashTrade` row (13.1 MB of HTML on the 25,001-row perf
+ * book) so the browser could filter and total them. The filters are search
+ * params now and the maths runs here, once, over the same read; the client
+ * receives `DashboardAggregate` — bounded by days, months and groups, never by
+ * the trade count. Async only for `searchParams`, and kept a CHILD so the page
+ * itself stays a synchronous element tree (tests walk it for the banner).
+ */
+async function DashboardFigures({
+  searchParams,
+  workspace,
+  monthlyBase,
+  monthlyStretch,
+}: {
+  searchParams?: Promise<SearchParams>;
+  workspace: Workspace;
+  monthlyBase: number | null;
+  monthlyStretch: number | null;
+}) {
+  const sp = (await searchParams) ?? {};
+  const aggregate = getDashboardAggregate(parseDashboardFilters(sp, defaultBucket(workspace)));
+  return (
+    <DashboardClient
+      workspace={workspace}
+      aggregate={aggregate}
+      monthlyBase={monthlyBase}
+      monthlyStretch={monthlyStretch}
+    />
+  );
+}
+
+export default function DashboardPage({ searchParams }: { searchParams?: Promise<SearchParams> } = {}) {
   const settings = getSettings();
   const risk = getGlobalRisk();
   // The 13 DashTrade fields are selected in SQL (getDashboardTrades) instead
   // of fetching all 74 columns and projecting here — same rows, same order,
   // same values, ~4× less row-mapping work at 25k trades (perf sweep 2026-08-29).
-  const dash: DashTrade[] = getDashboardTrades();
+  // Server-side only since v4.7.0 C0: the header count and the goal badge read
+  // it here, and DashboardFigures aggregates the same cached read.
+  const dash = getDashboardTrades();
 
   // ACCOUNT-FIRST (v3.7): the "Total ₹XL" tile read the GLOBAL settings row
   // while the goal badge three lines below already resolved per-account — the
@@ -103,9 +140,9 @@ export default function DashboardPage() {
         {/* v4.6.0 W4 (row 9.5): five first steps, above the movable sections
             and below every warning. Facts are read here, scoped (invariant 8). */}
         <GettingStartedStrip facts={getGettingStartedFacts()} />
-        <DashboardClient
+        <DashboardFigures
+          searchParams={searchParams}
           workspace={asWorkspace(settings?.workspace)}
-          trades={dash}
           monthlyBase={risk?.monthlyTargetBase ?? null}
           monthlyStretch={risk?.monthlyTargetStretch ?? null}
         />

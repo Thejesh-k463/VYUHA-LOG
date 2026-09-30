@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-11879%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-11928%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-142%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
@@ -678,7 +678,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery; Fyers' and Nuvama's lists are not bundled yet) | charge-engine error vs a real broker report |
-| **11879** | **45** | **0** |
+| **11928** | **45** | **0** |
 | tests, 142 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
@@ -923,7 +923,7 @@ forever.** Your own record of your trading is never held hostage.
 - **ITR Pack**: speculative vs non-speculative vs capital-gains segregation per FY, **ICAI Guidance Note turnover**, and a **44AB/44AD audit-applicability read** with layered cautions — export CSV/XLSX for your CA.
 - **Taxes paid (advance tax)** on the ITR pack — your own challans in the return's Schedule IT shape (BSR code, date of deposit, serial, amount), exportable, and **blank rather than 0** for anything it cannot derive.
 - **Schedule-format export** — the same figures emitted in the return's own item codes: **Schedule CG** (A2 for STCG u/s 111A on ITR-2 — A3 on ITR-3, which numbers the schedule differently; the 112A box is AY-keyed — B4 for LTCG u/s 112A in AY 2025-26, B3 in AY 2026-27 — with the ₹1.25L deduction), **Schedule BP** for both business heads, and **Schedule CFL** with each loss vintage and the year it lapses. It also says which form your book implies — ITR-2, or ITR-3 the moment any intraday or F&O appears.
-- **It gets the STT rule right, which a re-label would not.** STT is excluded from capital-gains deductions (proviso to S.48) but allowed in full as a business expense against intraday and F&O. Every other figure in Vyuha is net of STT, so the Schedule CG balance is deliberately *higher* than the net P&L shown elsewhere — the charge breakdown is stored per trade, so this is a fact here rather than an estimate.
+- **It gets the STT rule right, which a re-label would not.** STT is excluded from capital-gains deductions (proviso to S.48) but allowed in full as a business expense against intraday and F&O. Every other figure in Vyuha is net of STT, so the Schedule CG balance is deliberately *higher* than the net P&L shown elsewhere (except exited IPO allotments, whose STT is not yet added back — recorded, DECISIONS 2026-10-01 C0, STATE §0.4 item 15) — the charge breakdown is stored per trade, so this is a fact here rather than an estimate.
 
 ### 🔄 Automation — with your consent, never without it
 - **First-run setup, four steps and skippable**: account and optional starting capital → get your trades in → optional Telegram → done. **Capital stays optional** — skip it and every report that needs a base still says “— · set your capital in Settings” rather than inventing one. “Run setup again” lives in Settings, and an install that already has a book never sees the wizard.
@@ -1034,7 +1034,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       11879 unit + integration tests across 505 files (+ tests/load: 16 load cases, run separately)
+tests/       11928 unit + integration tests across 509 files (+ tests/load: 16 load cases, run separately)
 e2e/         142 Playwright flows through the real app, in 38 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -1055,7 +1055,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **11879 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **11928 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -1071,7 +1071,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (11879 tests) |
+| `npm test` | Vitest unit + integration suite (11928 tests) |
 | `npm run test:e2e` | Playwright e2e — 142 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -1141,7 +1141,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 11879 Vitest unit + integration tests (+ tests/load)
+  tests/          # 11928 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

@@ -15,6 +15,7 @@ import {
   type CapitalGainsTrade,
 } from "@/lib/analytics/capital-gains";
 import { assetClassFor, type CgAssetClass } from "@/lib/analytics/cg-heads";
+import { ipoCgTrade, itrPageInputs } from "@/lib/analytics/itr";
 
 /**
  * The shared input set for the Tax Summary page AND the on-demand ITR export
@@ -111,16 +112,10 @@ export const getTaxBase = cache((personParam?: string | null) => {
       pledgeCharges: t.pledgeCharges,
       fmv31Jan2018: fmvTotalOf(t),
     })),
-    ...ipoTaxRows.map((r) => ({
-      segment: r.segment,
-      assetClass: r.assetClass,
-      buyDate: r.buyDate,
-      sellDate: r.sellDate,
-      fyDate: r.fyDate,
-      buyValue: r.buyValue,
-      sellValue: r.sellValue,
-      netPnl: r.netPnl,
-    })),
+    // v4.7.0 C0 — through THE one IPO mapping, which /reports/itr's
+    // `itrPageInputs` calls too (lib/analytics/itr.ts), so the two surfaces
+    // cannot carry an exited allotment two ways.
+    ...ipoTaxRows.map((r) => ipoCgTrade(r)),
   ];
 
   /**
@@ -149,6 +144,20 @@ export const getTaxBase = cache((personParam?: string | null) => {
 
   return { trades, closedTrades, realisedTrades, exitedIpos, ipoTaxRows, cgTrades, taxRows, scope };
 });
+
+/**
+ * /reports/itr's three builders' inputs (the head-wise pack, the set-off engine,
+ * the schedule), built from THE tax base — the same person scope, the same
+ * realised rows and the same exited-IPO set /reports/tax and the ITR export
+ * read, in the same order (v4.7.0 C0). The page used to read `getTrades` →
+ * `getRealisedRows` itself and no IPO at all; folding every realised IPO in
+ * instead would double-count the records `ipoIdsCountedThroughTrades` already
+ * counts through their holdings, which `getTaxBase` excludes above.
+ */
+export function getItrPageInputs(personParam?: string | null) {
+  const b = getTaxBase(personParam);
+  return itrPageInputs(b.realisedTrades, b.ipoTaxRows);
+}
 
 /** How many rows the ITR export will contain — the page's disabled state. */
 export function countItrRows(personParam?: string | null): number {

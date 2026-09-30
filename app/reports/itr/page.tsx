@@ -3,13 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { ExportButtons } from "@/components/ui/export-button";
-import { getTrades } from "@/lib/queries/trades";
-import { getRealisedRows } from "@/lib/queries/realised-rows";
+import { getItrPageInputs } from "@/lib/queries/tax-itr";
 import { needsPersonChoice, resolveTaxScope, taxScopeHeader } from "@/lib/queries/tax-scope";
 import { TaxPersonLine, TaxPersonPicker } from "@/components/reports/tax-person-scope";
 import { getSettings } from "@/lib/queries/settings";
 import { ProGate } from "@/components/system/pro-gate";
-import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy, itrPageInputs } from "@/lib/analytics/itr";
+import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy } from "@/lib/analytics/itr";
 import { section } from "@/lib/analytics/statute";
 import { itrScheduleByFy, scheduleExportRows, taxesPaidByFy, taxesPaidExportRows } from "@/lib/analytics/itr-schedule";
 import { getChallans } from "@/lib/queries/challans";
@@ -76,26 +75,25 @@ export default async function ItrPackPage({
     );
   }
   const scopeNote = taxScopeHeader(scope);
-  // `getTrades(scope.accountIds)` and not `getTaxTrades`: the schedule builder
-  // reads `sttCtt`, which the tax projection does not carry.
-  const rawTrades = getTrades(scope.accountIds);
-  // v4.5.0 wave 3b-ii (P1) — all three builders below are REALISED consumers
-  // (each skips `isOpen` itself), so they read the realised book rather than
-  // the raw projection: one row per fill for a STAGED ladder, the parent row
-  // for everything else. A partly-sold ladder's booked fills used to appear in
-  // no financial year at all, and then whole in the year it closed.
-  // lib/analytics/realised-rows.ts owns that rule.
-  const realised = getRealisedRows(rawTrades);
-  // The asset class is resolved ONCE and the per-share FMV scaled to a total
-  // ONCE, inside the pure `itrPageInputs` (lib/analytics/itr.ts), and threaded
-  // into all three builders below — tests/itr-page-fmv.test.ts calls the same
-  // function, so the page and its pin cannot drift apart.
-  const inputs = itrPageInputs(realised);
+  // v4.7.0 C0 — the inputs come from THE tax base (`getTaxBase`, the one
+  // /reports/tax and the ITR export read): the same person scope, the same
+  // REALISED rows (one per fill for a STAGED ladder — lib/analytics/realised-rows.ts
+  // owns that rule) and the same EXITED IPOs, net of every record already counted
+  // through its linked holding. This page used to read `getTrades` →
+  // `getRealisedRows` itself and no IPO at all, so an allotment sold outside any
+  // holding was on the Tax Summary and missing here. The tax projection carries
+  // `sttCtt` (TAX_FIELDS, lib/queries/trades.ts), so the schedule reads it too.
+  // The asset class and the FMV total are resolved ONCE, inside the pure
+  // `itrPageInputs` (lib/analytics/itr.ts); tests/seams-v47-c0.test.ts renders
+  // this page against the tax pack, and tests/itr-page-fmv.test.ts pins the FMV.
+  const inputs = getItrPageInputs(person);
   const packs = itrPackByFy(inputs.pack, fyStartMonth);
 
   // Carry-forward comes from the SAME set-off engine the Tax Summary uses, so
-  // Schedule CFL cannot drift from the figures on that page.
-  const currentFy = packs[packs.length - 1]?.fy ?? "2026-27";
+  // Schedule CFL cannot drift from the figures on that page. The undated-row
+  // fallback FY is TODAY's, exactly as /reports/tax passes it (and as
+  // itrPackByFy defaults): the newest pack's FY equalled it only by coincidence.
+  const currentFy = deriveCurrentFy(fyStartMonth);
   const byFy = aggregateTradesByFy(inputs.capitalGains, fyStartMonth, currentFy);
   // Pre-journal b/f losses seed here too — same seed AND same SeedGuard as
   // the Tax Summary (a lot whose FY the journal covers is excluded on both

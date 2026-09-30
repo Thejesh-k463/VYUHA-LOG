@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/kpi-card";
 import { CountUp } from "@/components/ui/count-up";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ExportButtons } from "@/components/ui/export-button";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -17,37 +16,38 @@ import { brokersWithNativeParser } from "@/lib/import/registry-meta";
 import { EquityCurve, SegmentBars } from "./charts";
 import { CalendarHeatmap } from "./calendar-heatmap";
 import { Section, SectionStack } from "@/components/layout/section-stack";
-import {
-  computeKpis, equityCurve, dailyPnl, bySegment, bySetup, edgeMeasurable,
-  type AnalyticsTrade,
-} from "@/lib/analytics/metrics";
 import { inr, inrCompact, pct } from "@/lib/format";
+import { exportRows as writeExport } from "@/lib/export";
+import { Download } from "lucide-react";
 import { PROFIT_FACTOR_TITLE, profitFactorRows, segmentEdgeRows, type SegmentEdgeRow } from "@/lib/domain/kpi-detail";
 import { BROKERS, BROKER_LABELS, BUCKETS, BUCKET_LABELS, SEGMENTS, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
-import { provenanceRowOf, rProvenanceCounts, rProvenanceFromKpis, rProvenanceLine } from "@/lib/analytics/win-loss";
+import { rProvenanceFromKpis, rProvenanceLine } from "@/lib/analytics/win-loss";
 import {
-  isLotSegment, perLotAggregateResolved, perLotSecondLine, perLotUnknownNote, rPerLotLabel,
+  isLotSegment, perLotSecondLine, perLotUnknownNote, rPerLotLabel,
   type PerLotAggregate,
 } from "@/lib/analytics/per-lot";
+import {
+  dashboardQuery,
+  type DashboardAggregate, type DashboardFilters, type DashExportRow, type DashRow,
+} from "@/lib/analytics/dashboard-aggregate";
 
-export interface DashTrade extends AnalyticsTrade {
-  symbol: string;
-  exchange: string;
-  /** v4.4.0 D3 — the "1R = X per lot" numerator (stored risk, rupees). */
-  riskAmount?: number | null;
-  /** Lots resolved SERVER-side by getDashboardTrades; null = the book cannot say. */
-  lots?: number | null;
-  lotSource?: string | null;
-}
+/** One dashboard row — kept as the component's name for the server's shape. */
+export type DashTrade = DashRow;
 
 export function DashboardClient({
-  trades,
+  aggregate,
   monthlyBase,
   monthlyStretch,
   workspace = "both",
 }: {
-  trades: DashTrade[];
+  /**
+   * v4.7.0 C0 — every figure below, computed on the SERVER over the filters in
+   * the URL (`dashboardAggregate`, lib/analytics/dashboard-aggregate.ts). No
+   * trade row reaches this component; the export fetches its rows on click
+   * from GET /api/dashboard/export.
+   */
+  aggregate: DashboardAggregate;
   /** null = no monthly target set (v4.4.0) — the ladder says so rather than
    *  measuring against the ₹4.25L / ₹5.1L it used to substitute. */
   monthlyBase: number | null;
@@ -55,29 +55,27 @@ export function DashboardClient({
   workspace?: Workspace;
 }) {
   const router = useRouter();
-  const [broker, setBroker] = React.useState("");
-  // Workspace mode seeds the bucket filter, it does not enforce it: this is
-  // the same control the user can set to "All buckets", and it reads back the
-  // choice it made. Nothing is filtered that the screen does not show.
-  const [bucket, setBucket] = React.useState<string>(() => defaultBucket(workspace));
-  const [segment, setSegment] = React.useState("");
-  const [from, setFrom] = React.useState("");
-  const [to, setTo] = React.useState("");
-
-  const filtered = React.useMemo(() => {
-    return trades.filter((t) => {
-      if (broker && t.broker !== broker) return false;
-      if (bucket && t.bucket !== bucket) return false;
-      if (segment && t.segment !== segment) return false;
-      const d = t.sellDate ?? t.buyDate;
-      if (from && d && d < from) return false;
-      if (to && d && d > to) return false;
-      return true;
+  // The filters live in the URL, so the server can apply them. Workspace mode
+  // still seeds the bucket (an absent `bucket` param IS `defaultBucket`), it
+  // does not enforce it: "Both buckets" is `bucket=all`, and the control reads
+  // back the choice it made. The controls show the OPTIMISTIC value while the
+  // navigation is in flight and settle on the server's own `filters` after —
+  // derived, never synced in an effect.
+  const baseBucket = defaultBucket(workspace);
+  const [pending, startTransition] = React.useTransition();
+  const [shown, setShown] = React.useOptimistic(aggregate.filters);
+  const setFilter = (key: keyof DashboardFilters, value: string) => {
+    const next = { ...shown, [key]: value };
+    startTransition(() => {
+      setShown(next);
+      router.replace(`/${dashboardQuery(next, baseBucket)}`, { scroll: false });
     });
-  }, [trades, broker, bucket, segment, from, to]);
+  };
 
-  const k = React.useMemo(() => computeKpis(filtered), [filtered]);
-  const curve = React.useMemo(() => equityCurve(filtered), [filtered]);
+  // The figures and the popups speak for the filters they were computed under.
+  const { bucket, segment } = aggregate.filters;
+  const k = aggregate.kpis;
+  const curve = aggregate.curve;
 
   /**
    * P&L the equity curve cannot plot.
@@ -87,21 +85,12 @@ export function DashboardClient({
    * no per-trade dates, so the two can differ by lakhs — and a curve that
    * quietly ends far above the headline loss is worse than no curve at all.
    */
-  const undatedNet = React.useMemo(
-    () => filtered.filter((t) => !t.isOpen && !t.sellDate).reduce((s, t) => s + t.netPnl, 0),
-    [filtered],
-  );
-  const undatedCount = React.useMemo(
-    () => filtered.filter((t) => !t.isOpen && !t.sellDate).length,
-    [filtered],
-  );
-  const daily = React.useMemo(() => Object.fromEntries(dailyPnl(filtered)), [filtered]);
+  const undatedNet = aggregate.undatedNet;
+  const undatedCount = aggregate.undatedCount;
+  const daily = aggregate.daily;
   // Closed trades the calendar can never show — surfaced, not silently dropped.
-  const undatedClosed = React.useMemo(
-    () => filtered.filter((t) => !t.isOpen && !t.sellDate).length,
-    [filtered],
-  );
-  const segStats = React.useMemo(() => bySegment(filtered), [filtered]);
+  const undatedClosed = aggregate.undatedCount;
+  const segStats = aggregate.segStats;
   const segEdge = React.useMemo(() => segmentEdgeRows(segStats), [segStats]);
 
   /**
@@ -110,7 +99,9 @@ export function DashboardClient({
    * Population: the exact rows the per-trade figure above it was taken over —
    * closed AND `edgeMeasurable` — so expectancy-per-lot × Σlots = the segment's
    * priced net to the paisa. Lots are whatever the SERVER resolved (`lots`,
-   * `lotSource`); nothing is re-derived or re-priced here.
+   * `lotSource`); nothing is re-derived or re-priced here. Since v4.7.0 C0 the
+   * server also aggregates them (`aggregate.perLot`: `perLotAggregateResolved`
+   * and `rProvenanceCounts` over that population); this words the line.
    *
    * `rProvenanceLine` is computed over the SAME population and printed beside
    * the figures (design-review delta): on a cap-only segment "1R per lot" is a
@@ -118,96 +109,42 @@ export function DashboardClient({
    */
   const perLotBySegment = React.useMemo(() => {
     const out = new Map<string, { agg: PerLotAggregate; line: string; rProvLine: string }>();
-    const segs = new Set(filtered.map((t) => t.segment).filter(isLotSegment));
-    for (const s of segs) {
-      const pop = filtered.filter((t) => t.segment === s && !t.isOpen && edgeMeasurable(t));
-      if (pop.length === 0) continue;
-      const agg = perLotAggregateResolved(pop.map((t) => ({
-        lots: t.lots ?? null,
-        lotSource: t.lotSource ?? null,
-        netPnl: t.netPnl,
-        riskAmount: t.riskAmount ?? null,
-        rMultiple: t.rMultiple,
-      })));
-      const prov = rProvenanceLine(rProvenanceCounts(pop.map(provenanceRowOf)));
+    for (const [s, { agg, rProv }] of Object.entries(aggregate.perLot)) {
+      if (!isLotSegment(s)) continue;
+      const prov = rProvenanceLine(rProv);
       out.set(s, { agg, line: perLotSecondLine(agg, prov), rProvLine: prov });
     }
     return out;
-  }, [filtered]);
+  }, [aggregate.perLot]);
 
   /** The popups only speak per-lot when the filter names ONE F&O segment —
    *  a per-lot figure pooled across segments divides unlike lots. */
   const segPerLot = segment && isLotSegment(segment) ? perLotBySegment.get(segment) : undefined;
-  const setupStats = React.useMemo(() => bySetup(filtered), [filtered]);
+  const setupStats = aggregate.setupStats;
 
   // C4 — sparkline (last 30 equity points) + week-over-week net delta.
-  const spark = React.useMemo(() => curve.slice(-30).map((p) => p.cum), [curve]);
-  const weekDelta = React.useMemo(() => {
-    const dates = Object.keys(daily).sort();
-    if (dates.length === 0) return null;
-    const latest = new Date(dates[dates.length - 1] + "T00:00:00");
-    const cutoff = (d: number) => {
-      const x = new Date(latest);
-      x.setDate(x.getDate() - d);
-      return x.toISOString().slice(0, 10);
-    };
-    const wk1 = cutoff(7);
-    const wk2 = cutoff(14);
-    let thisWeek = 0;
-    let lastWeek = 0;
-    for (const [d, v] of Object.entries(daily)) {
-      if (d > wk1) thisWeek += v;
-      else if (d > wk2) lastWeek += v;
-    }
-    const value = Math.round(thisWeek - lastWeek);
-    return { value, label: "vs prior wk", formatted: inrCompact(Math.abs(value)) };
-  }, [daily]);
+  const spark = aggregate.spark;
+  const weekDelta = aggregate.weekDelta == null
+    ? null
+    : { value: aggregate.weekDelta, label: "vs prior wk", formatted: inrCompact(Math.abs(aggregate.weekDelta)) };
 
   // Drill-down inputs for the KPI popups (click any card).
-  const dayStats = React.useMemo(() => {
-    const entries = Object.entries(daily);
-    if (entries.length === 0) return { best: 0, worst: 0, bestDate: null as string | null, worstDate: null as string | null };
-    let best = entries[0];
-    let worst = entries[0];
-    for (const e of entries) {
-      if (e[1] > best[1]) best = e;
-      if (e[1] < worst[1]) worst = e;
-    }
-    return { best: best[1], worst: worst[1], bestDate: best[0], worstDate: worst[0] };
-  }, [daily]);
-
-  const rStats = React.useMemo(() => {
-    // Edge-measurable only, so this count IS `k.rCount` — the detail row used to
-    // count unpriced rows the Avg R average itself excludes (v4.4.0 D2).
-    const rs = filtered
-      .filter((t) => !t.isOpen && t.rMultiple != null && edgeMeasurable(t))
-      .map((t) => t.rMultiple as number);
-    return {
-      count: rs.length,
-      best: rs.length ? Math.max(...rs) : null,
-      worst: rs.length ? Math.min(...rs) : null,
-    };
-  }, [filtered]);
+  const dayStats = aggregate.dayStats;
+  // Edge-measurable only, so this count IS `k.rCount` (v4.4.0 D2).
+  const rStats = aggregate.rStats;
 
   /** Where the R denominators came from, over the SAME rows `k.avgR` averaged. */
   const rProv = React.useMemo(() => rProvenanceFromKpis(k), [k]);
   const rProvLine = rProvenanceLine(rProv);
 
   // monthly ladder (combined)
-  const monthly = React.useMemo(() => {
-    const m = new Map<string, number>();
-    for (const [d, v] of Object.entries(daily)) {
-      const key = d.slice(0, 7);
-      m.set(key, (m.get(key) ?? 0) + v);
-    }
-    return [...m.entries()].sort().map(([month, net]) => ({ month, net }));
-  }, [daily]);
+  const monthly = aggregate.monthly;
 
   const exportColumns = [
     { key: "sellDate", label: "Date" },
     { key: "symbol", label: "Symbol" },
     { key: "broker", label: "Broker" },
-    { key: "segment", label: "Segment", value: (r: DashTrade) => SEGMENT_LABELS[r.segment as Segment] ?? r.segment },
+    { key: "segment", label: "Segment", value: (r: DashExportRow) => SEGMENT_LABELS[r.segment as Segment] ?? r.segment },
     { key: "bucket", label: "Bucket" },
     { key: "exchange", label: "Exchange" },
     { key: "grossPnl", label: "Gross" },
@@ -222,7 +159,7 @@ export function DashboardClient({
   // range or clear a filter" — blaming a filter that was never set, on a
   // database that was never filled, with no next step offered anywhere
   // (2026-08-10 audit: "the single worst first impression in the product").
-  if (trades.length === 0) {
+  if (aggregate.bookCount === 0) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <EmptyState
@@ -243,23 +180,27 @@ export function DashboardClient({
     <div className="space-y-5">
       {/* Filter bar */}
       <div className="sticky top-[69px] z-[5] -mx-6 flex flex-wrap items-center gap-2 border-b border-border bg-background/90 px-6 py-2 backdrop-blur">
-        <Select value={broker} onChange={(e) => setBroker(e.target.value)} className="h-8 w-32">
+        <Select value={shown.broker} onChange={(e) => setFilter("broker", e.target.value)} className="h-8 w-32">
           <option value="">All brokers</option>
           {BROKERS.map((b) => <option key={b} value={b}>{BROKER_LABELS[b]}</option>)}
         </Select>
-        <Select value={bucket} onChange={(e) => setBucket(e.target.value)} className="h-8 w-40">
+        <Select value={shown.bucket} onChange={(e) => setFilter("bucket", e.target.value)} className="h-8 w-40">
           <option value="">Both buckets</option>
           {BUCKETS.map((b) => <option key={b} value={b}>{BUCKET_LABELS[b]}</option>)}
         </Select>
-        <Select value={segment} onChange={(e) => setSegment(e.target.value)} className="h-8 w-44">
+        <Select value={shown.segment} onChange={(e) => setFilter("segment", e.target.value)} className="h-8 w-44">
           <option value="">All segments</option>
           {SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}
         </Select>
-        <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-36" title="From" />
-        <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 w-36" title="To" />
+        <Input type="date" value={shown.from} onChange={(e) => setFilter("from", e.target.value)} className="h-8 w-36" title="From" />
+        <Input type="date" value={shown.to} onChange={(e) => setFilter("to", e.target.value)} className="h-8 w-36" title="To" />
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{k.closedCount} closed · {k.openCount} open</span>
-          <ExportButtons filename="vyuha-trades" columns={exportColumns} rows={filtered} />
+          <span className="text-xs text-muted-foreground" aria-busy={pending}>{k.closedCount} closed · {k.openCount} open</span>
+          <DashboardExport
+            columns={exportColumns}
+            disabled={aggregate.filteredCount === 0}
+            query={dashboardQuery(aggregate.filters, "")}
+          />
         </div>
       </div>
 
@@ -503,6 +444,52 @@ export function DashboardClient({
       </section>
       </Section>
       </SectionStack>
+    </div>
+  );
+}
+
+/**
+ * `ExportButtons`' two buttons, fed on the click (v4.7.0 C0): the rows are the
+ * filtered book, read from GET /api/dashboard/export (a route handler + client
+ * fetch — never a server action, AGENTS.md), so they never ride on the page.
+ * Same filename, same columns, no note — the file is the one the old
+ * in-memory export wrote. `query` is `dashboardQuery(filters, "")`: the
+ * filters the figures were computed under, bucket already resolved.
+ */
+function DashboardExport({
+  columns,
+  disabled,
+  query,
+}: {
+  columns: { key: string; label: string; value?: (r: DashExportRow) => string | number | null }[];
+  disabled: boolean;
+  query: string;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+  const run = async (format: "csv" | "xlsx") => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      const res = await fetch(`/api/dashboard/export${query}`, { cache: "no-store" });
+      const body = (await res.json()) as { ok?: boolean; rows?: DashExportRow[] };
+      if (!res.ok || !body.ok || !Array.isArray(body.rows)) throw new Error(`export ${res.status}`);
+      await writeExport("vyuha-trades", columns, body.rows, format);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex items-center gap-1.5 print:hidden">
+      {failed && <span className="text-xs text-loss" role="alert">Export failed — try again</span>}
+      <Button size="sm" variant="outline" onClick={() => void run("csv")} disabled={disabled || busy}>
+        <Download className="size-3.5" /> CSV
+      </Button>
+      <Button size="sm" variant="outline" onClick={() => void run("xlsx")} disabled={disabled || busy}>
+        <Download className="size-3.5" /> XLSX
+      </Button>
     </div>
   );
 }

@@ -9,6 +9,10 @@ import { canonicalIsin } from "@/lib/domain/isin";
 import { SLIM_TRADE_FIELDS, type SlimTrade } from "@/lib/domain/slim-trade";
 import { hasPlanR } from "@/lib/analytics/win-loss";
 import { lotsOf, lotSourceLabel } from "@/lib/analytics/per-lot";
+import {
+  dashboardAggregate, dashboardExportRows, sanitizeDashboardFilters,
+  type DashboardAggregate, type DashboardFilters, type DashExportRow,
+} from "@/lib/analytics/dashboard-aggregate";
 import { getIndexLotMap } from "./instruments";
 import { getSelectedAccountId } from "./accounts";
 import { accountScopeWhere } from "./tax-scope";
@@ -301,6 +305,25 @@ export const getDashboardTrades = cache((): DashboardTrade[] => {
     return out as unknown as DashboardTrade;
   });
 });
+
+/**
+ * v4.7.0 C0 — what `/` ships instead of the rows: `dashboardAggregate` over
+ * THIS projection, in THIS scope (the same `getDashboardTrades()` read, never a
+ * second path), under the page's filters. The whole-book row set stays on the
+ * server; the aggregate is bounded by distinct days, months and groups.
+ */
+export function getDashboardAggregate(filters: DashboardFilters): DashboardAggregate {
+  return dashboardAggregate(getDashboardTrades(), filters);
+}
+
+/**
+ * The dashboard export's rows — read on the click, not with the page. The
+ * filters come from the client, so they are re-checked against the vocabulary
+ * (an unknown value widens to "no filter", exactly like a hand-typed URL).
+ */
+export function getDashboardExportRows(filters: unknown): DashExportRow[] {
+  return dashboardExportRows(getDashboardTrades(), sanitizeDashboardFilters(filters as Partial<DashboardFilters> | null));
+}
 
 const TRACKER_FIELDS = [
   "id", "broker", "bucket", "segment", "instrumentType", "exchange",

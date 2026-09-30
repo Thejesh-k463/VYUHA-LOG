@@ -134,13 +134,16 @@ describe("both render sites print the SAME helper output", () => {
   const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
 
   it.each([
-    ["components/dashboard/dashboard-client.tsx"],
-    ["app/reports/edge-clinic/_tabs/setups.tsx"], // v4.6.0 W3: the old /reports/edge body
-  ])("%s renders perLotSecondLine beside rProvenanceLine", (file) => {
+    // v4.7.0 C0: the dashboard's per-lot population is counted on the SERVER
+    // (the page ships an aggregate, not rows), so `rProvenanceCounts` lives in
+    // the pure aggregate module; the client still words the line.
+    ["components/dashboard/dashboard-client.tsx", "lib/analytics/dashboard-aggregate.ts"],
+    ["app/reports/edge-clinic/_tabs/setups.tsx", "app/reports/edge-clinic/_tabs/setups.tsx"], // v4.6.0 W3: the old /reports/edge body
+  ])("%s renders perLotSecondLine beside rProvenanceLine", (file, countsFile) => {
     const src = read(file);
     expect(src, "the shared second line, not a hand-rolled one").toContain("perLotSecondLine(");
     expect(src, "the R provenance caption rides on the same line").toContain("rProvenanceLine(");
-    expect(src).toContain("rProvenanceCounts(");
+    expect(read(countsFile)).toContain("rProvenanceCounts(");
     // …and the population is the closed, priced rows of that segment only.
     expect(src).toMatch(/isLotSegment/);
   });
