@@ -63,7 +63,7 @@ const T95 = [
   2.08, 2.074, 2.069, 2.064, 2.06, 2.056, 2.052, 2.048, 2.045, 2.042,
 ];
 
-function tQuantile95(df: number): number {
+export function tQuantile95(df: number): number {
   if (df < 1) return Number.NaN;
   return df <= 30 ? T95[df - 1] : Z[0.95];
 }
