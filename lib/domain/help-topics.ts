@@ -35,6 +35,7 @@ function tab(hubPath: string, tabId: string): string {
   return hubTabHref(hub, tabId);
 }
 
+const CLINIC = tab("/reports/edge-clinic", "clinic");
 const SETUPS = tab("/reports/edge-clinic", "setups");
 const DISCIPLINE = tab("/reports/edge-clinic", "discipline");
 const SCALING = tab("/reports/edge-clinic", "scaling");
@@ -333,12 +334,13 @@ export const HELP_TASKS: Record<string, HelpTask> = {
   },
   "/reports/edge-clinic": {
     steps: [
+      "Start on Clinic for graded findings from your own book and this week's note.",
       "Open Setups for expectancy by setup, segment and NSE theme, with stop tuning and MAE/MFE.",
       "Open Discipline for the weekly Process Score and what broken rules cost.",
       "Open Scaling & Replay to see whether adding to a position helped.",
     ],
     watchOut: "Stop tuning describes where past stops sat in R; it names no stop to use.",
-    related: [SETUPS, DISCIPLINE, SCALING],
+    related: [CLINIC, SETUPS, DISCIPLINE, SCALING],
     screenshot: "reports-edge-clinic",
   },
   "/reports/capital": {
@@ -419,6 +421,17 @@ export const HELP_TASKS: Record<string, HelpTask> = {
     watchOut:
       "Annualised figures are clamped and marked once the extrapolation leaves the meaningful range, instead of printing an impossible number.",
     related: ["/reports/capital", EXPIRY, "/reports/performance"],
+  },
+  [CLINIC]: {
+    steps: [
+      "Read the whole-book evidence grade and how many more trades it still needs.",
+      "Read this week's note: at most three findings, each graded by the strength of its evidence.",
+      "Pick one account, then start an experiment from a finding to test it over your next trades.",
+      "Open a cell's Detail for its interval, its provenance line and any decay or sizing read.",
+    ],
+    watchOut:
+      "Grades are evidence about your past record, not advice: an established cell can still stop working, and the note never says what to trade.",
+    related: ["/reports/edge-clinic", SETUPS, DISCIPLINE],
   },
   [SETUPS]: {
     steps: [

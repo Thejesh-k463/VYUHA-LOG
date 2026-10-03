@@ -20,9 +20,9 @@ import { test, expect } from "@playwright/test";
  */
 
 const CASES: { from: string; to: RegExp; heading: RegExp; tabs: string[]; active: string }[] = [
-  { from: "/reports/edge", to: /\/reports\/edge-clinic\?tab=setups$/, heading: /Edge Clinic/, tabs: ["Setups", "Discipline", "Scaling & Replay"], active: "Setups" },
-  { from: "/reports/discipline", to: /\/reports\/edge-clinic\?tab=discipline$/, heading: /Edge Clinic/, tabs: ["Setups", "Discipline", "Scaling & Replay"], active: "Discipline" },
-  { from: "/reports/scaling", to: /\/reports\/edge-clinic\?tab=scaling$/, heading: /Edge Clinic/, tabs: ["Setups", "Discipline", "Scaling & Replay"], active: "Scaling & Replay" },
+  { from: "/reports/edge", to: /\/reports\/edge-clinic\?tab=setups$/, heading: /Edge Clinic/, tabs: ["Clinic", "Setups", "Discipline", "Scaling & Replay"], active: "Setups" },
+  { from: "/reports/discipline", to: /\/reports\/edge-clinic\?tab=discipline$/, heading: /Edge Clinic/, tabs: ["Clinic", "Setups", "Discipline", "Scaling & Replay"], active: "Discipline" },
+  { from: "/reports/scaling", to: /\/reports\/edge-clinic\?tab=scaling$/, heading: /Edge Clinic/, tabs: ["Clinic", "Setups", "Discipline", "Scaling & Replay"], active: "Scaling & Replay" },
   { from: "/reports/rom", to: /\/reports\/capital\?tab=rom$/, heading: /Capital & Expiry/, tabs: ["Return on Margin", "Expiry"], active: "Return on Margin" },
   { from: "/reports/expiry", to: /\/reports\/capital\?tab=expiry$/, heading: /Capital & Expiry/, tabs: ["Return on Margin", "Expiry"], active: "Expiry" },
   { from: "/reports/charges", to: /\/reports\/costs\?tab=charges$/, heading: /Costs/, tabs: ["Charges & MTF Leak", "Broker Costs"], active: "Charges & MTF Leak" },

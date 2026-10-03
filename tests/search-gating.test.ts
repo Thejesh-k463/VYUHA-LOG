@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PRO_FEATURES } from "@/lib/license";
 import { isSourceKey, lockFor, lockForSource, parseCategories, SOURCE_KEYS, SOURCES } from "@/lib/domain/search-scope";
+import { hubForHref, hubTabHref } from "@/lib/domain/hubs";
 
 /**
  * Search v1 — gating (owner rulings 2026-09-04).
@@ -18,10 +19,12 @@ describe("lockFor — the pure rule", () => {
   const cases: { href: string; ent: { pro: boolean }; locked: boolean }[] = [
     { href: "/risk", ent: FREE, locked: true },
     { href: "/risk", ent: PRO, locked: false },
-    // v4.6.0 W3: /reports/edge is the Edge Clinic's Setups tab; the hub PATH locks.
-    { href: "/reports/edge-clinic", ent: FREE, locked: true },
-    { href: "/reports/edge-clinic?from=2026-01-01", ent: FREE, locked: true }, // path match survives a query string
-    { href: "/reports/edge-clinic#setups", ent: FREE, locked: true },
+    // v4.7.0 C2: the hub PATH opens its default tab, Clinic — a `partial` screen (free teaser) — so it never locks;
+    // an explicit Pro tab still does (v4.6.0 W3's rule, now per tab).
+    { href: "/reports/edge-clinic", ent: FREE, locked: false },
+    { href: "/reports/edge-clinic?from=2026-01-01", ent: FREE, locked: false }, // a non-tab query string keeps the default tab
+    { href: "/reports/edge-clinic#setups", ent: FREE, locked: false }, // a fragment is not a tab
+    { href: "/reports/edge-clinic?tab=setups", ent: FREE, locked: true },
     { href: "/trades", ent: FREE, locked: false }, // core journal; `/trades?add=open` is a partial action, not the page
     { href: "/trades?symbol=TCS", ent: FREE, locked: false },
     { href: "/playbooks", ent: FREE, locked: false },
@@ -60,7 +63,11 @@ describe("lockFor — the pure rule", () => {
       // v4.6.0 W3: a whole-page entry keyed by a hub TAB URL is checked too —
       // it must lock under its own label, and so must its hub's bare path.
       expect(lockFor(f.href, FREE), f.href).toEqual({ locked: true, unlocks: f.label });
-      expect(lockFor(f.href.split("?")[0], FREE).locked, f.href).toBe(true);
+      // v4.7.0 C2: the bare hub path opens the hub's DEFAULT tab, so it locks only when that tab is whole-page Pro.
+      const path = f.href.split("?")[0];
+      const hub = hubForHref(path);
+      const opened = hub ? PRO_FEATURES.find((x) => x.href === hubTabHref(hub, hub.defaultTab)) : f;
+      expect(lockFor(path, FREE).locked, f.href).toBe(!!opened && !opened.partial);
       expect(lockFor(f.href, PRO), f.href).toEqual({ locked: false });
     }
   });

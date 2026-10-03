@@ -9,6 +9,7 @@ import { hasKnownBasis } from "@/lib/analytics/acquisition";
 import { num, inr, pct } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { computeMaeMfe, stopTuningReport, type MaeTradeInput } from "@/lib/analytics/mae-mfe";
+import { maeInputsOf } from "@/lib/analytics/mae-input";
 import { getBarsMap } from "@/lib/queries/price-history";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
@@ -20,11 +21,11 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { ProGate } from "@/components/system/pro-gate";
 import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analytics/win-loss";
-import { sideOf } from "@/lib/domain/side";
 
 // v4.6.0 W3 — the body of the old /reports/edge screen, now the Edge Clinic's
-// Setups tab. The hub page (../page.tsx) owns the page header and the Pro gate.
+// Setups tab. The hub page (../page.tsx) owns the page header; the tab owns its own Pro gate since v4.7.0 C2.
 
 // `pricedCount` rides along because it is the DENOMINATOR of "Win rate" and of
 // "Expectancy" on this table: a sheet carrying the rate without the trades it
@@ -43,26 +44,9 @@ export function SetupsTab() {
 
   // MAE/MFE — EOD-bar excursions for closed dated trades covered by price_history.
   const aliasMap = getAliasMap();
-  const maeInputs: MaeTradeInput[] = trades
-    .filter((t) => !t.isOpen)
-    .map((t) => {
-      const side: "long" | "short" = sideOf(t);
-      const qty = Math.max(t.buyQty, t.sellQty);
-      return {
-        id: t.id,
-        symbol: t.symbol,
-        ticker: resolveTicker(t.symbol.toUpperCase(), aliasMap),
-        side,
-        qty,
-        entry: side === "long" ? t.avgBuyPrice : t.avgSellPrice,
-        exit: side === "long" ? t.avgSellPrice : t.avgBuyPrice,
-        entryDate: side === "long" ? t.buyDate : t.sellDate,
-        exitDate: side === "long" ? t.sellDate : t.buyDate,
-        netPnl: t.netPnl,
-        isOpen: t.isOpen,
-        riskAmount: t.riskAmount,
-      };
-    });
+  // v4.7.0 C2: the ONE shared builder (lib/analytics/mae-input.ts) — typed
+  // intra-trade high/low are used while they bracket the fills, else EOD bars.
+  const maeInputs: MaeTradeInput[] = maeInputsOf(trades, (sym) => resolveTicker(sym, aliasMap));
   const maeReport = computeMaeMfe(maeInputs, getBarsMap(maeInputs.map((i) => i.ticker)));
   const tuning = stopTuningReport(maeReport.rows);
 
@@ -136,8 +120,10 @@ export function SetupsTab() {
     perLotBySegment.set(d.segment, perLotSecondLine(agg, prov));
   }
 
+  // v4.7.0 C2: the tab owns its gate — the hub page no longer wraps every
+  // body, because the Clinic tab beside it has a free teaser.
   return (
-    <>
+    <ProGate>
         {rProvLine && <p className="text-[0.6875rem] text-muted-foreground">Every Avg R on this page: {rProvLine}. Default-cap R measures P&amp;L in per-segment cap units, not plan adherence.</p>}
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />
@@ -145,7 +131,7 @@ export function SetupsTab() {
         <SegmentDepthCard report={depth} perLot={perLotBySegment} />
         <ThemeEdgeCard report={themes} />
         <MaeMfeCard report={maeReport} />
-    </>
+    </ProGate>
   );
 }
 

@@ -45,12 +45,20 @@ export const HUBS: readonly Hub[] = [
   {
     href: "/reports/edge-clinic",
     label: "Edge Clinic",
-    description: "Where your edge comes from and what leaks it — setups, discipline and scaling, one tab each.",
-    // 4.6.0: Setups is the default. The Clinic tab itself lands in 4.7.0 and
-    // takes the default then — no placeholder tab is registered before it
-    // exists (a tab that renders nothing is a broken promise in the strip).
-    defaultTab: "setups",
+    description: "Where your edge comes from and what leaks it — the Clinic's graded evidence, then setups, discipline and scaling, one tab each.",
+    // 4.7.0 C2: the Clinic tab lands and takes the default (4.6.0 opened on
+    // Setups — no placeholder tab was registered before it existed).
+    defaultTab: "clinic",
     tabs: [
+      {
+        id: "clinic",
+        label: "Clinic",
+        description: "What the evidence in your own book says, graded by how strong it is — and one experiment at a time to test it.",
+        // The Clinic replaced no screen. This href is a fresh alias (no
+        // app/ route, no other redirect uses it) so the registry's shape holds
+        // and next.config.ts answers it with the same 307 as the seven old ones.
+        legacyHref: "/reports/clinic",
+      },
       {
         id: "setups",
         label: "Setups",
@@ -163,7 +171,7 @@ export function legacyRedirect(oldHref: string): string | null {
   return null;
 }
 
-/** The seven routes the hubs replaced, derived from HUBS. */
+/** The seven routes the hubs replaced plus the Clinic's alias (4.7.0), derived from HUBS. */
 export const LEGACY_HREFS: readonly string[] = HUBS.flatMap((h) => h.tabs.map((t) => t.legacyHref));
 
 /** legacy href → hub href, derived (the saved-nav-order migration reads this). */

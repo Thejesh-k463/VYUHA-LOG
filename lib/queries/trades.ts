@@ -16,6 +16,9 @@ import {
 import { getIndexLotMap } from "./instruments";
 import { getSelectedAccountId } from "./accounts";
 import { accountScopeWhere } from "./tax-scope";
+import type { ClinicTrade } from "@/lib/analytics/edge-clinic";
+import type { SetupGrade } from "@/lib/analytics/edge-clinic-contract";
+import type { Segment } from "@/lib/domain/constants";
 
 /**
  * The whole book in the current scope.
@@ -101,10 +104,12 @@ export interface RPlanFlags {
 
 function rPlanRows<K extends keyof Trade & keyof typeof trades>(
   keys: readonly K[],
+  /** An explicit account list (`scopedBookRows`); omitted = the selected account (invariant 8). */
+  accountIds?: readonly number[],
 ): (Pick<Trade, K> & RPlanFlags)[] {
   const wide = scopedBookRows([
     ...keys, ...R_PLAN_INPUT_FIELDS,
-  ] as readonly (K | (typeof R_PLAN_INPUT_FIELDS)[number])[]);
+  ] as readonly (K | (typeof R_PLAN_INPUT_FIELDS)[number])[], accountIds);
   return wide.map((r) => {
     const src = r as Record<string, unknown>;
     const out = {} as Record<string, unknown>;
@@ -169,6 +174,39 @@ export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]> & RPlanFlag
  * the single-route-projection rule at the head of this file.
  */
 export const getLensTrades = cache((): LensRowTrade[] => rPlanRows(LENS_FIELDS));
+
+/**
+ * v4.7.0 C2 — the Edge Clinic's input: every `ClinicTrade` field, 1:1 from the
+ * row (money already rupees through `moneyPaise`; prices REAL), plus the two R
+ * provenance flags `rPlanRows` folds. The R-plan INPUT columns the engine also
+ * reads (`slPlanned`, `trailingSl`, the two average prices, both quantities,
+ * `riskAmount`, `riskSource`) are listed here too, so `rPlanRows` keeps them.
+ */
+const CLINIC_FIELDS = [
+  "id", "segment", "buyQty", "sellQty", "side", "buyDate", "sellDate", "entryTime", "exitTime", "isOpen",
+  "grossPnl", "chargesTotal", "netPnl", "rMultiple", "riskAmount", "riskSource", "slPlanned", "trailingSl",
+  "avgBuyPrice", "avgSellPrice", "setupTag", "setupGrade", "ruleViolations", "playbookId", "entryDte", "lotSize", "importNotes",
+] as const satisfies readonly (keyof Trade)[];
+
+/**
+ * The Edge Clinic's book, ordered by id (the digest hashes it in that order;
+ * the engine sorts chronologically itself, ties by id, so input order cannot
+ * move a figure). `accountIds` omitted = the selected account's scope through
+ * `accountScopeWhere` (invariant 8: `accountId > 0 ? filter : all`); `[id]` =
+ * exactly that account — an experiment is checked over ITS OWN account's book,
+ * never the view's (design review change 3). Not React-cached: an array
+ * argument is a fresh cache key on every call; `clinicInputs()` caches above it.
+ */
+export function getClinicTrades(accountIds?: readonly number[]): ClinicTrade[] {
+  return rPlanRows(CLINIC_FIELDS, accountIds)
+    .map((r) => ({
+      ...r,
+      segment: r.segment as Segment,
+      setupGrade: (r.setupGrade ?? null) as SetupGrade | null,
+      ruleViolations: r.ruleViolations ?? null,
+    }))
+    .sort((a, b) => a.id - b.id);
+}
 
 const LENS_CHARGE_FIELDS = [
   // id joins the row back to its lens group; isOpen lets the aggregation keep
@@ -573,6 +611,8 @@ const ARJUN_FIELDS = [
   // … and (v4.6.0 W6) which side opened a flat row: the MAE/MFE side and the
   // stop-migration direction map read it through `sideOf`.
   "side",
+  // … and (v4.7.0 C2) the typed intra-trade range `maeInputsOf` prefers over bars.
+  "intraHigh", "intraLow",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type ArjunTrade = Pick<Trade, (typeof ARJUN_FIELDS)[number]>;

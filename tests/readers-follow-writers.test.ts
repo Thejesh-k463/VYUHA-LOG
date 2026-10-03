@@ -428,6 +428,28 @@ const schedules = itrScheduleByFy(trades.map((t) => ({
   });
 });
 
+describe("v4.7.0 C2 — a split/bonus writer scales the typed intra-trade range with the other levels (intra-range-split)", () => {
+  const F = (src: string) => scanSource("split-probe.ts", src, ["intra-range-split"]).map((v) => v.line);
+
+  it("the pre-C2 split writer (SL/TSL/target only) is reported on both branches; the C2 shape and a non-split write are not", () => {
+    // Trimmed from lib/corporate-actions-apply.ts at 1c92bdc (:84-:108): both ternary arms scale the stop and target only.
+    const preFix = `import { adjustForSplitOrBonus } from "@/lib/analytics/corporate-actions";
+const after = adjustForSplitOrBonus(before, multiplier);
+tx.update(tradesTable)
+  .set(isShort
+    ? { side, sellQty: after.qty, slPlanned: after.slPlanned, trailingSl: after.trailingSl, targetPlanned: after.targetPlanned }
+    : { side, buyQty: after.qty, slPlanned: after.slPlanned, trailingSl: after.trailingSl, targetPlanned: after.targetPlanned })
+  .where(eq(tradesTable.id, t.id)).run();`;
+    expect(F(preFix)).toEqual([3]);
+    const fixed = preFix.replace(/targetPlanned: after\.targetPlanned \}/g, "targetPlanned: after.targetPlanned, intraHigh, intraLow }");
+    expect(F(fixed)).toEqual([]);
+    // Only one of the two is still a stranded range.
+    expect(F(preFix.replace(/targetPlanned: after\.targetPlanned \}/g, "targetPlanned: after.targetPlanned, intraHigh }"))).toEqual([3]);
+    // A file that rescales nothing is out of scope even when it writes a stop.
+    expect(F(`db.update(trades).set({ slPlanned: 5 }).run();`)).toEqual([]);
+  });
+});
+
 describe("G3 — HEAD under every rule", () => {
   /**
    * ONE walk for the whole file (measured locally 2026-09-15: 640 files read,
@@ -552,6 +574,13 @@ export function reads(p: P, list: P[]) {
     }
   });
 
+  it("intra-range-split: the split/bonus writer scales the typed intra-trade range with SL/TSL/target", () => {
+    expect(hits("intra-range-split"), RULE["intra-range-split"].forbidden).toEqual([]);
+    // Not empty-satisfiable: the one rescaling writer IS in the rule's scope.
+    const text = fs.readFileSync("lib/corporate-actions-apply.ts", "utf8");
+    expect(RULE["intra-range-split"].triggers.some((t) => text.includes(t))).toBe(true);
+  });
+
   /**
    * v4.6.0 W6 (contract D2/D3, design review R-3) — `trades.side`. Every writer
    * that sets a leg quantity states the side in the same statement, and no
@@ -633,7 +662,7 @@ export function reads(p: P, list: P[]) {
   });
 
   it("the registry states a rule, its forbidden shapes and its provenance for every field it guards", () => {
-    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer", "fmv-per-share"]);
+    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer", "fmv-per-share", "intra-range-split"]);
     for (const r of REGISTRY) {
       expect(r.rule.length, r.id).toBeGreaterThan(40);
       expect(r.forbidden.length, r.id).toBeGreaterThan(20);

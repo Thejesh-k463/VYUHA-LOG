@@ -45,6 +45,7 @@ import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts"
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { executionIdentity, scopedHashes } from "./trade-identity";
 import { recordAudit } from "@/lib/audit";
+import type { SetupGrade } from "@/lib/analytics/edge-clinic-contract";
 import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } from "./isin-symbol";
@@ -2668,6 +2669,11 @@ export interface ManualJournalFields {
   forcedSegment?: Segment | null;
   forcedExchange?: Exchange | null;
   setupTag?: string | null;
+  /** v4.7.0 C2: 'A+' | 'A' | 'B' or null (ungraded) — validated by the server action. */
+  setupGrade?: SetupGrade | null;
+  /** v4.7.0 C2: the typed intra-trade high / low (per-unit prices, both or neither) — validated by the server action. */
+  intraHigh?: number | null;
+  intraLow?: number | null;
   notes?: string | null;
   slPlanned?: number | null;
   trailingSl?: number | null;
@@ -2836,6 +2842,9 @@ export function commitManualTrade(
       rMultiple: capR(netPnl, riskAmount),
       riskSource,
       setupTag: fields.setupTag ?? null,
+      setupGrade: fields.setupGrade ?? null,
+      intraHigh: fields.intraHigh ?? null,
+      intraLow: fields.intraLow ?? null,
       notes: fields.notes ?? null,
       // v4.3.0 — the Signal book. An option only (the classifier's verdict, not
       // the form's claim), and null on an Add that recorded none: an empty
@@ -3767,6 +3776,11 @@ export interface UpdateTradeFields {
   /** MTF only; omit/undefined = keep the persisted funded amount unchanged. */
   ownCapitalUsed?: number | null;
   setupTag?: string | null;
+  /** v4.7.0 C2 — undefined = keep the stored value; null = clear (ungraded). */
+  setupGrade?: SetupGrade | null;
+  /** v4.7.0 C2 — the typed intra-trade high / low; undefined = keep, null = clear. */
+  intraHigh?: number | null;
+  intraLow?: number | null;
   /** WHY the trade was closed — free text; null = unanswered (never ""). */
   exitTrigger?: string | null;
   notes?: string | null;
@@ -4124,6 +4138,9 @@ export function updateManualTrade(
       trailingSl: fields.trailingSl !== undefined ? fields.trailingSl : t.trailingSl,
       targetPlanned: fields.targetPlanned !== undefined ? fields.targetPlanned : t.targetPlanned,
       setupTag: fields.setupTag !== undefined ? fields.setupTag : t.setupTag,
+      setupGrade: fields.setupGrade !== undefined ? fields.setupGrade : t.setupGrade,
+      intraHigh: fields.intraHigh !== undefined ? fields.intraHigh : t.intraHigh,
+      intraLow: fields.intraLow !== undefined ? fields.intraLow : t.intraLow,
       exitTrigger: fields.exitTrigger !== undefined ? fields.exitTrigger : t.exitTrigger,
       notes: fields.notes !== undefined ? fields.notes : t.notes,
       signalJson: nextSignalJson,

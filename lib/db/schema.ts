@@ -90,6 +90,12 @@ export const trades = sqliteTable(
 
     // Journal
     setupTag: text("setup_tag"),
+    /**
+     * The trader's own grade of the setup (v4.7.0 C2, migration 0079): 'A+' | 'A' |
+     * 'B', OPTIONAL, typed at entry (SETUP_GRADES, lib/analytics/edge-clinic-contract.ts).
+     * NULL = ungraded — never a grade cell in the Edge Clinic.
+     */
+    setupGrade: text("setup_grade").$type<"A+" | "A" | "B">(),
     notes: text("notes"),
     /**
      * THE SIGNAL this trade was taken on (v4.3.0, migration 0072) — a versioned
@@ -109,6 +115,15 @@ export const trades = sqliteTable(
     slPlanned: real("sl_planned"), // original stop-loss
     trailingSl: real("trailing_sl"), // trailing stop-loss (TSL)
     targetPlanned: real("target_planned"),
+    /**
+     * The highest / lowest price traded while the position was open (v4.7.0 C2,
+     * migration 0079) — typed by the user, both or neither. Per-unit PRICE LEVELS,
+     * so REAL (invariant 1), and scaled by a split / bonus exactly as SL / TSL /
+     * target are (lib/corporate-actions-apply.ts). MAE/MFE uses them only while
+     * low ≤ min(entry, exit) and high ≥ max(entry, exit) (lib/analytics/mae-mfe.ts).
+     */
+    intraHigh: real("intra_high"),
+    intraLow: real("intra_low"),
     riskAmount: moneyPaise("risk_amount_paise"),
     impliedVol: real("implied_vol"), // user-entered IV %, e.g. 20 for 20% (option Greeks)
     entryIv: real("entry_iv"),
@@ -1519,8 +1534,51 @@ export const brokerReference = sqliteTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// clinic_experiments — USER DATA (v4.7.0 C2, migration 0079): one pre-registered
+// comparison started on an Edge Clinic cell. Only `startedAt` is stored; the
+// baseline and the result are computed at read time from ONE ClinicTrade[]
+// (lib/analytics/edge-clinic-note.ts). Account-owned: backups, purge snapshot,
+// merge, scoped reads. NO foreign key (the migration header says why).
+// ---------------------------------------------------------------------------
+export const clinicExperiments = sqliteTable(
+  "clinic_experiments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull(),
+    cellKey: text("cell_key").notNull(),
+    cellLabel: text("cell_label").notNull(),
+    hypothesis: text("hypothesis").notNull(),
+    startedAt: text("started_at").notNull(),
+    targetN: integer("target_n").notNull(),
+    status: text("status").$type<"open" | "checked" | "abandoned">().notNull().default("open"),
+    checkedAt: text("checked_at"),
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex("clinic_experiments_open_uq").on(t.accountId, t.cellKey).where(sql`${t.status} = 'open'`),
+    index("clinic_experiments_account_idx").on(t.accountId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// clinic_cache — DERIVED (v4.7.0 C2, migration 0079): the last Edge Clinic
+// report per scope (`acct:<id>`, 0 = the All view) with the sha256 digest of the
+// exact engine input. No account_id; never backed up; a digest mismatch makes a
+// row stale, never fresh.
+// ---------------------------------------------------------------------------
+export const clinicCache = sqliteTable("clinic_cache", {
+  scopeKey: text("scope_key").primaryKey(),
+  digest: text("digest").notNull(),
+  engineVersion: text("engine_version").notNull(),
+  reportJson: text("report_json").notNull(),
+  computedAt: text("computed_at").notNull(),
+});
+
 // Type exports
 export type Trade = typeof trades.$inferSelect;
+export type ClinicExperimentRow = typeof clinicExperiments.$inferSelect;
+export type ClinicCacheRow = typeof clinicCache.$inferSelect;
 export type Playbook = typeof playbooks.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
 export type ChargeConfigRow = typeof chargeConfig.$inferSelect;

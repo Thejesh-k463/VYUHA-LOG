@@ -55,7 +55,8 @@ export type RuleId =
   | "risk-cap-resolver"
   | "trade-side-reader"
   | "trade-side-writer"
-  | "fmv-per-share";
+  | "fmv-per-share"
+  | "intra-range-split";
 
 export interface FieldRule {
   id: RuleId;
@@ -260,6 +261,26 @@ export const REGISTRY: FieldRule[] = [
       "v4.6.0 fix wave, finding MO-3 (HIGH): app/reports/itr/page.tsx:115/:138 passed `fmv31Jan2018: t.fmv31Jan2018` raw into " +
       "aggregateTradesByFy and itrScheduleByFy — 100 sh @ ₹100, FMV ₹250, sold ₹30,000 read LTCG ₹20,000 on the ITR pack " +
       "against ₹5,000 on /reports/tax. Red fixture: HEAD 3657793 app/reports/itr/page.tsx.",
+  },
+  {
+    id: "intra-range-split",
+    field: "intraHigh",
+    fields: ["intraHigh", "intraLow"],
+    rule:
+      "`trades.intraHigh` / `trades.intraLow` (v4.7.0 C2, migration 0079) are per-unit PRICE LEVELS the user typed, like " +
+      "`slPlanned` / `trailingSl` / `targetPlanned` (invariant 1). Every writer that rescales a row's levels for a split or " +
+      "bonus (`adjustForSplitOrBonus`) writes the two typed range levels in the SAME statement, scaled by the same function.",
+    forbidden:
+      "a `.update(trades).set({...})` in a file that calls `adjustForSplitOrBonus`, whose literal sets `slPlanned`, " +
+      "`trailingSl` or `targetPlanned` but not BOTH `intraHigh` and `intraLow`",
+    allowed: "the same literal carrying `intraHigh` and `intraLow` (scaled), and any trades write in a file that rescales nothing",
+    // Structural scope: only a file that rescales levels for a corporate action can strand the typed range.
+    triggers: ["adjustForSplitOrBonus"],
+    roots: ["lib", "app"],
+    provenance:
+      "v4.7.0 C2 design review change 8: lib/corporate-actions-apply.ts:80-107 scaled SL / TSL / target on a split and nothing " +
+      "else; a typed range left in pre-split rupees no longer brackets the post-split fills, and MAE/MFE then falls back to " +
+      "bars without a word. Red fixture: HEAD 1c92bdc lib/corporate-actions-apply.ts.",
   },
 ];
 
@@ -940,6 +961,27 @@ function scanFmvPerShare(sf: TS.SourceFile, file: string): Violation[] {
   return out;
 }
 
+/** Rule — a split/bonus writer scales the typed intra-trade range with the other levels (C2 change 8). */
+function scanIntraRangeSplit(sf: TS.SourceFile, file: string): Violation[] {
+  const out: Violation[] = [];
+  if (!TRADE_TABLES.some((t) => sf.text.includes(`(${t})`))) return out;
+  const why = "a split/bonus rescale of SL/TSL/target that leaves intraHigh/intraLow in pre-split rupees — scale them in the same statement";
+  const LEVELS = ["slPlanned", "trailingSl", "targetPlanned"];
+  walk(sf, (n) => {
+    if (!ts.isCallExpression(n) || !ts.isPropertyAccessExpression(n.expression) || n.expression.name.text !== "set") return;
+    const inner = n.expression.expression;
+    if (!ts.isCallExpression(inner) || !ts.isPropertyAccessExpression(inner.expression) || inner.expression.name.text !== "update") return;
+    const table = inner.arguments[0];
+    if (!table || !ts.isIdentifier(table) || !TRADE_TABLES.includes(table.text)) return;
+    const keys = literalKeys(sf, n.arguments[0]);
+    if (!keys) return;
+    if (LEVELS.some((k) => keys.has(k)) && !(keys.has("intraHigh") && keys.has("intraLow"))) {
+      out.push({ rule: "intra-range-split", file, line: lineOf(sf, n), expr: oneLine(sf, n.expression, 90), why });
+    }
+  });
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -969,6 +1011,7 @@ export function scanSource(fileName: string, text: string, only?: RuleId[]): Vio
     if (r.id === "trade-side-reader") out.push(...scanSideReader(parse(), file));
     if (r.id === "trade-side-writer") out.push(...scanSideWriter(parse(), file));
     if (r.id === "fmv-per-share") out.push(...scanFmvPerShare(parse(), file));
+    if (r.id === "intra-range-split") out.push(...scanIntraRangeSplit(parse(), file));
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule));
 }

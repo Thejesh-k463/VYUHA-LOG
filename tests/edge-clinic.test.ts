@@ -18,6 +18,7 @@ import { mulberry32 } from "@/lib/analytics/monte-carlo";
 import { benjaminiHochberg, benjaminiYekutieli } from "@/lib/analytics/inference";
 import { rProvenanceLine } from "@/lib/analytics/win-loss";
 import { mean } from "@/lib/analytics/edge-clinic-stats";
+import { cellTrades } from "@/lib/analytics/edge-clinic";
 
 const TODAY = "2026-10-01";
 
@@ -147,21 +148,21 @@ describe("the grid: grades after Benjamini–Yekutieli", () => {
 
   it("exactly the real-edge setup is established among the setups; the five nulls are unclear", () => {
     const setups = grid.cells.filter((c) => c.kind === "setup");
-    expect(setups.filter((c) => c.grade === "established").map((c) => c.key)).toEqual(["eq_intraday|A"]);
-    for (const k of ["B", "C"]) expect(cell(grid, `eq_intraday|${k}`).grade).toBe("unclear");
-    for (const k of ["D", "E", "F"]) expect(cell(grid, `eq_delivery|${k}`).grade).toBe("unclear");
-    expect(cell(grid, "eq_delivery|G").grade).toBe("insufficient");
+    expect(setups.filter((c) => c.grade === "established").map((c) => c.key)).toEqual(["eq_intraday|setup:A"]);
+    for (const k of ["B", "C"]) expect(cell(grid, `eq_intraday|setup:${k}`).grade).toBe("unclear");
+    for (const k of ["D", "E", "F"]) expect(cell(grid, `eq_delivery|setup:${k}`).grade).toBe("unclear");
+    expect(cell(grid, "eq_delivery|setup:G").grade).toBe("insufficient");
   });
 
   it("no cell made only of null setups is established; an established aggregate always contains A", () => {
     expect(cell(grid, "eq_delivery|all").grade).toBe("unclear");
     for (const c of grid.cells.filter((x) => x.grade === "established")) {
-      expect(["all|all", "eq_intraday|all", "eq_intraday|A"]).toContain(c.key);
+      expect(["all|all", "eq_intraday|all", "eq_intraday|setup:A"]).toContain(c.key);
     }
   });
 
   it("the established edge carries the imperative; its mean and CI are the sample's", () => {
-    const a = cell(grid, "eq_intraday|A");
+    const a = cell(grid, "eq_intraday|setup:A");
     expect(a.verb).toBe("imperative");
     expect(a.copy.headline).toBe("Keep sizing Equity Intraday · A as you do");
     expect(a.meanR!).toBeCloseTo(0.5, 12);
@@ -170,7 +171,7 @@ describe("the grid: grades after Benjamini–Yekutieli", () => {
   });
 
   it("insufficient reads \"—\" and \"n = 10, need ≥ 20\"", () => {
-    const g = cell(grid, "eq_delivery|G");
+    const g = cell(grid, "eq_delivery|setup:G");
     expect(g.verb).toBe("none");
     expect(g.copy.headline).toBe("—");
     expect(g.copy.detail).toMatch(/^n = 10, need ≥ 20/);
@@ -178,7 +179,7 @@ describe("the grid: grades after Benjamini–Yekutieli", () => {
   });
 
   it("unclear cells get a bounded experiment, never an imperative", () => {
-    const b = cell(grid, "eq_intraday|B");
+    const b = cell(grid, "eq_intraday|setup:B");
     expect(b.verb).toBe("test");
     expect(b.copy.detail).toMatch(/^Test: next 20 trades in Equity Intraday · B/);
   });
@@ -201,7 +202,7 @@ describe("BY, not BH — the correction the cells' overlap requires", () => {
     return ts;
   })();
   const r = edgeClinic(book, { today: TODAY });
-  const x = cell(r, "eq_intraday|X");
+  const x = cell(r, "eq_intraday|setup:X");
 
   it("precondition: m = 6 and X's p sits between the BY and BH thresholds", () => {
     expect(r.m).toBe(6);
@@ -445,7 +446,7 @@ describe("rule adherence", () => {
   });
 
   it("arms are broke-a-playbook-rule vs kept-every-rule; gap = adherent − violated", () => {
-    const c = cell(rich, "eq_intraday|ORB");
+    const c = cell(rich, "eq_intraday|setup:ORB");
     expect(c.ruleAdherence.coverage).toEqual({ withData: 75, of: 75 });
     const chk = c.ruleAdherence.check!;
     expect(chk.arms.map((a) => [a.label, a.n])).toEqual([["broke a playbook rule", 25], ["kept every rule", 50]]);
@@ -494,7 +495,7 @@ describe("F&O cuts", () => {
 
 describe("cost drag, win-rate × payoff, ΔE", () => {
   it("cost per trade, cost share of gross wins and cost in R", () => {
-    const c = cell(grid, "eq_intraday|A");
+    const c = cell(grid, "eq_intraday|setup:A");
     expect(c.cost.costPerTrade).toBeCloseTo(20, 12);
     const ts = gridBook().filter((t) => t.setupTag === "A");
     const grossWins = ts.filter((t) => t.grossPnl > 0).reduce((s, t) => s + t.grossPnl, 0);
@@ -532,7 +533,7 @@ describe("cost drag, win-rate × payoff, ΔE", () => {
   });
 
   it("ΔE on a cell splits the chronological sequence in halves; null when a half has no loss", () => {
-    const d = cell(grid, "eq_intraday|A").payoff!.deltaE!;
+    const d = cell(grid, "eq_intraday|setup:A").payoff!.deltaE!;
     expect(d.prev.n).toBe(40);
     expect(d.curr.n).toBe(40);
     expect(Math.abs(d.fromWinRate + d.fromWinners + d.fromLosers - d.total)).toBeLessThan(1e-9);
@@ -568,7 +569,7 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
   });
 
   it("MinTRL: trades still needed = max(0, ⌈MinTRL⌉ − n); capped display above 1000; null when sr ≤ 0", () => {
-    const a = cell(grid, "eq_intraday|A");
+    const a = cell(grid, "eq_intraday|setup:A");
     expect(a.minTrl!).toBeGreaterThan(0);
     expect(a.tradesStillNeeded).toBe(Math.max(0, Math.ceil(a.minTrl!) - a.nWithR));
     const tiny = edgeClinic(fromR(exact(40, 0.02, 10), {}, 0), { today: TODAY }).cells[0];
@@ -580,7 +581,7 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
   });
 
   it("edge decay only from n ≥ 60; a late drop raises a CUSUM alarm worded as a test", () => {
-    expect(cell(grid, "eq_intraday|B").decay).toBeNull();
+    expect(cell(grid, "eq_intraday|setup:B").decay).toBeNull();
     const rs = [...exact(60, 0.6, 40), ...exact(60, -0.6, 41)];
     const c = edgeClinic(fromR(rs, {}, 0), { today: TODAY }).cells[0];
     expect(c.decay!.cusum.alarmIndex!).toBeGreaterThanOrEqual(60);
@@ -590,15 +591,15 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
 
   it("sizing ceiling from n ≥ 50: half-Kelly at the lower bounds, streak copy, growth at the current risk", () => {
     const r = edgeClinic(gridBook(), { today: TODAY, currentRiskPct: 1 });
-    const s = cell(r, "eq_intraday|A").sizing!;
+    const s = cell(r, "eq_intraday|setup:A").sizing!;
     expect(s.supportsSizingUp).toBe(true);
     expect(s.halfKellyLowerBound!).toBeGreaterThan(0);
     expect(s.halfKellyLowerBound!).toBeLessThan(s.kellyPoint! / 2);
     expect(s.verb).toBe("imperative");
     expect(s.growthAtCurrent!).toBeGreaterThan(0);
     expect(s.copy.detail).toMatch(/^Half-Kelly at the lower 95 % bounds.*at 1 % risk and a [\d.]+ % loss rate, a run of \d+ straight losses in the next 200 trades is normal/);
-    expect(cell(r, "eq_intraday|B").sizing).toBeNull(); // 40 < 50
-    expect(cell(grid, "eq_intraday|A").sizing!.growthAtCurrent).toBeNull();
+    expect(cell(r, "eq_intraday|setup:B").sizing).toBeNull(); // 40 < 50
+    expect(cell(grid, "eq_intraday|setup:A").sizing!.growthAtCurrent).toBeNull();
   });
 
   it("a null-edge cell with n ≥ 50 says the data does not support sizing up", () => {
@@ -611,7 +612,7 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
 
   it("deflation: the best cell is A, DSR < its PSR, N = m", () => {
     const d = grid.deflation!;
-    expect(d.bestCellKey).toBe("eq_intraday|A");
+    expect(d.bestCellKey).toBe("eq_intraday|setup:A");
     expect(d.nTrials).toBe(9);
     expect(d.deflatedSr!).toBeLessThan(d.psr!);
     expect(d.withinLuck).toBe(false);
@@ -657,5 +658,61 @@ describe("open trades, empty books, purity", () => {
         expect(l, `${f}: ${l}`).not.toMatch(/lib\/db|lib\/queries|["']react|server-only|["']\.\.?\/(db|queries)/);
       }
     }
+  });
+});
+
+// ── v4.7.0 C2: setup grades, prefixed setup keys, cellTrades ─────────────────
+
+describe("C2 — grade cells, the setup-key prefix and cellTrades", () => {
+  /** The grid, with the real-edge setup graded A+ and setup B graded B; nothing graded A. */
+  const graded = () =>
+    gridBook().map((t) => ({ ...t, setupGrade: t.setupTag === "A" ? ("A+" as const) : t.setupTag === "B" ? ("B" as const) : null }));
+  const g = edgeClinic(graded(), { today: TODAY });
+
+  it("grade cells exist ONLY for the grades present, as whole-book cells, and they count in m (9 + 2 = 11)", () => {
+    const grades = g.cells.filter((c) => c.kind === "grade");
+    expect(grades.map((c) => c.key)).toEqual(["all|grade:A+", "all|grade:B"]);
+    expect(grades.map((c) => c.setupGrade)).toEqual(["A+", "B"]);
+    expect(grades.every((c) => c.segment === null && c.setup === null && c.cut === null)).toBe(true);
+    expect(cell(g, "all|grade:A+").n).toBe(80);
+    expect(cell(g, "all|grade:B").n).toBe(40);
+    expect(g.m).toBe(11);
+    expect(g.multiplicity.m).toBe(11);
+    // The A+ cell holds exactly the real-edge rows, so it grades with them; B is a null.
+    expect(cell(g, "all|grade:A+").grade).toBe("established");
+    expect(cell(g, "all|grade:B").grade).toBe("unclear");
+    expect(g.cells.filter((c) => c.kind !== "grade").every((c) => c.setupGrade === null)).toBe(true);
+  });
+
+  it("an ungraded book (null or absent) is C1's report exactly — no grade cell, the same m", () => {
+    const nulls = edgeClinic(gridBook().map((t) => ({ ...t, setupGrade: null })), { today: TODAY });
+    expect(nulls.cells.some((c) => c.kind === "grade")).toBe(false);
+    expect(nulls.m).toBe(grid.m);
+    expect(nulls.cells.map((c) => [c.key, c.grade, c.nWithR])).toEqual(grid.cells.map((c) => [c.key, c.grade, c.nWithR]));
+  });
+
+  it("a setup tagged literally 'all' gets its own cell — it no longer collides with the segment cell", () => {
+    const ts = [
+      ...fromR(exact(25, 0, 21), { segment: "eq_intraday", setupTag: "all" }, 0),
+      ...fromR(exact(25, 0, 22), { segment: "eq_intraday", setupTag: "x" }, 30),
+    ];
+    const r = edgeClinic(ts, { today: TODAY });
+    const keys = r.cells.map((c) => c.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(cell(r, "eq_intraday|all").n).toBe(50);
+    expect(cell(r, "eq_intraday|setup:all").n).toBe(25);
+    expect(cell(r, "eq_intraday|setup:all").kind).toBe("setup");
+  });
+
+  it("cellTrades returns exactly the rows the engine put in each cell, in its chronological order", () => {
+    const book = graded();
+    for (const c of g.cells) expect(cellTrades(book, c.key).length, c.key).toBe(c.n);
+    expect(cellTrades(book, "all|grade:A+").every((t) => t.setupTag === "A")).toBe(true);
+    const a = cellTrades(book, "eq_intraday|setup:A").map((t) => t.id);
+    expect(a).toEqual([...a].sort((x, y) => x - y)); // one per day in id order here
+    expect(cellTrades(book, "eq_intraday|nope")).toEqual([]);
+    // open rows never enter a cell
+    const withOpen = [...book, trade({ isOpen: true, setupTag: "A", setupGrade: "A+" })];
+    expect(cellTrades(withOpen, "all|grade:A+")).toHaveLength(80);
   });
 });

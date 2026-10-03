@@ -84,6 +84,7 @@ export interface BookMods {
   riskRoute: typeof import("@/app/api/positions/risk/route");
   riskCap: typeof import("@/lib/queries/risk-cap");
   limits: typeof import("@/lib/risk/limits");
+  edgeClinic: typeof import("@/lib/queries/edge-clinic");
   trashDir: string;
 }
 
@@ -109,6 +110,7 @@ export async function loadBookMods(): Promise<BookMods> {
     riskRoute: await import("@/app/api/positions/risk/route"),
     riskCap: await import("@/lib/queries/risk-cap"),
     limits: await import("@/lib/risk/limits"),
+    edgeClinic: await import("@/lib/queries/edge-clinic"),
     trashDir: (await import("@/lib/db")).trashDir,
   };
 }
@@ -1412,7 +1414,70 @@ export const VARIANTS: BookOp[] = [
       { buyQty: 30, avgBuyPrice: 90, buyValue: 2700, buyDate: "2026-09-03", side: "long", executions: [{ side: "buy", qty: 30, price: 90, date: "2026-09-03" }] },
     ],
   ),
+  // ── v4.7.0 C2 — the Edge Clinic's experiments in the book's sequences ──────
+  //
+  // VARIANTS, not OPS: an experiment needs a GRADED cell (n ≥ 20 R-bearing
+  // trades), which the fixture book does not have, so every op below first
+  // needs `seedClinicCell`. Crossing them with all of OPS would be ~60 more
+  // pair scenarios asking nothing the curated sequences in
+  // tests/harness-book-sequences.test.ts do not.
+  {
+    name: "seedClinicCell",
+    needs: "nothing — it seeds its own rows",
+    drives: "a graded Edge Clinic cell in BOTH books: 25 closed 'cap' round trips exiting before today + 20 exiting tomorrow, re-priced by repriceCapTrades",
+    run: async (_db, ctx) => {
+      // Seam D2: an experiment started today counts trades exiting AFTER today — the 20 "experiment" rows close tomorrow.
+      const todayIst = (await import("@/lib/domain/trading-day")).todayIstIso();
+      const today = new Date(Date.parse(`${todayIst}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+      // net = R × the cap the resolver states today, so the seeded R is exact and a later cap edit rescales it.
+      const cap = ctx.m.limits.resolvePerTradeCap(ctx.m.riskCap.readCapRows(ctx.t.sqlite), "active", "eq_intraday");
+      if (cap == null || !(cap > 0)) return record(ctx, "seedClinicCell", "skipped", "no per-trade cap is stated");
+      const ids: number[] = [];
+      for (const acct of [ctx.ids.acctA, ctx.ids.acctB]) {
+        for (let i = 0; i < 45; i++) {
+          const day = i < 25 ? new Date(Date.UTC(2025, 0, 2 + i)).toISOString().slice(0, 10) : today;
+          const r = CLINIC_R[i % CLINIC_R.length];
+          const row = ctx.t.db
+            .insert(ctx.t.schema.trades)
+            .values({
+              accountId: acct, broker: "dhan", bucket: "active", segment: "eq_intraday", instrumentType: "equity", exchange: "NSE",
+              symbol: CLINIC_SYMBOL, tradingsymbol: CLINIC_SYMBOL, buyQty: 10, avgBuyPrice: 100, buyValue: 1000,
+              sellQty: 10, avgSellPrice: 100 + (r * cap) / 10, sellValue: 1000 + r * cap, buyDate: day, sellDate: day, side: "long",
+              grossPnl: r * cap, chargesTotal: 0, netPnl: r * cap, isOpen: false, setupTag: CLINIC_SETUP,
+              riskAmount: cap, riskSource: "cap", rMultiple: r, dedupHash: `g2-clinic-${acct}-${ctx.seq}-${i}`,
+            })
+            .returning({ id: ctx.t.schema.trades.id })
+            .get()!;
+          ids.push(row.id);
+        }
+      }
+      ctx.seq += 1;
+      // The stored risk of a 'cap' row is ALWAYS today's resolved cap (I7) — let the product say what that is.
+      ctx.m.riskCap.repriceCapTrades(ctx.t.sqlite, { ids });
+      record(ctx, "seedClinicCell", "applied", `${ids.length} closed '${CLINIC_SETUP}' round trips across both books`);
+    },
+  },
+  ...(["A", "B"] as const).map((which): BookOp => ({
+    name: `startExperimentIn${which}`,
+    needs: "a graded cell (`seedClinicCell`) — refused otherwise",
+    drives: "lib/queries/edge-clinic.ts computeClinic → startExperiment (POST /api/edge-clinic/experiments), in that book",
+    run: async (_db, ctx) => {
+      const acct = which === "A" ? ctx.ids.acctA : ctx.ids.acctB;
+      if (!accountExists(ctx, acct)) return record(ctx, `startExperimentIn${which}`, "skipped", `account ${acct} is gone`);
+      selectAccount(ctx, acct);
+      await ctx.m.edgeClinic.computeClinic();
+      const res = ctx.m.edgeClinic.startExperiment(CLINIC_CELL);
+      if (!res.ok) return record(ctx, `startExperimentIn${which}`, "refused", `${res.status} ${res.message}`);
+      record(ctx, `startExperimentIn${which}`, "applied", `experiment #${res.experiment.id} on ${CLINIC_CELL} in account ${acct}`);
+    },
+  })),
 ];
+
+/** v4.7.0 C2 — the seeded Clinic cell (VARIANTS `seedClinicCell`). R on a 0.2 grid: exact at two decimals after any cap halving. */
+export const CLINIC_SYMBOL = "G2CLINIC";
+export const CLINIC_SETUP = "g2-clinic";
+export const CLINIC_CELL = `eq_intraday|setup:${CLINIC_SETUP}`;
+const CLINIC_R = [1.2, -0.6, 0.8, -1, 0.4, 2, -0.8];
 
 /**
  * Fix wave (finding 1) — the pre-W6 rows of an overnight short a per-leg check

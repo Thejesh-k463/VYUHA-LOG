@@ -173,6 +173,13 @@ export interface TrashEnvelope {
      * Optional, like every key here: snapshots written before v3.7 carry none.
      */
     weeklyReviews?: Record<string, unknown>[];
+    /**
+     * v4.7.0 C2: the account's Edge Clinic experiments (`clinic_experiments`) —
+     * the user's own pre-registered tests, carried by an account purge so a
+     * restore brings them back. Optional, like every key here: an envelope
+     * written before v4.7.0 carries none.
+     */
+    clinicExperiments?: Record<string, unknown>[];
   };
   /**
    * v2, merge only: how much of the source's `pnlRolledIn` marker was carried

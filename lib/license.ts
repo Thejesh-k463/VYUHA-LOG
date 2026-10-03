@@ -277,8 +277,14 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
   // v4.6.0 W3 (owner ruling T1): seven analytics screens are TABS of three
   // hubs now, so their entries are keyed by the tab URL (`hubTabHref`, the one
-  // spelling of it). Each tab is still its own sold line; the hub page carries
-  // the <ProGate>, and `lockFor` / ENTITLEMENT_PATHS read the PATH.
+  // spelling of it). Each tab is still its own sold line, and `lockFor` /
+  // ENTITLEMENT_PATHS read the PATH. v4.7.0 C2: each whole-page tab body
+  // (`app/<hub>/_tabs/<tab>.tsx`) carries the <ProGate> on the Edge Clinic,
+  // because its Clinic tab is `partial` — the whole-book evidence grade is a
+  // FREE teaser; the full report, the weekly note and experiments are sold.
+  // The page reads getEntitlement and hands the tab `clinicStateFor(state, pro)`,
+  // so the report never enters a free copy's payload.
+  { href: hubTabHref(EDGE_CLINIC, "clinic"), label: "Edge Clinic — graded findings, a weekly note and experiments over your own book (the whole-book evidence grade stays free)", partial: true },
   { href: hubTabHref(EDGE_CLINIC, "setups"), label: "Edge / Setups — expectancy by setup, segment and NSE theme" },
   { href: hubTabHref(EDGE_CLINIC, "discipline"), label: "Discipline — which broken rule costs you the most" },
   { href: "/review", label: "Trade Review Desk" },

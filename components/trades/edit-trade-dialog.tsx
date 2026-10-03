@@ -15,6 +15,8 @@ import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { ExitTriggerField } from "@/components/trades/exit-trigger-field";
 import { SignalSection } from "@/components/trades/signal-section";
 import { entryLegOf, sideOf } from "@/lib/domain/side";
+import { Select } from "@/components/ui/select";
+import { SETUP_GRADES } from "@/lib/analytics/edge-clinic-contract";
 
 interface PreviewResp {
   breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
@@ -169,6 +171,12 @@ export function EditTradeDialog({
   });
   const [ownCapitalUsed, setOwnCapitalUsed] = useState("");
   const [setupTag, setSetupTag] = useState(trade.setupTag ?? "");
+  // v4.7.0 C2 — setup grade + typed intra-trade range, PRE-FILLED from the row
+  // (SlimTrade carries all three since C2), so a save posts exactly what the
+  // user sees: a blank field here is a stored blank, and clearing one clears it.
+  const [setupGrade, setSetupGrade] = useState<string>(trade.setupGrade ?? "");
+  const [intraHigh, setIntraHigh] = useState(trade.intraHigh != null ? String(trade.intraHigh) : "");
+  const [intraLow, setIntraLow] = useState(trade.intraLow != null ? String(trade.intraLow) : "");
   const [exitTrigger, setExitTrigger] = useState(trade.exitTrigger ?? "");
   const [notes, setNotes] = useState(trade.notes ?? "");
   const [currentPrice, setCurrentPrice] = useState("");
@@ -318,6 +326,26 @@ export function EditTradeDialog({
           <Input name="currentPrice" type="number" step="any" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} placeholder="if still open" />
         </Field>
         <Field label="SL (original)"><Input name="slPlanned" type="number" step="any" value={slPlanned} onChange={(e) => setSlPlanned(e.target.value)} /></Field>
+        <Field label="Intra-trade high">
+          <Input
+            name="intraHigh"
+            type="number"
+            step="any"
+            value={intraHigh}
+            onChange={(e) => setIntraHigh(e.target.value)}
+            placeholder="optional"
+          />
+        </Field>
+        <Field label="Intra-trade low">
+          <Input
+            name="intraLow"
+            type="number"
+            step="any"
+            value={intraLow}
+            onChange={(e) => setIntraLow(e.target.value)}
+            placeholder="optional"
+          />
+        </Field>
         <Field label="Trailing SL"><Input name="trailingSl" type="number" step="any" value={trailingSl} onChange={(e) => setTrailingSl(e.target.value)} /></Field>
         <Field label="Target"><Input name="targetPlanned" type="number" step="any" value={targetPlanned} onChange={(e) => setTargetPlanned(e.target.value)} /></Field>
         <Field label="Risk amount (₹)">
@@ -342,6 +370,12 @@ export function EditTradeDialog({
           </Field>
         )}
         <Field label="Setup tag"><Input name="setupTag" value={setupTag} onChange={(e) => setSetupTag(e.target.value)} /></Field>
+        <Field label="Setup grade">
+          <Select name="setupGrade" value={setupGrade} onChange={(e) => setSetupGrade(e.target.value)}>
+            <option value="">—</option>
+            {SETUP_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+          </Select>
+        </Field>
         <Field label="Exit trigger"><ExitTriggerField name="exitTrigger" value={exitTrigger} onChange={setExitTrigger} /></Field>
         <Field label="Notes"><Input name="notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>

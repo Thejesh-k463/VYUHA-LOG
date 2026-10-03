@@ -35,6 +35,13 @@ export const BACKUP_VERSION = 3;
 // Order is insert-order for restore (parents-ish first); delete runs in reverse.
 export const BACKUP_TABLES = [
   "accounts",
+  // v4.7.0 C2 (migration 0079): the user's Edge Clinic experiments — their own
+  // pre-registered comparisons, so they TRAVEL. Joins on the per-key rationale
+  // above, no version bump: a pre-4.7 envelope does not carry the key and leaves
+  // today's rows alone. No foreign key (0079's header), so the row order here is
+  // a convention, not a constraint. `clinic_cache` is DERIVED and is not listed —
+  // a restore drops it inside its transaction instead (lib/backup.ts).
+  "clinic_experiments",
   "settings",
   "settings_baseline",
   "charge_config",

@@ -81,6 +81,17 @@ export function applyCorporateAction(id: number): ApplyResult {
           ? { qty: t.sellQty, avgPrice: t.avgSellPrice, slPlanned: t.slPlanned, trailingSl: t.trailingSl, targetPlanned: t.targetPlanned }
           : { qty: t.buyQty, avgPrice: t.avgBuyPrice, slPlanned: t.slPlanned, trailingSl: t.trailingSl, targetPlanned: t.targetPlanned };
         const after = adjustForSplitOrBonus(before, multiplier);
+        // v4.7.0 C2 — the typed intra-trade high / low are price LEVELS like the
+        // stop and target, so they scale by the SAME function (a range left in
+        // pre-split rupees would no longer bracket the post-split fills, and
+        // MAE/MFE would silently fall back to bars). Both-or-neither is kept: a
+        // null stays null.
+        const range = adjustForSplitOrBonus(
+          { qty: 0, avgPrice: 0, slPlanned: t.intraHigh, trailingSl: t.intraLow, targetPlanned: null },
+          multiplier,
+        );
+        const intraHigh = range.slPlanned;
+        const intraLow = range.trailingSl;
 
         tx.update(tradesTable)
           .set(
@@ -93,6 +104,8 @@ export function applyCorporateAction(id: number): ApplyResult {
                   slPlanned: after.slPlanned,
                   trailingSl: after.trailingSl,
                   targetPlanned: after.targetPlanned,
+                  intraHigh,
+                  intraLow,
                   updatedAt: sql`(datetime('now'))`,
                 }
               : {
@@ -103,6 +116,8 @@ export function applyCorporateAction(id: number): ApplyResult {
                   slPlanned: after.slPlanned,
                   trailingSl: after.trailingSl,
                   targetPlanned: after.targetPlanned,
+                  intraHigh,
+                  intraLow,
                   updatedAt: sql`(datetime('now'))`,
                 },
           )
@@ -114,8 +129,8 @@ export function applyCorporateAction(id: number): ApplyResult {
           entityId: t.id,
           action: "update",
           summary: `${t.symbol} ${action.type} ${action.fromUnits}:${action.toUnits} applied (×${multiplier})`,
-          before: { ...before },
-          after: { ...after },
+          before: { ...before, intraHigh: t.intraHigh, intraLow: t.intraLow },
+          after: { ...after, intraHigh, intraLow },
         });
         adjusted++;
       }

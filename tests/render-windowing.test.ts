@@ -255,7 +255,10 @@ describe("the projections that replaced whole-row reads", () => {
     expect(
       lens.length,
       "LENS_FIELDS has crept up to the whole wire shape — the projection was the /lenses fix",
-    ).toBeLessThan(SLIM_TRADE_FIELDS.length - 15);
+      // v4.7.0 C2: SLIM_TRADE_FIELDS gained setupGrade / intraHigh / intraLow
+      // (the edit dialog pre-fills them). The bound moves by the same three so
+      // the creep allowance for LENS_FIELDS stays exactly where it was.
+    ).toBeLessThan(SLIM_TRADE_FIELDS.length - 18);
   });
 
   it("every projection orders on the same THREE keys — a total order", () => {

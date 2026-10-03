@@ -515,6 +515,14 @@ describe("account-scoped table registry", () => {
     // filing one book's broker statement against another book would make
     // the reconciliation screen quote figures for trades it cannot see.
     broker_reference: ["lib/queries/reference.ts", "lib/import/commit.ts"],
+    // v4.7.0 C2 (migration 0079) — the user's Edge Clinic experiments. Every
+    // read in lib/queries/edge-clinic.ts starts from getSelectedAccountId() and
+    // applies `accountId > 0 ? filter : all`; a START resolves a REAL account
+    // (> 0, the All view refused — invariant 9) and an ABANDON requires
+    // exp.accountId === selected > 0. The routes call that module and write
+    // nothing themselves. account-delete.ts moves / snapshots / deletes them.
+    // (`clinic_cache` has NO account_id — it is keyed by scope, `acct:<id>`.)
+    clinic_experiments: ["lib/queries/edge-clinic.ts", "lib/queries/account-delete.ts"],
   };
 
   it("every table carrying account_id has a declared owner", () => {

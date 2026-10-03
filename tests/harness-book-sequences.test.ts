@@ -14,6 +14,7 @@ import {
   STRAY_IPO_NAME,
   SURVIVOR_IPO_NAME,
   VARIANTS,
+  CLINIC_CELL,
   checkInvariants,
   describeViolations,
   freshCtx,
@@ -759,4 +760,70 @@ describe("the sequences the v4.3.0 re-checks were written about", () => {
         `I2 the allotment is stated twice: holding #${ctx.ids.ipoTrade} is closed in the book and IPO #${ctx.ids.ipoId} realises its own exit`,
     ]);
   });
+});
+
+// ── v4.7.0 C2 — Edge Clinic experiments through the book's own operations ─────
+//
+// Design review changes 2-4: an experiment is checked over ITS OWN account's
+// book, its baseline and result come from ONE array (so a cap edit moves both),
+// a merge keeps the target's open experiment and sets the source's aside, and
+// a purge → un-purge brings back exactly one copy. The ops are VARIANTS in
+// tests/helpers/book-ops.ts (`seedClinicCell`, `startExperimentInA|B`).
+
+describe("v4.7.0 C2 — Edge Clinic experiments across the book's operations", () => {
+  const experiments = () => t.db.select().from(t.schema.clinicExperiments).all();
+  /** The experiment on CLINIC_CELL in account A, as the Clinic reads it there. */
+  const readInA = () => {
+    t.db.update(t.schema.settings).set({ selectedAccountId: ids.acctA }).run();
+    return m.edgeClinic.listExperiments().find((e) => e.cellKey === CLINIC_CELL)!;
+  };
+  /** The current R of A's seeded cell rows, split at the experiment's start, in the engine's order. */
+  const currentRs = (startedAt: string) => {
+    const rows = t.db.select().from(t.schema.trades).all()
+      .filter((r) => r.accountId === ids.acctA && r.setupTag === "g2-clinic" && !r.isOpen)
+      .sort((a, b) => `${a.sellDate}`.localeCompare(`${b.sellDate}`) || a.id - b.id);
+    const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+    return {
+      // Seam D2: the start day is baseline; the experiment is what exits AFTER it.
+      before: mean(rows.filter((r) => r.sellDate! <= startedAt).map((r) => r.rMultiple!)),
+      after: mean(rows.filter((r) => r.sellDate! > startedAt).slice(0, 20).map((r) => r.rMultiple!)),
+    };
+  };
+
+  it("startExperiment → per-trade cap edit → check: baseline AND result are read in the SAME unit", async () => {
+    const { ctx, violations } = await runSequence(["seedClinicCell", "startExperimentInA"]);
+    expect(violations.join("\n")).toBe("");
+    expect(ctx.log.map((l) => l.status)).toEqual(["applied", "applied"]);
+    const before = readInA();
+    expect(before.status).toBe("checked");
+    expect(before.result!.n).toBe(20);
+    expect(await applyMore(ctx, ["editPerTradeCap"])).toEqual([]);
+    expect(ctx.log.at(-1)!.status).toBe("applied");
+    const after = readInA();
+    const now = currentRs(after.startedAt);
+    // Both sides follow today's cap — the rows' own current R, not a figure frozen before the edit.
+    expect(after.baseline!.meanR!).toBeCloseTo(now.before, 9);
+    expect(after.result!.meanR!).toBeCloseTo(now.after, 9);
+    expect(after.baseline!.meanR!).not.toBeCloseTo(before.baseline!.meanR!, 3); // the edit really moved the unit
+  }, 60_000);
+
+  it("merge with colliding experiments: the target's stays open, the source's is set aside and moves; the un-merge leaves both with the target", async () => {
+    const { ctx, violations } = await runSequence(["seedClinicCell", "startExperimentInA", "startExperimentInB", "mergeAccountBIntoA", "restoreSourceAccount"]);
+    expect(violations.join("\n")).toBe("");
+    expect(ctx.log.map((l) => `${l.op}[${l.status}]`)).toEqual([
+      "seedClinicCell[applied]", "startExperimentInA[applied]", "startExperimentInB[applied]", "mergeAccountBIntoA[applied]", "restoreSourceAccount[applied]",
+    ]);
+    const onCell = experiments().filter((e) => e.cellKey === CLINIC_CELL);
+    expect(onCell).toHaveLength(2);
+    expect(onCell.every((e) => e.accountId === ids.acctA)).toBe(true);
+    expect(onCell.map((e) => e.status).sort()).toEqual(["abandoned", "open"]);
+  }, 60_000);
+
+  it("purge → un-purge: the account's experiment comes back exactly once", async () => {
+    const { ctx, violations } = await runSequence(["seedClinicCell", "startExperimentInB", "purgeAccountB", "restoreSourceAccount"]);
+    expect(violations.join("\n")).toBe("");
+    expect(ctx.log.map((l) => l.status)).toEqual(["applied", "applied", "applied", "applied"]);
+    expect(experiments().filter((e) => e.accountId === ids.acctB)).toHaveLength(1);
+    expect(experiments()).toHaveLength(1);
+  }, 60_000);
 });

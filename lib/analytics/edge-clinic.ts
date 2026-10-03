@@ -37,6 +37,18 @@ import { isFnoSegment } from "@/lib/analytics/sebi-reality";
 import { sideOf } from "@/lib/domain/side";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import * as S from "@/lib/analytics/edge-clinic-stats";
+import { SETUP_GRADES, type SetupGrade } from "@/lib/analytics/edge-clinic-contract";
+
+/**
+ * The engine's version, folded into every cache digest (lib/queries/edge-clinic.ts):
+ * a cached report computed by another version is never served as fresh. BUMP IT on any
+ * change to what `edgeClinic` returns for the same input — tests/edge-clinic-db.test.ts
+ * pins a golden-report hash beside this string, so an output change without a bump fails.
+ *   c1   v4.7.0 wave C1 (no cache existed)
+ *   c2.1 v4.7.0 wave C2 — grade cells (`all|grade:<g>`), setup keys `${seg}|setup:${tag}`
+ *   c2.2 v4.7.0 wave C2 seam D1 — a playbook-journaled row with NULL ruleViolations is rule data ("kept every rule")
+ */
+export const ENGINE_VERSION = "c2.2";
 
 /** Finance (No. 2) Act 2024 STT step for F&O — must equal `STT_EPOCH_2024` in lib/db/seed-data.ts (a test pins it). */
 export const FNO_STT_EPOCH = "2024-10-01";
@@ -83,7 +95,16 @@ export interface ClinicTrade {
   avgBuyPrice: number;
   avgSellPrice: number;
   setupTag: string | null;
+  /** v4.7.0 C2: the trader's own A+ / A / B grade; absent or null = ungraded (never a grade cell). */
+  setupGrade?: SetupGrade | null;
   ruleViolations: string[] | null;
+  /**
+   * v4.7.0 C2 (seam D1): the playbook a journal save assigned. Its ONLY writer is
+   * app/api/trades/journal/route.ts, which stores NULL ruleViolations when every
+   * rule was kept — so a row with a playbookId is rule data even when
+   * ruleViolations is null. Absent = treated as null.
+   */
+  playbookId?: number | null;
   entryDte: number | null;
   lotSize: number | null;
   importNotes?: string | null;
@@ -217,15 +238,17 @@ export interface SizingCeiling {
   copy: ClinicCopy;
 }
 
-export type CellKind = "book" | "segment" | "setup" | "fno";
+export type CellKind = "book" | "segment" | "setup" | "grade" | "fno";
 export type FnoDimension = "dte" | "side" | "lots" | "expiryRegime";
 
 export interface ClinicCell {
   key: string;
   kind: CellKind;
   segment: Segment | null;
-  /** The setup tag ("untagged" for null); null on book / segment / fno cells. */
+  /** The setup tag ("untagged" for null); null on book / segment / grade / fno cells. */
   setup: string | null;
+  /** v4.7.0 C2: the setup grade on a `grade` cell; null on every other kind. */
+  setupGrade: SetupGrade | null;
   cut: { dimension: FnoDimension; label: string } | null;
   label: string;
   /** Closed trades in the cell. */
@@ -704,6 +727,7 @@ interface CellSpec {
   kind: CellKind;
   segment: Segment | null;
   setup: string | null;
+  setupGrade?: SetupGrade | null;
   cut: ClinicCell["cut"];
   label: string;
   trades: ClinicTrade[]; // closed, chronological
@@ -837,7 +861,7 @@ function buildCell(spec: CellSpec, ctx: Ctx): ClinicCell {
     }
   }
 
-  const withData = ts.filter((t) => rOf(t) != null && t.ruleViolations != null);
+  const withData = ts.filter((t) => rOf(t) != null && (t.ruleViolations != null || t.playbookId != null));
   const broke = (t: ClinicTrade) => (t.ruleViolations ?? []).some((v) => v.startsWith(PLAYBOOK_RULE_PREFIX));
   const ruleAdherence: RuleAdherence = {
     coverage: withData.length > 0 ? { withData: withData.length, of: nWithR } : null,
@@ -866,6 +890,7 @@ function buildCell(spec: CellSpec, ctx: Ctx): ClinicCell {
     kind: spec.kind,
     segment: spec.segment,
     setup: spec.setup,
+    setupGrade: spec.setupGrade ?? null,
     cut: spec.cut,
     label: spec.label,
     n: ts.length,
@@ -960,74 +985,9 @@ export function edgeClinic(trades: readonly ClinicTrade[], opts: ClinicOptions):
     riskCapRupees: opts.riskCapRupees ?? null,
     currentRiskPct: opts.currentRiskPct ?? null,
   };
-  const closed = chronological(trades.filter((t) => !t.isOpen && Number.isFinite(t.netPnl)));
+  const closed = closedChronological(trades);
   const openExcluded = trades.filter((t) => t.isOpen).length;
-
-  // Segments and setups in a stable order.
-  const segments = [...new Set(closed.map((t) => t.segment))].sort();
-  const specs: CellSpec[] = [
-    { key: "all|all", kind: "book", segment: null, setup: null, cut: null, label: "Whole book", trades: closed },
-  ];
-  const fnoSpecs: { segment: Segment; dims: Record<FnoDimension, CellSpec[] | null>; unknownDte: number; unknownLots: number; oneLotOverCap: number | null }[] = [];
-
-  for (const seg of segments) {
-    const segTs = closed.filter((t) => t.segment === seg);
-    const segLabel = SEGMENT_LABELS[seg];
-    specs.push({ key: `${seg}|all`, kind: "segment", segment: seg, setup: null, cut: null, label: `${segLabel} · all setups`, trades: segTs });
-    const setups = [...new Set(segTs.map((t) => t.setupTag ?? "untagged"))].sort();
-    for (const setup of setups) {
-      specs.push({
-        key: `${seg}|${setup}`,
-        kind: "setup",
-        segment: seg,
-        setup,
-        cut: null,
-        label: `${segLabel} · ${setup}`,
-        trades: segTs.filter((t) => (t.setupTag ?? "untagged") === setup),
-      });
-    }
-
-    if (isFnoSegment(seg)) {
-      const mk = (dimension: FnoDimension, label: string, ts: ClinicTrade[]): CellSpec => ({
-        key: `${seg}|fno:${dimension}:${label}`,
-        kind: "fno",
-        segment: seg,
-        setup: null,
-        cut: { dimension, label },
-        label: `${segLabel} · ${label}`,
-        trades: ts,
-      });
-      const withDte = segTs.filter((t) => fin(t.entryDte) && t.entryDte >= 0);
-      const dte = DTE_BANDS.map((b) => mk("dte", `DTE ${b.label}`, withDte.filter((t) => t.entryDte! >= b.minDte && t.entryDte! <= b.maxDte)));
-      const side = isOptionSegment(seg)
-        ? [
-            mk("side", "buyer", segTs.filter((t) => sideOf(t) === "long")),
-            mk("side", "seller", segTs.filter((t) => sideOf(t) === "short")),
-          ]
-        : null;
-      const lotted = segTs.map((t) => ({ t, lots: lotsOf(t) }));
-      const lots = [
-        mk("lots", "1 lot", lotted.filter((x) => x.lots === 1).map((x) => x.t)),
-        mk("lots", "2–3 lots", lotted.filter((x) => x.lots != null && x.lots >= 2 && x.lots <= 3).map((x) => x.t)),
-        mk("lots", "4+ lots", lotted.filter((x) => x.lots != null && x.lots >= 4).map((x) => x.t)),
-      ];
-      const dated = segTs.map((t) => ({ t, d: dayOf(t.sellDate) })).filter((x) => x.d != null);
-      const expiryRegime = [
-        mk("expiryRegime", `before ${FNO_WEEKLY_EXPIRY_CUT}`, dated.filter((x) => x.d! < FNO_WEEKLY_EXPIRY_CUT).map((x) => x.t)),
-        mk("expiryRegime", `from ${FNO_WEEKLY_EXPIRY_CUT}`, dated.filter((x) => x.d! >= FNO_WEEKLY_EXPIRY_CUT).map((x) => x.t)),
-      ];
-      const cap = ctx.riskCapRupees;
-      fnoSpecs.push({
-        segment: seg,
-        dims: { dte, side, lots, expiryRegime },
-        unknownDte: segTs.length - withDte.length,
-        unknownLots: lotted.filter((x) => x.lots == null).length,
-        oneLotOverCap: fin(cap)
-          ? lotted.filter((x) => x.lots === 1 && fin(x.t.riskAmount) && x.t.riskAmount > cap).length
-          : null,
-      });
-    }
-  }
+  const { segments, specs, fnoSpecs } = cellSpecs(closed, ctx.riskCapRupees);
 
   // Pass 1 over EVERYTHING that can be shown, so m is computed once.
   const allSpecs: CellSpec[] = [...specs];
@@ -1074,6 +1034,120 @@ export function edgeClinic(trades: readonly ClinicTrade[], opts: ClinicOptions):
     provenanceLine: rProvenanceLine(provenance),
     behaviourNote: NOT_CORRECTED,
   };
+}
+
+/** The engine's sample: closed rows with a finite net, in its chronological order. */
+function closedChronological(trades: readonly ClinicTrade[]): ClinicTrade[] {
+  return chronological(trades.filter((t) => !t.isOpen && Number.isFinite(t.netPnl)));
+}
+
+/**
+ * The closed trades of ONE cell, in the engine's chronological order — exactly the
+ * rows `edgeClinic` puts in the cell with that key (the same spec builder runs), so
+ * an experiment's baseline and result (lib/analytics/edge-clinic-note.ts) read the
+ * cell the report graded. Unknown key → []. Covers every kind, F&O cuts included.
+ */
+export function cellTrades(trades: readonly ClinicTrade[], key: string): ClinicTrade[] {
+  const { specs, fnoSpecs } = cellSpecs(closedChronological(trades), null);
+  const hit = specs.find((s) => s.key === key);
+  if (hit) return hit.trades;
+  for (const f of fnoSpecs) for (const d of Object.values(f.dims)) for (const s of d ?? []) if (s.key === key) return s.trades;
+  return [];
+}
+
+interface FnoSpec {
+  segment: Segment;
+  dims: Record<FnoDimension, CellSpec[] | null>;
+  unknownDte: number;
+  unknownLots: number;
+  oneLotOverCap: number | null;
+}
+
+/**
+ * Every cell the report can show, over `closed` (already closed + chronological).
+ *
+ * Keys (v4.7.0 C2, a recorded format change): `all|all` the book · `${seg}|all` a
+ * segment · `${seg}|setup:${tag}` a setup (prefixed so a tag literally named "all"
+ * cannot collide with the segment cell) · `all|grade:${g}` a setup grade, ONLY for
+ * grades present on a closed row · `${seg}|fno:${dim}:${label}` an F&O cut.
+ */
+function cellSpecs(closed: ClinicTrade[], cap: number | null): { segments: Segment[]; specs: CellSpec[]; fnoSpecs: FnoSpec[] } {
+  // Segments and setups in a stable order.
+  const segments = [...new Set(closed.map((t) => t.segment))].sort();
+  const specs: CellSpec[] = [
+    { key: "all|all", kind: "book", segment: null, setup: null, cut: null, label: "Whole book", trades: closed },
+  ];
+  const fnoSpecs: FnoSpec[] = [];
+
+  for (const seg of segments) {
+    const segTs = closed.filter((t) => t.segment === seg);
+    const segLabel = SEGMENT_LABELS[seg];
+    specs.push({ key: `${seg}|all`, kind: "segment", segment: seg, setup: null, cut: null, label: `${segLabel} · all setups`, trades: segTs });
+    const setups = [...new Set(segTs.map((t) => t.setupTag ?? "untagged"))].sort();
+    for (const setup of setups) {
+      specs.push({
+        key: `${seg}|setup:${setup}`,
+        kind: "setup",
+        segment: seg,
+        setup,
+        cut: null,
+        label: `${segLabel} · ${setup}`,
+        trades: segTs.filter((t) => (t.setupTag ?? "untagged") === setup),
+      });
+    }
+
+    if (isFnoSegment(seg)) {
+      const mk = (dimension: FnoDimension, label: string, ts: ClinicTrade[]): CellSpec => ({
+        key: `${seg}|fno:${dimension}:${label}`,
+        kind: "fno",
+        segment: seg,
+        setup: null,
+        cut: { dimension, label },
+        label: `${segLabel} · ${label}`,
+        trades: ts,
+      });
+      const withDte = segTs.filter((t) => fin(t.entryDte) && t.entryDte >= 0);
+      const dte = DTE_BANDS.map((b) => mk("dte", `DTE ${b.label}`, withDte.filter((t) => t.entryDte! >= b.minDte && t.entryDte! <= b.maxDte)));
+      const side = isOptionSegment(seg)
+        ? [
+            mk("side", "buyer", segTs.filter((t) => sideOf(t) === "long")),
+            mk("side", "seller", segTs.filter((t) => sideOf(t) === "short")),
+          ]
+        : null;
+      const lotted = segTs.map((t) => ({ t, lots: lotsOf(t) }));
+      const lots = [
+        mk("lots", "1 lot", lotted.filter((x) => x.lots === 1).map((x) => x.t)),
+        mk("lots", "2–3 lots", lotted.filter((x) => x.lots != null && x.lots >= 2 && x.lots <= 3).map((x) => x.t)),
+        mk("lots", "4+ lots", lotted.filter((x) => x.lots != null && x.lots >= 4).map((x) => x.t)),
+      ];
+      const dated = segTs.map((t) => ({ t, d: dayOf(t.sellDate) })).filter((x) => x.d != null);
+      const expiryRegime = [
+        mk("expiryRegime", `before ${FNO_WEEKLY_EXPIRY_CUT}`, dated.filter((x) => x.d! < FNO_WEEKLY_EXPIRY_CUT).map((x) => x.t)),
+        mk("expiryRegime", `from ${FNO_WEEKLY_EXPIRY_CUT}`, dated.filter((x) => x.d! >= FNO_WEEKLY_EXPIRY_CUT).map((x) => x.t)),
+      ];
+      fnoSpecs.push({
+        segment: seg,
+        dims: { dte, side, lots, expiryRegime },
+        unknownDte: segTs.length - withDte.length,
+        unknownLots: lotted.filter((x) => x.lots == null).length,
+        oneLotOverCap: fin(cap)
+          ? lotted.filter((x) => x.lots === 1 && fin(x.t.riskAmount) && x.t.riskAmount > cap).length
+          : null,
+      });
+    }
+  }
+
+  // Setup grades (v4.7.0 C2): whole-book cells, ONLY for grades present — an
+  // ungraded book's cells, m and BY family are exactly C1's. They are ordinary
+  // cells: tested at nWithR ≥ minN, counted in m, corrected with the rest, and
+  // eligible for deflation — so grading RAISES m and can demote a borderline
+  // established cell elsewhere (recorded in DECISIONS, C2).
+  for (const g of SETUP_GRADES) {
+    const ts = closed.filter((t) => t.setupGrade === g);
+    if (ts.length === 0) continue;
+    specs.push({ key: `all|grade:${g}`, kind: "grade", segment: null, setup: null, setupGrade: g, cut: null, label: `Grade ${g} setups`, trades: ts });
+  }
+  return { segments, specs, fnoSpecs };
 }
 
 /**

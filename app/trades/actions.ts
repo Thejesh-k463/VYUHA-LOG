@@ -16,6 +16,9 @@ import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
 import { normalizeDate, unreadableDateMessage } from "@/lib/domain/trading-day";
 import { sideOf } from "@/lib/domain/side";
 import { signalFromForm, parseFormNumber } from "@/lib/domain/signal";
+// v4.7.0 C2: the clinic-field validator is a PURE module — an exported async function in this
+// "use server" file would be a callable endpoint.
+import { clinicFieldsFrom, typedNumber } from "@/lib/domain/clinic-fields";
 import { recordAudit } from "@/lib/audit";
 import { AccountRequiredError, getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import {
@@ -52,13 +55,7 @@ const num = (v: FormDataEntryValue | null) => {
   if (s === "") return 0;
   return parseFormNumber(s) ?? NaN;
 };
-/**
- * The raw field, trimmed, with the HTML number input's leading-dot spelling (".5", "-.5" is a
- * valid floating-point number there and is submitted as typed) given its zero. Not a second
- * rule: commas, exponents and everything else stay `parseFormNumber`'s to accept or refuse.
- */
-const typedNumber = (v: FormDataEntryValue | null) =>
-  String(v ?? "").trim().replace(/^([-+]?)\.(?=\d)/, (_m, sign: string) => `${sign}0.`);
+// `typedNumber` (the leading-dot spelling) lives in lib/domain/clinic-fields.ts since v4.7.0 C2.
 
 /** Every numeric field the trade forms post, with the label its refusal names. */
 const NUMBER_FIELDS: Record<string, string> = {
@@ -78,6 +75,8 @@ const NUMBER_FIELDS: Record<string, string> = {
   ownCapitalUsed: "Own capital used",
   daysHeld: "Days held",
   lotSize: "Lot size",
+  intraHigh: "Intra-trade high",
+  intraLow: "Intra-trade low",
 };
 
 /**
@@ -249,12 +248,17 @@ export async function createManualTrade(
   // row it cannot read is refused, never coerced).
   const signal = signalFromFormData(formData);
   if (signal && !signal.ok) return { ok: false, message: signal.message };
+  const clinic = clinicFieldsFrom(formData, { closed: !isOpenTrade, avgBuyPrice, avgSellPrice }, "create");
+  if (!clinic.ok) return { ok: false, message: clinic.message };
 
   try {
     const res = commitManualTrade(t, {
       forcedSegment: (segment as never) ?? null,
       forcedExchange: (exchange as never) ?? null,
       setupTag: str(formData.get("setupTag")),
+      setupGrade: clinic.setupGrade,
+      intraHigh: clinic.intraHigh,
+      intraLow: clinic.intraLow,
       notes: str(formData.get("notes")),
       ruleViolations,
       slPlanned,
@@ -369,6 +373,20 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
   const signal = signalFromFormData(formData);
   if (signal && !signal.ok) return { ok: false, message: signal.message };
 
+  // v4.7.0 C2 — grade + typed range, validated against the fills this save posts.
+  const postedBuyQty = num(formData.get("buyQty"));
+  const postedSellQty = num(formData.get("sellQty"));
+  const clinic = clinicFieldsFrom(
+    formData,
+    {
+      closed: postedBuyQty > 0 && postedSellQty > 0 && postedBuyQty === postedSellQty,
+      avgBuyPrice: num(formData.get("avgBuyPrice")),
+      avgSellPrice: num(formData.get("avgSellPrice")),
+    },
+    "update",
+  );
+  if (!clinic.ok) return { ok: false, message: clinic.message };
+
   // D9 (v4.3.0 wave 2P) — a date field ABSENT from the form (a stale tab, a
   // non-dialog client) is "not mentioned" (`undefined` in UpdateTradeFields), not
   // "clear this": the stored date is kept and a stored value that states no day
@@ -395,6 +413,9 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
     riskAmount: riskFieldUnchanged(formData) ? undefined : num(formData.get("riskAmount")) || null,
     ownCapitalUsed: ownCapital(formData.get("ownCapitalUsed")),
     setupTag: str(formData.get("setupTag")),
+    setupGrade: clinic.setupGrade,
+    intraHigh: clinic.intraHigh,
+    intraLow: clinic.intraLow,
     exitTrigger: str(formData.get("exitTrigger")),
     notes: str(formData.get("notes")),
     currentPrice: num(formData.get("currentPrice")) || null,

@@ -102,6 +102,14 @@ export const SLIM_TRADE_FIELDS = [
   // integers (never gated analytics).
   "buyOrderCount",
   "sellOrderCount",
+  // v4.7.0 C2 (migration 0079): the setup grade (A+/A/B) and the typed
+  // intra-trade high/low. The edit dialog PRE-FILLS them from this row, so a
+  // save posts what the user sees; without them on the wire the dialog showed
+  // blanks over stored values. Three nullable user-typed fields (the high/low
+  // are per-unit PRICES — invariant 1, levels stay REAL).
+  "setupGrade",
+  "intraHigh",
+  "intraLow",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]> & {

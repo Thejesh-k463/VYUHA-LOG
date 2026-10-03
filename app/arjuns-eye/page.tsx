@@ -41,7 +41,12 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { sideOf, statedSideOf } from "@/lib/domain/side";
+import { statedSideOf } from "@/lib/domain/side";
+import { maeInputsOf } from "@/lib/analytics/mae-input";
+import { clinicStateFor } from "@/lib/analytics/edge-clinic-contract";
+import { getClinicState } from "@/lib/queries/edge-clinic";
+import { getEntitlement } from "@/lib/queries/license";
+import { ArjunClinicCard } from "@/components/edge-clinic/arjun-clinic-card";
 
 export const dynamic = "force-dynamic";
 
@@ -156,24 +161,10 @@ export default function ArjunsEyePage() {
 
   // ── MAE/MFE coverage (EOD bars), shared by the SL and Exits tabs ────────
   const aliasMap = getAliasMap();
-  const maeInputs: MaeTradeInput[] = closed.map((t) => {
-    const side: "long" | "short" = sideOf(t);
-    const qty = Math.max(t.buyQty, t.sellQty);
-    return {
-      id: t.id,
-      symbol: t.symbol,
-      ticker: resolveTicker(t.symbol.toUpperCase(), aliasMap),
-      side,
-      qty,
-      entry: side === "long" ? t.avgBuyPrice : t.avgSellPrice,
-      exit: side === "long" ? t.avgSellPrice : t.avgBuyPrice,
-      entryDate: side === "long" ? t.buyDate : t.sellDate,
-      exitDate: side === "long" ? t.sellDate : t.buyDate,
-      netPnl: t.netPnl,
-      isOpen: t.isOpen,
-      riskAmount: t.riskAmount,
-    };
-  });
+  // v4.7.0 C2 (design review change 8): the ONE shared builder, also used by
+  // the Edge Clinic's Setups tab — typed intra-trade high/low ride along while
+  // they bracket the fills, else the EOD bars are used as before.
+  const maeInputs: MaeTradeInput[] = maeInputsOf(closed, (s) => resolveTicker(s, aliasMap));
   const maeReport = computeMaeMfe(maeInputs, getBarsMap(maeInputs.map((i) => i.ticker)));
   const maeById = new Map(maeReport.rows.map((r) => [r.id, r]));
 
@@ -525,6 +516,8 @@ export default function ArjunsEyePage() {
               </CardContent>
             </Card>
           )}
+          {/* v4.7.0 C2: the Clinic's first finding, from the CACHED report — this page never computes it. */}
+          <ArjunClinicCard state={clinicStateFor(getClinicState(), getEntitlement().pro)} />
           {rep.closedTrades === 0 ? (
             <EmptyState
               variant="chart"

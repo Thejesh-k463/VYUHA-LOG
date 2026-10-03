@@ -30,6 +30,7 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TABLE_MAP: Record<BackupTable, any> = {
   accounts: schema.accounts,
+  clinic_experiments: schema.clinicExperiments,
   settings: schema.settings,
   settings_baseline: schema.settingsBaseline,
   charge_config: schema.chargeConfig,
@@ -342,6 +343,12 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
       tx.delete(schema.atlasStaleness).run();
       tx.delete(schema.atlasMetric).run();
       tx.delete(schema.atlasDaily).run();
+      // v4.7.0 C2 — the Edge Clinic's cached reports are DERIVED from the book
+      // that was just replaced (migration 0079; not in BACKUP_TABLES). A cached
+      // row could never be served as fresh — its digest hashes the old input —
+      // but a STALE report of a book that no longer exists is still shown with
+      // its age, so it goes here, inside the transaction (invariant 10).
+      tx.delete(schema.clinicCache).run();
 
       // The rows above are the DONOR's, keyed however its release keyed them;
       // this database's data-fix markers say nothing about them. Forget the

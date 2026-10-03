@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-12021%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-142%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-12145%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-144%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
 [![Where](https://img.shields.io/badge/where-desktop%20or%20web-black)](#-your-data-your-choice-of-home)
@@ -658,7 +658,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > *v2.98 proved the safety net (atomic restore, stronger backup crypto, aggregate-view write
 > guards) and added the ITR schedule-format export with the S.48 STT rule applied per head.*
 
-- 🇮🇳 **To-the-rupee Indian cost engine.** STT, exchange txn, SEBI, stamp, IPFT, GST, DP, pledge — computed per **broker × segment × exchange** from an editable rate table, reconciled against real broker files. Money is stored as **integer paise** (no float drift), with statutory rounding.
+- 🇮🇳 **To-the-rupee Indian cost engine.** STT, exchange txn, SEBI, stamp, IPFT, GST, DP, pledge — computed per **broker × plan × segment × exchange** from an editable rate table, reconciled against real broker files. Money is stored as **integer paise** (no float drift), with statutory rounding.
 - 💸 **MTF done right — the only journal that gets it.** Interest accrues on the *broker-funded portion only* (own-margin % is broker-specific: Dhan/Groww ≈25%, Zerodha ≈20%), with the **correct T+1 day-count** verified against Dhan's own docs. See ROI on your own capital, leverage, breakeven price, and a ⚠ flag when interest has eaten your entire paper gain.
 - 📚 **Playbooks that enforce discipline, not just describe it.** 25 preset setups from trading ecosystems worldwide (ORB → Wyckoff → Minervini VCP → India's expiry-day theta), fully editable, plus your own. Tag a trade and its rules become a **followed/broken checklist** — the Discipline page then shows *which broken rule costs you the most ₹*.
 - 🇮🇳 **Knows today's SEBI regime.** A compliance radar reads your open book against the post-2024 F&O rules — the **+2% expiry-day ELM** on short options expiring today, the **loss of calendar-spread margin benefit** on expiry, which indices still have weeklies, and how close your index exposure sits to the ₹1,500 cr limit that's now snapshotted *intraday*. No other journal tracks this.
@@ -678,14 +678,14 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery; Fyers' and Nuvama's lists are not bundled yet) | charge-engine error vs a real broker report |
-| **12021** | **45** | **0** |
-| tests, 142 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
+| **12145** | **45** | **0** |
+| tests, 144 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
 
 > **Read that third number again.** On a real 92-row broker report, Vyuha's computed statutory
 > charges land within **0.69%** of the broker's own — STT, exchange, SEBI, stamp, IPFT, GST, DP and
-> pledge, per broker × segment × exchange, in integer paise with statutory rounding. Brokerage is
+> pledge, per broker × plan × segment × exchange, in integer paise with statutory rounding. Brokerage is
 > excluded from that claim because it isn't derivable from the file. We say so rather than pad the
 > number.
 >
@@ -711,7 +711,7 @@ in-app with the date they were set, and the buy message embeds the price you saw
 |---|---|
 | Recording **closed** trades — add, edit, delete, tag | **Live open-position tracking** — SL/TSL/target, running risk |
 | All eight broker importers + duplicate detection | Portfolio Risk cockpit — VaR, Greeks, margin, breach alerts |
-| Dashboard, P&L calendar with day drill-down & streaks | Arjun's Eye, and the Edge Clinic hub — Setups, Discipline, Scaling & Replay tabs |
+| Dashboard, P&L calendar with day drill-down & streaks | Arjun's Eye, and the Edge Clinic hub — Clinic (default), Setups, Discipline, Scaling & Replay tabs |
 | Staged positions, playbooks, sessions, calculator | **Trade Review Desk** — review queue, Sunday ritual, Process Score |
 | First-run setup wizard — capital always optional | Options Seller Journal, and the Capital & Expiry hub — Return on Margin, Expiry tabs |
 | Chart screenshots, symbol aliases, corporate actions | Tax Summary, ITR Pack, Advance Tax, Harvest, AIS Reconcile |
@@ -1006,7 +1006,7 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 Current release: **v4.6.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
-**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all eight broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, the Edge Clinic hub (Setups, Discipline, Scaling & Replay), the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and the Capital & Expiry hub (Return on Margin, Expiry), the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), the Costs hub (Charges & MTF Leak, Broker Costs), per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.
+**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all eight broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, the Edge Clinic hub (the Clinic's full report, weekly note and experiments; Setups, Discipline, Scaling & Replay — the Clinic's whole-book evidence grade stays a free teaser card), the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and the Capital & Expiry hub (Return on Margin, Expiry), the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), the Costs hub (Charges & MTF Leak, Broker Costs), per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.
 
 **New here?** Flip through the 📽 [**Getting-Started deck**](docs/client/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
 
@@ -1034,8 +1034,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       12021 unit + integration tests across 511 files (+ tests/load: 16 load cases, run separately)
-e2e/         142 Playwright flows through the real app, in 38 specs
+tests/       12145 unit + integration tests across 516 files (+ tests/load: 16 load cases, run separately)
+e2e/         144 Playwright flows through the real app, in 39 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -1055,7 +1055,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **12021 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **12145 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -1071,8 +1071,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (12021 tests) |
-| `npm run test:e2e` | Playwright e2e — 142 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm test` | Vitest unit + integration suite (12145 tests) |
+| `npm run test:e2e` | Playwright e2e — 144 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -1121,7 +1121,7 @@ single-architecture Node that fails on the other kind of Mac.
 
 - **Database:** `data/vyuha.sqlite` (git-ignored). Reset: delete `data/`, run `npm run setup`.
 - **Capital model:** two buckets (Equity / Trade F&O), editable in Settings; every risk %, allocation and target computes against bucket capital, with opening snapshots kept in sync.
-- **Nothing statutory is hard-coded:** all charge rates live in `charge_config` (broker × segment × exchange) and margin rates in `margin_config` (broker × segment) — both editable in-app, in Drizzle Studio, or via the seed files.
+- **Nothing statutory is hard-coded:** all charge rates live in `charge_config` (broker × plan × segment × exchange) and margin rates in `margin_config` (broker × segment) — both editable in-app, in Drizzle Studio, or via the seed files.
 - **Known limits:** broker P&L files lack segment/MTF flags and per-trade dates — re-tag those rows once (overrides persist across re-imports). Brokerage/MTF interest can't be derived from scrip-aggregated files; the reconciliation panel surfaces the deltas.
 
 </details>
@@ -1141,7 +1141,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 12021 Vitest unit + integration tests (+ tests/load)
+  tests/          # 12145 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

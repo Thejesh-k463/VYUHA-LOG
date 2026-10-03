@@ -75,12 +75,19 @@ describe("validateBackup", () => {
     //   be the wrong direction: a token restored from a donor file is the
     //   donor's snapshot of a master that changes on corporate actions, and a
     //   stale token prices the wrong scrip silently. The adapter re-resolves.
+    //   clinic_cache — the v4.7.0 C2 Edge Clinic report CACHE (migration 0079):
+    //   one engine report per scope, keyed by the sha256 of the engine's input.
+    //   Nothing the user typed lives here (the user's experiments are
+    //   clinic_experiments, which IS listed) and every row is recomputed from the
+    //   restored trades on the next Clinic visit; a restore deletes the table
+    //   inside its transaction so a report of the replaced book is never shown.
     const EXCLUDED: string[] = [
       "data_fixes",
       "atlas_daily",
       "atlas_metric",
       "atlas_staleness",
       "angelone_instrument_tokens",
+      "clinic_cache",
     ];
 
     const expected = allTables.filter((n) => !EXCLUDED.includes(n)).sort();

@@ -378,7 +378,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
   hubEntry(
     "/reports/edge-clinic",
     "Where does my edge come from, and what is leaking it?",
-    "One screen, three tabs: Setups (expectancy by setup, segment and NSE theme, with stop tuning and MAE/MFE), Discipline (the weekly Process Score and what broken rules cost) and Scaling & Replay (whether adding to a position helped, with an EOD replay of each ladder).",
+    "One screen, four tabs: Clinic (graded findings, a weekly note and experiments; the whole-book grade is free), Setups (expectancy by setup, segment and NSE theme, with stop tuning and MAE/MFE), Discipline (the weekly Process Score) and Scaling & Replay (whether adding to a position helped).",
   ),
   hubEntry(
     "/reports/capital",
@@ -444,6 +444,21 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "Annualised figures are clamped and marked — a book losing 10% a day extrapolates to an impossible number, and the report says so rather than printing it.",
     ],
     keywords: ["rom", "margin", "capital", "return"],
+  },
+  {
+    // v4.7.0 C2 — the Edge Clinic's default tab.
+    href: tabHref("/reports/edge-clinic", "clinic"),
+    title: "Clinic",
+    answers: "What does the evidence in my own record say, and how strong is it?",
+    body: [
+      "Every cell of your book — the whole book, each segment, each setup tag and setup grade, and the F&O cuts — is graded insufficient, unclear, likely or established, corrected for testing many cells at once. A weekly note lists at most three findings, each proposing one experiment over your next 20 trades.",
+      "The whole-book grade and the trades it still needs are free; the full report, the weekly note and experiments are Pro. The report is computed once per change to your book, off the page, and reused until something it reads changes. Experiments start in one account at a time, never in the All-accounts view.",
+    ],
+    keywords: ["clinic", "evidence", "grade", "weekly note", "experiment", "multiple comparisons", "edge decay", "kelly"],
+    refusals: [
+      "A grade describes the evidence in your past record. It is not advice and names no trade to take.",
+      "No counterfactual rupee figure is offered: a finding states a mean R and its interval.",
+    ],
   },
   {
     href: tabHref("/reports/edge-clinic", "setups"),

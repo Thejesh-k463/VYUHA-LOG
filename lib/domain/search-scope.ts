@@ -15,6 +15,7 @@
 // because the screen it opens is on PRO_FEATURES.
 
 import { PRO_FEATURES } from "@/lib/license";
+import { HUB_TAB_PARAM, hubForHref, hubTabHref, resolveTab } from "@/lib/domain/hubs";
 
 export type SearchScope = "account" | "global";
 
@@ -138,11 +139,22 @@ const FREE: Lock = { locked: false };
  * is Pro, so such an entry locks its hub's PATH too. The entry whose href IS
  * the requested one names what unlocks; any other tab of the same hub is the
  * fallback label. Partial entries are still skipped, exactly as above.
+ *
+ * v4.7.0 C2 — a hub path resolves to the TAB it opens (`?tab=` or the hub's
+ * defaultTab) and locks only when THAT tab is a whole-page Pro entry: the Edge
+ * Clinic's default tab, Clinic, is `partial` (a free teaser card), so a padlock
+ * on `/reports/edge-clinic` would be the same false lock `/lenses` had.
  */
 export function lockFor(href: string, entitlement: { pro: boolean }, features: readonly Feature[] = PRO_FEATURES): Lock {
   if (entitlement.pro) return FREE;
   const bare = href.split("#")[0];
   const path = bare.split("?")[0];
+  const hub = hubForHref(path);
+  if (hub) {
+    const tab = resolveTab(hub, new URLSearchParams(bare.split("?")[1] ?? "").get(HUB_TAB_PARAM) ?? undefined);
+    const hit = features.find((f) => f.href === hubTabHref(hub, tab.id));
+    return hit && !hit.partial ? { locked: true, unlocks: hit.label } : FREE;
+  }
   const whole = features.filter((f) => !f.partial);
   const hit = whole.find((f) => f.href === bare) ?? whole.find((f) => f.href.split("?")[0] === path);
   return hit ? { locked: true, unlocks: hit.label } : FREE;

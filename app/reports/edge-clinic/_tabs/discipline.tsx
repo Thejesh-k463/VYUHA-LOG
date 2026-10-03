@@ -16,13 +16,14 @@ import { playbookStats, mistakeReport, emotionReport, playbookRuleCost, PLAYBOOK
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { inr, num } from "@/lib/format";
 import Link from "next/link";
+import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analytics/win-loss";
 
 // v4.6.0 W3 — the body of the old /reports/discipline screen, now the Edge
-// Clinic's Discipline tab. The hub page (../page.tsx) owns the page header and
-// the Pro gate.
+// Clinic's Discipline tab. The hub page (../page.tsx) owns the page header;
+// the tab owns its own Pro gate since v4.7.0 C2.
 
 // The export carries the honest pair: a refused week exports a BLANK score plus
 // the reason it refused, never a 0 that a spreadsheet would happily average.
@@ -94,8 +95,9 @@ export function DisciplineTab() {
   const emotions = emotionReport(behaviorTrades);
   const pnlCls = (v: number | null) => (v == null ? "text-muted-foreground" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
+  // v4.7.0 C2: the tab owns its gate (the hub's Clinic tab has a free teaser).
   return (
-    <>
+    <ProGate>
         {rProvLine && <p className="text-[0.6875rem] text-muted-foreground">Every Avg R on this page: {rProvLine}. Default-cap R measures P&amp;L in per-segment cap units, not plan adherence.</p>}
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiCard
@@ -389,6 +391,6 @@ export function DisciplineTab() {
           under any week to see the arithmetic. A week with fewer than {PROCESS_SCORE_FLOOR} closed trades states
           that in place of a score, and stays out of the average above.
         </p>
-    </>
+    </ProGate>
   );
 }

@@ -461,6 +461,43 @@ if (closeOut) {
   }
 }
 
+// ── C2. README's charge-rate key vs the same `charge_config_uq` index ───────
+// README prose on one side, the schema's index on the other. Check C read only
+// AGENTS.md, so README said "broker × segment × exchange" for a release after the
+// key gained `plan` (prose pass 2026-10-04). Every README phrase that names a key
+// from `broker` to `exchange` must name the index's columns, in its order.
+{
+  const schemaRel = "lib/db/schema.ts";
+  const schema = doc(schemaRel);
+  const idx = schema ? /uniqueIndex\("charge_config_uq"\)\.on\(([^)]*)\)/.exec(schema) : null;
+  const phrases = readme ? [...readme.matchAll(/broker × (?:\w+ × )*exchange/g)] : [];
+  if (!idx) skip("readme-rate-key", `${schemaRel} has no parsable \`charge_config_uq\` index`, schemaRel);
+  else if (phrases.length === 0) skip("readme-rate-key", "README names no `broker × … × exchange` key", "README.md");
+  else {
+    const actual = idx[1].split(",").map((s) => s.trim().replace(/^t\./, "")).filter((c) => c && c !== "effectiveFrom").join(" × ");
+    const bad = phrases.filter((m) => m[0] !== actual);
+    cmp(
+      "readme-rate-key",
+      bad.length,
+      0,
+      bad.length ? `README: ${bad.map((m) => `"${m[0]}" at :${lineAt(readme, m.index)}`).join(", ")}` : `README: ${phrases.length} phrase(s) = ${actual}`,
+      `${schemaRel} charge_config_uq: ${actual}`,
+      `README.md vs ${schemaRel}:${lineAt(schema, idx.index)}`,
+    );
+  }
+}
+
+// ── C3. STATE's preamble date vs §0's own "reconciled" date ─────────────────
+// The preamble above §0 says which date the §0 record carries; §0's header says it
+// too. A rewrite of §0 left the preamble a session behind twice (prose passes
+// 2026-10-01 and 2026-10-04).
+if (closeOut) {
+  const pre = stateFull ? /§0 below is a LATER reconciliation record \((\d{4}-\d{2}-\d{2})\)/.exec(stateFull) : null;
+  const hdr = state0 ? /^## §0 START HERE — reconciled (\d{4}-\d{2}-\d{2})/m.exec(state0) : null;
+  if (!pre || !hdr) skip("state-preamble-date", "STATE has no preamble date or no `reconciled YYYY-MM-DD` §0 header", "VYUHA-STATE.md");
+  else cmp("state-preamble-date", pre[1], hdr[1], `preamble ${pre[1]}`, `§0 header ${hdr[1]}`, `VYUHA-STATE.md:${lineAt(stateFull, pre.index)} vs :${state0Line}`);
+}
+
 // ── D. commit.ts's autoClose claim vs the import routes' own call sites ─────
 // A COMMENT on one side, the CALLERS on the other. W2a landed the applier
 // dormant ("every production caller … writes exactly what v4.4.0 wrote") and

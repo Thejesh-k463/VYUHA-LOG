@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
@@ -60,18 +61,34 @@ describe("migration 0078 — the 16 rows, equal to the seed's", () => {
     const applied = () => (t.sqlite.prepare("SELECT count(*) AS n FROM __drizzle_migrations").get() as { n: number }).n;
     // Back to the 4.5.0 shape: 0078's ledger row and its rows gone. A hand-added
     // Fyers row the user already has must WIN over the migration.
-    const last = t.sqlite.prepare("SELECT max(created_at) AS c FROM __drizzle_migrations").get() as { c: number };
-    t.sqlite.prepare("DELETE FROM __drizzle_migrations WHERE created_at = ?").run(last.c);
+    // v4.7.0 C2: 0078 is no longer the newest migration, and the migrator applies only
+    // what is NEWER than the last ledger row — so rewind the ledger to just before 0078
+    // and migrate from a folder that ENDS at 0078 (later migrations are not 0078's to
+    // re-apply; 0079's ALTER TABLE is not idempotent). The later ledger rows go back after.
+    const journal = JSON.parse(fs.readFileSync(path.join(ROOT, "drizzle", "meta", "_journal.json"), "utf8")) as { entries: { idx: number; tag: string; when: number }[] };
+    const when78 = journal.entries.find((e) => e.idx === 78)!.when;
+    const later = t.sqlite.prepare("SELECT * FROM __drizzle_migrations WHERE created_at > ?").all(when78) as Record<string, unknown>[];
+    t.sqlite.prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?").run(when78);
+    const upTo78 = fs.mkdtempSync(path.join(os.tmpdir(), "vyuha-0078-"));
+    fs.mkdirSync(path.join(upTo78, "meta"));
+    const kept = journal.entries.filter((e) => e.idx <= 78);
+    fs.writeFileSync(path.join(upTo78, "meta", "_journal.json"), JSON.stringify({ ...journal, entries: kept }));
+    for (const e of kept) fs.copyFileSync(path.join(ROOT, "drizzle", `${e.tag}.sql`), path.join(upTo78, `${e.tag}.sql`));
     expect(dropNew()).toBe(16);
     t.sqlite.prepare("INSERT INTO margin_config (broker, segment, margin_pct, note) VALUES ('fyers', 'future', 18, 'mine')").run();
     const before = applied();
-    migrate(t.db, { migrationsFolder: "./drizzle" });
+    migrate(t.db, { migrationsFolder: upTo78 });
     expect(applied() - before, "run 1 applies 0078").toBe(1);
     expect(count()).toBe(16);
     expect(rowsOf(["fyers"]).find((r) => r.segment === "future"), "the user's own row wins").toMatchObject({ marginPct: 18, note: "mine" });
-    migrate(t.db, { migrationsFolder: "./drizzle" });
+    migrate(t.db, { migrationsFolder: upTo78 });
     expect(applied() - before, "run 2 applies nothing").toBe(1);
     expect(count()).toBe(16);
+    for (const r of later) {
+      const cols = Object.keys(r).filter((c) => c !== "id"); // the re-applied 0078 row took a fresh id
+      t.sqlite.prepare(`INSERT INTO __drizzle_migrations (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`).run(...cols.map((c) => r[c]));
+    }
+    fs.rmSync(upTo78, { recursive: true, force: true });
     t.sqlite.prepare("UPDATE margin_config SET margin_pct = 15, note = 'SPAN+exposure approx' WHERE broker = 'fyers' AND segment = 'future'").run();
   });
 });

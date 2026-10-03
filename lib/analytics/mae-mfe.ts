@@ -27,6 +27,31 @@ export interface MaeTradeInput {
   netPnl: number;
   isOpen: boolean;
   riskAmount?: number | null; // planned ₹ risk (1R) — unlocks R-normalized stop tuning
+  /**
+   * v4.7.0 C2 — the intra-trade high / low the user TYPED (per-unit prices). When both
+   * are present AND still bracket the fills (`typedRangeValid`), the row is computed
+   * from them (`source: "typed"`, barsUsed 0) — which covers options and intraday,
+   * where EOD bars cannot. Otherwise the EOD bars, as before (`source: "bars"`).
+   */
+  intraHigh?: number | null;
+  intraLow?: number | null;
+}
+
+/**
+ * The typed range is usable only while it brackets both fills: low ≤ min(entry, exit)
+ * and high ≥ max(entry, exit). Checked at READ time, not just at the write, because a
+ * later edit of the fills (or a corporate action on them) can leave a typed range that
+ * no longer contains the trade — that range would report a negative excursion as 0.
+ */
+export function typedRangeValid(
+  entry: number,
+  exit: number,
+  high: number | null | undefined,
+  low: number | null | undefined,
+): boolean {
+  if (high == null || low == null) return false;
+  if (![entry, exit, high, low].every(Number.isFinite)) return false;
+  return low <= Math.min(entry, exit) && high >= Math.max(entry, exit);
 }
 
 export interface MaeMfeRow {
@@ -38,7 +63,10 @@ export interface MaeMfeRow {
   exit: number;
   entryDate: string;
   exitDate: string;
+  /** 0 on a typed row. */
   barsUsed: number;
+  /** v4.7.0 C2: where hi/lo came from — the user's typed intra-trade range, or EOD bars. */
+  source: "typed" | "bars";
   maeRs: number; // ₹ worst move against entry over the window (≥0)
   mfeRs: number; // ₹ best move in favour over the window (≥0)
   capturedPct: number | null; // (exit move ₹) / mfeRs × 100, null when mfeRs = 0
@@ -73,19 +101,28 @@ export function computeMaeMfe(
       undated += 1;
       continue;
     }
-    const bars = (barsByTicker.get(t.ticker.toUpperCase()) ?? []).filter(
-      (b) => b.date >= t.entryDate! && b.date <= t.exitDate!,
-    );
-    if (bars.length === 0) {
-      uncovered += 1;
-      continue;
-    }
-
     let hi = -Infinity;
     let lo = Infinity;
-    for (const b of bars) {
-      hi = Math.max(hi, b.high ?? b.close);
-      lo = Math.min(lo, b.low ?? b.close);
+    let barsUsed = 0;
+    let source: MaeMfeRow["source"];
+    if (typedRangeValid(t.entry, t.exit, t.intraHigh, t.intraLow)) {
+      hi = t.intraHigh as number;
+      lo = t.intraLow as number;
+      source = "typed";
+    } else {
+      const bars = (barsByTicker.get(t.ticker.toUpperCase()) ?? []).filter(
+        (b) => b.date >= t.entryDate! && b.date <= t.exitDate!,
+      );
+      if (bars.length === 0) {
+        uncovered += 1;
+        continue;
+      }
+      for (const b of bars) {
+        hi = Math.max(hi, b.high ?? b.close);
+        lo = Math.min(lo, b.low ?? b.close);
+      }
+      barsUsed = bars.length;
+      source = "bars";
     }
     const sign = t.side === "short" ? -1 : 1;
     // favorable move per unit: long → hi − entry; short → entry − lo
@@ -107,7 +144,8 @@ export function computeMaeMfe(
       exit: t.exit,
       entryDate: t.entryDate,
       exitDate: t.exitDate,
-      barsUsed: bars.length,
+      barsUsed,
+      source,
       maeRs,
       mfeRs,
       capturedPct,

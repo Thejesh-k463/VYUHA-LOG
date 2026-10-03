@@ -40,6 +40,14 @@ const EXPECTED: Record<string, string> = {
   "/reports/broker-compare": "/reports/costs?tab=broker-compare",
 };
 
+/**
+ * v4.7.0 C2: the Clinic tab replaced no screen, but the registry gives every tab
+ * a legacyHref, so it carries a FRESH alias — no app/ route and no other redirect
+ * uses it. next.config.ts answers it with the same 307; there is no page stub.
+ */
+const CLINIC_ALIAS = { "/reports/clinic": "/reports/edge-clinic?tab=clinic" } as const;
+const ALL_ALIASES: Record<string, string> = { ...CLINIC_ALIAS, ...EXPECTED };
+
 describe("HUBS — the registry's shape", () => {
   it("three hubs, unique hrefs, unique tab ids per hub, a default tab that exists", () => {
     expect(HUBS.map((h) => h.href)).toEqual(["/reports/edge-clinic", "/reports/capital", "/reports/costs"]);
@@ -50,14 +58,23 @@ describe("HUBS — the registry's shape", () => {
       expect(ids, `${h.href} default`).toContain(h.defaultTab);
       for (const t of h.tabs) expect(t.description.length, `${h.href}#${t.id}`).toBeGreaterThan(10);
     }
-    // 4.6.0: Setups is the Edge Clinic's default; no placeholder Clinic tab.
-    expect(hub("/reports/edge-clinic").defaultTab).toBe("setups");
-    expect(hub("/reports/edge-clinic").tabs.map((t) => t.id)).toEqual(["setups", "discipline", "scaling"]);
+    // 4.7.0 C2 (design review change 9, flipped deliberately): the Clinic tab
+    // exists now, sits FIRST and is the Edge Clinic's default (4.6.0: Setups).
+    expect(hub("/reports/edge-clinic").defaultTab).toBe("clinic");
+    expect(hub("/reports/edge-clinic").tabs.map((t) => t.id)).toEqual(["clinic", "setups", "discipline", "scaling"]);
+    expect(hub("/reports/edge-clinic").tabs[0].label).toBe("Clinic");
   });
 
-  it("the seven legacy hrefs each map exactly once", () => {
-    expect([...LEGACY_HREFS].sort()).toEqual(Object.keys(EXPECTED).sort());
-    expect(new Set(LEGACY_HREFS).size).toBe(7);
+  it("the seven legacy hrefs plus the Clinic's alias each map exactly once", () => {
+    expect([...LEGACY_HREFS].sort()).toEqual(Object.keys(ALL_ALIASES).sort());
+    expect(new Set(LEGACY_HREFS).size).toBe(8);
+  });
+
+  it("the Clinic's alias collides with no route on disk", () => {
+    // A legacyHref that named a live route would redirect a real screen away.
+    for (const alias of Object.keys(CLINIC_ALIAS)) {
+      expect(fs.existsSync(path.join(ROOT, `app${alias}`)), alias).toBe(false);
+    }
   });
 
   it("tab descriptions are the old screens' own PageHeader descriptions, verbatim", () => {
@@ -90,10 +107,11 @@ describe("legacyRedirect / hubTabHref / resolveTab / hubForHref", () => {
   it("resolveTab: a known id opens it; missing, unknown and repeated all open the default", () => {
     const h = hub("/reports/edge-clinic");
     expect(resolveTab(h, "scaling").id).toBe("scaling");
-    expect(resolveTab(h, undefined).id).toBe("setups");
-    expect(resolveTab(h, "nope").id).toBe("setups");
-    expect(resolveTab(h, "").id).toBe("setups");
-    expect(resolveTab(h, ["scaling", "discipline"]).id).toBe("setups");
+    expect(resolveTab(h, "setups").id).toBe("setups");
+    expect(resolveTab(h, undefined).id).toBe("clinic");
+    expect(resolveTab(h, "nope").id).toBe("clinic");
+    expect(resolveTab(h, "").id).toBe("clinic");
+    expect(resolveTab(h, ["scaling", "discipline"]).id).toBe("clinic");
     expect(resolveTab(hub("/reports/costs"), undefined).id).toBe("charges");
     expect(resolveTab(hub("/reports/capital"), "expiry").id).toBe("expiry");
   });
@@ -215,7 +233,7 @@ describe("routes — the seven old pages redirect, the three hubs gate", () => {
     // redirect is the one a bookmark, curl or the screenshot script sees.
     const config = (await import("../next.config")).default;
     const rules = await config.redirects!();
-    const expected = Object.entries(EXPECTED).map(([source, destination]) => ({ source, destination, permanent: false }));
+    const expected = Object.entries(ALL_ALIASES).map(([source, destination]) => ({ source, destination, permanent: false }));
     expect(rules).toEqual(expected);
     expect(rules.every((r) => r.permanent === false), "a 308 would outlive 4.7.0's re-map").toBe(true);
   });
@@ -229,14 +247,39 @@ describe("routes — the seven old pages redirect, the three hubs gate", () => {
     expect(fs.existsSync(path.join(ROOT, `app${legacy}/loading.tsx`)), `app${legacy}/loading.tsx must be gone`).toBe(false);
   });
 
-  it.each(HUBS.map((h) => h.href))("app%s/page.tsx: force-dynamic, reads ?tab= through resolveTab, gates with <ProGate>", (href) => {
+  // v4.7.0 C2: the Edge Clinic's Clinic tab is PARTIAL (a free teaser), so that
+  // hub's page holds no gate and each of its whole-page tabs gates its own body.
+  const TAB_GATED = new Set(["/reports/edge-clinic"]);
+
+  it.each(HUBS.filter((h) => !TAB_GATED.has(h.href)).map((h) => h.href))("app%s/page.tsx: ONE <ProGate> wrapping whichever body the URL selected", (href) => {
     const src = read(`app${href}/page.tsx`);
-    expect(src).toContain("<ProGate>");
     // ONE gate, wrapping whichever body the URL selected — a page that gated
     // only some tabs (`tab.id === "rom" ? <ProGate>… : body`) would still
     // contain the literal and pass the per-file pro-gating scan.
     expect(src.match(/<ProGate>/g)).toHaveLength(1);
     expect(src).toContain("<ProGate>{BODIES[tab.id]()}</ProGate>");
+  });
+
+  it("app/reports/edge-clinic/page.tsx holds NO gate; every whole-page tab gates its own body; the Clinic tab gets clinicStateFor(…, pro)", () => {
+    const h = hub("/reports/edge-clinic");
+    const src = read(`app${h.href}/page.tsx`);
+    expect(src, "a page-level gate would gate the free teaser").not.toContain("<ProGate>");
+    expect(src).toContain("getEntitlement");
+    expect(src).toMatch(/clinicStateFor\(getClinicState\(\), getEntitlement\(\)\.pro\)/);
+    for (const t of h.tabs) {
+      const tab = read(`app${h.href}/_tabs/${t.id}.tsx`);
+      // Exactly one gate per tab body — the Clinic's wraps its Pro half (the
+      // teaser renders outside it), the others wrap their whole body.
+      expect(tab.match(/<ProGate>/g), `${t.id} gates exactly once`).toHaveLength(1);
+      expect(tab, `${t.id}`).toContain("</ProGate>");
+    }
+    // The Clinic tab never reads the cache itself — its state arrives cut.
+    expect(read(`app${h.href}/_tabs/clinic.tsx`)).not.toMatch(/getClinicState\(|getEntitlement\(/);
+  });
+
+  it.each(HUBS.map((h) => h.href))("app%s/page.tsx: force-dynamic, reads ?tab= through resolveTab, one body per tab", (href) => {
+    const src = read(`app${href}/page.tsx`);
+    expect(src).toContain("BODIES[tab.id]()");
     expect(src).toContain("resolveTab(");
     expect(src).toContain('export const dynamic = "force-dynamic"');
     expect(src).toContain("searchParams: Promise<");
@@ -246,12 +289,12 @@ describe("routes — the seven old pages redirect, the three hubs gate", () => {
     for (const t of hub(href).tabs) expect(fs.existsSync(path.join(ROOT, `app${href}/_tabs/${t.id}.tsx`)), `${href} ${t.id}`).toBe(true);
   });
 
-  it("a tab body owns neither the page header nor the gate (the hub does)", () => {
+  it("a tab body never owns the page header; it owns the gate only on a tab-gated hub", () => {
     for (const h of HUBS) {
       for (const t of h.tabs) {
         const src = read(`app${h.href}/_tabs/${t.id}.tsx`);
         expect(src, `${t.id}`).not.toContain("<PageHeader");
-        expect(src, `${t.id}`).not.toContain("<ProGate>");
+        if (!TAB_GATED.has(h.href)) expect(src, `${t.id}`).not.toContain("<ProGate>");
         expect(src, `${t.id}`).not.toMatch(/export default/);
       }
     }
@@ -262,11 +305,11 @@ describe("command palette — one row per hub tab, filtered by hub AND tab", () 
   const rows = (ws: (typeof WORKSPACES)[number]) => commandsFor(buildCommands(null, null), ws);
   const tabRows = (ws: (typeof WORKSPACES)[number]) => rows(ws).filter((c) => c.href.includes("?tab="));
 
-  it("'both' offers all seven tabs as '<Hub> › <Tab>' in Analytics, each opening its tab URL", () => {
+  it("'both' offers all eight tabs as '<Hub> › <Tab>' in Analytics, each opening its tab URL", () => {
     const got = tabRows("both").map((c) => [c.label, c.href, c.group]);
     const want = HUBS.flatMap((h) => h.tabs.map((t) => [`${h.label} › ${t.label}`, hubTabHref(h, t.id), "Analytics"]));
     expect(got).toEqual(want);
-    expect(got).toHaveLength(7);
+    expect(got).toHaveLength(8); // v4.7.0 C2: + Edge Clinic › Clinic
   });
 
   it("an equity workspace keeps the Capital & Expiry hub and its ROM tab, and drops the Expiry TAB row", () => {
@@ -274,7 +317,7 @@ describe("command palette — one row per hub tab, filtered by hub AND tab", () 
     expect(eq.some((c) => c.href === "/reports/capital")).toBe(true);
     expect(eq.some((c) => c.href === "/reports/capital?tab=rom")).toBe(true);
     expect(eq.some((c) => c.href === "/reports/capital?tab=expiry")).toBe(false);
-    expect(tabRows("equity")).toHaveLength(6);
+    expect(tabRows("equity")).toHaveLength(7);
     expect(rows("fno").some((c) => c.href === "/reports/capital?tab=expiry")).toBe(true);
   });
 
@@ -300,10 +343,13 @@ describe("Pro gating follows the tabs", () => {
     }
     for (const l of LEGACY_HREFS) expect(hrefs, l).not.toContain(l);
     for (const h of HUBS) expect(ENTITLEMENT_PATHS).toContain(h.href);
+    // v4.7.0 C2: the Clinic tab is sold too, but PARTIAL — its teaser is free.
+    expect(PRO_FEATURES.find((x) => x.href === CLINIC_ALIAS["/reports/clinic"])?.partial).toBe(true);
   });
 
-  it("the hub PATH and each tab URL lock for a free user; a tab URL names its own feature", () => {
-    expect(lockFor("/reports/edge-clinic", FREE).locked).toBe(true);
+  it("the hub PATH locks as its default tab does; each Pro tab URL locks and names its own feature", () => {
+    // v4.7.0 C2: the default tab, Clinic, is partial (free teaser) — the bare path opens it, so no padlock.
+    expect(lockFor("/reports/edge-clinic", FREE).locked).toBe(false);
     expect(lockFor("/reports/edge-clinic?tab=scaling", FREE)).toEqual({
       locked: true,
       unlocks: PRO_FEATURES.find((f) => f.href === "/reports/edge-clinic?tab=scaling")!.label,
@@ -359,7 +405,7 @@ describe("global search finds a hub TAB as a screen (D-9)", () => {
       h.tabs.map((tab) => [`${h.label} › ${tab.label}`, hubTabHref(h, tab.id), NAV_ITEMS.find((n) => n.href === h.href)!.group]),
     );
     expect(tabRows.map((c) => [c.label, c.href, c.group])).toEqual(want);
-    expect(tabRows).toHaveLength(7);
+    expect(tabRows).toHaveLength(8);
   });
 
   it.each([

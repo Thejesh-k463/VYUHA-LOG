@@ -86,7 +86,7 @@ describe("computeMaeMfe", () => {
 describe("stopTuningReport", () => {
   const row = (over: Partial<MaeMfeRow>): MaeMfeRow => ({
     id: 1, symbol: "X", side: "long", qty: 100, entry: 100, exit: 110,
-    entryDate: "2026-07-01", exitDate: "2026-07-04", barsUsed: 4,
+    entryDate: "2026-07-01", exitDate: "2026-07-04", barsUsed: 4, source: "bars",
     maeRs: 0, mfeRs: 0, capturedPct: null, edgeRatio: null, netPnl: 0,
     maeR: null, mfeR: null,
     ...over,

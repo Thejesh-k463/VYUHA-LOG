@@ -20,6 +20,8 @@ import {
   brokerConnections,
   panelDismissals,
   brokerReference,
+  clinicExperiments,
+  clinicCache,
 } from "@/lib/db/schema";
 import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { carryUnfetchedOnMerge } from "@/lib/import/dhan-unfetched";
@@ -170,6 +172,8 @@ export interface AccountDeleteCounts {
   advanceTaxChallans: number;
   brokerConnections: number;
   panelDismissals: number;
+  /** v4.7.0 C2: Edge Clinic experiments — purge snapshots them; merge MOVES them. */
+  clinicExperiments: number;
 }
 
 export interface AccountDeletePreview {
@@ -243,6 +247,20 @@ function resolve(accountId: number, mode: AccountDeleteMode, targetId?: number |
   return { ok: true, account, target: null };
 }
 
+/**
+ * v4.7.0 C2 — ids of the SOURCE's open Edge Clinic experiments whose cell the
+ * TARGET also has an open experiment on (the merge sets these aside).
+ */
+function clinicExperimentCollisions(sourceId: number, targetId: number): number[] {
+  const targetOpen = new Set(
+    db.select({ cellKey: clinicExperiments.cellKey }).from(clinicExperiments)
+      .where(and(eq(clinicExperiments.accountId, targetId), eq(clinicExperiments.status, "open"))).all().map((r) => r.cellKey),
+  );
+  return db.select({ id: clinicExperiments.id, cellKey: clinicExperiments.cellKey }).from(clinicExperiments)
+    .where(and(eq(clinicExperiments.accountId, sourceId), eq(clinicExperiments.status, "open"))).all()
+    .filter((r) => targetOpen.has(r.cellKey)).map((r) => r.id);
+}
+
 /** count(*) of one account-scoped table. */
 function countRows(table: { accountId: unknown }, accountId: number): number {
   const t = table as unknown as typeof importBatches; // any table with accountId — shape only
@@ -271,6 +289,7 @@ function gatherCounts(accountId: number): AccountDeleteCounts {
     advanceTaxChallans: countRows(advanceTaxChallans, accountId),
     brokerConnections: countRows(brokerConnections, accountId),
     panelDismissals: countRows(panelDismissals, accountId),
+    clinicExperiments: countRows(clinicExperiments, accountId),
   };
 }
 
@@ -736,6 +755,13 @@ export function previewAccountDelete(opts: { accountId: number; mode: AccountDel
     if (counts.advanceTaxChallans > 0) {
       warnings.push(`${counts.advanceTaxChallans} advance-tax challan${counts.advanceTaxChallans === 1 ? "" : "s"} will move to “${r.target.name}” — they record payments that really happened and follow the trades.`);
     }
+    if (counts.clinicExperiments > 0) {
+      const clash = clinicExperimentCollisions(opts.accountId, r.target.id).length;
+      warnings.push(
+        `${counts.clinicExperiments} Edge Clinic experiment${counts.clinicExperiments === 1 ? "" : "s"} will move to “${r.target.name}”` +
+          (clash ? ` — ${clash} open on a cell “${r.target.name}” is already testing will be set aside (the target's stays open).` : "."),
+      );
+    }
     for (const broker of connectionCollisionBrokers(opts.accountId, r.target.id)) {
       warnings.push(`Target already connected to ${broker} — that connection cannot move and will be removed (credentials are not recoverable).`);
     }
@@ -899,6 +925,10 @@ export function deleteAccount(opts: {
   // merge: ISO weeks reviewed on BOTH accounts — the target's row survives and
   // the source's note is appended to it. Gathered up front for the same reason.
   const weeklyCollisions = mode === "merge" ? weeklyReviewCollisions(accountId, r.target!.id) : [];
+  // merge (v4.7.0 C2): source experiments open on a cell the target is already
+  // testing — set aside inside the transaction. Gathered up front like the rest.
+  const clinicClashIds = mode === "merge" ? clinicExperimentCollisions(accountId, r.target!.id) : [];
+  const clinicClash = clinicClashIds.length;
   const weeklyRowById = new Map(
     (weeklyCollisions.length > 0 ? db.select().from(weeklyReviews).all() : []).map((row) => [row.id, row]),
   );
@@ -936,6 +966,12 @@ export function deleteAccount(opts: {
             db.select().from(weeklyReviews).where(inArray(weeklyReviews.id, chunk)).all(),
           ),
     ),
+    // v4.7.0 C2 — Edge Clinic experiments are the user's own pre-registered
+    // comparisons (a hypothesis they chose), so a purge snapshots every one and a
+    // Trash restore brings them back. merge: none is destroyed — they MOVE, and a
+    // source experiment open on a cell the target is already testing is set aside
+    // (`abandoned`) and moves too.
+    clinicExperiments: asRows(mode === "purge" ? db.select().from(clinicExperiments).where(eq(clinicExperiments.accountId, accountId)).all() : []),
   };
 
   // ── Broker-stated figures (v3.9 `broker_reference`) ──────────────────────
@@ -1049,6 +1085,8 @@ export function deleteAccount(opts: {
         // behind would be invisible (every read is account-scoped) yet still
         // occupy the account in `broker_reference_uq`.
         tx.delete(brokerReference).where(eq(brokerReference.accountId, accountId)).run();
+        // v4.7.0 C2 — snapshotted above (destroyedRows.clinicExperiments).
+        tx.delete(clinicExperiments).where(eq(clinicExperiments.accountId, accountId)).run();
       } else {
         const targetId = r.target!.id;
         // K1: first, the IPO links that follow the target's surviving copy of a
@@ -1228,6 +1266,17 @@ export function deleteAccount(opts: {
         // key, so there is no such thing as a colliding challan.
         tx.update(advanceTaxChallans).set({ accountId: targetId }).where(eq(advanceTaxChallans.accountId, accountId)).run();
 
+        // v4.7.0 C2 — Edge Clinic experiments MOVE with the book they test. One
+        // OPEN experiment per (account, cell) (the partial unique index): where
+        // both accounts have one open on the same cell the TARGET's stays open —
+        // it is the book that survives — and the source's is set aside
+        // (`abandoned`, never deleted: the hypothesis is the user's own text).
+        // Set aside FIRST, then move, so the index never sees two open rows.
+        for (const c of clinicClashIds) {
+          tx.update(clinicExperiments).set({ status: "abandoned" }).where(eq(clinicExperiments.id, c)).run();
+        }
+        tx.update(clinicExperiments).set({ accountId: targetId }).where(eq(clinicExperiments.accountId, accountId)).run();
+
         // R10 (v4.3.0 fix wave 1): the source's kept "not fetched" Dhan notices
         // follow its trades, whatever the connections choice — the fact is
         // about the BOOK (lib/import/dhan-unfetched.ts). One append-only row
@@ -1268,6 +1317,9 @@ export function deleteAccount(opts: {
 
       tx.delete(accounts).where(eq(accounts.id, accountId)).run();
       moveSelection(accountId, mode === "merge" ? r.target!.id : null);
+      // v4.7.0 C2 — the Edge Clinic's cached report of a scope that no longer
+      // exists. DERIVED (migration 0079), so it is dropped, not snapshotted.
+      tx.delete(clinicCache).where(eq(clinicCache.scopeKey, `acct:${accountId}`)).run();
 
       recordAudit({
         entity: "account",
@@ -1294,7 +1346,7 @@ export function deleteAccount(opts: {
 
   const message =
     mode === "purge"
-      ? `Deleted account “${account.name}” — ${counts.trades} trade${counts.trades === 1 ? "" : "s"} and everything it owned. Trades, imports, IPOs, ledger, sessions, capital history and weekly reviews are recoverable from Backup & Restore → Deleted items; broker API credentials, capital goals, brought-forward loss lots, advance-tax challans and panel dismissals are not.` +
+      ? `Deleted account “${account.name}” — ${counts.trades} trade${counts.trades === 1 ? "" : "s"} and everything it owned. Trades, imports, IPOs, ledger, sessions, capital history, weekly reviews and Edge Clinic experiments are recoverable from Backup & Restore → Deleted items; broker API credentials, capital goals, brought-forward loss lots, advance-tax challans and panel dismissals are not.` +
         (failed.length ? ` ${failed.length} attachment file${failed.length === 1 ? "" : "s"} could not be moved into the snapshot.` : "")
       : `Merged “${account.name}” into “${r.target!.name}” — ${counts.trades - doomedIds.length} trade${counts.trades - doomedIds.length === 1 ? "" : "s"} moved` +
         (doomedIds.length ? `, ${doomedIds.length} duplicate${doomedIds.length === 1 ? "" : "s"} skipped (saved to Deleted items)` : "") +
@@ -1326,6 +1378,7 @@ export function deleteAccount(opts: {
             (weeklyCollisions.length ? ` and ${weeklyCollisions.length} shared week${weeklyCollisions.length === 1 ? "" : "s"} kept on the target with this account's note appended` : "")
           : "") +
         (counts.advanceTaxChallans ? `, ${counts.advanceTaxChallans} advance-tax challan${counts.advanceTaxChallans === 1 ? "" : "s"} moved` : "") +
+        (counts.clinicExperiments ? `, ${counts.clinicExperiments} Edge Clinic experiment${counts.clinicExperiments === 1 ? "" : "s"} moved` + (clinicClash ? ` (${clinicClash} set aside — “${r.target!.name}” already had one open on that cell)` : "") : "") +
         (connections === "move" ? `, ${movedConnections} connection${movedConnections === 1 ? "" : "s"} moved` : "") +
         (connCollisions.length ? `, ${connCollisions.length} connection${connCollisions.length === 1 ? "" : "s"} removed (target already connected — credentials are not recoverable)` : "") +
         (connections === "delete" && counts.brokerConnections ? `, ${counts.brokerConnections} connection${counts.brokerConnections === 1 ? "" : "s"} deleted (credentials are not recoverable)` : "") +

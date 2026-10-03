@@ -16,6 +16,7 @@ import {
   tradingSessions,
   capitalSnapshots,
   weeklyReviews,
+  clinicExperiments,
   brokerReference,
 } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -793,6 +794,12 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           // unique index refuses the insert and it is COUNTED as skipped, not
           // silently duplicated under a fresh id.
           [weeklyReviews, env.accountRows.weeklyReviews, null],
+          // v4.7.0 C2: the account's Edge Clinic experiments come back with the
+          // book, under their ORIGINAL ids — a row already present (restored by
+          // another route) or an OPEN one on a cell the account has since opened
+          // again (the partial unique index) is COUNTED as skipped, never
+          // duplicated under a fresh id: one copy, never two.
+          [clinicExperiments, env.accountRows.clinicExperiments, null],
         ];
         for (const [table, tableRows, refColumn] of groups) {
           for (const row of tableRows ?? []) {

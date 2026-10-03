@@ -18,6 +18,39 @@ import {
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { ExitTriggerField } from "@/components/trades/exit-trigger-field";
+import type { TradeCellLine } from "@/lib/analytics/edge-clinic-contract";
+
+/**
+ * v4.7.0 C2 (design D6) — the trade's Edge Clinic cell in one line, from the
+ * CACHED report (GET /api/edge-clinic/cell; Pro only, never computes). This
+ * component mounts when the dialog opens, so the fetch IS the open event; the
+ * only state is the async reply, tagged with the trade it answers, and a reply
+ * for another trade is simply not rendered (derived, never reset in an effect).
+ * Nothing renders when the line is null (free copy, no cached report, no cell).
+ */
+function ClinicCellLine({ tradeId }: { tradeId: number }) {
+  const [reply, setReply] = React.useState<{ tradeId: number; line: TradeCellLine | null } | null>(null);
+  React.useEffect(() => {
+    const ctrl = new AbortController();
+    fetch(`/api/edge-clinic/cell?tradeId=${tradeId}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { ok?: boolean; line?: TradeCellLine | null } | null) => {
+        if (d?.ok) setReply({ tradeId, line: d.line ?? null });
+      })
+      .catch(() => {
+        /* aborted or offline — the line is an extra, its absence says nothing */
+      });
+    return () => ctrl.abort();
+  }, [tradeId]);
+  const line = reply && reply.tradeId === tradeId ? reply.line : null;
+  if (!line) return null;
+  return (
+    <p className="text-[0.6875rem] text-muted-foreground" data-clinic-cell={line.key}>
+      <span className="font-medium text-foreground">Edge Clinic · {line.label}</span> ({line.grade}, {line.nWithR} trades with an R):{" "}
+      {line.headline}
+    </p>
+  );
+}
 
 export interface PlaybookOption {
   id: number;
@@ -101,6 +134,7 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
 
   return (
     <div className="space-y-3">
+      <ClinicCellLine tradeId={trade.id} />
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Playbook</Label>

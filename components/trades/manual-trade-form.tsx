@@ -20,6 +20,7 @@ import { WriteAccountPicker, type WriteAccountOption } from "@/components/system
 import { CheckCircle2, Paperclip } from "lucide-react";
 import { buildManualPreviewBody } from "@/components/trades/manual-preview-body";
 import { SignalSection } from "@/components/trades/signal-section";
+import { SETUP_GRADES } from "@/lib/analytics/edge-clinic-contract";
 
 interface PreviewResp {
   classification: { segment: Segment; bucket: string; exchange: string; symbol: string; optionType: string | null };
@@ -499,6 +500,10 @@ export function ManualTradeForm({
         <Field label={open ? "Entry date" : kind === "fno" ? "Entry date" : "Buy date"}><Input name="buyDate" type="date" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} /></Field>
         {!open && <Field label={kind === "fno" ? "Exit date" : "Sell date"}><Input name="sellDate" type="date" value={sellDate} onChange={(e) => setSellDate(e.target.value)} /></Field>}
         <Field label="SL (original)"><Input name="slPlanned" type="number" step="any" value={sl} onChange={(e) => setSl(e.target.value)} /></Field>
+        {/* v4.7.0 C2 — the highest / lowest price traded while the position was open.
+            Optional, both or neither (the save refuses one alone); per-unit prices. */}
+        <Field label="Intra-trade high"><Input name="intraHigh" type="number" step="any" placeholder="optional" /></Field>
+        <Field label="Intra-trade low"><Input name="intraLow" type="number" step="any" placeholder="optional" /></Field>
         <Field label="Trailing SL"><Input name="trailingSl" type="number" step="any" /></Field>
         <Field label="Target"><Input name="targetPlanned" type="number" step="any" value={target} onChange={(e) => setTarget(e.target.value)} /></Field>
         <Field label="Risk amount (₹)">
@@ -512,6 +517,13 @@ export function ManualTradeForm({
           />
         </Field>
         <Field label={kind === "fno" ? "Strategy" : "Setup tag"}><Input name="setupTag" placeholder={kind === "fno" ? "e.g. Iron condor, ORB" : "e.g. ORB, pullback"} /></Field>
+        {/* v4.7.0 C2 — the trader's own grade of the setup; blank = ungraded. */}
+        <Field label="Setup grade">
+          <Select name="setupGrade" defaultValue="">
+            <option value="">—</option>
+            {SETUP_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+          </Select>
+        </Field>
         {!isMtf ? null : (
           <>
             <Field label="Own capital used (₹)">

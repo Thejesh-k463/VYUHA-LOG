@@ -30,6 +30,38 @@ function pageFileFor(href: string): string | null {
   return fs.existsSync(p) ? p : null;
 }
 
+/**
+ * "/reports/edge-clinic?tab=setups" → app/reports/edge-clinic/_tabs/setups.tsx —
+ * the hub TAB's own body file, or null when the href names no `?tab=` or the
+ * file does not exist.
+ *
+ * v4.7.0 C2: a hub may gate PER TAB. The Edge Clinic's Clinic tab is partial (a
+ * free teaser), so its page holds no <ProGate> and each whole-page tab wraps its
+ * own body. A whole-page tab entry is gated when its page OR its tab body holds
+ * the gate; a partial tab entry is checked against the tab body and the page.
+ */
+function tabFileFor(href: string): string | null {
+  const [pathname, query] = href.split("#")[0].split("?");
+  if (!query) return null;
+  const tab = new URLSearchParams(query).get("tab");
+  if (!tab) return null;
+  const p = path.join(ROOT, "app", pathname, "_tabs", `${tab}.tsx`);
+  return fs.existsSync(p) ? p : null;
+}
+
+/** Every `_tabs/<id>.tsx` under app/, as [file, "<hub>?tab=<id>"]. */
+function allTabFiles(): [string, string][] {
+  return allPageFiles().flatMap((page) => {
+    const dir = path.join(path.dirname(page), "_tabs");
+    if (!fs.existsSync(dir)) return [];
+    const hub = hrefForPageFile(page);
+    return fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith(".tsx"))
+      .map((f) => [path.join(dir, f), `${hub}?tab=${f.replace(/\.tsx$/, "")}`] as [string, string]);
+  });
+}
+
 /** app/reports/edge/page.tsx → /reports/edge (no route groups exist under app/). */
 function hrefForPageFile(file: string): string {
   return file
@@ -69,7 +101,10 @@ describe("Pro gating — the registry and the real gates agree", () => {
       expect(file, `${f.href} names no page.tsx`).not.toBeNull();
       if (!file) continue;
       const src = read(file);
-      if (!src.includes("<ProGate>")) ungated.push(f.href);
+      // v4.7.0 C2: a tab entry may be gated by its own body instead of its page.
+      const tab = tabFileFor(f.href);
+      const gated = src.includes("<ProGate>") || (tab != null && read(tab).includes("<ProGate>"));
+      if (!gated) ungated.push(f.href);
     }
     expect(ungated, `advertised as Pro but rendering free: ${ungated.join(", ")}`).toEqual([]);
   });
@@ -87,6 +122,15 @@ describe("Pro gating — the registry and the real gates agree", () => {
       unadvertised,
       `gated but never advertised — blocked by something the upsell card does not mention: ${unadvertised.join(", ")}`,
     ).toEqual([]);
+    // v4.7.0 C2: the same direction for a hub TAB body that carries its own gate —
+    // its tab URL must be on the upsell card (whole-page, or partial when the gate
+    // wraps only the tab's Pro half).
+    const allHrefs = new Set(PRO_FEATURES.map((f) => f.href));
+    const tabUnadvertised = allTabFiles()
+      .filter(([file]) => read(file).includes("<ProGate>"))
+      .map(([, href]) => href)
+      .filter((h) => !allHrefs.has(h));
+    expect(tabUnadvertised, `tab bodies gated but never advertised: ${tabUnadvertised.join(", ")}`).toEqual([]);
   });
 
   it("a partially-gated screen really checks entitlement, and is not page-gated", () => {
@@ -96,6 +140,21 @@ describe("Pro gating — the registry and the real gates agree", () => {
       const src = read(page);
       expect(src, `${f.href} must read getEntitlement`).toContain("getEntitlement");
       expect(src, `${f.href} is partial — a whole-page <ProGate> would gate the free part`).not.toContain("<ProGate>");
+      // v4.7.0 C2: a partial hub TAB (`?tab=x`) resolves to `_tabs/x.tsx`, and that
+      // tab must see its data THROUGH the entitlement — either it reads
+      // getEntitlement itself, or the page hands it a value cut by
+      // `getEntitlement().pro` (the Clinic: `clinicStateFor(getClinicState(),
+      // getEntitlement().pro)`, so a free copy's payload never carries the report).
+      if (/[?&]tab=/.test(f.href)) {
+        const tab = tabFileFor(f.href);
+        expect(tab, `${f.href} names no _tabs/<id>.tsx`).not.toBeNull();
+        if (!tab) continue;
+        const tabSrc = read(tab);
+        const comp = /export function (\w+)/.exec(tabSrc)?.[1];
+        expect(comp, `${tab} exports no tab component`).toBeTruthy();
+        const handed = new RegExp(`<${comp}\\b[^>]*getEntitlement\\(\\)\\.pro`).test(src);
+        expect(tabSrc.includes("getEntitlement(") || handed, `${f.href}: the tab must receive its data through the entitlement`).toBe(true);
+      }
     }
   });
 
