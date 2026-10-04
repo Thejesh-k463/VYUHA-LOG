@@ -13,11 +13,13 @@ import { getLiveFeedProvider } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type ProviderHealth, type Quote, type QuoteKey } from "@/lib/quotes/types";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
-import { getResultsDateMap, getSectorResolution } from "@/lib/queries/instruments";
+import { getClassificationResolution, getResultsDateMap, getSectorResolution } from "@/lib/queries/instruments";
+import { getCorporateActions } from "@/lib/queries/corporate-actions";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getTrades } from "@/lib/queries/trades";
 import type { BarsCap, DeskBar, DeskRow, FeedInfo, LiveDeskData } from "./desk-types";
 import { sideOf } from "@/lib/domain/side";
+import { corpActionsFor, partialOf, prevCloseOf } from "@/lib/live/positions-view";
 
 /**
  * The Live Desk server loader — journal rows in, `LiveDeskData` out.
@@ -175,6 +177,14 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
   // same shape as `sectors` above, and for the same reason: 40+ rows must not
   // each go back to `instruments`.
   const resultsDates = getResultsDateMap();
+  // C4 (D4) — the LEVELS-aware chain for the Positions tab's industry cohort.
+  // A user tag or an index-map hit is sector-only (industry null), so that row
+  // falls UP to its sector in the Industry view. One read for the whole desk.
+  const classes = getClassificationResolution();
+  // C4 (P5) — recorded corporate actions. Reference data (no account_id): a
+  // split is a fact about the scrip, not about one book. One read, filtered
+  // per row by `corpActionsFor` (bonus + split, exDate ≥ today − 30 days).
+  const corporateActions = getCorporateActions();
   const capital = getBucketCapital();
   const equityCapitalP = capital.equityCapital > 0 ? toPaise(capital.equityCapital) : null;
   const activeCapitalP = capital.activeCapital > 0 ? toPaise(capital.activeCapital) : null;
@@ -303,6 +313,7 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     const t = byId.get(p.id);
     const isShort = t ? sideOf(t) === "short" : false;
     const sector = sectors.get(p.symbol.toUpperCase()) ?? null;
+    const cls = classes.get(p.symbol.toUpperCase()) ?? null;
     const bars = barsBySymbol.get(p.symbol.toUpperCase()) ?? [];
 
     const position: LivePosition = {
@@ -441,6 +452,34 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
       // risk-at-stop figure the row two lines up had just nulled.
       stop: entitlement.pro ? stop : gateStop(stop),
       spark: bars.slice(-SPARK_SESSIONS).map((b) => b.closeP),
+      // ── v4.7.0 C4 — the Positions tab ──────────────────────────────────────
+      industry: cls?.industry ?? null,
+      sectorName: cls?.sector ?? null,
+      classSource: cls?.source ?? null,
+      // D6 (free): from the PARENT row's quantities and REAL averages
+      // (invariant 5), never `grossPnl`; null when nothing is booked.
+      partial: t
+        ? partialOf({
+            side: position.side,
+            buyQty: t.buyQty,
+            sellQty: t.sellQty,
+            avgBuyPrice: t.avgBuyPrice,
+            avgSellPrice: t.avgSellPrice,
+          })
+        : null,
+      corpActions: corpActionsFor(corporateActions, p.symbol, today),
+      prevCloseP: prevCloseOf(bars, today),
+      // D10 — PRO ONLY, the same boundary as the four scalars above: the
+      // calculator's defaults carry capital, which the free wire never does.
+      sizing: entitlement.pro && capitalP !== null && riskPpm !== null && riskPpm > 0 ? { capitalP, riskPpm } : null,
+      // D8 — a derivative's STORED contract expiry; nothing is parsed from a
+      // tradingsymbol (an expiry the journal never recorded is omitted).
+      expiry:
+        (position.instrumentType === "option" || position.instrumentType === "future") && t?.expiry && /^\d{4}-\d{2}-\d{2}$/.test(t.expiry)
+          ? t.expiry
+          : null,
+      slPlannedP: position.slPlannedP,
+      trailingSlP: position.trailingSlP,
     });
   }
 
@@ -504,5 +543,12 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     barsBySymbol: barsOut,
     barsCap,
     today,
+    positions: {
+      deployCapPpm: risk?.deployCapPpm ?? null,
+      atrMultPermille: risk?.stopAtrMultPermille ?? null,
+      // PRO ONLY (D10/D5): the % of capital and the deploy-cap marker are Pro,
+      // and capital stays off the free wire exactly as `pctOfCapital` does.
+      capitalP: entitlement.pro ? totalCapitalP : null,
+    },
   };
 }

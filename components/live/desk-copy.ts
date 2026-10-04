@@ -81,6 +81,174 @@ export const DESK_COPY = {
 } as const;
 
 /**
+ * The `/live` POSITIONS tab (v4.7.0 wave C4, design C4-DESIGN-2026-10-04 D13).
+ *
+ * VOICE: record-keeping and calculation, never advice. Every sentence states a
+ * level the user recorded, the arithmetic between levels, or where a figure
+ * came from. Nothing here prompts a transaction, names a level as something to
+ * act on, or describes a result the user did not have — `tests/live-positions-copy.test.ts`
+ * pins that (no counterfactual P&L phrasing, no imperative verb on a stop or a
+ * target, "before charges" on every computed loss or P&L, and the fills caveat
+ * as the ONE sentence `DESK_COPY.fillsCaveat` already is — referenced, never
+ * restated, so the desk's copy guard keeps exempting it by value).
+ */
+export const POSITIONS_COPY = {
+  tabCharts: "Charts",
+  tabPositions: "Positions",
+  tabsLabel: "Live Desk views",
+  /** The Positions table's region name — deliberately NOT "Open positions" (D3: one region per name). */
+  regionLabel: "Positions",
+  compact: "Compact rows",
+
+  /* ── header ───────────────────────────────────────────────────────────── */
+  staleMarks: (n: number) => (n === 1 ? "1 mark older than the newest" : `${n} marks older than the newest`),
+  noStaleMarks: "No mark older than the newest",
+  cohortTitle: "Concentration · by industry cohort",
+  cohortTitleSector: "Concentration · by sector",
+  cohortIndustry: "Industry",
+  cohortSector: "Sector",
+  cohortToggleLabel: "Concentration level",
+  /** D4 — share of DEPLOYED rupees, said so; and the classification is today's. */
+  cohortCaveat: (classified: number, total: number) =>
+    `Share of deployed rupees · current classification, not point-in-time · ${classified} of ${total} classified`,
+  cohortFellUp: "sector — no industry recorded",
+  unclassified: "Unclassified",
+  cohortEmpty: "This book has no deployed rupees to divide.",
+  cohortLocked: "Concentration by industry cohort is Pro.",
+
+  deployedTitle: "Deployed · of capital",
+  deployCapNote: (pct: string, amount: string) => `Gold marker = your deploy cap, ${pct} · ${amount}`,
+  deployCapUnset: "No deploy cap recorded.",
+  heatTitle: "Portfolio heat · if every stop is hit",
+  heatCeilingNote: (pct: string, amount: string) => `Bar ends at your ceiling, ${pct} · ${amount}`,
+  heatNoCeiling: "No heat ceiling recorded — the bar ends at 100%.",
+  heatLocked: "Portfolio heat is Pro.",
+  unrealisedTitle: "Unrealised · on capital",
+  beforeCharges: "Before charges",
+  realisedOnPartials: (pct: string) => `${pct} realised on partials, before charges`,
+  unmarked: (n: number) => (n === 1 ? "1 position has no mark and is left out" : `${n} positions have no mark and are left out`),
+  ofCapitalLocked: "% of capital",
+
+  /* ── table ────────────────────────────────────────────────────────────── */
+  colTicker: "Ticker · stop → mark → target",
+  colQty: "Qty",
+  colHeld: "Held",
+  colSize: "Size",
+  colStop: "Stop · source",
+  colFromEntry: "From entry",
+  colOnCapital: "On capital",
+  colR: "R",
+  held: (days: number | null) => (days === null ? "—" : `${days}d`),
+  avgToMark: (avg: string, mark: string) => `avg ${avg} → mark ${mark}`,
+  partiallyBooked: (pct: string) => `partially booked ${pct}`,
+  realisedBeforeCharges: (amount: string) => `${amount} realised, before charges`,
+  /** D7 — the state chip under the stop value: level arithmetic, free. */
+  stateAtEntry: "stop at entry",
+  stateAtRisk: "at risk",
+  stateLockedIn: "locked in",
+  amountAtRisk: (amount: string) => `${amount} at risk`,
+  amountLockedIn: (amount: string) => `${amount} locked in`,
+  nearStop: (atr: string) => `${atr} ATR from stop`,
+  noStop: "no stop recorded",
+  noStopLab: "No stop recorded · Sizing Lab",
+  computedNotRecorded: "computed · not recorded",
+  stripLabel: (symbol: string) => `${symbol}: stop, entry, mark and target on one line`,
+  corpAction: (type: "bonus" | "split", from: number, to: number, exDate: string) =>
+    `${type === "bonus" ? "Bonus" : "Split"} ${from}:${to} · ex ${exDate}`,
+  book: (n: number) => `Book · ${n} open`,
+  bookStops: (withRisk: number, atEntry: number, lockedIn: number, excluded: number) =>
+    `${withRisk} with risk · ${atEntry} at entry · ${lockedIn} locked in · ${excluded} without a stop`,
+  excludedFromHeat: (symbols: string) => `Excluded from heat: ${symbols} (no stop recorded).`,
+  lockedInAcross: (n: number) =>
+    n === 1 ? "1 position has its stop beyond entry." : `${n} positions have their stop beyond entry.`,
+  keyboardHelp: "j / k move · Enter or a click opens the card · Esc closes it",
+
+  /* ── Risk lens (Ideas B, Pro, collapsed by default) ───────────────────── */
+  lensTitle: "Risk lens",
+  lensSummary: (heat: string, withRisk: number, lockedIn: number, excluded: number) =>
+    `Heat ${heat} · ${withRisk} ${withRisk === 1 ? "stop" : "stops"} with risk · ${lockedIn} locked in · ${excluded} excluded`,
+  lensLocked: "The Risk lens — heat by position, what each stop gives back, the change since the last close and what is dated on your book — is Pro.",
+  lensHeat: (heat: string, risk: string, capital: string) => `${heat} · ${risk} of ${capital}`,
+  lensRankTitle: "If the stop is hit",
+  lensGivesBack: "Gives back",
+  lensShare: "Share",
+  lensAtrAway: "ATR away",
+  lensLockedIn: (amount: string) => `locked in ${amount}`,
+  lensNoStops: "No position carries a stop, so nothing is ranked.",
+  sinceCloseTitle: "Since the previous close",
+  /** P7 — marks only, both at TODAY's stops, and it says stop edits are not tracked. */
+  sinceCloseUnrealised: (atClose: string, now: string) => `Unrealised ${atClose} at the previous close, ${now} now.`,
+  sinceCloseGivesBack: (atClose: string, now: string) =>
+    `If every stop is hit, the book gives back ${atClose} measured from the previous close and ${now} measured from now.`,
+  sinceCloseOpenedToday: (n: number) =>
+    n === 0 ? "No position opened today." : n === 1 ? "1 position opened today and has no previous close." : `${n} positions opened today and have no previous close.`,
+  sinceCloseNear: (symbols: string) => `Within 1 ATR of the stop: ${symbols}.`,
+  sinceCloseNoneNear: "No stop within 1 ATR.",
+  sinceCloseNoCompare: "No position has both a previous close and a mark to compare.",
+  sinceCloseStops: "Stop edits are not tracked day to day, so both figures use today's stops.",
+  upcomingTitle: "Upcoming on your book",
+  upcomingResults: (symbol: string, when: string) => `Results · ${symbol} · ${when}`,
+  upcomingCorp: (type: "bonus" | "split", symbol: string, from: number, to: number, when: string) =>
+    `${type === "bonus" ? "Bonus" : "Split"} ${from}:${to} · ${symbol} · ex ${when}`,
+  upcomingExpiry: (symbol: string, when: string) => `Expiry · ${symbol} · ${when}`,
+  upcomingNone: "Nothing dated on your book from today on.",
+
+  /* ── the pop-up card (Blend 2) ────────────────────────────────────────── */
+  cardFigures: "Figures",
+  figRiskAtStop: "Risk at stop",
+  figToStop: "Distance to stop",
+  figToTarget: "To your target",
+  figHeatShare: "Heat share",
+  figMtf: "MTF funded",
+  figBooked: "Booked so far",
+  figDeployed: "Deployed",
+  ofCapital: (pct: string) => `${pct} of capital`,
+  ofOpenRisk: (amount: string) => `of ${amount} open risk`,
+  atrAway: (atr: string) => `${atr} ATR`,
+  zoneTitle: "Last 30 sessions · entry, stop and target as a zone",
+  zoneNeedsData: "— needs 2 stored sessions.",
+  zoneLabel: (symbol: string, n: number) => `${symbol}: last ${n} closes with the stop, entry and target drawn`,
+  arithmeticTitle: "The arithmetic, in your words",
+  /** A stop at or beyond entry: the stop-fill P&L is a gain or zero, said as a signed figure. */
+  pnlAtStop:(level: string, pnl: string) =>
+    `If the stop is hit at ${level}, the computed P&L is ${pnl}, before charges — the stop sits at or beyond entry.`,
+  lossAtStopLocked: (level: string) => `If the stop is hit at ${level}, the computed loss, before charges, is`,
+  pnlAtTarget: (level: string, pnl: string) => `At ${level} the computed P&L is ${pnl}, before charges.`,
+  noTarget: "No target recorded on this position.",
+  stopFromTrailing: "Stop from the trailing stop you recorded.",
+  stopFromPlanned: "Stop from the stop you recorded.",
+  stopFromAtr: (n: number, k: string) => `Stop computed from your ATR setting: ${n} sessions × ${k}.`,
+  stopFromAtrNoMult: (n: number) => `Stop computed from your ATR setting over ${n} sessions.`,
+  stopFromStructure: "Stop computed from the structure rule.",
+  stopFromPercent: "Stop computed from the percent rule.",
+  stopNone: "No stop recorded on this position.",
+  computedLevel: (level: string) => `The stop tree computes ${level}; it is not recorded on the trade and is not in heat.`,
+  /** Sits ABOVE the four actions (D9). The desk's own sentence, by reference. */
+  fillsCaveat: DESK_COPY.fillsCaveat,
+  actionOpenChart: "Open chart",
+  actionSizingLab: "Sizing Lab",
+  actionEditLevels: "Edit levels",
+  actionTradeRecord: "Trade record",
+  editLocked: "Editing levels from the Live Desk is Pro.",
+
+  /* ── the inline calculator (D10, Pro) ─────────────────────────────────── */
+  calcTitle: "Size calculator",
+  calcNote: "Arithmetic only — nothing here is written to your journal or settings.",
+  calcCapital: "Capital ₹",
+  calcRisk: "Risk per trade %",
+  calcEntry: "Entry ₹",
+  calcStop: "Stop ₹",
+  calcQty: "Qty",
+  calcLots: "Lots",
+  calcDeployed: "Deployed",
+  calcRiskAtStop: "Risk at stop",
+  calcExceedsCapital: "Deployed is more than the capital entered.",
+  calcZeroSize: "The risk budget is smaller than one unit's risk, so the quantity is 0.",
+  calcOpenLab: "Open in Lab",
+  calcLocked: "The size calculator is Pro.",
+} as const;
+
+/**
  * The live stream's connection state, in the feed strip (FW-1).
  *
  * WHY IT IS SAID AT ALL. `GET /api/live/stream` shipped in v4.0 and nothing
@@ -442,3 +610,14 @@ export function stalenessLabel(staleness: string | null, asOf: string | null): s
   if (staleness === "delayed") return `Delayed${when}`;
   return `Last traded${when}`;
 }
+
+/**
+ * C4 fix wave — which denominator a figure is of, when the Positions view is
+ * filtered (rows are of their own bucket; the Book row and heat of the whole book).
+ */
+export const SCOPE_COPY = {
+  sizeHeader: "Deployed as a % of the position's own capital bucket. The Book row is of total capital.",
+  sizeOfTotal: "of total capital",
+  wholeBook: "whole book",
+  inViewRisk: (amount: string) => `${amount} open risk in this view — each share below is of this figure`,
+} as const;

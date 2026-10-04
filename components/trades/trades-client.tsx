@@ -127,6 +127,7 @@ export function TradesClient({
   writeAccounts = [],
   attachmentCounts = {},
   pro = true,
+  initialOpenTrade = null,
 }: {
   /** THE FIRST SERVER PAGE — 500 rows, not the book (v3.9). The whole book
    *  used to cross the RSC stream here; /trades was the one route over the
@@ -161,6 +162,13 @@ export function TradesClient({
   attachmentCounts?: Record<number, number>;
   /** Entitlement — gates the Pro-only "Open trade" entry point. */
   pro?: boolean;
+  /**
+   * `?trade=<id>` (v4.7.0 C4, D12) — the trade the SERVER resolved through an
+   * account-scoped read, or null. It is the INITIAL state of the full edit
+   * dialog (and of the staged ladder when the row has legs) — never a
+   * set-state-in-effect (AGENTS.md).
+   */
+  initialOpenTrade?: Trade | null;
 }) {
   // IST, not UTC: this is the user's day (it seeds date defaults and the
   // "today" comparisons in the table), and after 05:30 IST a UTC date is
@@ -171,8 +179,8 @@ export function TradesClient({
   const [editing, setEditing] = React.useState<Trade | null>(null);
   const [journaling, setJournaling] = React.useState<Trade | null>(null);
   const [closingTrade, setClosingTrade] = React.useState<Trade | null>(null);
-  const [fullEditing, setFullEditing] = React.useState<Trade | null>(null);
-  const [staging, setStaging] = React.useState<Trade | null>(null);
+  const [fullEditing, setFullEditing] = React.useState<Trade | null>(initialOpenTrade);
+  const [staging, setStaging] = React.useState<Trade | null>(initialOpenTrade?.staged ? initialOpenTrade : null);
   // Row selection for bulk delete. A Set of trade ids — cleared after a delete
   // and whenever the filters change (a hidden selected row is a trap).
   const [selected, setSelected] = React.useState<ReadonlySet<number>>(new Set());
@@ -238,14 +246,15 @@ export function TradesClient({
       if (q.add === "manual") setAddOpen(true);
       else if (q.add === "open") setAddOpenTrade(true);
     });
-    // Strip ONLY `add`: a reload must not re-open the dialog, but must keep
-    // whatever filters rode along with it.
-    if (q.add) window.history.replaceState(null, "", window.location.pathname + serializeTradesQuery({ ...q, add: null }));
+    // Strip ONLY the one-shots (`add`, and `trade` — whose dialog the server
+    // already opened through `initialOpenTrade`): a reload must not re-open
+    // the dialog, but must keep whatever filters rode along with it.
+    if (q.add || q.trade !== null) window.history.replaceState(null, "", window.location.pathname + serializeTradesQuery({ ...q, add: null, trade: null }));
   }, []);
 
   /** The current filters as the URL contract sees them. */
   const currentQuery = React.useCallback((): TradesQuery => ({
-    add: null, symbol: search, from, to, realised, segment, basis: basisUnknown ? "unknown" : null, view,
+    add: null, trade: null, symbol: search, from, to, realised, segment, basis: basisUnknown ? "unknown" : null, view,
   }), [search, from, to, realised, segment, basisUnknown, view]);
 
   /** Mirror a filter change into the URL. replaceState, never push: a filter

@@ -45,10 +45,17 @@ export interface TradesQuery {
   basis: TradesBasis | null;
   /** The status/outcome select on /trades. `null` means "all" (the default). */
   view: TradeView | null;
+  /**
+   * One-shot (v4.7.0 C4, D12): open THIS trade's record — the full edit dialog,
+   * plus the staged ladder when it has legs. A positive integer, else ignored.
+   * The page resolves it through an ACCOUNT-SCOPED read (invariant 8); an id
+   * outside the selected scope is not opened.
+   */
+  trade: number | null;
 }
 
 export const EMPTY_TRADES_QUERY: Readonly<TradesQuery> = Object.freeze({
-  add: null, symbol: "", from: "", to: "", realised: false, segment: "", basis: null, view: null,
+  add: null, symbol: "", from: "", to: "", realised: false, segment: "", basis: null, view: null, trade: null,
 });
 
 /**
@@ -62,9 +69,17 @@ export const TRADES_QUERY_VIEWS: readonly TradeView[] = [
 ];
 
 /** Stable emission order. `add` first so a one-shot reads as the intent. */
-const KEY_ORDER = ["add", "symbol", "from", "to", "realised", "segment", "basis", "view"] as const;
+const KEY_ORDER = ["add", "trade", "symbol", "from", "to", "realised", "segment", "basis", "view"] as const;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A trade id: a positive safe integer written as plain digits (no sign, no exponent, no decimals). */
+export function parseTradeId(raw: string | null | undefined): number | null {
+  const s = String(raw ?? "").trim();
+  if (!/^\d{1,15}$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
 
 function isView(v: string): v is TradeView {
   return (TRADES_QUERY_VIEWS as readonly string[]).includes(v);
@@ -102,6 +117,7 @@ export function parseTradesQuery(search: string): TradesQuery {
     // "all" is the select's default; as a query value it means nothing, so it
     // is normalised to null rather than kept as a no-op key.
     view: view && view !== "all" && isView(view) ? view : null,
+    trade: parseTradeId(get("trade")),
   };
 }
 

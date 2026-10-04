@@ -15,7 +15,8 @@ import type { OwnCapitalUnstated } from "@/lib/analytics/positions";
 import type { ConcentrationRow, HeatView } from "@/lib/live/heat";
 import type { StopResult } from "@/lib/live/stop";
 import type { Exchange, ProviderId, Staleness } from "@/lib/quotes/types";
-import type { Bar, TrackerRow } from "@/lib/live/types";
+import type { Bar, Paise, TrackerRow } from "@/lib/live/types";
+import type { CorpActionChip, PartialBooking } from "@/lib/live/positions-view";
 
 /**
  * One OHLC bar for the position chart, in PAISE.
@@ -99,6 +100,35 @@ export interface DeskRow extends TrackerRow {
   stop: StopResult;
   /** Last ≤ SPARK_SESSIONS closes in paise, ascending. The sparkline's ONLY input. */
   spark: number[];
+
+  // ── v4.7.0 wave C4 — the Positions tab (design C4-DESIGN-2026-10-04) ──────
+  // The trade id the deep link `/trades?trade=<id>` and Edit levels need is
+  // `TrackerRow.id` — it IS the parent trade's id — so no `tradeId` is added.
+
+  /** D4 — the exchanges' industry; null for a user tag / index-map hit (sector-only → falls UP). */
+  industry: string | null;
+  /** D4 — the sector from `getClassificationResolution()`; null = unclassified. */
+  sectorName: string | null;
+  /** D4 — "user" | "taxonomy" | "index", or null when unclassified. */
+  classSource: string | null;
+  /** D6 (free) — what the parent row already booked, before charges; null when nothing is. */
+  partial: PartialBooking | null;
+  /** P5 (free) — recorded bonus/split actions with exDate ≥ today − 30 days, ascending. */
+  corpActions: CorpActionChip[];
+  /** P7 — the close of the last session BEFORE `today`, from the bars already read; null if none. */
+  prevCloseP: Paise | null;
+  /** D10 — the inline calculator's defaults. PRO ONLY: null on free, and null when capital or risk % is unset. */
+  sizing: { capitalP: Paise; riskPpm: number } | null;
+  /** D8 — the contract's STORED expiry (`trades.expiry`), derivatives only; null otherwise. Never parsed from a symbol. */
+  expiry: string | null;
+  /**
+   * D11 — the two stored stop levels SEPARATELY (the row's `effectiveStopP` is
+   * `trailing ?? planned`). Edit levels must pre-fill both, or a save would move
+   * a trailing SL into the original-SL field. Levels are free (P6). Paise,
+   * rounded from the journal's REAL level like `avgEntryP`.
+   */
+  slPlannedP: Paise | null;
+  trailingSlP: Paise | null;
 }
 
 /**
@@ -179,4 +209,11 @@ export interface LiveDeskData {
   barsBySymbol: Record<string, DeskBar[]>;
   barsCap: BarsCap;
   today: string;
+  /**
+   * v4.7.0 C4 — the Positions tab's settings. `deployCapPpm` and
+   * `atrMultPermille` are the user's stored `risk_config` values (null = unset);
+   * `capitalP` (the heat strip's denominator, total capital) is PRO ONLY — null
+   * on free, exactly as `pctOfCapital` is.
+   */
+  positions: { deployCapPpm: number | null; atrMultPermille: number | null; capitalP: Paise | null };
 }

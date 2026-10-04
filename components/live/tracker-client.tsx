@@ -3,9 +3,10 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
 import { ProLock } from "@/components/system/pro-lock";
 // The ONE source of both prompt sentences (`tests/live-feed-copy.test.ts` pins
@@ -40,6 +41,7 @@ import {
   EM_DASH,
   LIVE_STREAM_COPY,
   NOT_PRICED_BY_FEED,
+  POSITIONS_COPY,
   lockedInAtStop,
   needsData,
   needsSessions,
@@ -53,6 +55,10 @@ import {
 import * as fmt from "./desk-format";
 import { deskAction, isTypingTarget, nextIndex } from "./desk-keys";
 import type { DeskRow, LiveDeskData } from "./desk-types";
+import { PositionsTab } from "./positions-tab";
+
+/** The two views of `/live` (v4.7.0 C4, D1). Absent `?tab=` is Charts. */
+export type LiveTab = "charts" | "positions";
 
 /**
  * The Live Desk tracker (spec §3.1).
@@ -377,6 +383,26 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
    */
   const [focusId, setFocusId] = React.useState<number | null>(null);
   const [expandedId, setExpandedId] = React.useState<number | null>(null);
+  /**
+   * WHICH VIEW (v4.7.0 C4, D1): Charts (default) | Positions. Read ONCE from
+   * `?tab=` as the initial state, so a reload or a shared link keeps the tab;
+   * after that the URL follows the state through `history.replaceState`, which
+   * Next's router integrates WITHOUT a server round-trip — same payload, same
+   * one stream consumer below feeding both tabs.
+   *
+   * Read through `useSearchParams` rather than an `initialTab` prop: the
+   * entitlement guard (tests/live-pro-gate.test.ts) pins this component's prop
+   * signature to exactly `{ data, pro }`.
+   */
+  const searchParams = useSearchParams();
+  const [tab, setTab] = React.useState<LiveTab>(() => (searchParams.get("tab") === "positions" ? "positions" : "charts"));
+  const switchTab = React.useCallback((next: LiveTab) => {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "positions") url.searchParams.set("tab", "positions");
+    else url.searchParams.delete("tab");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
   // The clock starts null and is set once on mount: rendering an IST time on
   // the server and again in the browser is a hydration mismatch by construction.
   const [now, setNow] = React.useState<Date | null>(null);
@@ -696,7 +722,25 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     [router],
   );
 
+  /**
+   * The Positions card's "Open chart" (D9): the SAME row, focused and expanded
+   * on the Charts tab — the chart panel itself is untouched, and on a free
+   * licence it lands on the panel's existing lock.
+   */
+  const openChart = React.useCallback(
+    (r: DeskRow) => {
+      setFocusId(r.id);
+      setExpandedId(r.id);
+      switchTab("charts");
+    },
+    [switchTab],
+  );
+
   React.useEffect(() => {
+    // D2 — this listener acts ONLY while the Charts tab is active. The
+    // Positions tab owns its own (positions-tab.tsx); two listeners on one
+    // keystroke would move BOTH tabs' focus.
+    if (tab !== "charts") return;
     function onKey(e: KeyboardEvent) {
       const el = e.target as HTMLElement | null;
       const typing = isTypingTarget(el?.tagName, el?.isContentEditable ?? false);
@@ -756,7 +800,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, focusIdx, focused, openLab, windowed, virtualizer, theadHeight]);
+  }, [tab, visible, focusIdx, focused, openLab, windowed, virtualizer, theadHeight]);
 
   const marketOpen = now === null ? null : isMarketOpenIst(now);
 
@@ -930,6 +974,17 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           </Link>
         </div>
       )}
+
+      {/* ── Charts | Positions (v4.7.0 C4, D1) ─────────────────────────────────
+          The Charts panel below is the desk body as it was, unchanged and still
+          the default; Radix unmounts the inactive panel. The header rail and
+          the two banners above stay shared by both tabs. */}
+      <Tabs value={tab} onValueChange={(v) => switchTab(v === "positions" ? "positions" : "charts")}>
+      <TabsList aria-label={POSITIONS_COPY.tabsLabel}>
+        <TabsTrigger value="charts">{POSITIONS_COPY.tabCharts}</TabsTrigger>
+        <TabsTrigger value="positions">{POSITIONS_COPY.tabPositions}</TabsTrigger>
+      </TabsList>
+      <TabsContent value="charts" className="flex flex-col gap-4 pt-4">
 
       {/* ── The tracker table ───────────────────────────────────────────────── */}
       <div
@@ -1128,6 +1183,21 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
         <p className="mt-1">{DESK_COPY.fillsCaveat}</p>
         <p className="mt-1">{DESK_COPY.chargesCaveat}</p>
       </footer>
+      </TabsContent>
+      <TabsContent value="positions">
+        <PositionsTab
+          rows={rows}
+          accountFilter={accountFilter}
+          query={query}
+          data={data}
+          pro={pro}
+          linkLabel={linkLabel}
+          now={now}
+          onOpenChart={openChart}
+          onLab={openLab}
+        />
+      </TabsContent>
+      </Tabs>
     </div>
   );
 }

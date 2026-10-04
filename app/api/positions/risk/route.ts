@@ -103,7 +103,9 @@ export async function POST(req: Request) {
     });
   }
 
-  for (const p of ["/risk", "/equity", "/active", "/", "/trades"]) revalidatePath(p);
+  // "/live" since v4.7.0 C4 (D11): the Positions tab's Edit levels saves here,
+  // and the desk's stop cells, heat and Risk lens read these very columns.
+  for (const p of ["/risk", "/equity", "/active", "/", "/trades", "/live"]) revalidatePath(p);
   return NextResponse.json({
     ok: true,
     message: derivativeMark ? `Saved. The current price was not stored: ${DERIVATIVE_MARK_MESSAGE.charAt(0).toLowerCase()}${DERIVATIVE_MARK_MESSAGE.slice(1)}` : "Saved.",

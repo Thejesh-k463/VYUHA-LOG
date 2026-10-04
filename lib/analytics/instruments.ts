@@ -358,8 +358,10 @@ export interface ClassificationSources extends Omit<SectorSources, "taxonomy"> {
  *   index map  — its `industry` field IS a sector-equivalent label (a
  *                constituent list's heading); industry / basic / macro null.
  *
- * A user tag REPLACES the taxonomy row for that symbol (it does not keep the
- * taxonomy's industry under a sector the user may have disagreed with).
+ * A user tag that DIFFERS from the taxonomy's sector (after aliases) for the
+ * row's ISIN REPLACES the taxonomy row for that symbol (it does not keep the
+ * taxonomy's industry under a sector the user disagreed with). A tag that
+ * AGREES keeps the taxonomy row, levels and all (v4.7.0 C4 fix 4).
  */
 export function buildClassificationResolution(
   rows: { symbol: string; sector: string | null; isin?: string | null }[],
@@ -403,14 +405,22 @@ export function buildClassificationResolution(
   for (const r of rows) {
     const symbol = up(r.symbol);
     if (!symbol) continue;
-    const own = canon(r.sector);
-    if (own) {
-      out.set(symbol, { macro: null, sector: own, industry: null, basic: null, tier: "user", source: "user", raw: String(r.sector).trim() });
-      continue;
-    }
     const isin = up(r.isin ?? "") || up(sources.isinBySymbol?.(symbol) ?? "");
     const e = isin ? byIsin.get(isin) : undefined;
     const sector = e ? canon(e.sector) : null;
+    const own = canon(r.sector);
+    if (own) {
+      // v4.7.0 C4 fix 4: a tag that AGREES with the taxonomy's sector for this
+      // row's ISIN is not a disagreement — keep the taxonomy row and its levels.
+      // The NSE-map merge writes its label into `instruments.sector` (COALESCE),
+      // so on a real journal every row carries a "tag"; treating each as an
+      // override dropped every industry. A tag that differs still REPLACES the
+      // row, sector-only (W5: never the taxonomy's industry under a sector the
+      // user disagreed with).
+      if (e && sector && sector === own) out.set(symbol, fromTaxonomy(e, sector));
+      else out.set(symbol, { macro: null, sector: own, industry: null, basic: null, tier: "user", source: "user", raw: String(r.sector).trim() });
+      continue;
+    }
     if (e && sector && (!out.has(symbol) || out.get(symbol)!.tier === "index")) {
       out.set(symbol, fromTaxonomy(e, sector));
     }

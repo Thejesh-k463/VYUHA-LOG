@@ -72,6 +72,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
     answers: "Where do my open positions stand, and what is at risk if every stop is hit?",
     body: [
       "Every open position with the levels you recorded and the arithmetic between them: mark, unrealised P&L, open R against the risk frozen at entry, risk at stop, and portfolio heat — the sum of that risk over your capital, printed with its denominator.",
+      // v4.7.0 C4 — the Positions tab (design C4-DESIGN-2026-10-04, D13 / H4).
+      "Beside the Charts view, a Positions tab lists the same open positions as a ledger — each stop with where it came from and whether it sits below, at or beyond entry, partial bookings before charges, results dates and any bonus or split you recorded — and Enter or a click opens a card with the arithmetic of that position's levels; R, risk at stop, heat, concentration by industry cohort, the Risk lens and the card's size calculator are Pro.",
       // THREE sources in v4.1, and the third is the one that needs its
       // consent named in the same breath: `OPENALGO_FEED_ENABLED`
       // (lib/quotes/types.ts:61) puts the OpenAlgo provider in the registry,

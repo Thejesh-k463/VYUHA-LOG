@@ -26,6 +26,7 @@ import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
 import { ShowMore, useRowWindow } from "@/components/ui/show-more";
 import { toast } from "@/components/ui/toaster";
+import { RiskEditDialog } from "@/components/risk/risk-edit-dialog";
 import { ChevronDown, SlidersHorizontal, ShieldAlert, ShieldCheck, CircleX } from "lucide-react";
 
 const POSITION_EXPORT_COLS = [
@@ -317,8 +318,16 @@ export function RiskCockpitClient({
         <DialogContent className="max-w-md">
           {editing && (
             <RiskEditDialog
-              p={editing}
-              onSaved={() => {
+              tradeId={editing.id}
+              symbol={editing.symbol}
+              avgEntry={editing.entry}
+              openQty={editing.qty}
+              originalSl={editing.originalSl}
+              trailingSl={editing.trailingSl}
+              target={editing.target}
+              invested={editing.invested}
+              mark={{ mtm: editing.mtm, impliedVol: editing.impliedVol, optionType: editing.optionType }}
+              onDone={() => {
                 setEditing(null);
                 router.refresh();
               }}
@@ -599,65 +608,6 @@ function Detail({ k, v, cls }: { k: string; v: React.ReactNode; cls?: string }) 
       <span className="text-muted-foreground">{k}</span>
       <span className={`tabular-nums ${cls ?? ""}`}>{v}</span>
     </div>
-  );
-}
-
-function RiskEditDialog({ p, onSaved }: { p: ExposurePosition; onSaved: () => void }) {
-  const [originalSl, setOriginalSl] = React.useState(p.originalSl == null ? "" : String(p.originalSl));
-  const [trailingSl, setTrailingSl] = React.useState(p.trailingSl == null ? "" : String(p.trailingSl));
-  const [target, setTarget] = React.useState(p.target == null ? "" : String(p.target));
-  const [mtmPrice, setMtmPrice] = React.useState(String(p.mtm));
-  const [impliedVol, setImpliedVol] = React.useState(p.impliedVol == null ? "" : String(p.impliedVol));
-  const [pending, setPending] = React.useState(false);
-
-  async function save() {
-    setPending(true);
-    try {
-      const res = await fetch("/api/positions/risk", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tradeId: p.id, originalSl, trailingSl, target, mtmPrice, impliedVol }),
-      });
-      const json = await res.json();
-      if (json.ok) {
-        // The route says when it kept the stops but not the price (a premium
-        // typed on an option/future is not stored under the underlying); that
-        // sentence must reach the screen, not just the HTTP body.
-        const msg = typeof json.message === "string" && json.message !== "Saved." ? json.message : "Risk inputs saved.";
-        toast.success(msg);
-        onSaved();
-      } else {
-        toast.error(json.message ?? "Failed");
-      }
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{p.symbol} — risk inputs</DialogTitle>
-        <DialogDescription>Entry {num(p.entry, 2)} · {num(p.qty, 0)} qty · invested {inrCompact(p.invested)}</DialogDescription>
-      </DialogHeader>
-      <div className="grid grid-cols-2 gap-3">
-        <Fld label="Original SL"><Input type="number" step="any" value={originalSl} onChange={(e) => setOriginalSl(e.target.value)} /></Fld>
-        <Fld label="Trailing SL (TSL)"><Input type="number" step="any" value={trailingSl} onChange={(e) => setTrailingSl(e.target.value)} /></Fld>
-        <Fld label="Target"><Input type="number" step="any" value={target} onChange={(e) => setTarget(e.target.value)} /></Fld>
-        <Fld label="Current price (MTM)"><Input type="number" step="any" value={mtmPrice} onChange={(e) => setMtmPrice(e.target.value)} /></Fld>
-        {p.optionType && (
-          <Fld label="Implied vol % (for Greeks)">
-            <Input type="number" step="any" value={impliedVol} onChange={(e) => setImpliedVol(e.target.value)} placeholder="e.g. 15 — blank = 20% default" />
-          </Fld>
-        )}
-      </div>
-      <DialogFooter>
-        <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
-        <Button type="button" onClick={save} disabled={pending}>{pending ? "Saving…" : "Save"}</Button>
-      </DialogFooter>
-    </>
   );
 }
 

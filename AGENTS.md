@@ -236,6 +236,8 @@ findings were `side`, a frozen R and `avgEntryP` rounding crossing such seams. B
 either side reverted. `e2e/z-live-desk.spec.ts` is the browser harness for the Live Desk (rows,
 j/k geometry under the sticky thead, free-wire gating, Lab hand-off `side`); any change under
 `components/live/*` runs it locally before the audit — the scroll fix was wrong twice without it.
+Since v4.7.0 C4 the same rule covers `e2e/z-live-positions.spec.ts` (the Positions tab: its own
+`aria-label="Positions"` region, the Charts-only keyboard gate, the card, the free-wire payload).
 
 ## Invariant guards for identity, IPO-link, Trash, merge and MTF work (2026-09-15)
 

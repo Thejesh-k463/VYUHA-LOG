@@ -23,6 +23,11 @@ import { situationFingerprint } from "@/lib/domain/dismissals";
 import { panelHidden } from "@/lib/queries/dismissals";
 import { summariseAcquisitions, ipoAllottedPnl, hasKnownBasis } from "@/lib/analytics/acquisition";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { trades } from "@/lib/db/schema";
+import { accountScopeWhere } from "@/lib/queries/tax-scope";
+import type { SlimTrade } from "@/lib/domain/slim-trade";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +121,22 @@ export default async function TradesPage({
   const unmarkedFp = situationFingerprint(unmarked.map((h) => `${h.id}:${h.buyQty}`));
   const unmarkedHidden = unmarked.length > 0 && panelHidden("unmarked-holdings", unmarkedFp);
 
+  // `?trade=<id>` (v4.7.0 C4, D12) — open THIS trade's record. The read is
+  // ACCOUNT-SCOPED (invariant 8): `accountScopeWhere` with no person list is
+  // `getSelectedAccountId()`'s `accountId > 0 ? filter : all`, the same one
+  // rule every book read uses. An id outside the selected scope is NOT opened —
+  // and the page says so in one line rather than silently showing the table.
+  let initialOpenTrade: SlimTrade | null = null;
+  if (link.trade !== null) {
+    const row = db
+      .select()
+      .from(trades)
+      .where(and(eq(trades.id, link.trade), accountScopeWhere(trades.accountId)))
+      .get();
+    initialOpenTrade = row ? toSlimTrade(row) : null;
+  }
+  const tradeLinkRefused = link.trade !== null && initialOpenTrade === null;
+
   return (
     <>
       <PageHeader title="Trades" description="The journal — every leg with charges, R-multiple and tags." />
@@ -163,7 +184,14 @@ export default async function TradesPage({
           </Card>
         )}
 
+        {tradeLinkRefused && (
+          <p role="status" data-trade-link="refused" className="text-sm text-warning">
+            Trade #{link.trade} is not in the selected account&apos;s view (or no longer exists), so it was not opened.
+          </p>
+        )}
+
         <TradesClient
+          initialOpenTrade={initialOpenTrade}
           initialRows={firstPage.rows.map(toSlimTrade)}
           initialCursor={firstPage.nextCursor}
           initialTotal={firstPage.total}
