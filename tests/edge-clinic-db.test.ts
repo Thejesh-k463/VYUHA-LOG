@@ -185,6 +185,9 @@ describe("the digest — fresh / stale / missing, and never a stale report serve
     const row = t.db.select().from(t.schema.clinicCache).where(await_eq(t.schema.clinicCache.scopeKey, "acct:1")).get()!;
     t.db.update(t.schema.clinicCache).set({ engineVersion: "c1" }).where(await_eq(t.schema.clinicCache.scopeKey, "acct:1")).run();
     expect(q.getClinicState().status).toBe("missing");
+    // C3: a cached C2 report (no sizingSample, sizing at the old floor and sample) reads missing too — never stale.
+    t.db.update(t.schema.clinicCache).set({ engineVersion: "c2.2" }).where(await_eq(t.schema.clinicCache.scopeKey, "acct:1")).run();
+    expect(q.getClinicState().status).toBe("missing");
     t.db.update(t.schema.clinicCache).set({ engineVersion: row.engineVersion }).where(await_eq(t.schema.clinicCache.scopeKey, "acct:1")).run();
     expect(q.getClinicState().status).toBe("fresh");
   });
@@ -472,6 +475,7 @@ describe("ENGINE_VERSION is pinned to the engine's output (golden report)", () =
   it(`report hash ⇔ ENGINE_VERSION "${ENGINE_VERSION}" — an output change needs a version bump (and this pin updated)`, () => {
     const report = edgeClinic(goldenBook(), { today: "2026-10-03", riskCapRupees: 1500, currentRiskPct: 1 });
     const hash = createHash("sha256").update(stable(report)).digest("hex");
-    expect({ ENGINE_VERSION, hash }).toEqual({ ENGINE_VERSION: "c2.2", hash: "9c2885c7d56af1159e31cb4c77bd57a1d1234a780daa333c051305cec360e273" });
+    // c3.0 (v4.7.0 C3): sizing over kellySample() — no cap-unit R, no basis-less sale — at the floor 30, plus `sizingSample`.
+    expect({ ENGINE_VERSION, hash }).toEqual({ ENGINE_VERSION: "c3.0", hash: "6b0acc4b8745f83951eb8aad1cf6b7575cb1022a4c73c2192539114c3c42c240" });
   });
 });

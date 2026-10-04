@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
-import type { CellKind, ClinicCell, ClinicReport, FnoCuts, GapCheck, SegmentBehaviour } from "@/lib/analytics/edge-clinic";
+import { KELLY_MIN_N, type CellKind, type ClinicCell, type ClinicReport, type FnoCuts, type GapCheck, type SegmentBehaviour } from "@/lib/analytics/edge-clinic";
 import { ClinicCopyBlock, GradeBadge, fmtR } from "./clinic-copy";
 
 /**
@@ -34,6 +34,12 @@ function CellDetail({ cell }: { cell: ClinicCell }) {
         {extra.map((x, i) => (
           <ClinicCopyBlock key={i} verb={x.verb} headline={x.copy.headline} detail={x.copy.detail} provenanceLine={x.copy.provenanceLine} />
         ))}
+        {cell.sizing == null && cell.sizingSample ? (
+          // C3 D8: why there is no sizing card — the sample, not an instruction.
+          <p className="text-[0.6875rem] text-muted-foreground" data-clinic-sizing-sample="">
+            Sizing: {cell.sizingSample.withRisk} of {cell.sizingSample.of} trades carry a real risk — {KELLY_MIN_N} needed.
+          </p>
+        ) : null}
       </div>
     </details>
   );

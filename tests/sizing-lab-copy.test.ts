@@ -26,7 +26,17 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PRESCRIPTIVE_LANGUAGE } from "@/lib/intelligence/insight";
-import { DEFAULT_RISK_PCT_PPM, LAB_METHODS } from "@/components/sizing/lab-config";
+import {
+  DEFAULT_RISK_PCT_PPM,
+  JOURNAL_CEILING_FLAG,
+  KELLY_JOURNAL_DESCRIPTION,
+  LAB_METHODS,
+  journalCeilingLine,
+  journalRefusalLine,
+  journalSampleLine,
+  kellyDescription,
+} from "@/components/sizing/lab-config";
+import type { JournalKellyOk } from "@/lib/analytics/journal-kelly";
 import { sizePctVolatility, sizeVolatilityUnit } from "@/lib/risk/sizing";
 
 const root = path.resolve(__dirname, "..");
@@ -47,6 +57,8 @@ const FILES = [
   "components/sizing/method-rail.tsx",
   "components/sizing/formula-block.tsx",
   "components/sizing/compare-table.tsx",
+  // v4.7.0 C3 — the Kelly tab's journal panel speaks inside the Lab, so it is held to the Lab's words.
+  "components/sizing/journal-kelly-panel.tsx",
 ];
 
 /** Same stripper as `tests/position-chart-copy.test.ts`. */
@@ -219,6 +231,82 @@ describe("the % volatility tab states the true relation to the Turtle unit", () 
     // 2,500 / 10,000 = a QUARTER, not "larger" and not "around twice".
     expect(varsity.qty * 4).toBe(turtle.qty);
     expect(varsity.qty).toBeLessThan(turtle.qty);
+  });
+});
+
+/**
+ * v4.7.0 C3 (design D9, D10, K6, K7; research R4, R6). The journal branch of
+ * the Kelly card says the same thing about the record that R4 says about typed
+ * inputs: the formula returns a number FROM it, the record is not a forecast.
+ * The panel's lines state what was measured, over which trades, and why a
+ * refusal refused — never an instruction, never a counterfactual.
+ */
+describe("the Kelly tab's journal copy (C3)", () => {
+  const ok: JournalKellyOk = {
+    ok: true, label: "Whole account", n: 42, of: 1292, winPpm: 452_381, payoffPpm: 1_840_000,
+    p: 0.452381, pLo: 0.31, pHi: 0.6, b: 1.84, bLo: 1.2, kellyPoint: 0.1546, halfKellyLowerBound: 0.0213, supportsSizingUp: true,
+  };
+  const weak: JournalKellyOk = { ...ok, halfKellyLowerBound: null, supportsSizingUp: false };
+  const lines = [
+    KELLY_JOURNAL_DESCRIPTION,
+    journalSampleLine(ok, "all"),
+    journalSampleLine(ok, "12m"),
+    journalCeilingLine(ok),
+    journalCeilingLine(weak),
+    JOURNAL_CEILING_FLAG,
+    journalRefusalLine({ ok: false, reason: "all-view", n: 0, of: 0, need: 30 }),
+    journalRefusalLine({ ok: false, reason: "below-floor", n: 0, of: 1292, need: 30 }),
+    journalRefusalLine({ ok: false, reason: "no-losing-trades", n: 31, of: 31, need: 30 }),
+  ];
+
+  it("the journal branch says the record measured the inputs and is not a forecast; the manual branch keeps 'you supplied' (R4)", () => {
+    expect(kellyDescription("journal")).toBe(KELLY_JOURNAL_DESCRIPTION);
+    expect(KELLY_JOURNAL_DESCRIPTION).toContain(
+      "The Kelly formula, with the win rate and payoff measured in your own record, returns a fraction of capital. The record is not a forecast.",
+    );
+    expect(kellyDescription("manual")).toContain("with the win rate and payoff you supplied");
+  });
+
+  it("D9: the sample line names N of M, the slice, the window, the win rate with its interval, and the payoff", () => {
+    expect(journalSampleLine(ok, "all")).toBe(
+      "From your journal: 42 of 1,292 closed trades in Whole account, all dates. Win rate 45.2 % (95 % CI 31.0–60.0). Payoff 1.84 R.",
+    );
+    expect(journalSampleLine(ok, "12m")).toContain("closed trades in Whole account, the last 12 months.");
+  });
+
+  it("D10 / K7: the ceiling line, the flag, and the weak-edge mark in C1's words", () => {
+    expect(journalCeilingLine(ok)).toBe("Clinic ceiling for this slice: ½ Kelly at the lower 95 % bounds = 2.13 % of capital at risk per trade.");
+    expect(JOURNAL_CEILING_FLAG).toBe("Your Kelly fraction puts more at risk than this ceiling.");
+    expect(journalCeilingLine(weak)).toMatch(/^Whole account: the data does not support sizing up — Kelly at the lower 95 % bounds \(win rate 31\.0 %, payoff 1\.20 R\) is not positive\.$/);
+  });
+
+  it("K6 and the floor: the refusal lines, verbatim", () => {
+    expect(lines[6]).toBe("Choose one account — a Kelly from merged books describes neither.");
+    expect(lines[7]).toBe("0 of 1,292 closed trades carry a real risk (a stop or a typed risk). 30 needed.");
+  });
+
+  it("no line instructs, ranks or states a counterfactual", () => {
+    for (const l of lines) {
+      expect(l).not.toMatch(PRESCRIPTIVE_LANGUAGE);
+      expect(l).not.toMatch(/would have|could have made|missed out/i);
+      expect(l).not.toMatch(/don'?t trade/i);
+      for (const b of BANNED) expect(l, `${b.re} — ${b.why}`).not.toMatch(b.re);
+    }
+  });
+
+  it("no Lab file states a counterfactual", () => {
+    for (const f of FILES) expect(read(f), f).not.toMatch(/would have|could have made|missed out/i);
+  });
+
+  it("only the click fills: the panel calls onUse from the button and nowhere else", () => {
+    const src = stripComments(read("components/sizing/journal-kelly-panel.tsx"));
+    expect(src.match(/onUse\(/g) ?? []).toHaveLength(1);
+    expect(src).toMatch(/onClick=\{\(\) => \{\s*if \(ok\) onUse\(ok\);\s*\}\}/);
+    // The fill helper touches the two fields only — never the Kelly fraction.
+    const cfg = stripComments(read(CONFIG));
+    const body = /export function applyJournalKelly[\s\S]*?\n\}/.exec(cfg)?.[0] ?? "";
+    expect(body).toContain("winPpm");
+    expect(body).not.toContain("kellyFractionPpm");
   });
 });
 

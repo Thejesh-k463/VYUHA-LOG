@@ -22,11 +22,19 @@
  *    a counterfactual rupee figure (invariant 6: anything underivable is null).
  *  - Closed trades only. Money arrives in rupees (invariant 1) and is never
  *    converted here.
+ *  - The sizing ceiling (Kelly) reads ONE sample, `kellySample()`: closed rows
+ *    with a finite R whose denominator is a REAL risk (a stop or a typed risk —
+ *    never `risk_source = 'cap'`, which is P&L in cap units, not a risk), and a
+ *    known cost basis. Floor: `KELLY_MIN_N` = 30 trades in that sample (owner
+ *    ruling Q-7, applied to the Clinic by C3 K2 — it was 50 in C1). The Sizing
+ *    Lab's journal Kelly (lib/analytics/journal-kelly.ts) calls the same
+ *    `kellyCeiling` over the same sample: one Kelly, one sample.
  */
 import { benjaminiYekutieli, meanInterval, tQuantile95, wilsonInterval, type Interval } from "@/lib/analytics/inference";
 import {
   EMPTY_R_PROVENANCE,
   provenanceRowOf,
+  rProvenance,
   rProvenanceCounts,
   rProvenanceLine,
   type RProvenanceCounts,
@@ -47,8 +55,10 @@ import { SETUP_GRADES, type SetupGrade } from "@/lib/analytics/edge-clinic-contr
  *   c1   v4.7.0 wave C1 (no cache existed)
  *   c2.1 v4.7.0 wave C2 — grade cells (`all|grade:<g>`), setup keys `${seg}|setup:${tag}`
  *   c2.2 v4.7.0 wave C2 seam D1 — a playbook-journaled row with NULL ruleViolations is rule data ("kept every rule")
+ *   c3.0 v4.7.0 wave C3 — sizing over `kellySample()` (no cap-unit R, no basis-less sale), floor 50 → 30,
+ *        `sizingSample` on every cell, `n` on the sizing card, the sizing provenance line names the sample
  */
-export const ENGINE_VERSION = "c2.2";
+export const ENGINE_VERSION = "c3.0";
 
 /** Finance (No. 2) Act 2024 STT step for F&O — must equal `STT_EPOCH_2024` in lib/db/seed-data.ts (a test pins it). */
 export const FNO_STT_EPOCH = "2024-10-01";
@@ -63,6 +73,16 @@ export const MIN_TRL_DISPLAY_CAP = 1000;
 export const STREAK_HORIZON = 200;
 /** The bounded experiment's length. */
 export const EXPERIMENT_TRADES = 20;
+/**
+ * The Kelly floor: trades in `kellySample()` a sizing figure needs. Owner ruling
+ * Q-7 ("journal-derived Kelly at >= 30 closed trades"), applied to the Clinic's
+ * sizing card AND the Sizing Lab by C3 K2 — C1's session value of 50 lost to it.
+ * It is an anti-embarrassment floor ("so no one Kellys off six trades"), not a
+ * power calculation; the lower 95 % bounds carry the uncertainty above it.
+ */
+export const KELLY_MIN_N = 30;
+/** The engine's default bootstrap seed — the Lab's journal Kelly uses it too, so the two agree to the bit. */
+export const CLINIC_SEED = 20261001;
 
 // ── Input ───────────────────────────────────────────────────────────────────
 
@@ -219,10 +239,21 @@ export interface EdgeDecay {
   copy: ClinicCopy;
 }
 
-export interface SizingCeiling {
+/**
+ * The numeric core of every Kelly figure in the app (C3 D1) — `kellyCeiling()`
+ * over a `kellySample()`. Fractions are of capital AT RISK per trade (an R is
+ * one unit of risk), the unit `sizeKelly`'s fUsed is in.
+ */
+export interface KellyCeiling {
+  /** R values in the sample. */
+  n: number;
+  /** Win rate (R > 0). */
   p: number;
+  /** Wilson lower 95 % bound of p. */
   pLo: number;
+  /** Payoff W̄/L̄ (a loss is every non-winning R): 0 with no winner, +∞ with no loser. */
   b: number;
+  /** Percentile-bootstrap lower 95 % bound of b; null when not finite. */
   bLo: number | null;
   kellyPoint: number | null;
   kellyAtLowerBounds: number | null;
@@ -231,6 +262,9 @@ export interface SizingCeiling {
   supportsSizingUp: boolean;
   empiricalKelly: number | null;
   zeroGrowthFraction: number | null;
+}
+
+export interface SizingCeiling extends KellyCeiling {
   growthAtCurrent: number | null;
   lossRate: number;
   longestLosingRun: S.LongestRun | null;
@@ -281,6 +315,12 @@ export interface ClinicCell {
   ruleAdherence: RuleAdherence;
   decay: EdgeDecay | null;
   sizing: SizingCeiling | null;
+  /**
+   * C3 D8: the sizing sample against the cell's R sample — `withRisk` rows in
+   * `kellySample()` of `of` = nWithR. Lets a surface say why `sizing` is null
+   * ("X of Y trades carry a real risk — 30 needed").
+   */
+  sizingSample: { withRisk: number; of: number };
 }
 
 export interface HoldMeasure {
@@ -740,11 +780,43 @@ function rUnitOf(ts: ClinicTrade[]): "R" | "cap" {
 
 const ciExcludesZero = (ci: Interval | null) => ci != null && fin(ci.lo) && fin(ci.hi) && (ci.lo > 0 || ci.hi < 0);
 
-function sizingCeiling(rs: number[], grade: EvidenceGrade, meanR: number | null, label: string, ctx: Ctx, provLine: string): SizingCeiling | null {
-  if (rs.length < ctx.minKelly) return null;
-  const wins = rs.filter((r) => r > 0).length;
-  const p = wins / rs.length;
-  const pLo = wilsonInterval(wins, rs.length).lo;
+const EQUITY_SEGMENTS: ReadonlySet<Segment> = new Set<Segment>(["eq_delivery", "eq_mtf", "eq_intraday"]);
+
+/**
+ * An equity row whose buy leg carries quantity but no price: a sale with no cost
+ * basis (an acquisition-flagged holding whose issue price is still blank —
+ * `edgeMeasurable` false). Its R is a basis-less "win" (research risk 4), and the
+ * Clinic's projection carries no acquisition column, so the buy price is the
+ * fingerprint. Equity only: an option or a future CAN close at 0 (a short that
+ * expires worthless is a real, priced win).
+ */
+export function basisUnknown(t: Pick<ClinicTrade, "segment" | "buyQty" | "avgBuyPrice">): boolean {
+  return EQUITY_SEGMENTS.has(t.segment) && t.buyQty > 0 && !(t.avgBuyPrice > 0);
+}
+
+/**
+ * THE Kelly sample (C3 D2, owner K1), in the input's order: closed rows with a
+ * finite rMultiple whose R denominator is a real risk — provenance through
+ * `rProvenance()` (lib/analytics/win-loss.ts, the ONE place), so a `cap` row is
+ * out and a null riskSource with an R counts as typed, as everywhere else — and
+ * a known cost basis (`basisUnknown`). The Clinic's sizing card and the Sizing
+ * Lab's journal Kelly both read this; nothing else defines it.
+ */
+export function kellySample<T extends ClinicTrade>(trades: readonly T[]): T[] {
+  return trades.filter((t) => !t.isOpen && fin(t.rMultiple) && rProvenance(provenanceRowOf(t)) !== "cap" && !basisUnknown(t));
+}
+
+/**
+ * THE Kelly numbers over an R sample (C3 D1 — extracted from C1's sizing card).
+ * No floor here: callers apply `KELLY_MIN_N`. The bootstrap of b is seeded, so
+ * the same sample in the same order gives the same bounds everywhere.
+ */
+export function kellyCeiling(rs: readonly number[], opts: { seed?: number } = {}): KellyCeiling {
+  const seed = opts.seed ?? CLINIC_SEED;
+  const sample = [...rs];
+  const wins = sample.filter((r) => r > 0).length;
+  const p = wins / sample.length;
+  const pLo = wilsonInterval(wins, sample.length).lo;
   // b = W̄/L̄ (a loss is every non-winning R). Allocation-free: it runs inside
   // every bootstrap resample. No win → 0; no loss → +∞ (sorts to the top, so
   // it can only raise the upper bound, never invent a lower one).
@@ -766,15 +838,36 @@ function sizingCeiling(rs: number[], grade: EvidenceGrade, meanR: number | null,
     const lm = ln ? ls / ln : 0;
     return lm > 0 ? ws / wn / lm : Number.POSITIVE_INFINITY;
   };
-  const b = ratio(rs);
-  const bCi = S.bootstrapInterval(rs, ratio, { seed: ctx.seed });
+  const b = ratio(sample);
+  const bCi = S.bootstrapInterval(sample, ratio, { seed });
   const bLo = fin(bCi.lo) ? bCi.lo : null;
   const kellyPoint = fin(b) ? S.kellyApprox(p, b) : null;
   const kellyAtLowerBounds = bLo != null ? S.kellyApprox(pLo, bLo) : null;
   const halfKellyLowerBound = kellyAtLowerBounds != null && kellyAtLowerBounds > 0 ? kellyAtLowerBounds / 2 : null;
-  const supportsSizingUp = halfKellyLowerBound != null;
-  const empiricalKelly = S.kellyEmpirical(rs);
-  const zeroGrowthFraction = S.zeroGrowthFractionEmpirical(rs);
+  return {
+    n: sample.length,
+    p,
+    pLo,
+    b,
+    bLo,
+    kellyPoint,
+    kellyAtLowerBounds,
+    halfKellyLowerBound,
+    supportsSizingUp: halfKellyLowerBound != null,
+    empiricalKelly: S.kellyEmpirical(sample),
+    zeroGrowthFraction: S.zeroGrowthFractionEmpirical(sample),
+  };
+}
+
+/**
+ * The Clinic's sizing card: `kellyCeiling` over the cell's `kellySample()` R
+ * values (`rs`, of `of` = the cell's nWithR), plus copy, verb, streak and growth.
+ * Null below `ctx.minKelly` (KELLY_MIN_N unless a caller overrides it).
+ */
+function sizingCeiling(rs: number[], of: number, grade: EvidenceGrade, meanR: number | null, label: string, ctx: Ctx, provLine: string): SizingCeiling | null {
+  if (rs.length < ctx.minKelly) return null;
+  const k = kellyCeiling(rs, { seed: ctx.seed });
+  const { p, halfKellyLowerBound, supportsSizingUp } = k;
   const growthAtCurrent = fin(ctx.currentRiskPct) ? S.empiricalGrowth(ctx.currentRiskPct / 100, rs) : null;
   const lossRate = 1 - p;
   const longestLosingRun = S.expectedLongestLoss(STREAK_HORIZON, lossRate);
@@ -799,22 +892,15 @@ function sizingCeiling(rs: number[], grade: EvidenceGrade, meanR: number | null,
     supportsSizingUp ? "Half-Kelly at the lower 95 % bounds of the win rate and the payoff." : "Kelly at the lower 95 % bounds of the win rate and the payoff is not positive.",
     streak,
   ].filter(Boolean).join(" ");
+  // D8: the card names its own sample — cap-unit R is P&L over a cap, not a risk.
+  const sampleLine = `Sizing reads ${k.n} of ${of} trades with an R: the trades with a stop or a typed risk — cap-unit rows are not a risk.`;
   return {
-    p,
-    pLo,
-    b,
-    bLo,
-    kellyPoint,
-    kellyAtLowerBounds,
-    halfKellyLowerBound,
-    supportsSizingUp,
-    empiricalKelly,
-    zeroGrowthFraction,
+    ...k,
     growthAtCurrent,
     lossRate,
     longestLosingRun,
     verb,
-    copy: { headline, detail, provenanceLine: provLine },
+    copy: { headline, detail, provenanceLine: provLine ? `${provLine}. ${sampleLine}` : sampleLine },
   };
 }
 
@@ -920,11 +1006,12 @@ function buildCell(spec: CellSpec, ctx: Ctx): ClinicCell {
     ruleAdherence,
     decay,
     sizing: null, // pass 2, once the grade is known
+    sizingSample: { withRisk: kellySample(ts).length, of: nWithR },
   };
 }
 
-/** Pass 2 — grade, verdict, copy and the sizing card, given the BY outcome. */
-function finishCell(c: ClinicCell, survivesBy: boolean, m: number, ctx: Ctx, rs: number[]): void {
+/** Pass 2 — grade, verdict, copy and the sizing card (over `kellyRs`, the cell's `kellySample()` R), given the BY outcome. */
+function finishCell(c: ClinicCell, survivesBy: boolean, m: number, ctx: Ctx, rs: number[], kellyRs: number[]): void {
   const capNote = c.rUnit === "cap" ? " P&L in units of your per-trade cap, not of the risk you took." : "";
   const excl = ciExcludesZero(c.ci) && (!c.early || (ciExcludesZero(c.bootstrapCi) && Math.sign(c.bootstrapCi!.lo) === Math.sign(c.ci!.lo)));
   c.grade = !c.tested ? "insufficient" : !excl ? "unclear" : survivesBy ? "established" : "likely";
@@ -969,7 +1056,7 @@ function finishCell(c: ClinicCell, survivesBy: boolean, m: number, ctx: Ctx, rs:
       };
     }
   }
-  c.sizing = sizingCeiling(rs, c.grade, c.meanR, c.label, ctx, c.copy.provenanceLine);
+  c.sizing = sizingCeiling(kellyRs, c.nWithR, c.grade, c.meanR, c.label, ctx, c.copy.provenanceLine);
 }
 
 // ── The engine ──────────────────────────────────────────────────────────────
@@ -978,10 +1065,10 @@ export function edgeClinic(trades: readonly ClinicTrade[], opts: ClinicOptions):
   const ctx: Ctx = {
     minN: opts.minN ?? 20,
     minArm: opts.minArm ?? 15,
-    minKelly: opts.minKelly ?? 50,
+    minKelly: opts.minKelly ?? KELLY_MIN_N,
     window: opts.window ?? 30,
     q: opts.q ?? 0.05,
-    seed: opts.seed ?? 20261001,
+    seed: opts.seed ?? CLINIC_SEED,
     riskCapRupees: opts.riskCapRupees ?? null,
     currentRiskPct: opts.currentRiskPct ?? null,
   };
@@ -992,12 +1079,17 @@ export function edgeClinic(trades: readonly ClinicTrade[], opts: ClinicOptions):
   // Pass 1 over EVERYTHING that can be shown, so m is computed once.
   const allSpecs: CellSpec[] = [...specs];
   for (const f of fnoSpecs) for (const d of Object.values(f.dims)) if (d) allSpecs.push(...d);
-  const built = allSpecs.map((s) => ({ spec: s, cell: buildCell(s, ctx), rs: s.trades.map(rOf).filter(fin) }));
+  const built = allSpecs.map((s) => ({
+    spec: s,
+    cell: buildCell(s, ctx),
+    rs: s.trades.map(rOf).filter(fin),
+    kellyRs: kellySample(s.trades).map((t) => t.rMultiple as number),
+  }));
   const testedCells = built.filter((b) => b.cell.tested);
   const m = testedCells.length;
   const by = benjaminiYekutieli(testedCells.map((b) => ({ item: b.cell.key, p: b.cell.pTwoSided ?? 1 })), ctx.q);
   const survives = new Set(by.filter((r) => r.significant).map((r) => r.item));
-  for (const b of built) finishCell(b.cell, survives.has(b.cell.key), m, ctx, b.rs);
+  for (const b of built) finishCell(b.cell, survives.has(b.cell.key), m, ctx, b.rs, b.kellyRs);
 
   const byKey = new Map(built.map((b) => [b.cell.key, b.cell]));
   const cells = specs.map((s) => byKey.get(s.key)!);

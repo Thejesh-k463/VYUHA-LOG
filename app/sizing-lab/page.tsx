@@ -211,6 +211,7 @@ export default async function SizingLabPage({ searchParams }: { searchParams: Pr
         schedules={data.schedules}
         ratesAsOf={data.ratesAsOf}
         query={query}
+        accountId={data.accountId}
       />
     </ProGate>
   );

@@ -17,7 +17,14 @@
  */
 
 import { toPaise } from "@/lib/money";
+import { num } from "@/lib/format";
 import type { Segment } from "@/lib/domain/constants";
+import type {
+  JournalKellyOk,
+  JournalKellyRefusal,
+  JournalKellyResult,
+  JournalKellyWindow,
+} from "@/lib/analytics/journal-kelly";
 import { compareAll } from "@/lib/risk/sizing";
 import type { SizeResult, SizingMethodId, SizingSetup } from "@/lib/risk/sizing";
 
@@ -166,6 +173,84 @@ export const LAB_METHODS: readonly LabMethod[] = [
 
 export function methodByKey(key: string): LabMethod | null {
   return LAB_METHODS.find((m) => m.keyHint === key) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// The Kelly tab's journal source (v4.7.0 C3, design D9, D10, D12)
+// ---------------------------------------------------------------------------
+
+/**
+ * The Kelly card's description when the win rate and payoff on screen are the
+ * ones "Use my journal" filled (R4's rule, restated about the record: the
+ * formula returns a number FROM the record, it does not tell anyone to bet).
+ * The manual sentence in `LAB_METHODS` ("…the win rate and payoff you
+ * supplied…") stays for typed inputs.
+ */
+export const KELLY_JOURNAL_DESCRIPTION =
+  "The Kelly formula, with the win rate and payoff measured in your own record, returns a fraction of capital. The record is not a forecast. Raw Kelly routinely returns a deployment larger than the account, which is what the deploy cap clips.";
+
+/** The Kelly card's description for the inputs' source. */
+export function kellyDescription(source: "manual" | "journal"): string {
+  return source === "journal" ? KELLY_JOURNAL_DESCRIPTION : LAB_METHODS.find((m) => m.id === "kelly")!.description;
+}
+
+/**
+ * D12 — the ONLY write "Use my journal" makes: the measured point win rate and
+ * payoff into the two existing fields, in the Lab's ppm units. NOTHING else
+ * moves — the Kelly fraction (quarter by default), the deploy cap, capital and
+ * the levels are the user's. A refusal applies nothing (the same object back):
+ * it carries no figure to apply.
+ */
+export function applyJournalKelly(inputs: LabInputs, result: JournalKellyResult): LabInputs {
+  if (!result.ok) return inputs;
+  return { ...inputs, winPpm: Math.round(result.p * 1_000_000), payoffPpm: Math.round(result.b * 1_000_000) };
+}
+
+/** True while the two Kelly fields still hold exactly what the journal filled. */
+export function inputsFromJournal(inputs: LabInputs, result: JournalKellyResult | null): boolean {
+  if (!result || !result.ok) return false;
+  const filled = applyJournalKelly(inputs, result);
+  return filled.winPpm === Math.round(inputs.winPpm) && filled.payoffPpm === Math.round(inputs.payoffPpm);
+}
+
+/**
+ * D10 — the flag beside the ceiling. Both sides are a fraction of capital AT
+ * RISK per trade: the Lab's `kellyFUsedPpm` (Kelly × your fraction, the budget
+ * `sizeKelly` risks) over 1e6, and the Clinic's ½ Kelly at the lower 95 %
+ * bounds. Marked, never clipped. No ceiling (not supported) → no comparison.
+ */
+export function kellyExceedsCeiling(kellyFUsedPpm: number | null, halfKellyLowerBound: number | null): boolean {
+  if (kellyFUsedPpm == null || halfKellyLowerBound == null) return false;
+  return kellyFUsedPpm / 1_000_000 > halfKellyLowerBound;
+}
+
+const pct1 = (x: number) => num(x * 100, 1);
+const count = (x: number) => num(x, 0);
+
+/** D9 — what the journal measured, over which trades. */
+export function journalSampleLine(r: JournalKellyOk, window: JournalKellyWindow): string {
+  const span = window === "12m" ? "the last 12 months" : "all dates";
+  return `From your journal: ${count(r.n)} of ${count(r.of)} closed trades in ${r.label}, ${span}. Win rate ${pct1(r.p)} % (95 % CI ${pct1(r.pLo)}–${pct1(r.pHi)}). Payoff ${num(r.b, 2)} R.`;
+}
+
+/** D10 — the Clinic's ceiling for the slice, or K7's mark when the lower bounds give no positive Kelly. */
+export function journalCeilingLine(r: JournalKellyOk): string {
+  if (r.halfKellyLowerBound != null) {
+    return `Clinic ceiling for this slice: ½ Kelly at the lower 95 % bounds = ${num(r.halfKellyLowerBound * 100, 2)} % of capital at risk per trade.`;
+  }
+  const bLo = r.bLo != null ? `${num(r.bLo, 2)} R` : "not stated";
+  return `${r.label}: the data does not support sizing up — Kelly at the lower 95 % bounds (win rate ${pct1(r.pLo)} %, payoff ${bLo}) is not positive.`;
+}
+
+export const JOURNAL_CEILING_FLAG = "Your Kelly fraction puts more at risk than this ceiling.";
+
+/** D5 / K6 — why the journal cannot fill, in the panel's words. */
+export function journalRefusalLine(r: JournalKellyRefusal): string {
+  if (r.reason === "all-view") return "Choose one account — a Kelly from merged books describes neither.";
+  if (r.reason === "no-losing-trades") {
+    return `None of the ${count(r.n)} trades with a real risk in this slice closed at or below zero, so a payoff cannot be stated.`;
+  }
+  return `${count(r.n)} of ${count(r.of)} closed trades carry a real risk (a stop or a typed risk). ${r.need} needed.`;
 }
 
 // ---------------------------------------------------------------------------

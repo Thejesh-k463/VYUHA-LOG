@@ -18,7 +18,7 @@ import { mulberry32 } from "@/lib/analytics/monte-carlo";
 import { benjaminiHochberg, benjaminiYekutieli } from "@/lib/analytics/inference";
 import { rProvenanceLine } from "@/lib/analytics/win-loss";
 import { mean } from "@/lib/analytics/edge-clinic-stats";
-import { cellTrades } from "@/lib/analytics/edge-clinic";
+import { basisUnknown, cellTrades, kellyCeiling, kellySample, KELLY_MIN_N } from "@/lib/analytics/edge-clinic";
 
 const TODAY = "2026-10-01";
 
@@ -589,8 +589,10 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
     expect(c.decay!.verb).toBe("test");
   });
 
-  it("sizing ceiling from n ≥ 50: half-Kelly at the lower bounds, streak copy, growth at the current risk", () => {
+  it("sizing ceiling from n ≥ 30 (KELLY_MIN_N, owner Q-7 / C3 K2): half-Kelly at the lower bounds, streak copy, growth at the current risk", () => {
+    expect(KELLY_MIN_N).toBe(30);
     const r = edgeClinic(gridBook(), { today: TODAY, currentRiskPct: 1 });
+    expect(r.params.minKelly).toBe(30);
     const s = cell(r, "eq_intraday|setup:A").sizing!;
     expect(s.supportsSizingUp).toBe(true);
     expect(s.halfKellyLowerBound!).toBeGreaterThan(0);
@@ -598,8 +600,55 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
     expect(s.verb).toBe("imperative");
     expect(s.growthAtCurrent!).toBeGreaterThan(0);
     expect(s.copy.detail).toMatch(/^Half-Kelly at the lower 95 % bounds.*at 1 % risk and a [\d.]+ % loss rate, a run of \d+ straight losses in the next 200 trades is normal/);
-    expect(cell(r, "eq_intraday|setup:B").sizing).toBeNull(); // 40 < 50
+    // 40 ≥ 30 now carries a ceiling (it was null under C1's 50); 10 < 30 does not, and says why.
+    expect(cell(r, "eq_intraday|setup:B").sizing!.n).toBe(40);
+    expect(cell(r, "eq_delivery|setup:G").sizing).toBeNull();
+    expect(cell(r, "eq_delivery|setup:G").sizingSample).toEqual({ withRisk: 10, of: 10 });
     expect(cell(grid, "eq_intraday|setup:A").sizing!.growthAtCurrent).toBeNull();
+  });
+
+  it("the floor is exactly 30 trades in the sample: 29 → null, 30 → a card", () => {
+    const at = (n: number) => edgeClinic(fromR(exact(n, 0.4, 61), {}, 0), { today: TODAY }).cells[0];
+    expect(at(29).sizing).toBeNull();
+    expect(at(29).sizingSample).toEqual({ withRisk: 29, of: 29 });
+    expect(at(30).sizing!.n).toBe(30);
+  });
+
+  it("sizing reads kellySample(): cap-unit R and a basis-less sale are out of it, every other R statistic keeps them", () => {
+    // 40 real-risk trades + 40 cap rows (wildly positive) + 5 basis-less equity sales (avgBuyPrice 0).
+    const real = fromR(exact(40, 0.1, 71), {}, 0);
+    const cap = fromR(exact(40, 3, 72), { riskSource: "cap" }, 40);
+    const noBasis = fromR([9, 9, 9, 9, 9], { segment: "eq_delivery", avgBuyPrice: 0 }, 80);
+    const c = edgeClinic([...real, ...cap, ...noBasis], { today: TODAY }).cells[0];
+    expect(c.nWithR).toBe(85);
+    expect(c.sizingSample).toEqual({ withRisk: 40, of: 85 });
+    expect(c.sizing!.n).toBe(40);
+    const alone = kellyCeiling(real.map((t) => t.rMultiple as number));
+    expect([c.sizing!.p, c.sizing!.b, c.sizing!.halfKellyLowerBound]).toEqual([alone.p, alone.b, alone.halfKellyLowerBound]);
+    expect(c.sizing!.copy.provenanceLine).toMatch(/Sizing reads 40 of 85 trades with an R: the trades with a stop or a typed risk — cap-unit rows are not a risk\.$/);
+    // An all-cap cell has no sizing at any size, and says 0 of N.
+    const allCap = edgeClinic(fromR(exact(60, 0.5, 73), { riskSource: "cap" }, 0), { today: TODAY }).cells[0];
+    expect(allCap.sizing).toBeNull();
+    expect(allCap.sizingSample).toEqual({ withRisk: 0, of: 60 });
+  });
+
+  it("kellySample: closed, finite R, non-cap provenance (null riskSource with an R counts as typed), a known basis", () => {
+    const rows = [
+      trade({ id: 9001, rMultiple: 1 }),
+      trade({ id: 9002, rMultiple: 1, riskSource: "cap" }),
+      trade({ id: 9003, rMultiple: 1, riskSource: null }),
+      trade({ id: 9004, rMultiple: 1, isOpen: true }),
+      trade({ id: 9005, rMultiple: null }),
+      trade({ id: 9006, rMultiple: Number.NaN }),
+      trade({ id: 9007, rMultiple: 1, segment: "eq_delivery", avgBuyPrice: 0 }),
+      // An option CAN close at 0 — a short expiring worthless is a priced win, never "basis unknown".
+      trade({ id: 9008, rMultiple: 1, segment: "index_option", side: "short", avgBuyPrice: 0 }),
+      trade({ id: 9009, rMultiple: -1, riskSource: "frozen" }),
+    ];
+    expect(kellySample(rows).map((t) => t.id)).toEqual([9001, 9003, 9008, 9009]);
+    expect(basisUnknown({ segment: "eq_mtf", buyQty: 5, avgBuyPrice: 0 })).toBe(true);
+    expect(basisUnknown({ segment: "eq_mtf", buyQty: 0, avgBuyPrice: 0 })).toBe(false);
+    expect(basisUnknown({ segment: "future", buyQty: 5, avgBuyPrice: 0 })).toBe(false);
   });
 
   it("a null-edge cell with n ≥ 50 says the data does not support sizing up", () => {

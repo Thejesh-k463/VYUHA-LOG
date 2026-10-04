@@ -227,6 +227,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "One setup, seven sizing methods computed side by side — fixed rupee amount, fixed fractional (% risk), volatility / Turtle unit (N), % volatility, Kelly and fractional Kelly, fixed ratio and equal weight — each with the formula printed beside the size it produced, and a typed reason instead of a number when an input is missing.",
       "The stop comes from the method you pick (manual, structure, ATR or percent), a deploy cap bounds what one idea can occupy, and round-trip charges are folded into the risk when the charges toggle is on. Lot sizes are respected, so an F&O size is a whole number of lots.",
+      "Kelly's win rate and payoff are yours to type, or can be filled from your journal on a click: measured over one account's trades with a stop or a typed risk (cap-unit R is not a risk), at least 30 of them, with the Clinic's ceiling printed beside the fields.",
       "Nothing here changes your Live Desk defaults on its own: the risk percentage, deploy cap, stop method, ATR length and ATR multiple are written to Settings only when you press the write-back button, and the dialog shows the stored value next to the new one first.",
     ],
     keywords: ["sizing", "position size", "quantity", "kelly", "turtle", "atr stop", "deploy cap", "risk per trade", "lab", "lot size"],
@@ -453,6 +454,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "Every cell of your book — the whole book, each segment, each setup tag and setup grade, and the F&O cuts — is graded insufficient, unclear, likely or established, corrected for testing many cells at once. A weekly note lists at most three findings, each proposing one experiment over your next 20 trades.",
       "The whole-book grade and the trades it still needs are free; the full report, the weekly note and experiments are Pro. The report is computed once per change to your book, off the page, and reused until something it reads changes. Experiments start in one account at a time, never in the All-accounts view.",
+      "The sizing ceiling counts only trades with a stop or a typed risk — cap-unit R is not a risk — and needs 30 of them in a cell.",
     ],
     keywords: ["clinic", "evidence", "grade", "weekly note", "experiment", "multiple comparisons", "edge decay", "kelly"],
     refusals: [

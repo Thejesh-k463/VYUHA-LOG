@@ -30,7 +30,10 @@ import {
   VOLATILITY_SIZE_CAPTION,
   VOLATILITY_SWITCH_LABEL,
   VOLATILITY_VARIANTS,
+  applyJournalKelly,
   buildSetup,
+  inputsFromJournal,
+  kellyDescription,
   methodByKey,
   seedFromParams,
   stopIsOriented,
@@ -46,6 +49,8 @@ import { FormulaBlock } from "./formula-block";
 import { ResultTiles, FlagRow } from "./tiles";
 import { CompareTable } from "./compare-table";
 import { WriteBackDialog } from "./write-back-dialog";
+import { JournalKellyPanel } from "./journal-kelly-panel";
+import type { JournalKellyOk } from "@/lib/analytics/journal-kelly";
 
 /**
  * The Sizing Lab's one client component (03 §6, spec §3.4).
@@ -82,6 +87,12 @@ export interface LabClientProps {
   ratesAsOf: string;
   /** The URL the Lab was opened with — the Live Desk hand-off arrives here. */
   query?: LabQuery;
+  /**
+   * v4.7.0 C3: the selected account (0 = the All view). The journal-Kelly panel
+   * is keyed on it, so an account switch remounts it — its slice, window and
+   * answer belong to the account they were read from.
+   */
+  accountId?: number;
 }
 
 const SOURCE_LABEL: Record<LabSchedule["source"], string> = {
@@ -119,6 +130,18 @@ export function LabClient(p: LabClientProps) {
   // touches `method`, so the rail, the compare highlight and the `?method=`
   // deep links are exactly what they were.
   const [volPrimary, setVolPrimary] = React.useState<VolatilityVariantId>("volatility-unit");
+  // v4.7.0 C3: the journal answer the user last APPLIED (on click only). The
+  // Kelly card reads as journal-measured while the two fields still hold it —
+  // derived at render, so typing over a field returns it to "you supplied".
+  // Tagged with the account it was read from: after an account switch the
+  // fields keep the user's numbers, but the card no longer calls them measured
+  // in THIS account's record (prose-pass finding, 2026-10-04).
+  const [appliedFrom, setAppliedFrom] = React.useState<{ accountId: number; result: JournalKellyOk } | null>(null);
+  const applied = appliedFrom != null && appliedFrom.accountId === (p.accountId ?? 0) ? appliedFrom.result : null;
+  const applyJournal = (r: JournalKellyOk) => {
+    setInputs((s) => applyJournalKelly(s, r));
+    setAppliedFrom({ accountId: p.accountId ?? 0, result: r });
+  };
 
   const set = <K extends keyof LabInputs>(k: K, v: LabInputs[K]) => setInputs((s) => ({ ...s, [k]: v }));
 
@@ -178,6 +201,9 @@ export function LabClient(p: LabClientProps) {
   const oriented = stopIsOriented(inputs);
   const capitalUnset = !(inputs.capitalRupees > 0);
   const activeMeta = LAB_METHODS.find((m) => m.id === active.method)!;
+  const activeDescription =
+    active.method === "kelly" ? kellyDescription(inputsFromJournal(inputs, applied) ? "journal" : "manual") : activeMeta.description;
+  const kellyRow = rows.find((r) => r.method === "kelly") ?? null;
 
   return (
     <div className="space-y-4">
@@ -420,10 +446,18 @@ export function LabClient(p: LabClientProps) {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{activeMeta.label}</CardTitle>
-              <p className="text-[0.6875rem] text-muted-foreground">{activeMeta.description}</p>
+              <p className="text-[0.6875rem] text-muted-foreground">{activeDescription}</p>
             </CardHeader>
             <CardContent className="space-y-3">
               <MethodExtras id={active.method} inputs={inputs} set={set} />
+              {active.method === "kelly" ? (
+                <JournalKellyPanel
+                  key={p.accountId ?? 0}
+                  kellyFUsedPpm={kellyRow?.ok ? kellyRow.kellyFUsedPpm : null}
+                  onUse={applyJournal}
+                  serverRender={p.risk}
+                />
+              ) : null}
 
               {active.method === "volatility-unit" ? (
                 <VolatilityPair
