@@ -167,7 +167,7 @@ async function readGateFromDb(): Promise<UpstoxGateState> {
   const { settings, brokerConnections } = await import("@/lib/db/schema");
   const { readSecret } = await import("@/lib/vault");
   const { getSelectedAccountId } = await import("@/lib/queries/accounts");
-  const { desc, eq } = await import("drizzle-orm");
+  const { desc, eq, sql } = await import("drizzle-orm");
 
   const s = db.select({ ack: settings.liveFeedAckJson }).from(settings).limit(1).all()[0];
   if (!isFeedAckCurrent(s?.ack ?? null, "upstox")) {
@@ -183,7 +183,9 @@ async function readGateFromDb(): Promise<UpstoxGateState> {
     .select({ accountId: brokerConnections.accountId, apiKey: brokerConnections.apiKey })
     .from(brokerConnections)
     .where(eq(brokerConnections.broker, "upstox"))
-    .orderBy(desc(brokerConnections.updatedAt))
+    // D-C7-3: by INSTANT, not by text — mixed "YYYY-MM-DD HH:MM:SS" / ISO "T"
+    // stamps (the openalgo.ts gate reader says why julianday()).
+    .orderBy(desc(sql`julianday(${brokerConnections.updatedAt})`), desc(brokerConnections.id))
     .all();
   const scoped = accountId > 0 ? rows.filter((r) => r.accountId === accountId) : rows;
 

@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated:** 2026-10-04 · **Applies to:** Vyuha v4.6.0 and later
+**Last updated:** 2026-10-05 · **Applies to:** Vyuha v4.6.0 and later
 
 Vyuha Desktop has no account, no server and no telemetry. This page exists because that
 claim deserves to be written down precisely rather than asserted in a slogan —
@@ -86,10 +86,22 @@ Exactly four kinds, and only one of them is automatic:
    IP address. From all three, Vyuha stores the trades it reads, never the raw
    response, and none of them can place, modify or cancel an order.
    That same bridge can also price your open positions: while the Live Desk is
-   open and in the foreground, Vyuha asks it once every 1–5 seconds, at the interval you set in
-   Settings → Live feed, and each request carries the trading symbols and
-   exchanges of the positions you have open and nothing else about them — no
-   quantity, no entry price, no P&L, no account — plus one `/funds` request
+   open and in the foreground during market hours, Vyuha holds one streaming
+   connection to it and receives prices as they change, and asks it at the
+   interval you set in Settings → Live feed (1–5 seconds) only for a symbol the
+   stream has not priced for 30 seconds — or for every symbol while the stream
+   is unavailable. Both stop when the desk closes or goes to the background and
+   at the end of the live window (about 15:45 IST); the streaming connection
+   itself closes within 30 seconds of the desk closing. Each request carries the
+   trading symbols and exchanges of the positions you have open and nothing else
+   about them — no quantity, no entry price, no P&L, no account — and the stream
+   carries the same symbols and exchanges, plus your OpenAlgo API key once per
+   connection, in the message that signs it in. The stream goes to the same
+   machine as the bridge address: OpenAlgo's streaming port 8765 there, or the
+   streaming address you saved for that instance, which Vyuha refuses on any
+   other machine; like the `http://` address, a `ws://` stream is not
+   encrypted. Outside the live window nothing streams and nothing repeats: the
+   desk asks for the last prices once each time it connects — plus one `/funds` request
    each time you check the connection and each time the desk opens or its price
    stream reconnects, to the same bridge with the same key, keeping nothing from
    the answer but that it replied and how long it took — and one version read
@@ -189,11 +201,32 @@ Exactly four kinds, and only one of them is automatic:
 <!--
   Item 3, second paragraph — every claim and the code that performs it:
   (Line numbers drift; each carries the identifier it points at, so grep the name.)
-    • 1–5 s, user-set interval  lib/quotes/openalgo.ts:59-71 (REFRESH_SECONDS_MIN/MAX/
-                                  DEFAULT + clampRefreshSeconds), :419 (subscribe()'s
-                                  `const timer = setInterval(() => void poll(), periodMs)`),
-                                  :420-427 (`const stop: Unsubscribe` → clearInterval(timer)
-                                  on the signal abort — stopped with the desk's stream)
+    • one streaming connection, market hours only (v4.7.0 C7)
+                                  createOpenAlgoStream() in lib/quotes/openalgo-stream.ts,
+                                  held by the memoised provider, opened lazily by the first
+                                  subscribe() and never outside isWithinLiveWindow()
+    • 30 s with no streamed price → asked the old way
+                                  STREAM_QUIET_MS (30_000) / isQuiet() in
+                                  lib/quotes/openalgo-stream.ts; pump() in
+                                  lib/quotes/openalgo.ts asks /multiquotes for the quiet
+                                  keys only (none when every key is fresh); a closed or
+                                  refused socket leaves every key quiet
+    • 1–5 s, user-set interval  lib/quotes/openalgo.ts (REFRESH_SECONDS_MIN/MAX/
+                                  DEFAULT + clampRefreshSeconds()); subscribe()'s
+                                  `setInterval(() => void pump(true), periodMs)`,
+                                  cleared when the last subscription ends
+    • stop at the window's end  app/api/live/stream/route.ts msUntilLiveWindowEnd() →
+                                  windowTimer → unsubscribe() (owner answer Q4)
+    • closes within 30 s        STREAM_CLOSE_GRACE_MS (30_000): zero held keys closes
+                                  the socket after that grace
+    • key once per connection   the socket's open handler sends
+                                  { action: "authenticate", api_key } and nothing else
+                                  carries the key; sendSubscription() sends only
+                                  { symbol, exchange } pairs, mode STREAM_MODE, request_id
+    • same machine, port 8765   openAlgoStreamUrl() in lib/import/api/openalgo.ts (the
+                                  saved host's hostname on OPENALGO_WS_PORT, or the saved
+                                  streaming address); normalizeOpenAlgoStreamUrl() refuses
+                                  a streaming address whose hostname is not the bridge's
     • the desk's poll: only while the desk is open
                                   app/api/live/stream/route.ts (the SSE route is
                                   what starts and aborts the subscription)
@@ -236,8 +269,9 @@ Exactly four kinds, and only one of them is automatic:
                                   lib/quotes/openalgo.ts:156-162 (readGateFromDb(): the
                                   settings select → `if (!gate.allowed) return
                                   { state: "disabled" … }`)
-    • no tick is written          lib/quotes/openalgo.ts:392-428 (subscribe(), whose poll()
-                                  only calls onTick) writes nothing;
+    • no tick is written          lib/quotes/openalgo.ts subscribe() (whose pump() only
+                                  delivers to onTick) writes nothing, and
+                                  lib/quotes/openalgo-stream.ts imports no database module;
                                   lib/quotes/persist-mark.ts writes ONE row per position
                                   per IST day into mtm_prices
   This is the SAME kind of request as the pull above — the user's own broker

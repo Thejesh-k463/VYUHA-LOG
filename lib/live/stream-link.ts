@@ -56,10 +56,27 @@ export interface LinkState {
    * with the rest of the link state and resets to null on a new connection.
    */
   symbolCount: number | null;
+  /**
+   * WHICH PATH PRICED THE LAST TICK BATCH (v4.7.0 C7, design D11 / review R5):
+   * the route's `transport` on a `tick` frame — `"stream"` when at least one
+   * quote in the batch was pushed by the provider's stream, `"poll"` when every
+   * one came from a request. null until a tick names one.
+   *
+   * A fact about the FRAMES this connection carried, so it follows them: a tick
+   * that names a transport sets it; a heartbeat (no quotes) leaves it; a
+   * quote-bearing frame that names none — the snapshot a new connection opens
+   * with, which is a plain request — clears it, so a reconnect never inherits
+   * the previous connection's answer. The strip prints it for the OpenAlgo
+   * bridge only (`LIVE_STREAM_COPY.live`).
+   */
+  transport: LinkTransport | null;
 }
 
-export const LINK_IDLE: LinkState = { phase: "idle", reason: null, at: null, symbolCount: null };
-export const LINK_PAUSED: LinkState = { phase: "paused", reason: null, at: null, symbolCount: null };
+/** The two values the stream route writes on a `tick` frame's `transport`. */
+export type LinkTransport = "stream" | "poll";
+
+export const LINK_IDLE: LinkState = { phase: "idle", reason: null, at: null, symbolCount: null, transport: null };
+export const LINK_PAUSED: LinkState = { phase: "paused", reason: null, at: null, symbolCount: null, transport: null };
 
 /**
  * First reconnect delay, in ms, doubling to `RECONNECT_STEPS`.
@@ -211,6 +228,45 @@ export function parseSymbolCount(raw: unknown): number | null {
   const value = (raw as { symbols?: unknown }).symbols;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return null;
   return value;
+}
+
+/**
+ * The frame's `transport` — `"stream"` or `"poll"` — or null.
+ *
+ * PURE and STRICT, like `parseSymbolCount`: only the two strings the route
+ * writes (`transportOf()` in app/api/live/stream/route.ts) count. Anything else
+ * — absent, another string, a number — is null, never a guess.
+ */
+export function parseTransport(raw: unknown): LinkTransport | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const value = (raw as { transport?: unknown }).transport;
+  return value === "stream" || value === "poll" ? value : null;
+}
+
+/**
+ * True when the frame says this connection's subscription has ENDED — the
+ * route's heartbeat after its live-window-end unsubscribe carries
+ * `streaming: false` (v4.7.0 C7 fix D-C7-2, owner answer Q4). STRICT: only the
+ * boolean `false` counts; a frame without the field (every pre-C7 frame, and
+ * every heartbeat of a stream that never subscribed) is not a claim.
+ */
+export function parseStreamingEnded(raw: unknown): boolean {
+  if (raw === null || typeof raw !== "object") return false;
+  return (raw as { streaming?: unknown }).streaming === false;
+}
+
+/**
+ * The transport the link carries after `raw` (the rule on `LinkState.transport`):
+ * a named transport wins; a frame with a `quotes` array that names none (the
+ * snapshot) clears it; a frame saying the subscription has ended
+ * (`streaming: false`) clears it; any other frame (a heartbeat) keeps `previous`.
+ */
+export function nextTransport(previous: LinkTransport | null, raw: unknown): LinkTransport | null {
+  const named = parseTransport(raw);
+  if (named !== null) return named;
+  if (parseStreamingEnded(raw)) return null;
+  const quotes = raw !== null && typeof raw === "object" ? (raw as { quotes?: unknown }).quotes : undefined;
+  return Array.isArray(quotes) ? null : previous;
 }
 
 /**
@@ -369,10 +425,12 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
     // The snapshot states it once per connection; every later frame carries
     // none, so the last stated count stands until a NEW connection restates it.
     const symbolCount = parseSymbolCount(raw) ?? state.symbolCount;
+    // C7: which path priced the last tick batch (the rule on `LinkState.transport`).
+    const transport = nextTransport(state.transport, raw);
     if (state.phase === "stopped") {
       // Terminal: the heartbeat refreshes how old the last frame is and does
       // not touch the verdict the provider already gave for this connection.
-      setState({ ...state, at, symbolCount });
+      setState({ ...state, at, symbolCount, transport });
       return;
     }
     // A snapshot is honest about the clock: outside 09:00–15:40 the route ships
@@ -382,13 +440,19 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
     const marketShut =
       raw !== null && typeof raw === "object" && (raw as { marketOpen?: unknown }).marketOpen === false;
     if (quotes.length > 0 && !marketShut) {
-      setState({ phase: "live", reason: null, at, symbolCount });
+      setState({ phase: "live", reason: null, at, symbolCount, transport });
+      return;
+    }
+    // D-C7-2 (owner answer Q4): the route unsubscribed at the live window's
+    // end and says so on its heartbeats — the pipe is open, nothing streams.
+    if (parseStreamingEnded(raw)) {
+      setState({ phase: "connected", reason: null, at, symbolCount, transport });
       return;
     }
     // Heartbeat-only. A link that HAS been live stays live inside its grace —
     // that is what the heartbeat is for — and one that never carried a quote
     // says only that it is connected.
-    setState({ phase: state.phase === "live" ? "live" : "connected", reason: null, at, symbolCount });
+    setState({ phase: state.phase === "live" ? "live" : "connected", reason: null, at, symbolCount, transport });
   };
 
   function onError(ev: Event) {
@@ -405,7 +469,7 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
       } catch {
         reason = null;
       }
-      setState({ phase: "stopped", reason, at: env.now(), symbolCount: state.symbolCount });
+      setState({ phase: "stopped", reason, at: env.now(), symbolCount: state.symbolCount, transport: state.transport });
       return;
     }
     if (source !== null && source.readyState === SOURCE_CONNECTING) {
@@ -413,12 +477,12 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
       // hint. Say so; do not race it with a second timer — and do not say it at
       // all for a routine re-establish inside the heartbeat window.
       if (state.at !== null && env.now() - state.at < LIVE_GRACE_MS) return;
-      setState({ phase: "reconnecting", reason: null, at: state.at, symbolCount: state.symbolCount });
+      setState({ phase: "reconnecting", reason: null, at: state.at, symbolCount: state.symbolCount, transport: state.transport });
       return;
     }
     closeSource();
     retry = Math.min(retry + 1, RECONNECT_STEPS);
-    setState({ phase: "reconnecting", reason: null, at: state.at, symbolCount: state.symbolCount });
+    setState({ phase: "reconnecting", reason: null, at: state.at, symbolCount: state.symbolCount, transport: state.transport });
     retryTimer = env.setTimer(open, RECONNECT_BASE_MS * 2 ** (retry - 1));
   }
 

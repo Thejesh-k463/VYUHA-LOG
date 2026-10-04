@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -89,6 +90,8 @@ const DYNAMIC_URL_CALL_SITES: Record<string, string> = {
     "v4.2 Angel One searchScrip token look-up — same BASE constant, same host, cached locally (06-ANSWERS ruling 4.2-7); never the scrip-master host.",
   "lib/import/api/openalgo.ts":
     "the OpenAlgo host is USER-CONFIGURED by design (self-hosted instance, default 127.0.0.1) — no fixed host exists to pin.",
+  "lib/quotes/openalgo-stream.ts":
+    "v4.7.0 C7 — the OpenAlgo live feed's WebSocket (design D1/D13, review R6). Its ONE `new WebSocket(url)` takes a url bound only from openAlgoStreamUrl() (lib/import/api/openalgo.ts): the saved bridge host's own hostname on OPENALGO_WS_PORT, or the user's saved streaming address, which the save route refuses unless its hostname equals the bridge's. Same machine as the REST poll, no new host. Pinned below by an AST check (R6 a–c).",
   "lib/import/api/dhan.ts":
     "the token-mint URL is built by dhanAuthUrl (auth.dhan.co) so tests can pin its shape — every URL literal in the file is still checked below.",
   "lib/import/api/fyers.ts":
@@ -320,6 +323,104 @@ describe("egress guard — the zero-telemetry claim is enforced, not asserted", 
     const files = ["lib", "app", "components"].flatMap((d) => walk(path.join(root, d), [".ts", ".tsx", ".js", ".mjs"]));
     const naming = files.filter((f) => stripComments(readFileSync(f, "utf8")).includes("api.telegram.org")).map(rel);
     expect(naming).toEqual(["lib/telegram/send.ts"]);
+  });
+
+  /**
+   * v4.7.0 C7, review R6. The regex above matches a literal (or shadowed)
+   * `new WebSocket(` and nothing else — `new Ctor(url)`,
+   * `new globalThis.WebSocket(url)` and `new (impl ?? WebSocket)(url)` all
+   * walk past it. So the socket is pinned by the TypeScript AST instead:
+   * (a) the IDENTIFIER `WebSocket` (any position — a type, a property access,
+   *     a constructor) and the test seam's `webSocketImpl` appear in no file
+   *     under lib/ app/ components/ but the stream module (+ the option type and
+   *     its pass-through in lib/quotes/openalgo.ts); strings and comments are
+   *     not identifiers, so copy may name the protocol;
+   * (b) the stream module constructs exactly ONE socket, with ONE argument, an
+   *     identifier whose only binding is `openAlgoStreamUrl(…)`, and constructs
+   *     nothing else through a computed or unknown callee;
+   * (c) the registry's `createOpenAlgoProvider(` call passes no `webSocketImpl`.
+   */
+  describe("the OpenAlgo socket can be constructed in ONE place, from ONE url source (v4.7.0 C7, R6)", () => {
+    const STREAM = "lib/quotes/openalgo-stream.ts";
+    const PROVIDER = "lib/quotes/openalgo.ts";
+
+    function identifiersIn(src: string, file: string): Set<string> {
+      const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+      const out = new Set<string>();
+      const visit = (n: ts.Node) => {
+        if (ts.isIdentifier(n)) out.add(n.text);
+        ts.forEachChild(n, visit);
+      };
+      visit(sf);
+      return out;
+    }
+
+    /** Files whose CODE names `name` — a text pre-filter, then the AST decides. */
+    function filesNaming(name: string): string[] {
+      return ["lib", "app", "components"]
+        .flatMap((d) => walk(path.join(root, d), [".ts", ".tsx"]))
+        .filter((f) => {
+          const src = readFileSync(f, "utf8");
+          return src.includes(name) && identifiersIn(src, f).has(name);
+        })
+        .map(rel)
+        .sort();
+    }
+
+    it("(a) only the stream module names WebSocket; only it and the provider's option type name webSocketImpl", () => {
+      expect(filesNaming("WebSocket"), "a second file can reach the socket class").toEqual([STREAM]);
+      expect(filesNaming("webSocketImpl"), "the test seam leaked beyond the stream module and its option type").toEqual(
+        [PROVIDER, STREAM].sort(),
+      );
+    });
+
+    it("(b) ONE construction, ONE argument, bound only from openAlgoStreamUrl(", () => {
+      const src = readFileSync(path.join(root, STREAM), "utf8");
+      const sf = ts.createSourceFile(STREAM, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+      const news: ts.NewExpression[] = [];
+      const bindings = new Map<string, ts.Expression[]>();
+      const record = (name: string, init: ts.Expression | undefined) => {
+        if (!init) return;
+        bindings.set(name, [...(bindings.get(name) ?? []), init]);
+      };
+      const visit = (n: ts.Node) => {
+        if (ts.isNewExpression(n)) news.push(n);
+        if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) record(n.name.text, n.initializer);
+        if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left)) {
+          record(n.left.text, n.right);
+        }
+        ts.forEachChild(n, visit);
+      };
+      visit(sf);
+
+      // Nothing is constructed through a computed or unknown callee.
+      const SAFE = new Set(["WebSocket", "Map", "Set", "Date", "Error"]);
+      const callees = news.map((n) => (ts.isIdentifier(n.expression) ? n.expression.text : `<${ts.SyntaxKind[n.expression.kind]}>`));
+      expect(callees.filter((c) => !SAFE.has(c)), "a constructor the guard cannot name").toEqual([]);
+
+      const sockets = news.filter((n) => ts.isIdentifier(n.expression) && n.expression.text === "WebSocket");
+      expect(sockets, "the socket must be constructed in exactly one place").toHaveLength(1);
+      const args = sockets[0].arguments ?? ts.factory.createNodeArray();
+      expect(args, "the socket takes exactly one argument — its url").toHaveLength(1);
+      expect(ts.isIdentifier(args[0]), "the url argument must be a plain identifier").toBe(true);
+      const urlName = (args[0] as ts.Identifier).text;
+      const inits = bindings.get(urlName) ?? [];
+      expect(inits, `\`${urlName}\` must be bound exactly once`).toHaveLength(1);
+      const init = inits[0];
+      expect(
+        ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === "openAlgoStreamUrl",
+        `\`${urlName}\` is bound from something other than openAlgoStreamUrl(…)`,
+      ).toBe(true);
+      // The function itself is the shared one, not a local look-alike.
+      expect(src).toMatch(/import \{[^}]*\bopenAlgoStreamUrl\b[^}]*\} from "@\/lib\/import\/api\/openalgo";/);
+    });
+
+    it("(c) the registry builds the OpenAlgo provider without the test seam", () => {
+      const src = stripComments(readFileSync(path.join(root, "lib/quotes/registry.ts"), "utf8"));
+      const calls = [...src.matchAll(/createOpenAlgoProvider\(([^)]*)\)/g)].map((m) => m[1]);
+      expect(calls.length, "the registry no longer builds the OpenAlgo provider where this guard looks").toBeGreaterThan(0);
+      for (const args of calls) expect(args).not.toMatch(/webSocketImpl|WebSocket/);
+    });
   });
 
   it("the v4.3 strategy-shelf door is same-origin only — it names no host and opens no socket", () => {

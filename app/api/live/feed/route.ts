@@ -274,6 +274,10 @@ async function healthLine() {
     reason: h.reason ?? "",
     // W8: an old or unreadable OpenAlgo version — said beside "Feed OK".
     warning: h.warning ?? null,
+    // v4.7.0 C7 (design D11): OpenAlgo's stream state + reason, REPORTED by
+    // `health()` (it opens no socket). Only the OpenAlgo provider has one;
+    // every other provider answers null, and the card says nothing for it.
+    stream: h.stream ?? null,
     capabilities: provider.capabilities,
   };
 }

@@ -235,9 +235,18 @@ describe("the consent sheet and the privacy sheet agree about the feed", () => {
   const privacy = read("docs/client/PRIVACY.md").replace(/\s+/g, " ");
   const sheet = OPENALGO_FEED_ITEMS.map((i) => `${i.title} ${i.body}`).join(" ");
 
-  it("both state the 1–5 second cadence", () => {
-    expect(privacy).toMatch(/every 1–5 seconds/);
-    expect(sheet).toMatch(/every 1 to 5 seconds|1 to 5 seconds/i);
+  it("both state the 1–5 second cadence — since v4.7.0 C7 as the FALLBACK behind one stream", () => {
+    // The slider range is still stated on both…
+    expect(privacy).toMatch(/at the interval you set in Settings → Live feed \(1–5 seconds\)/);
+    expect(sheet).toMatch(/outside 1 to 5 seconds is clamped/i);
+    // …behind the stream, on both, with the same quiet window…
+    expect(privacy).toMatch(/holds one streaming connection to it/);
+    expect(sheet).toMatch(/holds one streaming connection to your bridge/);
+    expect(privacy).toMatch(/has not priced for 30 seconds/);
+    expect(sheet).toMatch(/no streamed price for 30 seconds/);
+    // …and neither claims the poll as the primary cadence any more.
+    expect(privacy).not.toMatch(/Vyuha asks it once every 1–5 seconds/);
+    expect(sheet).not.toMatch(/It asks every 1 to 5 seconds/);
   });
 
   it("both state the /funds probe", () => {

@@ -783,4 +783,105 @@ describe("S-2  one memo key per provider: OpenAlgo and a broker share no field",
     expect(door).not.toBe(desk);
     expect(door.id).toBe("eod");
   });
+
+  /* ---- (6) v4.7.0 C7: an instance that leaves the slot is DISPOSED -------- */
+
+  it("6a  R1 b - switching to a feed that is not memoised disposes the cached instance and clears the slot", async () => {
+    configOpenAlgoOnly();
+    const desk = await getLiveFeedProvider();
+    expect(desk.id).toBe("openalgo");
+    const dispose = vi.spyOn(desk, "dispose");
+    setSettings({ liveFeedProvider: "eod" });
+    expect((await getLiveFeedProvider()).id).toBe("eod");
+    expect(dispose, "the replaced OpenAlgo instance - and its socket - stayed alive").toHaveBeenCalledTimes(1);
+    // The slot is EMPTY, not holding the disposed instance for the next peek.
+    setSettings({ liveFeedProvider: "openalgo" });
+    expect(await peekLiveFeedProvider()).not.toBe(desk);
+  });
+
+  it("6b  a memoised replacement disposes the REPLACED instance exactly once, never the new one; the reset disposes too", async () => {
+    configOpenAlgoOnly();
+    const first = await getLiveFeedProvider();
+    const disposeFirst = vi.spyOn(first, "dispose");
+    setSettings({ liveFeedRefreshSeconds: 4 });
+    const second = await getLiveFeedProvider();
+    expect(second).not.toBe(first);
+    const disposeSecond = vi.spyOn(second, "dispose");
+    expect(disposeFirst).toHaveBeenCalledTimes(1);
+    expect(await getLiveFeedProvider(), "a same-key call disposed nothing and rebuilt nothing").toBe(second);
+    expect(disposeSecond).not.toHaveBeenCalled();
+    resetLiveFeedProviderCache();
+    expect(disposeSecond).toHaveBeenCalledTimes(1);
+    expect(disposeFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("6c  R2 through the registry: the gate's saved wsUrl opens the socket; a replacement ends the desk's subscription ONCE and the old instance asks nothing more", async () => {
+    // The real gate reader against the real database: the vault blob carries
+    // host AND wsUrl (owner answer D2'). The registry passes no socket class,
+    // so the GLOBAL one is what opens - stubbed here with a recorder.
+    await import("@/lib/vault");
+    const sockets: { url: string; closed: boolean }[] = [];
+    class RecordingSocket {
+      readyState = 0;
+      closed = false;
+      constructor(readonly url: string) {
+        sockets.push(this);
+      }
+      addEventListener() {}
+      send() {}
+      close() {
+        this.closed = true;
+      }
+    }
+    const requests: string[] = [];
+    vi.stubGlobal("WebSocket", RecordingSocket);
+    vi.stubGlobal("fetch", async (url: string) => {
+      requests.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ status: "success", results: [] }) } as unknown as Response;
+    });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T05:00:00Z")); // Friday 10:30 IST - inside the live window
+    try {
+      clearConnections();
+      t.db
+        .insert(t.schema.brokerConnections)
+        .values({
+          accountId: ACCOUNT,
+          broker: "openalgo:groww",
+          apiKey: "oa-c7-key",
+          accessToken: "",
+          authJson: JSON.stringify({ host: "http://127.0.0.1:5050", underlyingBroker: "groww", wsUrl: "ws://127.0.0.1:4051" }),
+          updatedAt: OPENALGO_SAVED_AT,
+        })
+        .run();
+      setSettings({
+        liveFeedProvider: "openalgo",
+        openalgoEnabled: true,
+        openalgoAckVersion: OPENALGO_ACK,
+        selectedAccountId: ACCOUNT,
+        liveFeedRefreshSeconds: 1,
+      });
+      const desk = await getLiveFeedProvider();
+      let ended = 0;
+      desk.subscribe([{ symbol: "TCS", exchange: "NSE" }], () => {}, undefined, () => (ended += 1));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sockets.map((s) => s.url), "the saved streaming address did not reach the socket").toEqual(["ws://127.0.0.1:4051"]);
+
+      await vi.advanceTimersByTimeAsync(2000);
+      const before = requests.length;
+      expect(before, "the fallback poll never ran").toBeGreaterThan(0);
+      setSettings({ liveFeedRefreshSeconds: 3 }); // the slider is in the key: a replacement
+      const next = await getLiveFeedProvider();
+      expect(next).not.toBe(desk);
+      expect(ended, "the desk's subscription was not ended exactly once").toBe(1);
+      expect(sockets[0].closed, "the replaced instance kept its socket").toBe(true);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(requests.length, "the replaced instance kept polling").toBe(before);
+      expect(sockets, "the replaced instance reopened a socket").toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      resetLiveFeedProviderCache();
+    }
+  });
 });

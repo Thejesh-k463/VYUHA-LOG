@@ -27,7 +27,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalgo-disclosure";
-import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
+import { OPENALGO_WS_PORT, isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
 import { connectionModeLabel, saveDisabled, saveTargetLabel, type GateBroker } from "@/components/import/broker-connect-gate";
 // PURE consent copy (v4.7.0 C6) — the ONLY C6 module this client file may
 // import: lib/import/api/{fyers,kotakneo,nuvama}.ts are server-only (xlsx via
@@ -90,6 +90,9 @@ interface ConnStatus {
    *  actually connected instead of defaults (host/broker are not secrets). */
   openalgoHost?: string | null;
   openalgoUnderlyingBroker?: string | null;
+  /** v4.7.0 C7: the saved streaming address (a local URL, not a secret); null
+   *  = OpenAlgo's default streaming port on the bridge's own machine. */
+  openalgoWsUrl?: string | null;
   /** v4.7.0 C6 (fyers / kotakneo / nuvama): the stored consent ack is the
    *  sheet's CURRENT version — false re-shows the consent sheet. */
   pullAckCurrent?: boolean;
@@ -446,6 +449,38 @@ export const KITE_DAILY_LOGIN_NOTE =
  * (2026-09-04). A placeholder is now always a sentence, never a value shape.
  */
 export const KEY_KEPT_PLACEHOLDER = "saved — leave blank to keep";
+
+/**
+ * The OpenAlgo form's optional "Streaming address" (v4.7.0 C7, owner answer
+ * D2'). Empty = OpenAlgo's default, `ws://<the host's own hostname>:` +
+ * `OPENALGO_WS_PORT` (`openAlgoStreamUrl()` in lib/import/api/openalgo.ts). Two
+ * instances on one machine cannot both stream on the default port, so the hint
+ * says where the real one is written. The port is the constant, never a typed
+ * number (tests/openalgo-stream-copy.test.ts).
+ */
+export const OPENALGO_STREAM_LABEL = "Streaming address (optional)";
+export const OPENALGO_STREAM_HINT = `Leave empty for OpenAlgo's default (ws://<host>:${OPENALGO_WS_PORT}). Running more than one OpenAlgo? Copy WEBSOCKET_URL from that instance's .env.`;
+
+/**
+ * The OpenAlgo half of the save body. `wsUrl` is the box's value, trimmed —
+ * an empty string CLEARS the stored address — but only once the box has a
+ * value of its own: `null` means it was never touched and nothing was saved to
+ * prefill it (with two or more instances the form prefills nothing, by
+ * design), and then the field is OMITTED, which the save route reads as "keep
+ * the stored one". Sending "" for an untouched box would silently drop a saved
+ * streaming address on an unrelated re-save.
+ */
+export function openAlgoSaveFields(f: { host: string; underlyingBroker: string; wsUrl: string | null }): {
+  host: string;
+  underlyingBroker: string;
+  wsUrl?: string;
+} {
+  return {
+    host: f.host,
+    underlyingBroker: f.underlyingBroker,
+    ...(f.wsUrl !== null ? { wsUrl: f.wsUrl.trim() } : {}),
+  };
+}
 
 /** All-accounts: the picker's empty state, and the button that waits on it. */
 export const PICK_ACCOUNT_PLACEHOLDER = "Pick an account…";
@@ -910,6 +945,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   // (that id selects the charge profile, so it is asked, never guessed).
   const [host, setHost] = useState(OPENALGO_DEFAULT_HOST);
   const [underlyingBroker, setUnderlyingBroker] = useState("");
+  // C7: the optional streaming address. `null` = untouched and nothing saved to
+  // show (the save then omits it and the server keeps what is stored).
+  const [wsUrl, setWsUrl] = useState<string | null>(null);
   // The gate, as the SERVER sees it. Nothing about OpenAlgo renders until this
   // is true; it is re-read after every request so a gate closed mid-session
   // takes the tab away rather than leaving a button that 403s.
@@ -1028,6 +1066,10 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     if (oa.openalgoUnderlyingBroker) {
       setUnderlyingBroker((prev) => (prev === "" ? oa.openalgoUnderlyingBroker! : prev));
     }
+    // C7: the saved streaming address, under the same never-over-typing rule.
+    if (oa.openalgoWsUrl) {
+      setWsUrl((prev) => (prev === null ? oa.openalgoWsUrl! : prev));
+    }
   }
 
   async function refresh() {
@@ -1116,7 +1158,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         // the button below is a courtesy, not the control).
         ...(active === "dhan" && dhanTotpMode ? { pin, totpSecret, dhanTotpConsent: dhanConsent } : {}),
         ...(active === "zerodha" && apiSecret ? { apiSecret } : {}),
-        ...(active === "openalgo" ? { host, underlyingBroker } : {}),
+        // C7: + the streaming address — the box's value ("" clears), omitted
+        // while untouched so the server keeps the stored one.
+        ...(active === "openalgo" ? openAlgoSaveFields({ host, underlyingBroker, wsUrl }) : {}),
         // v4.7.0 C6: empty fields keep the stored ones (the server merges).
         ...((active === "fyers" || active === "nuvama") && apiSecret ? { apiSecret } : {}),
         ...(active === "kotakneo" ? { mobileNumber, ucc, mpin: pin, totpSecret } : {}),
@@ -1631,6 +1675,26 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                     That is not this computer — your trade data will travel to that machine on every pull.
                   </p>
                 )}
+              </div>
+              {/* C7: the Live Desk's stream address. Optional, on the bridge's
+                  own machine only — the save route refuses any other with a
+                  400 whose message lands in the form's usual error line. */}
+              <div className="space-y-1">
+                <Label htmlFor="openalgo-ws-url">{OPENALGO_STREAM_LABEL}</Label>
+                <Input
+                  id="openalgo-ws-url"
+                  value={wsUrl ?? ""}
+                  onChange={(e) => setWsUrl(e.target.value)}
+                  // A sentence, never a value shape (KEY_KEPT_PLACEHOLDER's lesson:
+                  // a URL-shaped placeholder reads as a box already filled).
+                  placeholder="empty = OpenAlgo's default"
+                  autoComplete="off"
+                  spellCheck={false}
+                  data-testid="openalgo-ws-url"
+                />
+                <p className="text-[0.6875rem] text-muted-foreground" data-testid="openalgo-ws-url-hint">
+                  {OPENALGO_STREAM_HINT}
+                </p>
               </div>
               <div className="space-y-1">
                 <Label>Broker behind OpenAlgo</Label>

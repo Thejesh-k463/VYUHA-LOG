@@ -340,6 +340,15 @@ describe("POST provider — the consent gate, on the shipped route", () => {
     expect(settingsRow()?.liveFeedProvider).toBe("openalgo");
   });
 
+  it("v4.7.0 C7: the health line carries OpenAlgo's stream state through to the card", async () => {
+    // `health()` REPORTS the stream and opens no socket (design D11), so with
+    // no desk subscribed it is "off" — and the card turns that into "Stream
+    // starts when the Live Desk opens in market hours".
+    const body = await (await get()).json();
+    expect(body.health.provider).toBe("openalgo");
+    expect(body.health.stream, "the feed route dropped health().stream").toEqual({ state: "off", reason: null, since: null });
+  });
+
   it("falls back to end-of-day the moment consent goes away — the pick survives, the feed does not", async () => {
     // The RESTORE case: a backup carries the picker column, but the two consent
     // columns are machine state and do not travel.
@@ -349,6 +358,8 @@ describe("POST provider — the consent gate, on the shipped route", () => {
     expect(body.feed.effective).toBe("eod");
     expect(body.feed.blockedReason).toBeTruthy();
     expect(body.health.provider).toBe("eod");
+    // C7: end-of-day has no stream, and says so as null rather than omitting it.
+    expect(body.health.stream).toBeNull();
 
     // A-6 — OpenAlgo'S OWN BEHAVIOUR IS UNCHANGED, and that is the point of
     // asserting it here. The card's blocked block is now derived from

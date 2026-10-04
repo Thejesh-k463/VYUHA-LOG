@@ -679,3 +679,60 @@ describe("the Upstox half of the adopted answer, and the refresh slider (fix wav
     ).not.toMatch(/setSeconds\(previous\);/);
   });
 });
+
+/**
+ * D-C7-3 (v4.7.0 C7 fix wave) — THE GATE'S "MOST RECENTLY UPDATED" IS AN INSTANT.
+ *
+ * An INSERT used to stamp SQLite's default "YYYY-MM-DD HH:MM:SS" and an UPDATE a
+ * JS ISO string; ordered as TEXT, "T" sorts above " ", so an older re-saved row
+ * outranked a newer inserted one. In the All-accounts view (id 0) the Upstox gate
+ * takes the newest row across books, so the wrong order hands the desk the wrong
+ * account's token. Rows already stored in mixed formats must order by time.
+ */
+describe("D-C7-3 — the Upstox gate orders mixed updated_at formats by instant (All accounts)", () => {
+  it("a LATER SQLite-format stamp beats an EARLIER ISO stamp, and the reverse", async () => {
+    const { withFeedAck } = await import("@/lib/domain/live-feed-disclosure");
+    const { createUpstoxProvider } = await import("@/lib/quotes/upstox");
+    const before = t.db.select().from(t.schema.settings).all()[0];
+    const kept = t.sqlite.prepare("SELECT * FROM broker_connections WHERE broker = 'upstox'").all() as Record<string, unknown>[];
+    t.sqlite.prepare("DELETE FROM broker_connections WHERE broker = 'upstox'").run();
+    try {
+      t.db.update(t.schema.settings).set({ selectedAccountId: 0, liveFeedAckJson: withFeedAck(null, "upstox") }).run();
+      t.db
+        .insert(t.schema.brokerConnections)
+        .values([
+          { accountId: SWING, broker: "upstox", apiKey: "token-swing", accessToken: "" },
+          { accountId: OTHER, broker: "upstox", apiKey: "token-other", accessToken: "" },
+        ])
+        .run();
+      const stamp = t.sqlite.prepare("UPDATE broker_connections SET updated_at = ? WHERE broker = 'upstox' AND account_id = ?");
+      const tokenUsed = async () => {
+        const seen: string[] = [];
+        const get = (async (_path: string, token: string) => {
+          seen.push(token);
+          return { status: "success", data: {} };
+        }) as UpstoxGetterT;
+        const p = createUpstoxProvider({ getImpl: get, isinOf: () => "INE002A01018", now: () => 0 });
+        await p.snapshot([{ symbol: "RELIANCE", exchange: "NSE" }]).catch(() => undefined);
+        return seen[0];
+      };
+
+      stamp.run("2026-10-04T20:45:26.795Z", SWING); // re-saved a minute ago (ISO)
+      stamp.run("2026-10-04 20:46:26", OTHER); // inserted NOW (SQLite's default format)
+      expect(await tokenUsed(), "text order: the older ISO 'T' stamp outranked the newer one").toBe("token-other");
+
+      stamp.run("2026-10-04 20:47:00", SWING);
+      stamp.run("2026-10-04T20:46:59.999Z", OTHER);
+      expect(await tokenUsed()).toBe("token-swing");
+    } finally {
+      t.sqlite.prepare("DELETE FROM broker_connections WHERE broker = 'upstox'").run();
+      for (const row of kept) {
+        const cols = Object.keys(row);
+        t.sqlite.prepare(`INSERT INTO broker_connections (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`).run(...cols.map((c) => row[c]));
+      }
+      t.db.update(t.schema.settings).set({ selectedAccountId: before.selectedAccountId, liveFeedAckJson: before.liveFeedAckJson }).run();
+    }
+  });
+});
+
+type UpstoxGetterT = import("@/lib/quotes/upstox").UpstoxGetter;

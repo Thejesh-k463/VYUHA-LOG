@@ -1616,3 +1616,63 @@ describe("a refused write adopts the route's own answer for the radio (fix wave 
     ).not.toContain("the radio the user sees is the stored pick either way");
   });
 });
+
+/**
+ * D-C7-3 (v4.7.0 C7 fix wave) — THE GATE'S "MOST RECENTLY UPDATED" IS AN INSTANT.
+ * Same defect as the Upstox and OpenAlgo gates: an INSERT stamped SQLite's
+ * "YYYY-MM-DD HH:MM:SS", an UPDATE a JS ISO string, and as TEXT "T" > " " — so in
+ * the All-accounts view an older re-saved row signed in with the wrong account's
+ * credentials. Pinned on the credential the sign-in is handed.
+ */
+describe("D-C7-3 — the Angel One gate orders mixed updated_at formats by instant (All accounts)", () => {
+  it("a LATER SQLite-format stamp beats an EARLIER ISO stamp, and the reverse", async () => {
+    const { withFeedAck } = await import("@/lib/domain/live-feed-disclosure");
+    const { createAngelOneProvider } = await import("@/lib/quotes/angelone");
+    const before = t.db.select().from(t.schema.settings).all()[0];
+    const kept = t.sqlite.prepare("SELECT * FROM broker_connections WHERE broker = 'angelone'").all() as Record<string, unknown>[];
+    t.sqlite.prepare("DELETE FROM broker_connections WHERE broker = 'angelone'").run();
+    try {
+      t.db.update(t.schema.settings).set({ selectedAccountId: 0, liveFeedAckJson: withFeedAck(null, "angelone") }).run();
+      const auth = JSON.stringify({ clientCode: "C1", pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP" });
+      t.db
+        .insert(t.schema.brokerConnections)
+        .values([
+          { accountId: SWING, broker: "angelone", apiKey: "smartapi-swing", accessToken: "", authJson: auth },
+          { accountId: OTHER, broker: "angelone", apiKey: "smartapi-other", accessToken: "", authJson: auth },
+        ])
+        .run();
+      const stamp = t.sqlite.prepare("UPDATE broker_connections SET updated_at = ? WHERE broker = 'angelone' AND account_id = ?");
+      const keyUsed = async () => {
+        const seen: string[] = [];
+        const p = createAngelOneProvider({
+          now: () => 0,
+          sleep: async () => {},
+          loginImpl: async (creds) => {
+            seen.push(creds.apiKey);
+            return { jwtToken: "jwt" };
+          },
+          quoteImpl: async () => ({ fetched: [], unfetched: [] }),
+          searchImpl: async () => [],
+        });
+        await p.snapshot([{ symbol: "RELIANCE", exchange: "NSE" }]).catch(() => undefined);
+        p.dispose?.();
+        return seen[0];
+      };
+
+      stamp.run("2026-10-04T20:45:26.795Z", SWING); // re-saved a minute ago (ISO)
+      stamp.run("2026-10-04 20:46:26", OTHER); // inserted NOW (SQLite's default format)
+      expect(await keyUsed(), "text order: the older ISO 'T' stamp outranked the newer one").toBe("smartapi-other");
+
+      stamp.run("2026-10-04 20:47:00", SWING);
+      stamp.run("2026-10-04T20:46:59.999Z", OTHER);
+      expect(await keyUsed()).toBe("smartapi-swing");
+    } finally {
+      t.sqlite.prepare("DELETE FROM broker_connections WHERE broker = 'angelone'").run();
+      for (const row of kept) {
+        const cols = Object.keys(row);
+        t.sqlite.prepare(`INSERT INTO broker_connections (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`).run(...cols.map((c) => row[c]));
+      }
+      t.db.update(t.schema.settings).set({ selectedAccountId: before.selectedAccountId, liveFeedAckJson: before.liveFeedAckJson }).run();
+    }
+  });
+});

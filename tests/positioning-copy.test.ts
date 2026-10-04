@@ -205,7 +205,13 @@ describe("positioning copy — 'local-first / 100% local & offline' is retired",
       privacy,
       "PRIVACY.md no longer states the Live Desk price poll's cadence and where the user sets it",
     ).toContain(
-      "while the Live Desk is open and in the foreground, Vyuha asks it once every 1–5 seconds, at the interval you set in Settings → Live feed",
+      // v4.7.0 C7: the stream is the primary path in market hours and the
+      // slider is the FALLBACK interval — "asks it once every 1–5 seconds" as
+      // the primary cadence is gone (design §4: never claimed anywhere).
+      "while the Live Desk is open and in the foreground during market hours, Vyuha holds one streaming connection to it and receives prices as they change, and asks it at the interval you set in Settings → Live feed (1–5 seconds) only for a symbol the stream has not priced for 30 seconds",
+    );
+    expect(privacy, "PRIVACY.md still states the 1–5 s poll as the primary cadence").not.toContain(
+      "Vyuha asks it once every 1–5 seconds",
     );
     // …and what it may carry, which is the half a buyer actually worries about.
     expect(privacy, "PRIVACY.md no longer says what the poll does NOT send").toContain(

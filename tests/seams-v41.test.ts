@@ -214,11 +214,12 @@ const KEY = (symbol: string): QuoteKey => ({ symbol, exchange: "NSE", tradingsym
 
 describe("seam 1 — every factual claim in the OpenAlgo disclosure, against the adapter that performs it", () => {
   it("the 1-5 s cadence the disclosure states is the cadence the adapter clamps to", () => {
-    const title = claim(/every (\d+) to (\d+) seconds/);
+    // v4.7.0 C7: the title no longer leads with "every 1 to 5 seconds" — in
+    // market hours the stream prices the desk and the slider is the FALLBACK —
+    // so the range is read from the body's clamp sentence alone.
     const body = claim(/outside (\d+) to (\d+) seconds is clamped/);
-    expect(Number(title[1]), "the disclosure's floor is not REFRESH_SECONDS_MIN").toBe(REFRESH_SECONDS_MIN);
-    expect(Number(title[2]), "the disclosure's ceiling is not REFRESH_SECONDS_MAX").toBe(REFRESH_SECONDS_MAX);
-    expect([Number(body[1]), Number(body[2])]).toEqual([REFRESH_SECONDS_MIN, REFRESH_SECONDS_MAX]);
+    expect(Number(body[1]), "the disclosure's floor is not REFRESH_SECONDS_MIN").toBe(REFRESH_SECONDS_MIN);
+    expect(Number(body[2]), "the disclosure's ceiling is not REFRESH_SECONDS_MAX").toBe(REFRESH_SECONDS_MAX);
     // ...and the clamp really clamps to those, on both sides and off the end.
     expect(clampRefreshSeconds(0)).toBe(REFRESH_SECONDS_MIN);
     expect(clampRefreshSeconds(-9)).toBe(REFRESH_SECONDS_MIN);
@@ -303,7 +304,10 @@ describe("seam 1 — every factual claim in the OpenAlgo disclosure, against the
     try {
       // (a) the explicit unsubscribe the SSE route calls.
       const a = recorder({ status: "success", data: [{ symbol: "TCS", exchange: "NSE", ltp: 3100 }] });
-      const p1 = createOpenAlgoProvider({ readGate: READY_GATE, fetchImpl: a.impl, refreshSeconds: 1 });
+      // `isLiveWindow: () => false` (v4.7.0 C7): this pins the POLL; inside
+      // IST market hours the provider would otherwise try a real loopback
+      // socket for the stream as well.
+      const p1 = createOpenAlgoProvider({ readGate: READY_GATE, fetchImpl: a.impl, refreshSeconds: 1, isLiveWindow: () => false });
       const stop = p1.subscribe([KEY("TCS")], () => {});
       expect(a.sent.length, "subscribe() polled before the first interval").toBe(0);
       await vi.advanceTimersByTimeAsync(1000);
@@ -315,7 +319,7 @@ describe("seam 1 — every factual claim in the OpenAlgo disclosure, against the
       // (b) the abort signal the stream route aborts on disconnect.
       const b = recorder({ status: "success", data: [{ symbol: "TCS", exchange: "NSE", ltp: 3100 }] });
       const ctrl = new AbortController();
-      const p2 = createOpenAlgoProvider({ readGate: READY_GATE, fetchImpl: b.impl, refreshSeconds: 1 });
+      const p2 = createOpenAlgoProvider({ readGate: READY_GATE, fetchImpl: b.impl, refreshSeconds: 1, isLiveWindow: () => false });
       p2.subscribe([KEY("TCS")], () => {}, ctrl.signal);
       await vi.advanceTimersByTimeAsync(1000);
       expect(b.sent.length).toBe(1);
@@ -507,7 +511,8 @@ describe("seam 3 — what the registry claims it talks to, and what the privacy 
   it("PRIVACY item 3 quotes OPENALGO_DEFAULT_HOST verbatim, with the cadence and the /funds probe", () => {
     const item = privacyItem3();
     expect(item.includes(`\`${OPENALGO_DEFAULT_HOST}\``), "PRIVACY #3 no longer names the default host").toBe(true);
-    const cadence = item.match(/once every (\d+)[–-](\d+) seconds/);
+    // v4.7.0 C7: the slider range is stated as the FALLBACK interval.
+    const cadence = item.match(/interval you set in Settings → Live feed \((\d+)[–-](\d+) seconds\)/);
     expect(cadence, "PRIVACY #3 stopped stating the poll cadence").not.toBeNull();
     expect([Number(cadence![1]), Number(cadence![2])]).toEqual([REFRESH_SECONDS_MIN, REFRESH_SECONDS_MAX]);
     expect(item.includes("`/funds`"), "PRIVACY #3 dropped the /funds probe").toBe(true);
@@ -520,7 +525,9 @@ describe("seam 3 — what the registry claims it talks to, and what the privacy 
     expect(entry, "the /live help entry vanished").toBeTruthy();
     const text = entry!.body.join("\n");
     expect(text.includes(new URL(OPENALGO_DEFAULT_HOST).hostname), "/live help stopped naming 127.0.0.1").toBe(true);
-    const m = text.match(/every (\d+) to (\d+) seconds/);
+    // v4.7.0 C7: the BRIDGE's sentence — "every 1 to 5 seconds" is still in
+    // the Upstox sentence, which is a different feed's cadence.
+    const m = text.match(/at the interval you set \((\d+) to (\d+) seconds\)/);
     expect(m, "/live help stopped stating the cadence").not.toBeNull();
     expect([Number(m![1]), Number(m![2])]).toEqual([REFRESH_SECONDS_MIN, REFRESH_SECONDS_MAX]);
   });

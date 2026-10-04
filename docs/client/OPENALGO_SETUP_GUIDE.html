@@ -302,13 +302,17 @@ ZMQ_PORT=5556</code></pre></li>
   <li><b>Settings → Integrations (advanced)</b> → switch OpenAlgo on → read the disclosure →
     <b>Accept</b>. The Import tab entry does not exist until you do, and the server refuses saves
     and pulls regardless of the UI — hiding a button is never the only defence.</li>
-  <li><b>Import → OpenAlgo (self-hosted)</b>, then fill the three fields:
+  <li><b>Import → OpenAlgo (self-hosted)</b>, then fill the three fields (a fourth is optional):
     <ul>
       <li><b>OpenAlgo API key</b> — from <a href="#apikey">section 5</a>.</li>
       <li><b>Host</b> — <code>http://127.0.0.1:5000</code>, or whatever port that instance runs on.
         Each instance is its own host:port.</li>
       <li><b>Broker behind OpenAlgo</b> — the broker this instance is logged into. This matters: it
         stamps the trades and selects the charge profile.</li>
+      <li><b>Streaming address</b> (optional) — leave it empty on a default install: the Live Desk then
+        streams from OpenAlgo's default streaming port 8765 on the same machine as the host. Running more
+        than one OpenAlgo? Copy <code>WEBSOCKET_URL</code> from that instance's <code>.env</code> into this
+        box. It must be on the same machine as the host above; any other machine is refused.</li>
     </ul>
     Then <b>Add instance</b>. Saving checks the host's format and the broker and makes no network
     call, so it works while OpenAlgo is stopped. The live check is <b>Preview pull</b>: press it once
@@ -338,13 +342,27 @@ ZMQ_PORT=5556</code></pre></li>
   the fix wave (2026-09-06) — the earlier set was six lines low throughout — and
   each one now names the identifier it points at, so a future shift is visible
   by grep rather than only by counting:
-    • 1–5 s, clamped          lib/quotes/openalgo.ts:59-71 (REFRESH_SECONDS_MIN/
-                              MAX/DEFAULT + clampRefreshSeconds()); the poll is
-                              the setInterval at :419 (`const timer =
-                              setInterval(() => void poll(), periodMs)`),
-                              stopped with the desk's stream at :420-427
-                              (`const stop: Unsubscribe` → clearInterval(timer)
-                              on the signal abort)
+    • one stream, market hours (v4.7.0 C7) createOpenAlgoStream() in
+                              lib/quotes/openalgo-stream.ts — one socket per
+                              bridge, opened lazily by the first subscribe(),
+                              never outside isWithinLiveWindow(); closed
+                              STREAM_CLOSE_GRACE_MS (30 s) after the last
+                              symbol is released, and by the stream route's own
+                              window-end unsubscribe (msUntilLiveWindowEnd() →
+                              windowTimer in app/api/live/stream/route.ts)
+    • quiet 30 s → polled     STREAM_QUIET_MS / isQuiet(); pump() in
+                              lib/quotes/openalgo.ts asks /multiquotes for the
+                              quiet keys only, none when every key is fresh
+    • 1–5 s, clamped          lib/quotes/openalgo.ts (REFRESH_SECONDS_MIN/
+                              MAX/DEFAULT + clampRefreshSeconds()); the fallback
+                              poll is subscribe()'s `setInterval(() => void
+                              pump(true), periodMs)`, cleared with the last
+                              subscription
+    • port 8765 / streaming   openAlgoStreamUrl() + OPENALGO_WS_PORT in
+      address, same machine   lib/import/api/openalgo.ts; a saved streaming
+                              address must pass normalizeOpenAlgoStreamUrl()
+                              (same hostname as the bridge, ws: or wss:), or the
+                              save route answers 400
     • 10 req/s ceiling        :64 (RATE_LIMIT_PER_SECOND = 10), enforced by
                               createRateGuard() :290-300, whose take(now)
                               returns false past the limit
@@ -391,7 +409,11 @@ ZMQ_PORT=5556</code></pre></li>
   about once a minute during market hours while Vyuha is open, minimised
   included — runTelegramAlerts() in lib/jobs/telegram-alerts.ts, one
   snapshot() per run through peekLiveFeedProvider() — so "nothing polls behind
-  your back" below stopped being true and is rewritten.
+  your back" below stopped being true and is rewritten. v4.7.0 C7 AMENDED "5"
+  (never "6" — no install accepts "5" before v4.7.0 ships): the stream, the
+  30 s quiet rule, the window-end stop, port 8765 / the streaming address on
+  the same machine, and what the stream carries are in "How often", "Where it
+  goes", "What the stream carries" and "Streaming" below.
 -->
 <h2 id="live">9 · Live prices on the Live Desk</h2>
 <p>From v4.1 the same instance can also <b>price your open positions</b> while you watch them. It is a
@@ -400,10 +422,15 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
   <li><b>What it does.</b> The Live Desk marks your open positions from the stored end-of-day
     bhavcopy, or from prices you type, until you pick <b>OpenAlgo</b> as the source in
     <b>Settings → Live feed</b>.</li>
-  <li><b>How often.</b> While the Live Desk is open, Vyuha asks the bridge once every
-    <b>1 to 5 seconds</b> — the interval is a slider in Settings → Live feed, and anything outside
-    that range is clamped to it in code. The desk's requests stop when you leave the screen, and Vyuha
-    refuses more than 10 requests a second to your bridge whatever the slider says. Only if you turn on
+  <li><b>How often.</b> During market hours, while the Live Desk is open, the desk holds <b>one
+    streaming connection</b> to your bridge and receives prices as they change. A symbol with no
+    streamed price for 30 seconds — and every symbol while the stream is unavailable — is asked for
+    the old way, at the interval on the slider in Settings → Live feed (<b>1 to 5 seconds</b>; anything
+    outside that range is clamped to it in code). The stream and the asking stop when you leave the
+    screen and at the end of the live window (about 15:45 IST); the streaming connection itself closes
+    within 30 seconds of the desk closing. Outside the live window the desk asks for the last prices
+    once each time it connects, and nothing repeats. Vyuha refuses more than 10 requests a second to
+    your bridge whatever the slider says. Only if you turn on
     <b>Telegram stop/target alerts</b> (Pro), Vyuha also asks the bridge for your open positions' prices
     about once a minute during market hours while Vyuha is open on any screen, minimised included
     (more often while the Live Desk is open). With more than one account, every account's checked
@@ -418,11 +445,18 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
     old to pull trades from. Vyuha keeps nothing from those answers except that they arrived, how long
     the check took, and whether the version is new enough.</li>
   <li><b>Where it goes.</b> <code>http://127.0.0.1:5000</code> by default — your own machine talking
-    to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to
-    that machine every few seconds while the desk is open, and about once a minute during market hours
-    while Telegram alerts are on.</li>
-  <li><b>What you see change.</b> The marks on the desk refresh at your interval for as long as the
-    screen is in front of you. The desk opens the connection when you arrive and closes it when you
+    to itself, so no symbol leaves it. The stream goes to the same machine as that address, on
+    OpenAlgo's streaming port 8765 unless you saved a streaming address for the instance (see
+    <b>Streaming</b> below); like the <code>http://</code> address, a <code>ws://</code> stream is not
+    encrypted. If you enter another address, that list of symbols travels to that machine while the
+    desk is open — over the stream in market hours, and at your interval for what the stream has not
+    priced — and about once a minute during market hours while Telegram alerts are on.</li>
+  <li><b>What the stream carries.</b> Your OpenAlgo API key once per connection, in the message that
+    signs it in, and the same trading symbols and exchanges as the requests above, in the messages that
+    start and stop each symbol's prices. Nothing else about your positions.</li>
+  <li><b>What you see change.</b> The marks on the desk move as streamed prices arrive, and at your
+    interval for any symbol the stream has not priced, for as long as the screen is in front of you.
+    The strip at the top says which: <b>OpenAlgo stream</b> or <b>OpenAlgo poll</b>. The desk opens the connection when you arrive and closes it when you
     leave or switch to another tab; the only price requests made while the desk is closed are the
     once-a-minute Telegram alert checks, and only if you turned those on.</li>
   <li><b>What is stored.</b> Prices refresh on screen only. Ticks are never written to your journal;
@@ -446,6 +480,16 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
     earlier version does not cover the feed: every install reads and accepts it again before either
     path runs.</li>
 </ul>
+<h3 id="streaming">Streaming</h3>
+<p>The stream is OpenAlgo's own WebSocket, which listens on streaming port <b>8765</b> by default. On a
+default install there is nothing to do: leave <b>Streaming address</b> empty on the Import screen and
+Vyuha connects to port 8765 on the same machine as the host you saved. Running more than one
+OpenAlgo? Each instance has its own WebSocket port (<a href="#multi">section 4</a>), so copy
+<code>WEBSOCKET_URL</code> from that instance's <code>.env</code> into that connection's <b>Streaming
+address</b>. The address must be on the same machine as the host; any other machine is refused when you
+save. If the stream cannot connect, the desk asks at your interval instead, and the health line under
+Settings → Live feed says why. A host that starts with <code>https://</code> and has no streaming
+address saved is asked at your interval only.</p>
 
 <h2 id="brokers">10 · Broker-by-broker: the exact deltas</h2>
 <p>Sections 2–9 are the same for every broker. What differs is where the API key comes from and

@@ -340,6 +340,30 @@ describe("the heartbeat", () => {
     await vi.advanceTimersByTimeAsync(25_000);
     expect(frames(stream.text, "heartbeat")).toHaveLength(2);
     expect(frames(stream.text, "heartbeat")[0].provider).toBe("eod");
+    expect(frames(stream.text, "heartbeat").map((b) => "streaming" in b), "a never-subscribed stream's beat changed shape").toEqual([false, false]);
+  });
+
+  it("D-C7-2 — after the window-end unsubscribe it says `streaming: false` at once and on every later beat; before it, never", async () => {
+    process.env.VYUHA_QUOTE_PROVIDER = "mock";
+    const { liveWindowOn } = await import("@/lib/domain/market-calendar");
+    const { istWallClockIso } = await import("@/lib/domain/trading-day");
+    const end = liveWindowOn("2026-09-04")!.endMin;
+    // The window's LAST minute: it closes at the start of the next one, 60 s on.
+    const hhmm = `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(istWallClockIso("2026-09-04", hhmm)));
+    selectAccount(SWING);
+
+    const stream = reading(await get());
+    await vi.advanceTimersByTimeAsync(55_000); // two beats inside the window (25 s, 50 s)
+    expect(frames(stream.text, "tick").length, "the mock never streamed inside the window").toBeGreaterThan(0);
+    expect(frames(stream.text, "heartbeat").map((b) => b.streaming)).toEqual([undefined, undefined]);
+    await vi.advanceTimersByTimeAsync(21_000); // the window ends at 60 s; the next beat is at 75 s
+    const beats = frames(stream.text, "heartbeat");
+    expect(beats.slice(2).map((b) => b.streaming), "the window-end beat, then the 75 s beat").toEqual([false, false]);
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(frames(stream.text, "heartbeat").at(-1)?.streaming).toBe(false);
+    expect(stream.done, "the stream stays open after the window").toBe(false);
   });
 });
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { istClock, liveWindowOn } from "@/lib/domain/market-calendar";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import { isWithinLiveWindow } from "@/lib/quotes/mapping";
@@ -74,6 +75,30 @@ function openPositionKeys(): QuoteKey[] {
   return positionKeys(getTrackerTrades());
 }
 
+/**
+ * Milliseconds until the live window closes, or null outside it (v4.7.0 C7,
+ * owner answer Q4). The SAME calendar answer `isWithinLiveWindow()` gives —
+ * that predicate holds through the whole of the window's last minute
+ * (`minutes <= endMin`), so the window closes at the start of the next one.
+ * IST sits a whole number of minutes from UTC, so an IST minute boundary is a
+ * UTC minute boundary and the epoch's own minute remainder is exact.
+ */
+function msUntilLiveWindowEnd(now: Date): number | null {
+  const { date, minutes } = istClock(now);
+  const w = liveWindowOn(date);
+  if (!w || minutes < w.startMin || minutes > w.endMin) return null;
+  return (w.endMin + 1 - minutes) * 60_000 - (now.getTime() % 60_000);
+}
+
+/**
+ * Which path priced a tick batch (v4.7.0 C7, review R5): `"stream"` when at
+ * least one quote in it was pushed (`staleness: "tick"`), else `"poll"`. Per
+ * BATCH, never per instance — the strip reads the last tick's value.
+ */
+function transportOf(batch: readonly Quote[]): "stream" | "poll" {
+  return batch.some((q) => q.staleness === "tick") ? "stream" : "poll";
+}
+
 export async function GET(req: Request): Promise<Response> {
   if (!isSameOrigin(req)) {
     return NextResponse.json(
@@ -96,6 +121,15 @@ export async function GET(req: Request): Promise<Response> {
   let unsubscribe: Unsubscribe = () => {};
   let flushTimer: ReturnType<typeof setInterval> | undefined;
   let beatTimer: ReturnType<typeof setInterval> | undefined;
+  let windowTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Set once this stream's subscription has ended at the live window's end
+   * (v4.7.0 C7 fix D-C7-2, owner answer Q4). From then on every heartbeat says
+   * `streaming: false`, and `lib/live/stream-link.ts` drops the strip to
+   * `Connected · … · not streaming` and forgets the transport. A stream that
+   * never subscribed sends heartbeats WITHOUT the field, exactly as before.
+   */
+  let streamingEnded = false;
   const pending = new Map<string, Quote>();
   /**
    * The teardown, hoisted out of `start()` so `cancel()` can run the SAME one.
@@ -124,6 +158,7 @@ export async function GET(req: Request): Promise<Response> {
         closed = true;
         if (flushTimer) clearInterval(flushTimer);
         if (beatTimer) clearInterval(beatTimer);
+        if (windowTimer) clearTimeout(windowTimer);
         try {
           unsubscribe();
         } catch {
@@ -197,17 +232,52 @@ export async function GET(req: Request): Promise<Response> {
       // so the desk can never call a stale print "live".
       if (provider.capabilities.streaming && marketOpen && keys.length > 0) {
         try {
-          unsubscribe = provider.subscribe(keys, (q) => pending.set(quoteKeyId(q.key), q), req.signal);
+          // `onEnd` (v4.7.0 C7, review R2): the provider ended this
+          // subscription itself — its instance was replaced (an account
+          // switch, a key re-save, the slider). Close the stream; the client
+          // reconnects on the `retry:` hint and gets a fresh snapshot, the
+          // current account's keys and the current instance.
+          unsubscribe = provider.subscribe(
+            keys,
+            (q) => pending.set(quoteKeyId(q.key), q),
+            req.signal,
+            () => shutdown(),
+          );
+          if (closed) return;
+          const flush = () => {
+            if (pending.size === 0) return;
+            const batch = [...pending.values()];
+            pending.clear();
+            send("tick", { provider: provider.id, quotes: batch, transport: transportOf(batch) });
+          };
           // INSIDE the try, because a flush timer without a subscription is a
           // timer that can never have anything to flush: `pending` is filled
           // only by the callback above, so a refused subscribe used to leave an
           // interval waking 4× a second for the life of the connection.
-          flushTimer = setInterval(() => {
-            if (pending.size === 0) return;
-            const batch = [...pending.values()];
-            pending.clear();
-            send("tick", { provider: provider.id, quotes: batch });
-          }, COALESCE_MS);
+          flushTimer = setInterval(flush, COALESCE_MS);
+          // THE WINDOW'S END (owner answer Q4): this route unsubscribes itself
+          // when the live window closes — the stream AND the fallback poll
+          // stop, what arrived inside the window is flushed, and only
+          // heartbeats follow. Without it a desk left open polled all evening.
+          const leftMs = msUntilLiveWindowEnd(new Date());
+          if (leftMs != null) {
+            windowTimer = setTimeout(() => {
+              windowTimer = undefined;
+              if (closed) return;
+              try {
+                unsubscribe();
+              } catch {
+                /* a provider that throws on unsubscribe must not keep its timer */
+              }
+              unsubscribe = () => {};
+              flush();
+              if (flushTimer) clearInterval(flushTimer);
+              flushTimer = undefined;
+              // D-C7-2: tell the link at once, not at the next 25 s beat.
+              streamingEnded = true;
+              send("heartbeat", { at: new Date().toISOString(), provider: provider.id, streaming: false });
+            }, leftMs);
+          }
         } catch (e) {
           // The stream is NOT ended here. Ending it would drop the client onto
           // the `retry:` hint and reconnect it into the same refusal every 2–3
@@ -236,7 +306,12 @@ export async function GET(req: Request): Promise<Response> {
       }
 
       beatTimer = setInterval(() => {
-        send("heartbeat", { at: new Date().toISOString(), provider: provider.id });
+        send(
+          "heartbeat",
+          streamingEnded
+            ? { at: new Date().toISOString(), provider: provider.id, streaming: false }
+            : { at: new Date().toISOString(), provider: provider.id },
+        );
       }, HEARTBEAT_MS);
     },
 

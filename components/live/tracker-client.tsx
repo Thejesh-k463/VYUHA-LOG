@@ -620,7 +620,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   const linkLabel = !streaming
     ? null
     : link.phase === "live" && frameAgeS !== null
-      ? LIVE_STREAM_COPY.live(feed.providerId, frameAgeS)
+      ? LIVE_STREAM_COPY.live(feed.providerId, frameAgeS, link.transport)
       : link.phase === "connected"
         ? LIVE_STREAM_COPY.connected(feed.providerId)
         : link.phase === "reconnecting"

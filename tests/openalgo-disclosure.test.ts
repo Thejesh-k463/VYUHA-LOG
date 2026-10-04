@@ -167,10 +167,16 @@ describe("the live price feed disclosure (v2)", () => {
   });
 
   it("names the poll cadence and where the user sets it", () => {
-    // lib/quotes/openalgo.ts:59-71 clamps to 1–5 s; :413 is the interval.
-    expect(all).toMatch(/every 1 to 5 seconds|1 to 5 seconds/i);
+    // `clampRefreshSeconds()` clamps to 1–5 s. Since v4.7.0 C7 that is the
+    // FALLBACK interval — the stream prices the desk in market hours — so the
+    // range is stated, but never again as the primary cadence.
+    expect(all).toMatch(/1 to 5 seconds/i);
     expect(all).toMatch(/Settings → Live feed/);
     expect(all).toMatch(/while the Live Desk is open|when the Live Desk opens/i);
+    expect(all, "the sheet still says it asks every 1 to 5 seconds as the primary cadence").not.toMatch(
+      /It asks every 1 to 5 seconds/i,
+    );
+    expect(OPENALGO_FEED_ITEMS[1].body).toMatch(/holds one streaming connection to your bridge/);
   });
 
   it("names EXACTLY what the request body carries, and what it does not", () => {

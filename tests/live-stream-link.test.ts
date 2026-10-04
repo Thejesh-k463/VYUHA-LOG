@@ -8,7 +8,9 @@ import {
   createStreamLink,
   linkStateFor,
   msUntilCloseReopen,
+  nextTransport,
   parseSymbolCount,
+  parseTransport,
   streamKeyOf,
   type LinkState,
   type StreamSource,
@@ -496,5 +498,86 @@ describe("the snapshot frame states how many symbols this stream is about (A-5)"
     expect(parseSymbolCount({ symbols: -1 })).toBeNull();
     expect(parseSymbolCount(null)).toBeNull();
     expect(parseSymbolCount("snapshot")).toBeNull();
+  });
+});
+
+/* ───────────── v4.7.0 C7 — which path priced the last tick batch ───────────── */
+
+/**
+ * `app/api/live/stream/route.ts` writes `transport: "stream" | "poll"` on every
+ * `tick` frame (`transportOf()`: "stream" when at least one quote in the batch
+ * was pushed). The link carries the LAST one so the strip can say
+ * `Live · OpenAlgo stream · 3 s` / `… poll …` (design D11, review R5).
+ */
+describe("the link carries the last tick's transport (v4.7.0 C7)", () => {
+  it("a tick sets it, a heartbeat keeps it, and the next tick replaces it", () => {
+    const h = harness(IST_1600);
+    h.link.open();
+    const s = h.sources[0];
+    s.emit("snapshot", { symbols: 1, quotes: [QUOTE] });
+    expect(h.last()?.transport, "a snapshot is a request, never a streamed batch").toBeNull();
+
+    s.emit("tick", { provider: "openalgo", quotes: [QUOTE], transport: "stream" });
+    expect(h.last()?.phase).toBe("live");
+    expect(h.last()?.transport, "the route's transport was dropped").toBe("stream");
+
+    s.emit("heartbeat", { at: "x", provider: "openalgo" });
+    expect(h.last()?.transport, "a heartbeat carries no batch and must not erase the last one").toBe("stream");
+
+    s.emit("tick", { provider: "openalgo", quotes: [QUOTE], transport: "poll" });
+    expect(h.last()?.transport).toBe("poll");
+    h.link.destroy();
+  });
+
+  it("a NEW connection's snapshot clears it — a reconnect never inherits the old answer", () => {
+    const h = harness(IST_1600);
+    h.link.open();
+    h.sources[0].emit("tick", { quotes: [QUOTE], transport: "stream" });
+    expect(h.last()?.transport).toBe("stream");
+    h.link.open(); // a re-establish
+    h.sources[1].emit("snapshot", { symbols: 1, quotes: [QUOTE] });
+    expect(h.last()?.transport).toBeNull();
+    h.link.destroy();
+  });
+
+  it("only the two strings the route writes are a transport", () => {
+    expect(parseTransport({ transport: "stream" })).toBe("stream");
+    expect(parseTransport({ transport: "poll" })).toBe("poll");
+    expect(parseTransport({ transport: "STREAM" })).toBeNull();
+    expect(parseTransport({ transport: 1 })).toBeNull();
+    expect(parseTransport({})).toBeNull();
+    expect(parseTransport(null)).toBeNull();
+    expect(nextTransport("stream", { quotes: [] }), "a quote-bearing frame that names none clears").toBeNull();
+    expect(nextTransport("poll", { at: "x" }), "any other frame keeps").toBe("poll");
+    expect(nextTransport("stream", { at: "x", streaming: false }), "an ended subscription clears").toBeNull();
+    expect(LINK_IDLE.transport).toBeNull();
+  });
+
+  it("D-C7-2 — a `streaming: false` heartbeat (the route's window-end unsubscribe) drops a live link to CONNECTED and clears the transport", () => {
+    const h = harness(IST_1600);
+    h.link.open();
+    const s = h.sources[0];
+    s.emit("snapshot", { symbols: 1, quotes: [QUOTE] });
+    s.emit("tick", { provider: "openalgo", quotes: [QUOTE], transport: "stream" });
+    expect(h.last()).toMatchObject({ phase: "live", transport: "stream" });
+    s.emit("heartbeat", { at: "x", provider: "openalgo", streaming: false });
+    expect(h.last()).toMatchObject({ phase: "connected", transport: null, reason: null, symbolCount: 1 });
+    // Later plain-shaped heartbeats of the same ended stream keep it connected.
+    s.emit("heartbeat", { at: "y", provider: "openalgo", streaming: false });
+    expect(h.last()?.phase).toBe("connected");
+    h.link.destroy();
+  });
+
+  it("D-C7-2 — only the boolean `false` ends it; a stopped verdict stays terminal", () => {
+    const h = harness(IST_1600);
+    h.link.open();
+    const s = h.sources[0];
+    s.emit("tick", { provider: "openalgo", quotes: [QUOTE], transport: "poll" });
+    for (const streaming of [0, "false", null, true]) s.emit("heartbeat", { at: "x", streaming });
+    expect(h.last()).toMatchObject({ phase: "live", transport: "poll" });
+    s.emit("error", { message: "OpenAlgo is not answering." });
+    s.emit("heartbeat", { at: "z", streaming: false });
+    expect(h.last()).toMatchObject({ phase: "stopped", reason: "OpenAlgo is not answering." });
+    h.link.destroy();
   });
 });

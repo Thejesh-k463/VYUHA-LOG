@@ -12,6 +12,7 @@ import {
   type OpenAlgoHealth,
 } from "@/lib/quotes/openalgo";
 import { quoteKeyId, type QuoteKey } from "@/lib/quotes/types";
+import { OPENALGO_WS_PORT } from "@/lib/import/api/openalgo";
 
 /**
  * The OpenAlgo quote provider (v4.1, owner answers Q20/Q21/Q25).
@@ -157,6 +158,8 @@ describe("subscribe", () => {
       readGate: async () => READY,
       fetchImpl: fetchImpl as unknown as typeof fetch,
       refreshSeconds: 2,
+      // No socket in a poll test: outside the live window the stream never opens (C7).
+      isLiveWindow: () => false,
     });
     const seen: number[] = [];
     const stop = p.subscribe([RELIANCE], (q) => seen.push(q.ltp));
@@ -182,6 +185,8 @@ describe("subscribe", () => {
       readGate: async () => READY,
       fetchImpl: fetchImpl as unknown as typeof fetch,
       refreshSeconds: 3,
+      // No socket in a poll test: outside the live window the stream never opens (C7).
+      isLiveWindow: () => false,
     });
     const seen: number[] = [];
     const stop = p.subscribe([RELIANCE], (q) => seen.push(q.ltp));
@@ -202,6 +207,8 @@ describe("subscribe", () => {
       readGate: async () => READY,
       fetchImpl: fetchImpl as unknown as typeof fetch,
       refreshSeconds: 1,
+      // No socket in a poll test: outside the live window the stream never opens (C7).
+      isLiveWindow: () => false,
     });
     const ac = new AbortController();
     const seen: number[] = [];
@@ -301,5 +308,55 @@ describe("ticks are never persisted", () => {
     expect(OPENALGO_CAPABILITIES.egressDescription).toMatch(/host you configured/i);
     expect(OPENALGO_CAPABILITIES.requiresDailyAuth).toBe(true);
     expect(OPENALGO_CAPABILITIES.streaming).toBe(true);
+  });
+
+  it("v4.7.0 C7 — names the streaming port FROM the constant, and the staleness floor stays 'delayed' (D5, D12, R6 d)", () => {
+    expect(OPENALGO_CAPABILITIES.egressDescription).toContain(`streaming port ${OPENALGO_WS_PORT}`);
+    const src = readFileSync(path.join(process.cwd(), "lib/quotes/openalgo.ts"), "utf8");
+    expect(src, "the port is spelled as a number instead of the constant").not.toMatch(/\b8765\b/);
+    expect(OPENALGO_CAPABILITIES.staleness).toBe("delayed");
+  });
+});
+
+describe("v4.7.0 C7 — health() reports the stream on every branch and never opens a socket (D11)", () => {
+  const OFF = { state: "off", reason: null, since: null };
+  const gates: [string, FeedGateState][] = [
+    ["disabled", { state: "disabled", reason: "The OpenAlgo integration is off." }],
+    ["no-key", { state: "no-key", reason: "Connect your feed." }],
+    ["ready", READY],
+  ];
+  for (const [label, gate] of gates) {
+    it(`${label}: health().stream is present, 'off' before any subscription`, async () => {
+      const opened: string[] = [];
+      const p = createOpenAlgoProvider({
+        readGate: async () => gate,
+        fetchImpl: (async () => jsonResponse({ status: "success", data: {} })) as unknown as typeof fetch,
+        isLiveWindow: () => true,
+        webSocketImpl: class {
+          readyState = 0;
+          constructor(url: string) {
+            opened.push(url);
+          }
+          addEventListener() {}
+          send() {}
+          close() {}
+        },
+      });
+      const h = (await p.health()) as OpenAlgoHealth;
+      expect(h.stream).toEqual(OFF);
+      expect(opened).toEqual([]);
+    });
+  }
+
+  it("the unreachable branch carries it too", async () => {
+    const p = createOpenAlgoProvider({
+      readGate: async () => READY,
+      fetchImpl: (async () => {
+        throw new Error("ECONNREFUSED");
+      }) as unknown as typeof fetch,
+    });
+    const h = (await p.health()) as OpenAlgoHealth;
+    expect(h.state).toBe("unreachable");
+    expect(h.stream).toEqual(OFF);
   });
 });

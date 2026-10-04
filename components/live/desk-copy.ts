@@ -17,6 +17,7 @@
  */
 
 import { angelOneCadenceSeconds } from "@/lib/quotes/types";
+import type { LinkTransport } from "@/lib/live/stream-link";
 
 /** The em dash every un-computable figure renders. Never a 0, never "N/A". */
 export const EM_DASH = "—";
@@ -256,7 +257,9 @@ export const POSITIONS_COPY = {
  * WHY IT IS SAID AT ALL. `GET /api/live/stream` shipped in v4.0 and nothing
  * consumed it, so the desk's prices moved only on a server render while the
  * disclosure, PRIVACY and the Settings slider all described a 1–5 s refresh
- * "while the Live Desk is open". Now that the desk really holds the stream, the
+ * "while the Live Desk is open" (since v4.7.0 C7 the OpenAlgo bridge streams in
+ * market hours and the slider is the fallback interval for whatever the stream
+ * has not priced — see `live` below). Now that the desk really holds the stream, the
  * user has to be able to see whether it is holding it — a price that stopped
  * moving and a market that stopped moving look identical.
  *
@@ -266,8 +269,24 @@ export const POSITIONS_COPY = {
  * Nothing here upgrades a delayed print into a tick.
  */
 export const LIVE_STREAM_COPY = {
-  /** `<provider> · 3 s` — the age of the last frame, on the 30 s desk clock. */
-  live: (provider: string, seconds: number) => `Live · ${provider} · ${seconds} s`,
+  /**
+   * `<provider> · 3 s` — the age of the last frame, on the 30 s desk clock.
+   *
+   * v4.7.0 C7 (design D11, review R5): for the OpenAlgo bridge ONLY, the strip
+   * also says which path priced the LAST tick batch — `Live · OpenAlgo stream ·
+   * 3 s` when at least one quote in it was pushed by the bridge's stream,
+   * `Live · OpenAlgo poll · 3 s` when every quote came from the slider-interval
+   * request (`transportOf()` in app/api/live/stream/route.ts, carried by
+   * `LinkState.transport` in lib/live/stream-link.ts). Every other provider —
+   * the mock the e2e harness runs on included, whose ticks also say "stream" —
+   * and an OpenAlgo link that has not yet received a tick print exactly what
+   * they printed before C7. Still a claim about the PIPE: each row keeps its
+   * own "Last traded" / "Delayed" label.
+   */
+  live: (provider: string, seconds: number, transport?: LinkTransport | null) =>
+    provider === "openalgo" && (transport === "stream" || transport === "poll")
+      ? `Live · OpenAlgo ${transport} · ${seconds} s`
+      : `Live · ${provider} · ${seconds} s`,
   /**
    * The pipe is OPEN and NOTHING IS STREAMING DOWN IT — the state "Live" used
    * to be printed over.

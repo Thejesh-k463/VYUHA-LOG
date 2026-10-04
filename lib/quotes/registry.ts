@@ -549,7 +549,25 @@ export async function liveFeedInstanceKey(id: ProviderId, refreshSeconds: number
  * needs no reset, because the key already carries both.
  */
 export function resetLiveFeedProviderCache(): void {
+  const previous = cachedLiveFeedProvider;
   cachedLiveFeedProvider = null;
+  if (previous) disposeQuietly(previous.provider);
+}
+
+/**
+ * v4.7.0 C7 (design D8, review R1 b): an instance that leaves the slot is
+ * DISPOSED — for OpenAlgo that closes its socket and ends every subscription it
+ * still holds (`onEnd`, review R2), so a replaced instance can never keep
+ * streaming one account's key behind another account's desk. A provider
+ * without `dispose` holds nothing open. Never throws: a slot change must not
+ * cost the caller its new instance.
+ */
+function disposeQuietly(provider: QuoteProvider): void {
+  try {
+    provider.dispose?.();
+  } catch {
+    /* a provider that throws on dispose must not break the registry */
+  }
 }
 
 /**
@@ -565,12 +583,27 @@ export async function getLiveFeedProvider(): Promise<QuoteProvider> {
   const feed = await resolveLiveFeed();
   const env = process.env.VYUHA_QUOTE_PROVIDER;
   const id = env && env.trim() ? resolveProviderId(env) : feed.effective;
-  if (!MEMOISED_PROVIDER_IDS.includes(id)) return createProvider(id, feed.refreshSeconds);
+  if (!MEMOISED_PROVIDER_IDS.includes(id)) {
+    // REVIEW R1 b: switching to a feed that is not memoised (end-of-day, typed
+    // marks, OpenAlgo switched off) used to return here and leave the cached
+    // instance — and its socket — alive in the slot. The effective id differs
+    // from the cached one, so the slot is cleared and its instance disposed.
+    const previous = cachedLiveFeedProvider;
+    if (previous) {
+      cachedLiveFeedProvider = null;
+      disposeQuietly(previous.provider);
+    }
+    return createProvider(id, feed.refreshSeconds);
+  }
 
   const key = await liveFeedInstanceKey(id, feed.refreshSeconds);
   if (cachedLiveFeedProvider && cachedLiveFeedProvider.key === key) return cachedLiveFeedProvider.provider;
+  const previous = cachedLiveFeedProvider;
   const provider = createProvider(id, feed.refreshSeconds);
   cachedLiveFeedProvider = { key, provider, dbPath: process.env.VYUHA_DB_PATH ?? "" };
+  // The REPLACED instance is disposed (design D8) — after the slot holds the
+  // new one, so a caller that races this one never reads a disposed instance.
+  if (previous) disposeQuietly(previous.provider);
   return provider;
 }
 

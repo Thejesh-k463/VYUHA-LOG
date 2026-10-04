@@ -22,6 +22,12 @@
 // Nothing here may claim accuracy the adapter does not deliver — the pull
 // computes statutory charges, it does not receive them, and it covers one day.
 
+// The streaming port is written ONCE, beside the address rules that use it
+// (v4.7.0 C7, review R6 d). That module is client-safe (no `server-only`, no DB)
+// and the Import card already ships it; tests/openalgo-stream-copy.test.ts pins
+// that no other file under lib/ app/ components/ writes the number itself.
+import { OPENALGO_WS_PORT } from "@/lib/import/api/openalgo";
+
 /**
  * Bump ONLY when the risk statement materially changes — a typo fix is not a
  * new disclosure, a new risk is. Bumping re-prompts every install that had
@@ -68,9 +74,17 @@
  * the same `openAlgoGate` (app/api/import/broker/route.ts,
  * `currentOpenAlgoGate()`) — so the release notes say so.
  *
- * "5" is NOT final for v4.7.0: wave C7 AMENDS the "5" text before v4.7.0 ships
- * rather than bumping to "6" (the D-6 precedent above — no install accepts "5"
- * before the release, so a second number would re-prompt nobody twice).
+ * "5" AMENDED before release (v4.7.0 wave C7, owner answers 2026-10-05,
+ * DECISIONS "owner answers before v4.7.0 wave C7"), never bumped to "6" — the
+ * D-6 precedent above: no install accepts "5" before v4.7.0 ships, so a second
+ * number would re-prompt nobody twice. What changed in the text: in market
+ * hours the desk now holds ONE WebSocket to the bridge
+ * (lib/quotes/openalgo-stream.ts) and polls only the symbols that socket has
+ * not answered for (item 2); the socket carries the key once per connection
+ * and the same symbols (item 3); and it goes to the same machine as the saved
+ * address, on OpenAlgo's WS port or the instance's own WS address (item 5).
+ * The "ticks are never written" item is unchanged and still true — the socket
+ * module has no database access. Once v4.7.0 is published, "5" is frozen.
  */
 export const OPENALGO_DISCLOSURE_VERSION = "5";
 
@@ -137,8 +151,10 @@ export const OPENALGO_WHAT_IT_DOES: DisclosureItem[] = [
 /**
  * THE LIVE PRICE FEED (disclosure v2, v4.1). Kept as its own array rather than
  * folded into WHAT_IT_DOES because it is a second, separately-switched use of
- * the SAME instance: the pull is one request the user presses, this one repeats
- * every few seconds on its own while a screen is open. The dialog renders it
+ * the SAME instance: the pull is one request the user presses, this one runs on
+ * its own while a screen is open — since v4.7.0 C7 a price stream in market
+ * hours, plus a poll at the slider interval for whatever the stream has not
+ * priced. The dialog renders it
  * under its own heading for that reason.
  *
  * Every sentence below is checked against the code that performs it, and the
@@ -159,8 +175,44 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       "The Live Desk prices your open positions from the end-of-day bhavcopy, or from marks you type, until you pick the OpenAlgo bridge as its source in Settings → Live feed. That choice is yours and reversible, and it is offered only while this disclosure is accepted and the integration is on.",
   },
   {
-    title: "It asks every 1 to 5 seconds while the Live Desk is open — and, with Telegram alerts on, about once a minute",
+    title:
+      "During market hours it holds one price stream while the Live Desk is open, and asks at your interval only for what the stream has not priced — and, with Telegram alerts on, about once a minute",
     body:
+      // v "5" AMENDED (C7, design D1/D6/D10, owner answers Q2–Q4):
+      // • ONE streaming connection per bridge: `createOpenAlgoStream()` in
+      //   lib/quotes/openalgo-stream.ts, held by the memoised provider and
+      //   opened lazily by the first `subscribe()` (never by `snapshot()` or
+      //   `health()`), never outside `isWithinLiveWindow()`.
+      // • "no streamed price for 30 seconds" = `STREAM_QUIET_MS` (30_000) in
+      //   that file — `isQuiet()`; the provider's `pump()` in
+      //   lib/quotes/openalgo.ts asks `/multiquotes` for the quiet keys ONLY,
+      //   and for none when every key is fresh. "every symbol while the stream
+      //   is unavailable": a closed / refused / not-yet-open socket leaves every
+      //   key quiet, so the same rule polls them all.
+      // • the slider interval: `clampRefreshSeconds()` (REFRESH_SECONDS_MIN /
+      //   MAX), the `setInterval(() => void pump(true), periodMs)` in
+      //   `subscribe()`; the 10 req/s ceiling: `RATE_LIMIT_PER_SECOND` through
+      //   `createRateGuard()`, which REFUSES rather than queues.
+      // • "stop when it closes or when its tab goes to the background": the
+      //   desk's SSE stream closes on a hidden tab (S5a in
+      //   tests/seams-v41-fix.test.ts) and app/api/live/stream/route.ts
+      //   unsubscribes on abort; the poll stops with the last subscription.
+      // • "at the end of the live window": the stream route's own window-end
+      //   unsubscribe (`msUntilLiveWindowEnd()` → `windowTimer` in
+      //   app/api/live/stream/route.ts, owner answer Q4), the same calendar
+      //   answer `isWithinLiveWindow()` gives (`liveWindowOn()` in
+      //   lib/domain/market-calendar.ts — its end is the latest official-close
+      //   availability, 15:45 IST on a normal day).
+      // • "within 30 seconds of the desk closing": `STREAM_CLOSE_GRACE_MS`
+      //   (30_000) — zero held keys closes the socket after that grace, so a
+      //   reload inside it reuses the connection without a fresh sign-in.
+      // • "outside the live window … asks for the last prices once each time it
+      //   connects": the route's unconditional `provider.snapshot(keys)` before
+      //   its `send("snapshot", …)`; it subscribes only when `marketOpen`.
+      // The Telegram sentence is unchanged from C5 (its one REST `snapshot()`
+      // per run never reads the stream — design D9).
+      //
+      // v "5" (C5): the desk's poll is unchanged — it still starts and stops
       // v "5" (C5): the desk's poll is unchanged — it still starts and stops
       // with the desk and pauses on a hidden tab (S5a in
       // tests/seams-v41-fix.test.ts holds the client to that). What is NEW is
@@ -182,11 +234,21 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // `signal` abort). Ceiling: RATE_LIMIT_PER_SECOND = 10 (:64), enforced
       // by `createRateGuard()` (:290-300, whose `take(now)` returns false past
       // the limit), which REFUSES rather than queues.
-      "You set the interval on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code. The desk's requests start when the Live Desk opens and stop when it closes or when its tab goes to the background, and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says. Only if you turn on Telegram stop/target alerts (Pro), Vyuha also asks the bridge for the prices of your open positions about once a minute during market hours while Vyuha is open on any screen, minimised included (more often while the Live Desk is open). With more than one account, every account's checked symbols go through one bridge connection: the one already open, which is the one the Live Desk last used, or else the selected account's.",
+      "During market hours, while the Live Desk is open, the desk holds one streaming connection to your bridge and receives prices as they change. A symbol with no streamed price for 30 seconds — and every symbol while the stream is unavailable — is asked for the old way, at the interval you set on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code, and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says. The stream and the asking start when the Live Desk opens and stop when it closes or when its tab goes to the background, and at the end of the live window (about 15:45 IST on a normal day); the streaming connection itself closes within 30 seconds of the desk closing. Outside the live window nothing streams and nothing repeats: the desk asks for the last prices once each time it connects. Only if you turn on Telegram stop/target alerts (Pro), Vyuha also asks the bridge for the prices of your open positions about once a minute during market hours while Vyuha is open on any screen, minimised included (more often while the Live Desk is open). With more than one account, every account's checked symbols go through one bridge connection: the one already open, which is the one the Live Desk last used, or else the selected account's.",
   },
   {
-    title: "Each request carries your symbols, and nothing about your book",
+    title: "Each request, and the stream, carries your symbols and nothing about your book",
     body:
+      // v "5" AMENDED (C7, review R10): THE STREAM'S MESSAGES. On every new
+      // connection the socket sends `{ action: "authenticate", api_key }` once
+      // (the `send({ action: "authenticate", … })` in the socket's open handler,
+      // lib/quotes/openalgo-stream.ts) — once PER CONNECTION, so a reconnect
+      // signs in again; then `sendSubscription()` sends `{ action: "subscribe" |
+      // "unsubscribe", symbols: [{ symbol, exchange }], mode: STREAM_MODE,
+      // request_id }` with the SAME symbol strings the REST body carries. The
+      // key appears in no other frame, log line or `health()` answer. The key
+      // list is still the route's `openPositionKeys()`.
+      //
       // The body is exactly `{ apikey, symbols: [{ symbol, exchange }] }` —
       // built at lib/quotes/openalgo.ts:357-361 (`snapshot()`: the
       // `keys.slice(0, …).map((k) => ({ symbol, exchange }))` through
@@ -204,7 +266,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // can alert right now (a recorded stop / trailing stop / target, their
       // market trading — design review R8), built by the shared key builder;
       // still no quantity, price paid, stop or account name in the request.
-      "One request holds your OpenAlgo API key and a list of the trading symbols and exchanges of the positions your book has open — at most 500 of them. Your quantities, entry prices, stops, P&L and account names are not in it: the bridge is told which scrips to price, never how much of them you hold or what you paid.",
+      "One request holds your OpenAlgo API key and a list of the trading symbols and exchanges of the positions your book has open — at most 500 of them. The stream carries the same two things: your API key once per connection, in the message that signs it in, and the same symbols and exchanges in the messages that start and stop each symbol's prices. Your quantities, entry prices, stops, P&L and account names are in neither: the bridge is told which scrips to price, never how much of them you hold or what you paid.",
   },
   {
     title: "A /funds request and a version read when the feed is checked, and when the desk connects",
@@ -245,13 +307,32 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // Telegram path is named as a SEPARATE egress with its own disclosure —
       // a Telegram alert carries a symbol and its price to Telegram's Bot API,
       // which only lib/telegram/send.ts dials, never this adapter.
-      "By default the feed talks to your own OpenAlgo at http://127.0.0.1:5000 — this machine talking to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to that machine every few seconds while the desk is open, and about once a minute during market hours while Telegram alerts are on. Vyuha adds no other host for prices, and no market-data provider of its own. A Telegram alert, if you turn those on, is a separate path with its own disclosure.",
+      // v "5" AMENDED (C7, owner answer D2'): THE STREAM'S ADDRESS. Its only
+      // source is `openAlgoStreamUrl(host, wsUrl)` in lib/import/api/openalgo.ts
+      // (pinned as the socket constructor's ONLY url source by
+      // tests/egress-guard.test.ts): the saved host's own HOSTNAME on
+      // `OPENALGO_WS_PORT`, or the streaming address saved on the connection,
+      // which `normalizeOpenAlgoStreamUrl()` refuses unless its hostname EQUALS
+      // the bridge's (scheme ws: / wss: only, no user name or password) — the
+      // save route answers 400 with that reason. So "the same machine" is
+      // enforced at save time and re-checked at connect time. An `https://`
+      // bridge with no saved streaming address gets no stream (polling only).
+      // `ws://` carries no TLS, exactly like the default `http://` REST host.
+      "By default the feed talks to your own OpenAlgo at http://127.0.0.1:5000 — this machine talking to itself, so no symbol leaves it. The price stream goes to the same machine as the address you saved: to OpenAlgo's streaming port " +
+      `${OPENALGO_WS_PORT}` +
+      ", unless you enter that instance's streaming address (WEBSOCKET_URL in its .env) on the connection, and Vyuha refuses a streaming address on any other machine. Like the http:// address, a ws:// stream is not encrypted. If you enter another address, that list of symbols travels to that machine while the desk is open — over the stream in market hours, and at your interval for what the stream has not priced — and about once a minute during market hours while Telegram alerts are on. Vyuha adds no other host for prices, and no market-data provider of its own. A Telegram alert, if you turn those on, is a separate path with its own disclosure.",
   },
   {
     title: "Prices refresh on screen only — ticks are never written",
     body:
-      // `subscribe()` writes nothing anywhere (lib/quotes/openalgo.ts:392-428,
-      // `subscribe(keys, onTick, signal)` — its `poll()` only calls `onTick`);
+      // v "5" AMENDED (C7): STILL TRUE WITH THE STREAM. lib/quotes/openalgo-stream.ts
+      // imports no database module — a streamed frame becomes a `Quote` in
+      // `quoteFromStreamFrame()` and goes to `onTick` and nowhere else — and
+      // the provider's `pump()` (its REST fallback) only delivers to the same
+      // listeners. tests/openalgo-stream-copy.test.ts pins the absence of a DB
+      // import in the stream module.
+      // `subscribe()` writes nothing anywhere (lib/quotes/openalgo.ts,
+      // `subscribe(keys, onTick, signal, onEnd)` — its `pump()` only delivers);
       // the single write is `lib/quotes/persist-mark.ts`, one row per position
       // per IST day into `mtm_prices`, idempotent twice over (its header, and
       // `settings.last_live_mark_date`, migration 0067). Wording deliberately
@@ -298,9 +379,10 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // `not.toMatch` regulator ban on `dailyReauth`) keeps out of it.
       // `capabilities.requiresDailyAuth` (lib/quotes/openalgo.ts:93, in
       // OPENALGO_CAPABILITIES) is the flag; a failed poll is swallowed
-      // (:412-414, the bare `} catch {` in `poll()` whose only content is the
-      // comment "one failed poll is not the end of the subscription", closing
-      // into `} finally {`), so the last price stays, labelled with its
+      // (the bare `} catch {` in `pump()` whose only content is the comment
+      // "one failed poll is not the end of the subscription", closing into
+      // `} finally {`), and an expired broker session sends the stream no
+      // frames, so the last price stays, labelled with its
       // own date by `stalenessLabel()` (the `<Badge>` inside `StalenessChip`,
       // components/live/tracker-client.tsx — grep the name, that file moves).
       "The broker session behind OpenAlgo expires every day and has to be signed in again at OpenAlgo's own screen; that is the broker's rule, not Vyuha's. Until it is, prices stop arriving — the desk keeps the last mark it had, labelled with the date it belongs to, rather than blanking or guessing.",

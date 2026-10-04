@@ -401,6 +401,9 @@ describe("the live stream's connection line says what it can support", () => {
   it("never upgrades a delayed print into a tick, and never names a price", () => {
     const lines = [
       LIVE_STREAM_COPY.live("openalgo", 3),
+      // v4.7.0 C7: "stream" / "poll" name the PATH, never the data's provenance.
+      LIVE_STREAM_COPY.live("openalgo", 3, "stream"),
+      LIVE_STREAM_COPY.live("openalgo", 3, "poll"),
       LIVE_STREAM_COPY.connected("openalgo"),
       LIVE_STREAM_COPY.connecting,
       LIVE_STREAM_COPY.reconnecting,

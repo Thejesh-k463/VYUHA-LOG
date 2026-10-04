@@ -1,6 +1,7 @@
 import "server-only";
 import { isAckCurrent, openAlgoGate } from "@/lib/domain/openalgo-disclosure";
-import { normalizeHost, openAlgoFeedVersionWarning, readOpenAlgoVersion } from "@/lib/import/api/openalgo";
+import { normalizeHost, OPENALGO_WS_PORT, openAlgoFeedVersionWarning, readOpenAlgoVersion } from "@/lib/import/api/openalgo";
+import { createOpenAlgoStream, num, type OpenAlgoStreamHealth, type OpenAlgoStreamOptions } from "./openalgo-stream";
 import { createRateGuard } from "./rate-guard";
 import {
   quoteKeyId,
@@ -92,8 +93,9 @@ export const OPENALGO_CAPABILITIES: ProviderCapabilities = {
   // pinned verbatim by tests/live-feed-copy.test.ts; this comment must keep
   // matching it. The desk says it once a day (Q24).
   requiresDailyAuth: true,
-  egressDescription:
-    "None beyond your own machine by default: requests go to your own OpenAlgo bridge on 127.0.0.1 (or the host you configured in Settings → Integrations, which is your choice and may be another machine on your network).",
+  // v4.7.0 C7 (design D12): the stream goes to the SAME machine, on OpenAlgo's
+  // streaming port — the constant, never a second spelling of the number.
+  egressDescription: `None beyond your own machine by default: requests go to your own OpenAlgo bridge on 127.0.0.1, and while the Live Desk is open in market hours a price stream on its streaming port ${OPENALGO_WS_PORT} (or the host you configured in Settings → Integrations, which is your choice and may be another machine on your network).`,
 };
 
 /** What the provider needs before it may make a single request. */
@@ -101,6 +103,12 @@ export interface OpenAlgoFeedCredentials {
   apiKey: string;
   /** Base URL as the user saved it, e.g. http://127.0.0.1:5000 */
   host: string;
+  /**
+   * v4.7.0 C7 (owner answer D2'): the instance's own streaming address, when
+   * the user saved one (vault `authJson.wsUrl`). Absent → the default derived
+   * from `host` by `openAlgoStreamUrl()`.
+   */
+  wsUrl?: string | null;
 }
 
 export type FeedGateState =
@@ -123,15 +131,24 @@ export interface OpenAlgoHealth extends ProviderHealth {
    * refuses, and the card says so beside "Feed OK". Null otherwise.
    */
   warning?: string | null;
+  /**
+   * v4.7.0 C7 (design D11, review R5): the WebSocket stream's state — REPORTED
+   * from memory, never probed (`health()` opens no socket).
+   */
+  stream: OpenAlgoStreamHealth;
 }
 
 export interface OpenAlgoProviderOptions {
   readGate?: FeedGateReader;
-  /** On-screen refresh; clamped to 1–5 s whatever is passed. */
+  /** On-screen refresh; clamped to 1–5 s whatever is passed. Since C7, the FALLBACK poll's interval. */
   refreshSeconds?: number;
   /** Injected in tests so the rate-limit window is deterministic. */
   now?: () => number;
   fetchImpl?: typeof fetch;
+  /** Injected in tests; the default is the market calendar's live window. */
+  isLiveWindow?: (now: Date) => boolean;
+  /** TEST SEAM ONLY — the registry passes none (tests/egress-guard.test.ts). */
+  webSocketImpl?: OpenAlgoStreamOptions["webSocketImpl"];
 }
 
 /* ────────────────────────── the default gate reader ─────────────────────── */
@@ -158,7 +175,7 @@ async function readGateFromDb(): Promise<FeedGateState> {
   const { settings, brokerConnections } = await import("@/lib/db/schema");
   const { readSecret } = await import("@/lib/vault");
   const { getSelectedAccountId } = await import("@/lib/queries/accounts");
-  const { desc, like } = await import("drizzle-orm");
+  const { desc, like, sql } = await import("drizzle-orm");
 
   const s = db
     .select({ enabled: settings.openalgoEnabled, ackVersion: settings.openalgoAckVersion })
@@ -177,7 +194,12 @@ async function readGateFromDb(): Promise<FeedGateState> {
     })
     .from(brokerConnections)
     .where(like(brokerConnections.broker, "openalgo%"))
-    .orderBy(desc(brokerConnections.updatedAt))
+    // D-C7-3: "most recently updated" by INSTANT, not by text. An insert used
+    // to stamp SQLite's "YYYY-MM-DD HH:MM:SS" and an update a JS ISO string,
+    // and "T" sorts above " " — an older re-saved row outranked a newer one.
+    // julianday() reads both (and keeps the milliseconds datetime() drops), so
+    // rows already stored in mixed formats order correctly with no migration.
+    .orderBy(desc(sql`julianday(${brokerConnections.updatedAt})`), desc(brokerConnections.id))
     .all();
   const scoped = accountId > 0 ? rows.filter((r) => r.accountId === accountId) : rows;
 
@@ -185,16 +207,19 @@ async function readGateFromDb(): Promise<FeedGateState> {
     const key = readSecret(row.apiKey);
     if (!key.ok || !key.value) continue;
     let host: string | null = null;
+    let wsUrl: string | null = null;
     const auth = readSecret(row.authJson);
     if (auth.ok && auth.value) {
       try {
-        host = (JSON.parse(auth.value) as { host?: string }).host ?? null;
+        const parsed = JSON.parse(auth.value) as { host?: string; wsUrl?: unknown };
+        host = parsed.host ?? null;
+        wsUrl = typeof parsed.wsUrl === "string" && parsed.wsUrl ? parsed.wsUrl : null;
       } catch {
         host = null;
       }
     }
     if (!host) continue;
-    return { state: "ready", creds: { apiKey: key.value, host } };
+    return { state: "ready", creds: { apiKey: key.value, host, wsUrl } };
   }
   return {
     state: "no-key",
@@ -234,11 +259,8 @@ interface OpenAlgoQuoteRow extends OpenAlgoQuoteFields {
   data?: OpenAlgoQuoteFields | null;
 }
 
-function num(v: unknown): number | null {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
+// `num()` lives in `./openalgo-stream` since C7 — ONE tolerance rule for the
+// REST rows and the streamed frames (design D4).
 
 function paiseOrNull(v: unknown): Paise | null {
   const n = num(v);
@@ -320,6 +342,95 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
   const periodMs = clampRefreshSeconds(opts.refreshSeconds ?? REFRESH_SECONDS_DEFAULT) * 1000;
   const guard = createRateGuard();
 
+  /**
+   * v4.7.0 C7 — every live subscription on this instance. ONE poll and ONE
+   * socket serve them all; each keeps its OWN emit-on-change signatures, so a
+   * desk receives only its own keys (and a second desk on the same keys gets
+   * its own first tick).
+   */
+  interface Held {
+    keys: Map<string, QuoteKey>;
+    onTick: TickListener;
+    lastSig: Map<string, string>;
+    /** End it from the provider's side: release, then `onEnd` — at most once. */
+    end: () => void;
+  }
+  let subs: Held[] = [];
+  let pumpTimer: ReturnType<typeof setInterval> | null = null;
+  let pumping = false;
+  let disposed = false;
+
+  /**
+   * v4.7.0 C7 fix D-C7-1 (invariant 8): the CREDENTIAL identity this instance
+   * serves — (apiKey, host, wsUrl) of the row its FIRST ready gate read
+   * returned, pinned whether or not a socket ever opened (an https bridge or a
+   * desk outside the window never opens one, so the stream's own identity
+   * check alone cannot see a switch). The gate follows the SELECTED account,
+   * and an instance's subscriptions hold the keys of the account they were
+   * opened for: a later gate read naming another connection — the selection
+   * switched in another tab, or before the desk's refresh re-keys the registry
+   * — must not poll those keys with that connection. The instance RETIRES its
+   * subscriptions instead: each ends exactly once (`onEnd`, as `dispose()`
+   * does), the route closes the SSE, and the desk reconnects onto the current
+   * account and the current instance. One-shot `snapshot()` / `health()` keep
+   * reading the current gate — their keys are the CALLER's (the Telegram job
+   * peeks this instance by design, registry.ts `peekLiveFeedProvider`).
+   */
+  let identity: OpenAlgoFeedCredentials | null = null;
+  let retired = false;
+
+  /** True when `gate` is this instance's connection (pinning it on first sight); false → retired. */
+  function owns(gate: Extract<FeedGateState, { state: "ready" }>): boolean {
+    const c = gate.creds;
+    if (!identity) {
+      identity = { apiKey: c.apiKey, host: c.host, wsUrl: c.wsUrl ?? null };
+      return true;
+    }
+    if (identity.apiKey === c.apiKey && identity.host === c.host && (identity.wsUrl ?? null) === (c.wsUrl ?? null)) {
+      return true;
+    }
+    retire();
+    return false;
+  }
+
+  /** End every held subscription — each `onEnd` exactly once — and accept no new one. */
+  function retire(): void {
+    if (retired) return;
+    retired = true;
+    if (pumpTimer) clearInterval(pumpTimer);
+    pumpTimer = null;
+    stream.setTarget(null, CONNECTION_CHANGED);
+    const ending = subs;
+    subs = [];
+    for (const sub of ending) sub.end();
+  }
+
+  /** The stream's health, with the retirement's reason once the instance has retired. */
+  function streamHealth(): OpenAlgoStreamHealth {
+    const h = stream.health();
+    return retired ? { ...h, reason: CONNECTION_CHANGED } : h;
+  }
+
+  /** Change = the numbers a desk renders; receipt time alone is not a change. ONE rule for both paths. */
+  const signatureOf = (q: Quote) => `${q.ltp}|${q.dayHigh}|${q.dayLow}|${q.volume}`;
+
+  function deliver(id: string, quote: Quote): void {
+    for (const sub of subs) {
+      if (!sub.keys.has(id)) continue;
+      const sig = signatureOf(quote);
+      if (sub.lastSig.get(id) === sig) continue;
+      sub.lastSig.set(id, sig);
+      sub.onTick(quote);
+    }
+  }
+
+  const stream = createOpenAlgoStream({
+    onQuote: deliver,
+    now,
+    isLiveWindow: opts.isLiveWindow,
+    webSocketImpl: opts.webSocketImpl,
+  });
+
   async function post(creds: OpenAlgoFeedCredentials, path: string, extra: Record<string, unknown>, signal?: AbortSignal) {
     if (!guard.take(now())) {
       throw new Error(
@@ -361,11 +472,24 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
   }
 
   async function snapshot(keys: readonly QuoteKey[], signal?: AbortSignal): Promise<QuoteMap> {
-    const out: QuoteMap = new Map();
-    if (keys.length === 0) return out;
+    if (keys.length === 0) return new Map();
+    // A disposed instance makes NO request of any kind (review R2).
+    if (disposed) throw new Error(REPLACED_INSTANCE);
     const gate = await readGate();
     if (gate.state !== "ready") throw new Error(gate.reason);
+    // D-C7-1: a different connection retires the held subscriptions; this
+    // one-shot request still goes, with the CALLER's keys on the current gate.
+    owns(gate);
+    return snapshotWith(gate, keys, signal);
+  }
 
+  /** The one `/multiquotes` request, for a gate already read. */
+  async function snapshotWith(
+    gate: Extract<FeedGateState, { state: "ready" }>,
+    keys: readonly QuoteKey[],
+    signal?: AbortSignal,
+  ): Promise<QuoteMap> {
+    const out: QuoteMap = new Map();
     const symbols = keys.slice(0, OPENALGO_CAPABILITIES.maxSubscriptions).map((k) => ({
       symbol: wireSymbol(k),
       exchange: k.exchange,
@@ -393,54 +517,87 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
     snapshot,
 
     /**
-     * Poll `snapshot()` every 1–5 s and emit ONLY what changed.
+     * Stream what OpenAlgo pushes; poll over REST, every 1–5 s, ONLY the keys
+     * with no fresh streamed price (design D6 as amended by R3/R4); emit ONLY
+     * what changed, by ONE signature shared between both paths.
      *
-     * There is no first poll on subscribe: the SSE route sends a snapshot on
-     * connect, and a poll here would repeat it as a tick a moment later. A
-     * poll that fails is swallowed — the desk keeps the last price it had, and
-     * `health()` is what explains a bridge that went away. Nothing here writes
-     * anything anywhere; the ticks exist only in the listener's memory.
+     * There is no first REST poll on subscribe: the SSE route sends a snapshot
+     * on connect, and a poll here would repeat it as a tick a moment later.
+     * The gate IS read at once (a database read, not a request) so the socket
+     * can open, and again EVERY period (review R1 a) — even when no key is
+     * quiet — so a revoked consent or a changed connection closes the socket
+     * within one period. When every key is fresh the period sends NOTHING (no
+     * empty `/multiquotes`). A failed poll is swallowed — the desk keeps its
+     * last price and `health()` explains. Nothing here writes anything.
      */
-    subscribe(keys: readonly QuoteKey[], onTick: TickListener, signal?: AbortSignal): Unsubscribe {
+    subscribe(keys: readonly QuoteKey[], onTick: TickListener, signal?: AbortSignal, onEnd?: () => void): Unsubscribe {
+      if (disposed || retired) {
+        // Handed a replaced (or retired, D-C7-1) instance — a race with the registry: end at once,
+        // on a later turn so the caller has finished wiring its teardown.
+        if (onEnd) queueMicrotask(onEnd);
+        return () => {};
+      }
       if (keys.length === 0 || signal?.aborted) return () => {};
+      const own = new Map<string, QuoteKey>();
+      for (const k of keys) if (!own.has(quoteKeyId(k))) own.set(quoteKeyId(k), k);
+      const release = stream.hold([...own].map(([id, key]) => ({ id, key, symbol: wireSymbol(key), exchange: key.exchange })));
+
       let stopped = false;
-      let inFlight = false;
-      const lastSeen = new Map<string, string>();
-
-      const poll = async () => {
-        if (stopped || inFlight) return;
-        inFlight = true;
-        try {
-          const map = await snapshot(keys, signal);
-          if (stopped) return;
-          for (const [id, q] of map) {
-            // Change = the numbers a desk renders. Receipt time alone is not a
-            // change; emitting on it would push a frame every poll forever.
-            const sig = `${q.ltp}|${q.dayHigh}|${q.dayLow}|${q.volume}`;
-            if (lastSeen.get(id) === sig) continue;
-            lastSeen.set(id, sig);
-            onTick(q);
-          }
-        } catch {
-          /* one failed poll is not the end of the subscription */
-        } finally {
-          inFlight = false;
-        }
-      };
-
-      const timer = setInterval(() => void poll(), periodMs);
       const stop: Unsubscribe = () => {
         if (stopped) return; // idempotent, by contract
         stopped = true;
-        clearInterval(timer);
+        subs = subs.filter((s) => s !== sub);
+        release();
         signal?.removeEventListener("abort", stop);
+        if (subs.length === 0 && pumpTimer) {
+          clearInterval(pumpTimer);
+          pumpTimer = null;
+        }
       };
+      const sub: Held = {
+        keys: own,
+        onTick,
+        lastSig: new Map(),
+        end: () => {
+          if (stopped) return;
+          stop();
+          try {
+            onEnd?.();
+          } catch {
+            /* the caller's teardown must not stop the others' */
+          }
+        },
+      };
+      subs = [...subs, sub];
       signal?.addEventListener("abort", stop);
+      if (!pumpTimer) {
+        pumpTimer = setInterval(() => void pump(true), periodMs);
+        void pump(false);
+      }
       return stop;
     },
 
-    /** NEVER throws — the pill needs a reason, not a crash. */
+    /**
+     * v4.7.0 C7 (design D8, review R2). Closes the socket and forbids another;
+     * ENDS every subscription still held — each `onEnd` exactly once — and from
+     * then on makes NO request of any kind. Idempotent.
+     */
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      if (pumpTimer) clearInterval(pumpTimer);
+      pumpTimer = null;
+      stream.dispose();
+      const ending = subs;
+      subs = [];
+      for (const sub of ending) sub.end();
+    },
+
+    /** NEVER throws — the pill needs a reason, not a crash. Never opens the socket. */
     async health(): Promise<OpenAlgoHealth> {
+      if (disposed) {
+        return { ok: false, state: "unreachable", latencyMs: null, reason: REPLACED_INSTANCE, stream: streamHealth() };
+      }
       let gate: FeedGateState;
       try {
         gate = await readGate();
@@ -450,10 +607,16 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
           state: "disabled",
           latencyMs: null,
           reason: e instanceof Error ? e.message : "The OpenAlgo settings could not be read.",
+          stream: streamHealth(),
         };
       }
-      if (gate.state === "disabled") return { ok: false, state: "disabled", latencyMs: null, reason: gate.reason };
-      if (gate.state === "no-key") return { ok: false, state: "no-key", latencyMs: null, reason: gate.reason };
+      if (gate.state === "disabled") {
+        return { ok: false, state: "disabled", latencyMs: null, reason: gate.reason, stream: streamHealth() };
+      }
+      if (gate.state === "no-key") {
+        return { ok: false, state: "no-key", latencyMs: null, reason: gate.reason, stream: streamHealth() };
+      }
+      owns(gate); // D-C7-1: pin, or retire the subscriptions of another connection
 
       const started = now();
       try {
@@ -467,6 +630,7 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
           state: "unreachable",
           latencyMs: null,
           reason: e instanceof Error ? e.message : "OpenAlgo could not be reached.",
+          stream: streamHealth(),
         };
       }
       const latencyMs = Math.max(0, now() - started);
@@ -476,10 +640,78 @@ export function createOpenAlgoProvider(opts: OpenAlgoProviderOptions = {}): Quot
       const warning = guard.take(now())
         ? openAlgoFeedVersionWarning(await readOpenAlgoVersion(gate.creds.host, doFetch))
         : null;
-      return { ok: true, state: "ok", latencyMs, reason: `OpenAlgo answered in ${latencyMs} ms.`, warning };
+      return {
+        ok: true,
+        state: "ok",
+        latencyMs,
+        reason: `OpenAlgo answered in ${latencyMs} ms.`,
+        warning,
+        stream: streamHealth(),
+      };
     },
   };
+
+  /**
+   * One period of the live subscriptions (v4.7.0 C7). `withPoll` false is the
+   * gate-only read made at subscribe time so the socket can open at once.
+   *
+   * 1. Re-read the gate EVERY period (review R1 a) and hand it to the stream:
+   *    not ready, or a different (key, streaming address) than the socket
+   *    authenticated with → the stream closes and says why.
+   * 2. Ask `/multiquotes` for the QUIET keys only — none quiet, no request.
+   * 3. Drop a REST result for any key whose streamed frame arrived after this
+   *    poll was sent (review R4): an older REST price never overwrites a newer
+   *    streamed one. What survives is the stall evidence (review R3) and then
+   *    a tick, through the shared signature.
+   */
+  async function pump(withPoll: boolean): Promise<void> {
+    if (disposed || retired || pumping) return;
+    pumping = true;
+    try {
+      let gate: FeedGateState;
+      try {
+        gate = await readGate();
+      } catch (e) {
+        gate = { state: "disabled", reason: e instanceof Error ? e.message : "The OpenAlgo settings could not be read." };
+      }
+      if (disposed || retired || subs.length === 0) return;
+      if (gate.state !== "ready") {
+        stream.setTarget(null, gate.reason);
+        return;
+      }
+      // D-C7-1: another connection behind the gate (the selection moved) →
+      // every subscription ends here, BEFORE any request; nothing is polled.
+      if (!owns(gate)) return;
+      stream.setTarget(gate.creds);
+      if (!withPoll) return;
+
+      const quiet = new Map<string, QuoteKey>();
+      for (const sub of subs) {
+        for (const [id, key] of sub.keys) if (!quiet.has(id) && stream.isQuiet(id)) quiet.set(id, key);
+      }
+      if (quiet.size === 0) return;
+      const sentAt = now();
+      const map = await snapshotWith(gate, [...quiet.values()]);
+      if (disposed) return;
+      for (const [id, quote] of map) {
+        if (stream.framedSince(id, sentAt)) continue;
+        stream.observePoll(id, quote);
+        deliver(id, quote);
+      }
+    } catch {
+      /* one failed poll is not the end of the subscription */
+    } finally {
+      pumping = false;
+    }
+  }
 }
+
+/** Why a replaced (disposed) instance answers without asking anything (review R2). */
+const REPLACED_INSTANCE = "This OpenAlgo feed instance was replaced; the desk reconnects to the current one.";
+
+/** Why a retired instance's subscriptions ended (D-C7-1). */
+const CONNECTION_CHANGED =
+  "The OpenAlgo connection changed since this desk subscribed (another account was selected, or the connection was re-saved); the desk reconnects to the current one.";
 
 /** True when the stored acknowledgement covers the disclosure as it reads today. */
 export const isOpenAlgoAckCurrent = isAckCurrent;

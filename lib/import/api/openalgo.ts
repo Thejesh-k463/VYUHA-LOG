@@ -556,6 +556,80 @@ export function normalizeHost(host: string): string {
   return `${url.protocol}//${url.host}`;
 }
 
+/**
+ * OpenAlgo's default WebSocket port (v4.7.0 C7, design D2 / review R6 d) — its
+ * `.sample.env` `WEBSOCKET_PORT='8765'` (research R11 C1–C2). THE ONE PLACE the
+ * number is written: every copy that names the streaming port interpolates this
+ * constant (or is pinned equal to it).
+ */
+export const OPENALGO_WS_PORT = 8765;
+
+/** The plain reason a streaming address on another machine is refused with. */
+const STREAM_SAME_MACHINE = "The streaming address must be on the same machine as the bridge address";
+
+/**
+ * Validate a user-typed OpenAlgo streaming address against the saved bridge
+ * address, or THROW with a plain reason (owner answer D2', 2026-10-05).
+ *
+ * WHY IT EXISTS: OpenAlgo's REST and WebSocket ports are configured
+ * independently (R11 C3), and two instances on one machine cannot both sit on
+ * the default 8765 — the owner's own Upstox and Dhan instances stream on 4051
+ * and 4052. So the user may paste the instance's `WEBSOCKET_URL`. What they may
+ * NOT do is point the stream at a different machine: the API key travels in the
+ * authenticate message, and the disclosure promises it goes only to the host
+ * they saved. Hence: scheme `ws:` or `wss:` (a missing scheme reads as `ws://`),
+ * no user name or password, and a hostname EQUAL to the bridge host's
+ * (case-folded by `URL`; an IPv6 literal keeps its brackets on both sides).
+ * The path is kept (a reverse proxy exposes the stream at `/ws`, R11 C6); a
+ * query string or fragment is dropped.
+ */
+export function normalizeOpenAlgoStreamUrl(wsUrl: string, host: string): string {
+  const raw = String(wsUrl ?? "").trim();
+  if (!raw) throw new Error("The streaming address is empty — leave the box empty to use OpenAlgo's default.");
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `ws://${raw}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    throw new Error(`Not a valid streaming address: ${raw}. Expected OpenAlgo's WEBSOCKET_URL, e.g. ws://127.0.0.1:${OPENALGO_WS_PORT}`);
+  }
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new Error(
+      `The streaming address must start with ws:// or wss:// (OpenAlgo's WEBSOCKET_URL), e.g. ws://127.0.0.1:${OPENALGO_WS_PORT} — not ${url.protocol}//`,
+    );
+  }
+  if (url.username || url.password) throw new Error("The streaming address must not carry a user name or password.");
+  const bridge = new URL(normalizeHost(host));
+  if (url.hostname.toLowerCase() !== bridge.hostname.toLowerCase()) {
+    throw new Error(`${STREAM_SAME_MACHINE} (${bridge.hostname}), not ${url.hostname}.`);
+  }
+  const path = url.pathname === "/" ? "" : url.pathname;
+  return `${url.protocol}//${url.host}${path}`;
+}
+
+/**
+ * The ONE source of the URL the live feed's socket opens (review R6 b —
+ * `tests/egress-guard.test.ts` pins that `lib/quotes/openalgo-stream.ts` binds
+ * its constructor argument from this call and nothing else).
+ *
+ * A stored `wsUrl` wins when present (re-validated against the host: a stored
+ * value that no longer matches gives NO stream rather than a guessed one);
+ * otherwise `ws://<the saved host's hostname>:${OPENALGO_WS_PORT}` — only the
+ * hostname is reused, never the REST port. An `https://` bridge with no stored
+ * `wsUrl` → null: it sits behind a reverse proxy (R11 C6), whose streaming path
+ * Vyuha cannot guess, so the feed polls and says why. An unreadable host → null.
+ */
+export function openAlgoStreamUrl(host: string, wsUrl?: string | null): string | null {
+  try {
+    if (wsUrl != null && String(wsUrl).trim() !== "") return normalizeOpenAlgoStreamUrl(String(wsUrl), host);
+    const bridge = new URL(normalizeHost(host));
+    if (bridge.protocol !== "http:") return null;
+    return `ws://${bridge.hostname}:${OPENALGO_WS_PORT}`;
+  } catch {
+    return null;
+  }
+}
+
 /** OpenAlgo's success envelope. `mode` is present on a SANDBOX answer (trap 3). */
 interface OpenAlgoEnvelope<T> {
   data: T;

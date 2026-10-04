@@ -226,10 +226,22 @@ export interface QuoteProvider {
   /**
    * Push. A non-streaming provider returns a no-op unsubscribe and emits
    * nothing rather than pretending — `capabilities.streaming` is the contract.
+   *
+   * `onEnd` (v4.7.0 C7, review R2): called AT MOST ONCE, by the provider, when
+   * it ends the subscription itself — `dispose()` ending every subscription it
+   * still holds. The SSE route closes its stream on it, so the client
+   * reconnects to the instance the registry now holds. Never called for an
+   * unsubscribe the caller made.
    */
-  subscribe(keys: readonly QuoteKey[], onTick: TickListener, signal?: AbortSignal): Unsubscribe;
+  subscribe(keys: readonly QuoteKey[], onTick: TickListener, signal?: AbortSignal, onEnd?: () => void): Unsubscribe;
   /** Never throws. Returns why it cannot run right now. */
   health(): Promise<ProviderHealth>;
+  /**
+   * OPTIONAL (v4.7.0 C7, design D8): release what the instance holds open — a
+   * socket — and forbid reopening it. Called by the registry on the instance it
+   * REPLACES. Idempotent; an `Unsubscribe` called after it is safe.
+   */
+  dispose?(): void;
 }
 
 /**

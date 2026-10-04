@@ -71,12 +71,86 @@ export const LIVE_FEED_COPY = {
    */
   staleness:
     "Prices refresh on screen only. Ticks are never written to your journal — one mark per position per day is saved, from the last price of the session or from the price when you press Save today's mark, whichever comes first. A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close.",
-  /** Only true while the host is loopback; the card says the other case too. */
+  /**
+   * Only true while the host is loopback; the card says the other case too.
+   * v4.7.0 C7: the price stream goes to the SAME machine as the saved host
+   * (`openAlgoStreamUrl()` / `normalizeOpenAlgoStreamUrl()` in
+   * lib/import/api/openalgo.ts), so both sentences name it beside the requests.
+   */
   local:
-    "Requests go to the OpenAlgo bridge on your own machine. Vyuha adds no new internet host for prices.",
+    "Requests, and in market hours one price stream, go to the OpenAlgo bridge on your own machine. Vyuha adds no new internet host for prices.",
   remote:
-    "Your OpenAlgo host is not this machine, so the symbols you hold are sent to that machine every few seconds while the desk is open.",
+    "Your OpenAlgo host is not this machine, so the symbols you hold are sent to that machine while the desk is open — over its price stream in market hours, and at the fallback interval for any symbol the stream has not priced.",
+  /**
+   * THE SLIDER UNDER OpenAlgo IS THE FALLBACK (v4.7.0 C7, owner answer Q3 /
+   * design D10). In market hours the bridge's stream prices the desk; the
+   * slider interval is what `pump()` in lib/quotes/openalgo.ts asks at for a
+   * key with no streamed price for `STREAM_QUIET_MS` (30 s) — every key while
+   * the stream is down. Under Upstox the slider is still THE interval, so the
+   * label and this line are said only while OpenAlgo is the pick.
+   */
+  fallbackLabel: "Fallback refresh",
+  fallback: "Used for symbols the stream has not priced, and whenever streaming is unavailable.",
+  /** The stream line while no subscription has asked for a stream yet (`off`). */
+  streamOff: "Stream starts when the Live Desk opens in market hours.",
+  /** `connecting` / `streaming` with no sentence from the provider. */
+  streamConnecting: "Stream connecting…",
+  streamOn: "Streaming from your OpenAlgo bridge.",
 } as const;
+
+/**
+ * `health().stream` as the card receives it (`OpenAlgoStreamHealth` in
+ * lib/quotes/openalgo-stream.ts, passed through by app/api/live/feed/route.ts).
+ * Restated here rather than imported because that module is `server-only` and
+ * this file is a client component; tests/openalgo-stream-copy.test.ts holds the
+ * two shapes assignable to each other.
+ */
+export interface FeedStreamHealth {
+  state: "off" | "connecting" | "streaming" | "polling";
+  reason: string | null;
+  since: string | null;
+}
+
+/**
+ * The OpenAlgo stream line, DERIVED (AGENTS.md — never synced in an effect).
+ *
+ * REPORTED, NEVER PROBED: `health()` opens no socket (design D11), so "off"
+ * means no desk has asked for a stream yet — said as when it starts, not as a
+ * fault. `polling` names the interval the fallback actually runs at and the
+ * provider's own reason. `null` when there is nothing to say: no stream block
+ * in the answer (every non-OpenAlgo provider), or the answer has not come.
+ */
+export function openAlgoStreamText(stream: FeedStreamHealth | null | undefined, seconds: number): string | null {
+  if (stream == null) return null;
+  const reason = stream.reason?.trim() ? stream.reason.trim() : null;
+  switch (stream.state) {
+    case "streaming":
+      return reason ?? LIVE_FEED_COPY.streamOn;
+    case "connecting":
+      return reason ?? LIVE_FEED_COPY.streamConnecting;
+    case "polling":
+      return `Polling every ${seconds} s${reason ? ` — ${reason}` : ""}`;
+    default:
+      return reason ?? LIVE_FEED_COPY.streamOff;
+  }
+}
+
+/**
+ * Whether the card shows the stream line at all, and what it says. Only while
+ * OpenAlgo is the pick AND the effective provider (a blocked pick's health is
+ * end-of-day's, which has no stream), and only from an answer that is about
+ * OpenAlgo.
+ */
+export function feedStreamLine(args: {
+  pick: string;
+  blocked: boolean;
+  health?: { provider?: string; stream?: FeedStreamHealth | null } | null;
+  seconds: number;
+}): string | null {
+  if (args.pick !== "openalgo" || args.blocked) return null;
+  if (args.health?.provider !== "openalgo") return null;
+  return openAlgoStreamText(args.health.stream, args.seconds);
+}
 
 /**
  * THE UPSTOX ROW (v4.2), kept OUT of `LIVE_FEED_COPY` on purpose.
@@ -532,7 +606,17 @@ export interface FeedResponse {
   angelone?: AngelOneFeedState;
   lastLiveMarkDate?: string | null;
   /** `null` is "not known yet" — see `foldWriteResult` (C-7). */
-  health?: { ok: boolean; state: string; latencyMs: number | null; reason: string; warning?: string | null } | null;
+  health?: {
+    ok: boolean;
+    state: string;
+    latencyMs: number | null;
+    reason: string;
+    warning?: string | null;
+    /** The EFFECTIVE provider the line describes. */
+    provider?: string;
+    /** v4.7.0 C7: OpenAlgo's stream state; null for every other provider. */
+    stream?: FeedStreamHealth | null;
+  } | null;
   message?: string;
 }
 
@@ -753,6 +837,8 @@ export function LiveFeedCard({ current }: { current: Settings }) {
   // may carry (C-6), and a const so the callback below narrows it.
   const blocked = feedBlockState(status?.feed);
   const control = feedBlockControl(status?.feed, blocked);
+  // C7: the OpenAlgo stream's state and reason, derived from the same answer.
+  const streamLine = feedStreamLine({ pick: provider, blocked: blocked !== null, health, seconds });
 
   /**
    * The click. Upstox is the one pick that can need a sheet read first, and
@@ -965,9 +1051,19 @@ export function LiveFeedCard({ current }: { current: Settings }) {
           ) : (
             <div className="space-y-2 rounded-md border border-border bg-card-hover/40 px-3 py-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="live-feed-seconds">On-screen refresh</Label>
+                {/* C7: under OpenAlgo the stream prices the desk in market hours
+                    and this interval is the FALLBACK; under Upstox it is still
+                    the interval itself, so the label follows the pick. */}
+                <Label htmlFor="live-feed-seconds">
+                  {provider === "openalgo" ? LIVE_FEED_COPY.fallbackLabel : "On-screen refresh"}
+                </Label>
                 <span className="text-xs tabular-nums text-muted-foreground">{seconds}s</span>
               </div>
+              {provider === "openalgo" && (
+                <p className="text-xs text-muted-foreground" data-testid="live-feed-fallback">
+                  {LIVE_FEED_COPY.fallback}
+                </p>
+              )}
               <input
                 id="live-feed-seconds"
                 type="range"
@@ -1098,6 +1194,14 @@ export function LiveFeedCard({ current }: { current: Settings }) {
             Save today&apos;s mark
           </Button>
         </div>
+
+        {/* C7: the OpenAlgo stream line, under the health line it qualifies —
+            reported by the provider, never probed (design D11). */}
+        {streamLine && (
+          <p className="text-xs text-muted-foreground" data-testid="live-feed-stream">
+            {streamLine}
+          </p>
+        )}
 
         {/* The Upstox consent sheet. The generic dialog is handed UPSTOX's own
             items — it imports no provider's disclosure module of its own, so

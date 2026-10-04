@@ -24,6 +24,7 @@ import {
   fetchOpenAlgoTradebook,
   isOpenAlgoConnectionId,
   normalizeHost,
+  normalizeOpenAlgoStreamUrl,
   normalizeOpenAlgoTrades,
   openAlgoConnectionId,
   toParsedFile as openAlgoToParsedFile,
@@ -558,6 +559,9 @@ export async function GET() {
       if (isOpenAlgoConnectionId(r.broker) && a) {
         out.openalgoHost = (a.host as string | undefined) ?? null;
         out.openalgoUnderlyingBroker = (a.underlyingBroker as string | undefined) ?? null;
+        // v4.7.0 C7: the saved streaming address, so the Import form's input
+        // shows it back — a local URL, not a secret. Null = OpenAlgo's default.
+        out.openalgoWsUrl = typeof a.wsUrl === "string" && a.wsUrl ? a.wsUrl : null;
       }
       return out;
     }),
@@ -882,7 +886,36 @@ export async function POST(req: Request) {
       } catch (e) {
         return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 400 });
       }
-      authPlain = JSON.stringify({ host: normalizedHost, underlyingBroker });
+      // v4.7.0 C7 (owner answer D2'): the OPTIONAL streaming address, kept in
+      // the same blob. This branch rebuilds the blob whole, so an ABSENT field
+      // means "keep the stored one" (a re-save must not drop it); "" (or null)
+      // clears it; anything else must be ws:/wss: on the bridge's own machine,
+      // checked by the one pure rule — a kept value is re-checked against the
+      // host this save ends with.
+      let wsUrl: string | null = null;
+      try {
+        if (body.wsUrl === undefined) {
+          const stored = readAuthBlob(
+            db
+              .select({ authJson: brokerConnections.authJson })
+              .from(brokerConnections)
+              .where(
+                and(
+                  eq(brokerConnections.accountId, accountId),
+                  eq(brokerConnections.broker, openAlgoConnectionId(underlyingBroker as Broker)),
+                ),
+              )
+              .get()?.authJson,
+          );
+          const kept = stored.state === "ok" && typeof stored.value.wsUrl === "string" ? stored.value.wsUrl : "";
+          wsUrl = kept ? normalizeOpenAlgoStreamUrl(kept, normalizedHost) : null;
+        } else if (body.wsUrl !== null && String(body.wsUrl).trim() !== "") {
+          wsUrl = normalizeOpenAlgoStreamUrl(String(body.wsUrl), normalizedHost);
+        }
+      } catch (e) {
+        return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 400 });
+      }
+      authPlain = JSON.stringify(wsUrl ? { host: normalizedHost, underlyingBroker, wsUrl } : { host: normalizedHost, underlyingBroker });
       // The stored identity is the instance's underlying broker, so several
       // instances (one per broker) coexist as separate rows; saving the same
       // underlying again UPDATES that instance via the (account, broker) upsert.
@@ -1001,7 +1034,10 @@ export async function POST(req: Request) {
     // and removal is only ever the explicit `clearAuth: true`.
     if (!authPlain && !clearAuth && existing?.authJson) encAuth = existing.authJson;
     db.insert(brokerConnections)
-      .values({ accountId, broker, apiKey: encKey, accessToken: encToken, authJson: encAuth })
+      // D-C7-3: the INSERT stamps the same ISO instant the UPDATE below does —
+      // the column's SQLite default ("YYYY-MM-DD HH:MM:SS") sorted BELOW any
+      // ISO "T" stamp, so a newer connection lost "most recently updated".
+      .values({ accountId, broker, apiKey: encKey, accessToken: encToken, authJson: encAuth, updatedAt: new Date().toISOString() })
       .onConflictDoUpdate({
         target: [brokerConnections.accountId, brokerConnections.broker],
         set: { apiKey: encKey, accessToken: encToken, authJson: encAuth, updatedAt: new Date().toISOString() },

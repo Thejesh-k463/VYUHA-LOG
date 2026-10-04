@@ -82,8 +82,10 @@ export function OpenAlgoDialog({
 
           {/* Disclosure v2 (v4.1). Its own heading because it is a second,
               separately-switched use of the same instance: the pull is one
-              request the user presses, the feed repeats every few seconds
-              while the Live Desk is open. Rendered by the SAME generic
+              request the user presses, the feed runs by itself while the
+              Live Desk is open — one stream in market hours (v4.7.0 C7),
+              plus a poll at the slider interval for whatever the stream has
+              not priced. Rendered by the SAME generic
               ItemList as every other section, so a sentence added to
               OPENALGO_FEED_ITEMS reaches the screen with no edit here. */}
           <Section title="What the live price feed does">

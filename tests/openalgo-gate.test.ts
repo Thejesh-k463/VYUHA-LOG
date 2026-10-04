@@ -205,6 +205,112 @@ describe("with the gate OPEN, the save still validates before it stores", () => 
   });
 });
 
+/**
+ * v4.7.0 C7 — the OPTIONAL streaming address (owner answer D2'). The OpenAlgo
+ * branch rebuilds the auth blob WHOLE on every save, so the rule is: absent →
+ * keep the stored one; "" → clear it; anything else → `normalizeOpenAlgoStreamUrl`
+ * (ws:/wss:, the bridge's own machine) or a 400 that stores nothing.
+ */
+describe("the OpenAlgo save keeps, clears and validates the streaming address (C7, D2')", () => {
+  beforeEach(() => setGate(true, CURRENT));
+
+  const storedAuth = () => JSON.parse(decrypt(connections()[0].auth_json)) as Record<string, unknown>;
+
+  it("stores a valid address, keeps it on a re-save that omits it, and clears it on an empty one", async () => {
+    expect((await post({ ...GOOD_SAVE, wsUrl: "ws://127.0.0.1:4051/" })).status).toBe(200);
+    expect(storedAuth()).toEqual({ host: "http://127.0.0.1:5000", underlyingBroker: "groww", wsUrl: "ws://127.0.0.1:4051" });
+
+    // A re-save from a client that sends no wsUrl (an older form, a key rotation).
+    expect((await post({ ...GOOD_SAVE, apiKey: "" })).status).toBe(200);
+    expect(storedAuth().wsUrl, "a re-save dropped the stored streaming address").toBe("ws://127.0.0.1:4051");
+
+    expect((await post({ ...GOOD_SAVE, apiKey: "", wsUrl: "" })).status).toBe(200);
+    expect(storedAuth(), "an empty box must clear it").toEqual({ host: "http://127.0.0.1:5000", underlyingBroker: "groww" });
+  });
+
+  it("400s with a plain reason for another machine or a non-ws scheme, and stores nothing", async () => {
+    for (const [wsUrl, reason] of [
+      ["ws://192.168.1.9:4051", /same machine as the bridge address/i],
+      ["http://127.0.0.1:4051", /ws:\/\/ or wss:\/\//],
+    ] as const) {
+      const res = await post({ ...GOOD_SAVE, wsUrl });
+      expect(res.status, wsUrl).toBe(400);
+      expect((await res.json()).message).toMatch(reason);
+    }
+    expect(connections()).toHaveLength(0);
+  });
+
+  it("a kept address is re-checked against the host this save ends with", async () => {
+    expect((await post({ ...GOOD_SAVE, wsUrl: "ws://127.0.0.1:4051" })).status).toBe(200);
+    const before = connections()[0].auth_json;
+    const res = await post({ ...GOOD_SAVE, apiKey: "", host: "http://192.168.1.20:5000" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(/same machine/i);
+    expect(connections()[0].auth_json, "a refused save changed the row").toBe(before);
+  });
+
+  it("GET shows the saved address back (not a secret), and null when none is saved", async () => {
+    await post({ ...GOOD_SAVE, wsUrl: "ws://127.0.0.1:4052" });
+    type Conn = { broker: string; openalgoWsUrl?: string | null };
+    const read = async () => ((await (await route.GET()).json()) as { connections: Conn[] }).connections.find((c) => c.broker === "openalgo:groww");
+    expect((await read())?.openalgoWsUrl).toBe("ws://127.0.0.1:4052");
+    await post({ ...GOOD_SAVE, apiKey: "", wsUrl: "" });
+    expect((await read())?.openalgoWsUrl).toBeNull();
+  });
+});
+
+/**
+ * D-C7-3 (v4.7.0 C7 fix wave). The gate reader takes "the most recently updated"
+ * OpenAlgo row. An INSERT stamped SQLite's default "YYYY-MM-DD HH:MM:SS" and an
+ * UPDATE a JS ISO string, and ordered as TEXT "T" sorts above " " — so with two
+ * instances on one account (the owner's Upstox 5050 + Dhan 5051) an older
+ * re-saved row outranked a newer one. Both halves are pinned: the reader orders
+ * EXISTING mixed rows by instant, and the save now stamps ISO on insert too.
+ */
+describe("D-C7-3 — 'most recently updated' is an instant: mixed stamps order by time; an insert stamps ISO", () => {
+  beforeEach(() => setGate(true, CURRENT));
+  const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
+  const stampOf = (broker: string) =>
+    (t.sqlite.prepare("SELECT updated_at AS u FROM broker_connections WHERE broker = ?").get(broker) as { u: string }).u;
+
+  it("the save's INSERT stamps the same ISO instant format its UPDATE does", async () => {
+    expect((await post(GOOD_SAVE)).status).toBe(200);
+    expect(stampOf("openalgo:groww"), "the insert kept SQLite's default text format").toMatch(ISO);
+    expect((await post({ ...GOOD_SAVE, apiKey: "" })).status).toBe(200);
+    expect(stampOf("openalgo:groww")).toMatch(ISO);
+  });
+
+  it("the feed gate takes the row updated LATER whichever format each stamp is in", async () => {
+    expect((await post({ ...GOOD_SAVE, apiKey: "oa-key-upstox", host: "127.0.0.1:5050", underlyingBroker: "upstox" })).status).toBe(200);
+    expect((await post({ ...GOOD_SAVE, apiKey: "oa-key-dhan", host: "127.0.0.1:5051", underlyingBroker: "dhan" })).status).toBe(200);
+    const stamp = t.sqlite.prepare("UPDATE broker_connections SET updated_at = ? WHERE broker = ?");
+    const { createOpenAlgoProvider } = await import("@/lib/quotes/openalgo");
+    const used = async () => {
+      const calls: [string, unknown][] = [];
+      const p = createOpenAlgoProvider({
+        fetchImpl: (async (url: string, init?: RequestInit) => {
+          calls.push([String(url), (JSON.parse(String(init?.body)) as { apikey?: unknown }).apikey]);
+          return new Response(JSON.stringify({ status: "success", results: [] }), { status: 200 });
+        }) as unknown as typeof fetch,
+        isLiveWindow: () => false,
+      });
+      await p.snapshot([{ symbol: "INFY", exchange: "NSE" }]);
+      p.dispose?.();
+      return calls;
+    };
+
+    stamp.run("2026-10-04T20:45:26.795Z", "openalgo:upstox"); // re-saved a minute ago (ISO)
+    stamp.run("2026-10-04 20:46:26", "openalgo:dhan"); // inserted NOW, in the pre-fix SQLite format
+    expect(await used(), "text order: the older ISO 'T' stamp outranked the newer one").toEqual([
+      ["http://127.0.0.1:5051/api/v1/multiquotes", "oa-key-dhan"],
+    ]);
+
+    stamp.run("2026-10-04 20:47:00", "openalgo:upstox");
+    stamp.run("2026-10-04T20:46:59.999Z", "openalgo:dhan");
+    expect(await used()).toEqual([["http://127.0.0.1:5050/api/v1/multiquotes", "oa-key-upstox"]]);
+  });
+});
+
 describe("GET publishes the gate as the Import UI's contract", () => {
   it("reports available:false with the reason while the gate is closed", async () => {
     setGate(false, null);
