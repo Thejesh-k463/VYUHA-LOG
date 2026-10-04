@@ -595,3 +595,112 @@ describe("detectCrossBrokerEchoes — same instrument, same day, different broke
     expect(note).toMatch(/also under groww/);
   });
 });
+
+/**
+ * v4.7.0 wave C6 (builder B1) — the CONTRACT key (design review R1 + R2).
+ *
+ * One Fyers option was stored three ways — the Fyers file's `CDSL26SEP1400CE`,
+ * OpenAlgo's `OPT CDSL 29 Sep 2026 1400 CE` and (now) a native pull — and two
+ * different strings never met, so a file + a pull of one position counted twice
+ * with no dialog. Every row is now ALSO indexed by its contract
+ * (`instrumentType|underlying|YYYY-MM|strike|optionType`; equity = the bare
+ * ticker; no segment), the union kept in `existing` order. A compact monthly
+ * states no expiry DAY, so a match that rests on that missing day is RISKY only
+ * when the two rows share a trade date — otherwise it is told, not blocked (a
+ * monthly must not block a same-month weekly).
+ */
+describe("C6 — the contract key: one contract, two names", () => {
+  const fy = { broker: "fyers" };
+  const oaRow = (over: Partial<ExistingRow> = {}) =>
+    ex({
+      ...fy,
+      symbol: "CDSL",
+      tradingsymbol: "OPT CDSL 29 Sep 2026 1400 CE",
+      buyQty: 950,
+      buyValue: 44_175,
+      buyDate: "2026-08-25",
+      sourceFile: "openalgo-fyers-2026-08-25",
+      ...over,
+    });
+  const nativeIn = (over: Partial<IncomingRow> = {}) =>
+    inc({
+      ...fy,
+      symbol: "CDSL26SEP1400CE",
+      tradingsymbol: "CDSL26SEP1400CE",
+      buyQty: 950,
+      buyValue: 44_175,
+      buyDate: "2026-08-25",
+      ...over,
+    });
+
+  it("Fyers compact monthly vs OpenAlgo's dated name, sharing the trade date → RISKY (the pull asks)", () => {
+    const r = detectCrossSourceDuplicates([nativeIn()], [oaRow()], "fyers-api-2026-08-25");
+    expect(r.collisions).toHaveLength(1);
+    expect(r.collisions[0]).toMatchObject({ kind: "same-quantity", existing: { id: 1 } });
+    expect(r.collisions[0]!.monthOnly).toBeUndefined();
+    expect(r.risky).toBe(true);
+  });
+
+  it("the same pair with NO shared date → reported as INFORMATIONAL (month only), never risky", () => {
+    const r = detectCrossSourceDuplicates([nativeIn({ buyDate: "2026-09-02" })], [oaRow()], "fyers-api-2026-09-02");
+    expect(r.collisions).toHaveLength(1);
+    expect(r.collisions[0]).toMatchObject({ kind: "same-quantity", monthOnly: true });
+    expect(r.collisions[0]!.detail).toMatch(/Only the contract month matched/);
+    expect(r.risky).toBe(false);
+    expect(r.message).not.toBeNull();
+  });
+
+  it("a monthly vs a same-month WEEKLY (one day unstated, no shared date) → informational", () => {
+    const r = detectCrossSourceDuplicates(
+      [inc({ ...fy, symbol: "NIFTY26SEP25000CE", tradingsymbol: "NIFTY26SEP25000CE", buyQty: 75, buyValue: 9000, buyDate: "2026-09-03" })],
+      [ex({ ...fy, symbol: "NIFTY", tradingsymbol: "NIFTY2690825000CE", buyQty: 75, buyValue: 9000, buyDate: "2026-09-01", sourceFile: "fyers-tradebook.csv" })],
+      "fyers-api-2026-09-03",
+    );
+    expect(r.collisions.map((c) => c.monthOnly)).toEqual([true]);
+    expect(r.risky).toBe(false);
+  });
+
+  it("two STATED different days (a weekly and the dated monthly) are two contracts — no collision at all", () => {
+    const r = detectCrossSourceDuplicates(
+      [inc({ ...fy, symbol: "NIFTY2690825000CE", tradingsymbol: "NIFTY2690825000CE", buyQty: 75, buyValue: 9000, buyDate: "2026-09-03" })],
+      [ex({ ...fy, symbol: "NIFTY", tradingsymbol: "OPT NIFTY 29 Sep 2026 25000 CE", buyQty: 75, buyValue: 9000, buyDate: "2026-09-03", sourceFile: "openalgo-fyers-2026-09-03" })],
+      "fyers-api-2026-09-03",
+    );
+    expect(r.collisions).toEqual([]);
+  });
+
+  it("a compact future vs the dated future, sharing the sell date → risky", () => {
+    const r = detectCrossSourceDuplicates(
+      [inc({ ...fy, symbol: "NIFTY26SEPFUT", tradingsymbol: "NIFTY26SEPFUT", buyQty: 0, buyValue: 0, buyDate: null, sellQty: 75, sellValue: 1_875_000, sellDate: "2026-09-10" })],
+      [ex({ ...fy, symbol: "NIFTY", tradingsymbol: "FUT NIFTY 29 Sep 2026", buyQty: 75, buyValue: 1_860_000, buyDate: "2026-09-01", sellQty: 75, sellValue: 1_875_000, sellDate: "2026-09-10", sourceFile: "openalgo-fyers-2026-09-10" })],
+      "fyers-api-2026-09-10",
+    );
+    expect(r.collisions).toHaveLength(1);
+    expect(r.risky).toBe(true);
+  });
+
+  it("equity: `SBIN-EQ` (the Fyers file's name) meets the native pull's bare `SBIN` (R3)", () => {
+    const r = detectCrossSourceDuplicates(
+      [inc({ ...fy, symbol: "SBIN", tradingsymbol: "SBIN", buyQty: 10, buyValue: 8000, buyDate: "2026-09-10" })],
+      [ex({ ...fy, symbol: "SBIN-EQ", tradingsymbol: "SBIN-EQ", buyQty: 10, buyValue: 8000, buyDate: "2026-09-10", sourceFile: "FYERS_tradebook.csv" })],
+      "fyers-api-2026-09-10",
+    );
+    expect(r.collisions).toHaveLength(1);
+    expect(r.collisions[0]!.kind).toBe("same-quantity");
+    expect(r.risky).toBe(true);
+  });
+
+  it("the contract key never crosses brokers", () => {
+    const r = detectCrossSourceDuplicates([nativeIn()], [oaRow({ broker: "zerodha" })], "fyers-api-2026-08-25");
+    expect(r.collisions).toEqual([]);
+  });
+
+  it("the union keeps `existing` ORDER (W2L): an older contract-only row is met before a newer same-string row", () => {
+    const older = oaRow({ id: 7, sourceFile: "openalgo-fyers-2026-08-25" });
+    const newer = ex({ ...fy, id: 9, symbol: "CDSL26SEP1400CE", tradingsymbol: "CDSL26SEP1400CE", buyQty: 950, buyValue: 44_175, buyDate: "2026-08-25", sourceFile: "FYERS_tradebook.csv" });
+    const a = detectCrossSourceDuplicates([nativeIn()], [older, newer], "fyers-api-2026-08-25");
+    expect(a.collisions.map((c) => c.existing.id)).toEqual([7]);
+    const b = detectCrossSourceDuplicates([nativeIn()], [newer, older], "fyers-api-2026-08-25");
+    expect(b.collisions.map((c) => c.existing.id)).toEqual([9]);
+  });
+});

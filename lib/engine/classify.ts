@@ -50,7 +50,15 @@ const WEEKLY_MONTH: Record<string, string> = {
 /** 2-digit contract years are all post-2000; NSE listed no F&O before 2000. */
 const century = (yy: string) => `20${yy}`;
 
-function parseCompactName(name: string): ParsedInstrument | null {
+/**
+ * A compact match and the contract MONTH (`YYYY-MM`) its own YY + month token
+ * states. v4.7.0 C6 (review R1): a monthly option or a future names only its
+ * month, so `expiry` stays null below — but the month is a stated fact, and the
+ * cross-source contract key needs it to meet the same contract written in the
+ * full-date grammar (`OPT CDSL 29 Sep 2026 1400 CE`). `parsed` is exactly what
+ * `parseCompactName` has always returned.
+ */
+function matchCompactName(name: string): { parsed: ParsedInstrument; month: string } | null {
   // Compact names never contain spaces; requiring the derivative tail first
   // keeps every plain equity ticker out of the regex engine entirely.
   if (name.includes(" ") || !/\d/.test(name) || !/(?:CE|PE|FUT)$/.test(name)) return null;
@@ -58,31 +66,59 @@ function parseCompactName(name: string): ParsedInstrument | null {
   const w = COMPACT_WEEKLY_OPT.exec(name);
   if (w) {
     return {
-      kind: "option",
-      symbol: w[1],
-      expiry: `${century(w[2])}-${WEEKLY_MONTH[w[3]]}-${w[4]}`,
-      strike: Number(w[5]),
-      optionType: w[6] as OptionType,
+      parsed: {
+        kind: "option",
+        symbol: w[1],
+        expiry: `${century(w[2])}-${WEEKLY_MONTH[w[3]]}-${w[4]}`,
+        strike: Number(w[5]),
+        optionType: w[6] as OptionType,
+      },
+      month: `${century(w[2])}-${WEEKLY_MONTH[w[3]]}`,
     };
   }
   const m = COMPACT_MONTHLY_OPT.exec(name);
   if (m) {
     return {
-      kind: "option",
-      symbol: m[1],
-      // The monthly symbol states only year + month; the expiry DAY is a rule
-      // of the exchange calendar, and that rule changed twice in 2025. Null is
-      // the honest answer — inventing "last Thursday" fabricates a date.
-      expiry: null,
-      strike: Number(m[4]),
-      optionType: m[5] as OptionType,
+      parsed: {
+        kind: "option",
+        symbol: m[1],
+        // The monthly symbol states only year + month; the expiry DAY is a rule
+        // of the exchange calendar, and that rule changed twice in 2025. Null is
+        // the honest answer — inventing "last Thursday" fabricates a date.
+        expiry: null,
+        strike: Number(m[4]),
+        optionType: m[5] as OptionType,
+      },
+      month: `${century(m[2])}-${MONTHS[m[3].toLowerCase()]}`,
     };
   }
   const f = COMPACT_FUT.exec(name);
   if (f) {
-    return { kind: "future", symbol: f[1], expiry: null, strike: null, optionType: null };
+    return {
+      parsed: { kind: "future", symbol: f[1], expiry: null, strike: null, optionType: null },
+      month: `${century(f[2])}-${MONTHS[f[3].toLowerCase()]}`,
+    };
   }
   return null;
+}
+
+function parseCompactName(name: string): ParsedInstrument | null {
+  return matchCompactName(name)?.parsed ?? null;
+}
+
+/**
+ * `parseInstrumentName` plus the contract MONTH (`YYYY-MM`) the name states —
+ * from a compact name's own YY + month token (a monthly option or a future,
+ * whose `expiry` day is null), or from the full expiry date. Null for equity and
+ * for a derivative whose date did not parse. v4.7.0 C6 (review R1); `parsed` is
+ * the very value `parseInstrumentName` returns for the same string.
+ */
+export function parseInstrumentContract(raw: string): { parsed: ParsedInstrument; month: string | null } {
+  const name = raw.trim().replace(/\s+/g, " ");
+  const compact = matchCompactName(name.toUpperCase());
+  if (compact) return compact;
+  const parsed = parseInstrumentName(name);
+  return { parsed, month: parsed.kind !== "equity" && parsed.expiry ? parsed.expiry.slice(0, 7) : null };
 }
 
 /**

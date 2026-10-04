@@ -13,6 +13,7 @@ import { parseZerodha } from "@/lib/import/parsers/zerodha";
 import { normalizeUpstoxTrades, toParsedFile as upstoxToParsedFile, type UpstoxTradeRow } from "@/lib/import/api/upstox";
 import { spotChipLabel, spotCloseNotice } from "@/lib/risk/spot-ref";
 import { todayIstIso } from "@/lib/domain/trading-day";
+import { UNVERIFIED_PULL_BROKERS } from "@/lib/domain/broker-pull-disclosure";
 
 /**
  * v4.3.0 FIX WAVE 2 — THE SEAMS OF A THIRTEEN-BUILDER WAVE (plan-wave2.json).
@@ -977,8 +978,13 @@ describe("B10 · the landing page states the number of broker-API pulls the rout
     expect(res.status).toBe(400);
     const message = ((await res.json()) as { message: string }).message;
     const labels = message.replace(/^Unsupported broker\. Available: /, "").replace(/\.$/, "").split(", ");
-    const pulls = labels.filter((l) => !/^OpenAlgo/.test(l)).length;
-    expect(labels.length - pulls, "OpenAlgo is still offered, so excluding it means something").toBe(1);
+    // v4.7.0 C6: an unverified pull is offered, never advertised — match each
+    // label to its broker key by its leading letters ("Kotak Neo (…)" → kotakneo).
+    const keyOf = (l: string) => l.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const unverified = labels.filter((l) => UNVERIFIED_PULL_BROKERS.some((k) => keyOf(l).startsWith(k)));
+    expect(unverified.length, "every unverified pull is still offered, so excluding them means something").toBe(UNVERIFIED_PULL_BROKERS.length);
+    const pulls = labels.filter((l) => !/^OpenAlgo/.test(l) && !unverified.includes(l)).length;
+    expect(labels.length - pulls - unverified.length, "OpenAlgo is still offered, so excluding it means something").toBe(1);
     const html = fs.readFileSync(path.resolve(__dirname, "../docs/sales/landing-page.html"), "utf8");
     const stated = [...html.matchAll(/(\d+) (?:broker APIs|broker-API pulls|API pulls)/g)].map((m) => Number(m[1]));
     expect(stated.length).toBe(3);

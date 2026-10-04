@@ -6,11 +6,16 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import {
   ORACLE_A1, ORACLE_A2, ORACLE_A3, ORACLE_ALIAS, ORACLE_BUY_DATE, ORACLE_FY, ORACLE_SELL_DATE,
   ORACLE_NO_FIGURE, ORACLE_PERSON_1, ORACLE_PERSON_2,
+  ORACLE_FYERS_API_SYMBOL, ORACLE_FYERS_FILE_NAME, ORACLE_FYERS_FILE_SYMBOL, ORACLE_FYERS_PULL_FILE,
+  oracleFyersTradebookText, oracleNativeFyersPull,
   assertLiveFixture, loadOracleConsumers, oracleParsedFile, oracleReimportTrade,
   oracleIpoPrice, readOracle, resetOracleBook, seedOracleBook, selectOracleAccount,
   type OracleBook, type OraclePersonFigures, type OracleSnapshot, type OracleView,
 } from "./helpers/oracle-book";
 import type { NormalizedTrade } from "@/lib/engine/types";
+// Pure modules (no DB): safe as static imports before openTempDb binds the connection.
+import { parseFyersTradebook } from "@/lib/import/parsers/fyers-tradebook";
+import { fyersTradingsymbol } from "@/lib/import/pull-symbols";
 
 /**
  * THE CROSS-CONSUMER COUNTED-ONCE ORACLE (v4.3.0 wave 3, guard G1).
@@ -971,6 +976,36 @@ const OPS: Op[] = [
       const again = file({ sellQty: 20, avgSellPrice: 150, sellValue: 3000, sellDate: ORACLE_SELL_DATE }, "w3-sell-again");
       expect(again.autoClose?.closedWhole, "the lot was whole again, so it closed whole again").toBe(1);
       return afterFirstClose;
+    },
+  },
+  {
+    // v4.7.0 C6 (builder B1; design review R1/R3, guard addition) — a Fyers FILE and a NATIVE
+    // Fyers pull of ONE position. The file keeps the series on the name (`A1FYERS-EQ`); the pull
+    // stores the bare ticker (`A1FYERS`, `fyersTradingsymbol`), so the exact hash cannot meet them
+    // and neither could the string-only cross-source check: the pull would have added the sale a
+    // second time, in every consumer below. The contract key meets them, the preview is RISKY,
+    // and the broker route answers 409 `needsForce` before any write — so the book after the
+    // pull is the book after the file, and the sale is counted once.
+    name: "a Fyers tradebook FILE, then a native Fyers pull of the same sale",
+    run: async (_b, base) => {
+      selectOracleAccount(t, ORACLE_A1);
+      const file = parseFyersTradebook({ filename: ORACLE_FYERS_FILE_NAME, text: oracleFyersTradebookText() });
+      expect(file.trades.map((x) => [x.tradingsymbol, x.buyQty, x.sellQty]), "the real parser read one round trip").toEqual([
+        [ORACLE_FYERS_FILE_SYMBOL, 10, 10],
+      ]);
+      expect(importer.commitParsedFile(file, ORACLE_FYERS_FILE_NAME, null, ORACLE_A1, { autoClose: true }).added).toBe(1);
+      const afterFile = await readOracle(t);
+      expect(afterFile.a1.person.itrCount, "the file's sale is counted").toBe(base.a1.person.itrCount + 1);
+
+      const sym = fyersTradingsymbol(ORACLE_FYERS_API_SYMBOL);
+      expect(sym).toEqual({ tradingsymbol: "A1FYERS", series: "EQ" });
+      // The route's own options for a snapshot pull (C wires fyers into `snapshotPull`).
+      const opts = { supersedeSnapshot: { fileName: ORACLE_FYERS_PULL_FILE }, autoClose: true };
+      const pre = importer.previewParsedFile(oracleNativeFyersPull(sym!.tradingsymbol), null, ORACLE_A1, ORACLE_FYERS_PULL_FILE, opts);
+      expect(pre.summary.newCount, "the exact hash cannot meet two strings").toBe(1);
+      expect(pre.crossSource?.collisions[0], "the contract key meets the file's row").toMatchObject({ kind: "same-quantity" });
+      expect(pre.crossSource?.risky, "so the route answers 409 needsForce and writes nothing").toBe(true);
+      return afterFile;
     },
   },
 ];

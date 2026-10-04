@@ -18,6 +18,8 @@ import {
 } from "@/lib/import/api/dhan";
 import { keepUnfetched, keepUnfetchedAndStamp } from "@/lib/import/dhan-unfetched";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
+import { fetchKotakTrades, kotakLogin, normalizeKotakTrades, toParsedFile as kotakToParsedFile } from "@/lib/import/api/kotakneo";
+import { pullAckCurrent } from "@/lib/domain/broker-pull-disclosure";
 
 // Opt-in auto-pull on launch (v3.6, WS3) — the auto-MTM render-guard pattern,
 // NO scheduler subsystem: AutoPullRunner fires the route once per browser
@@ -29,6 +31,10 @@ import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxT
 //              mode expires daily and would 401 unattended)
 //   upstox   — always (year-long read-only Analytics token)
 //   zerodha  — NEVER (daily browser login + request_token paste, by regulation)
+//   kotakneo — only when auth_json carries mpin + totpSecret AND the CURRENT
+//              pull consent (v4.7.0 C6: a bumped sheet stops the launch pull
+//              until the user re-reads it — design §3 sequence #6)
+//   fyers, nuvama — NEVER (a browser login + paste on each pull day)
 //   openalgo — NEVER (a user-run third-party server; silent background calls
 //              to it were never part of its disclosure)
 //
@@ -47,6 +53,14 @@ export interface AutoPullAuthBlob {
   totpAckVersion?: number;
   clientCode?: string;
   apiSecret?: string;
+  /** v4.7.0 C6 (fyers / kotakneo / nuvama) — the pull-consent version the save
+   *  route stamped; compared with `pullAckCurrent`, never `>=`. */
+  pullAckVersion?: number;
+  /** Kotak Neo's saved login: UCC, registered mobile and the 6-digit MPIN (the
+   *  TOTP secret is `totpSecret` above). */
+  ucc?: string;
+  mobileNumber?: string;
+  mpin?: string;
 }
 
 export interface AutoPullEligibility {
@@ -70,6 +84,23 @@ export function autoPullEligibility(broker: string, auth: AutoPullAuthBlob | nul
       : { eligible: false, reason: "Dhan is on pasted 24-hour tokens — save PIN + TOTP to include it" };
   }
   if (broker === "zerodha") return { eligible: false, reason: "Zerodha needs a daily browser login by regulation" };
+  if (broker === "kotakneo") {
+    // The consent is part of the rule (review R6): the stored TOTP secret +
+    // MPIN were saved under ONE version of the sheet, and a bumped sheet
+    // must be re-read before Vyuha logs in unattended again.
+    if (!auth?.mpin || !auth?.totpSecret) {
+      return { eligible: false, reason: "Kotak Neo MPIN + TOTP secret are not saved — re-save the connection to include it" };
+    }
+    if (!pullAckCurrent("kotakneo", auth.pullAckVersion)) {
+      return {
+        eligible: false,
+        reason: "Kotak Neo's pull statement changed since you accepted it — re-save the connection and accept it to include Kotak Neo",
+      };
+    }
+    return { eligible: true, reason: "unattended (TOTP + MPIN login)" };
+  }
+  if (broker === "fyers") return { eligible: false, reason: "Fyers needs a browser login on each pull day" };
+  if (broker === "nuvama") return { eligible: false, reason: "Nuvama needs a browser login on each pull day" };
   return { eligible: false, reason: "not an unattended connection" };
 }
 
@@ -114,7 +145,15 @@ export interface AutoPullOutcome {
   summary: AutoPullEntry[];
 }
 
-const LABELS: Record<string, string> = { angelone: "Angel One", dhan: "Dhan", upstox: "Upstox", zerodha: "Zerodha" };
+const LABELS: Record<string, string> = {
+  angelone: "Angel One",
+  dhan: "Dhan",
+  upstox: "Upstox",
+  zerodha: "Zerodha",
+  fyers: "Fyers",
+  kotakneo: "Kotak Neo",
+  nuvama: "Nuvama",
+};
 const labelOf = (broker: string) => LABELS[broker] ?? broker;
 
 type ConnRow = typeof brokerConnections.$inferSelect;
@@ -246,6 +285,22 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       parsed = pulled;
     } else if (conn.broker === "upstox") {
       parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
+    } else if (conn.broker === "kotakneo") {
+      // v4.7.0 C6 — the manual route's Kotak branch: log in afresh (TOTP +
+      // MPIN), read the trade book, nothing cached. The key column holds the
+      // Trade API access token. Eligibility already required the current ack.
+      if (!auth?.ucc || !auth?.mobileNumber || !auth?.mpin || !auth?.totpSecret) {
+        return { ...base, status: "error", detail: "Kotak Neo login details missing — reconnect in Import" };
+      }
+      const session = await kotakLogin({
+        accessToken: keyRead.value,
+        mobileNumber: auth.mobileNumber,
+        ucc: auth.ucc,
+        mpin: auth.mpin,
+        totpSecret: auth.totpSecret,
+      });
+      const { trades, refused, notes } = normalizeKotakTrades(await fetchKotakTrades(session), today);
+      parsed = kotakToParsedFile(trades, refused, notes);
     } else {
       return { ...base, status: "error", detail: "not an auto-pull broker" };
     }

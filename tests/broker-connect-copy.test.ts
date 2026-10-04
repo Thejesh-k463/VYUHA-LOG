@@ -20,6 +20,9 @@ import {
   pullGapNotice,
   pullResultMessage,
   tokenExpiredMessage,
+  PULL_GAP_RANGED,
+  loginPasteField,
+  pullSaveBlocked,
   clearUnfetchedBody,
   unfetchedLines,
   unfetchedNotice,
@@ -718,7 +721,8 @@ describe("the gap line is rendered from that one function", () => {
     expect(src.match(/Pulls missed since/g)?.length).toBe(1);
     // C-6: each row's own catchUpFrom rides along, so a clamped gap is said.
     // R47: per ROW — pullGapLines calls pullGapNotice once per connection.
-    expect(src).toMatch(/pullGapNotice\(c\.lastPullAt, now, c\.catchUpFrom\)/);
+    // v4.7.0 C6 (review R9): and its `ranged` flag (absent = Dhan's ranged rule).
+    expect(src).toMatch(/pullGapNotice\(c\.lastPullAt, now, c\.catchUpFrom, c\.ranged \?\? true\)/);
     expect(src).toMatch(/data-testid="pull-gap"[\s\S]{0,300}?gapLines\.map\(/);
     // The old locale-ambiguous formatter must not come back. Comment lines are
     // dropped first — the header explains WHY it went, and naming it there is
@@ -735,13 +739,24 @@ describe("the gap line is rendered from that one function", () => {
    * was to gate the render on the active tab, not to reword the sentence — so
    * the sentence itself is still pinned verbatim above.
    */
-  it("renders only on the Dhan tab — every other broker fetches its own window", async () => {
+  /**
+   * v4.7.0 C6 (review R9) RE-PIN: the gate widened from `active === "dhan"` to
+   * an explicit list — Dhan (ranged) plus the TODAY-ONLY brokers Angel One,
+   * Upstox, Fyers, Kotak Neo and Nuvama, whose line names the broker's file
+   * for the days between instead of promising a catch-up. Zerodha and
+   * OpenAlgo stay off the list. A NEW visible line for Angel One / Upstox users.
+   */
+  it("renders on the listed tabs only — Dhan ranged, the today-only brokers with their own tail", async () => {
     const src = await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8");
     const code = src.split(/\r?\n/).filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join("\n");
 
-    // The list the `pull-gap` block renders is empty off the Dhan tab, so the
+    expect(PULL_GAP_RANGED).toEqual({ dhan: true, angelone: false, upstox: false, fyers: false, kotakneo: false, nuvama: false });
+    // The list the `pull-gap` block renders is empty off the listed tabs, so the
     // block cannot render there at all.
-    expect(code).toMatch(/const gapLines = active === "dhan" \? pullGapLines\(brokerConns, aggregate\) : \[\];/);
+    expect(code).toContain("const gapRanged = PULL_GAP_RANGED[active];");
+    expect(code).toMatch(
+      /const gapLines = gapRanged !== undefined \? pullGapLines\(brokerConns\.map\(\(c\) => \(\{ \.\.\.c, ranged: gapRanged \}\)\), aggregate\) : \[\];/,
+    );
     // …and it is still the ONE derivation the render reads.
     expect(code.match(/pullGapLines\(brokerConns/g)).toHaveLength(1);
     expect(code).toMatch(/\{gapLines\.length > 0 && \(/);
@@ -749,5 +764,86 @@ describe("the gap line is rendered from that one function", () => {
     expect(code).not.toMatch(/const gapLines = pullGapLines\(/);
     // R47: never again from the single lowest-account row.
     expect(code).not.toMatch(/pullGapNotice\(conn/);
+  });
+});
+
+/**
+ * v4.7.0 wave C6 — the card's new copy and rules, pinned pure.
+ */
+describe("C6 — the today-only gap line (review R9)", () => {
+  const now = new Date("2026-09-09T05:00:00Z"); // Wed 10:30 IST
+
+  it("a today-only broker's line names its file for the days between — never 'fetches the gap'", () => {
+    expect(pullGapNotice("2026-09-04T10:00:00Z", now, null, false)).toBe(
+      "Pulls missed since 04 Sep 2026 — this broker states today's trades only; import its file for the days between.",
+    );
+    // a catch-up start means nothing to a today-only pull
+    expect(pullGapNotice("2026-05-01T05:00:00Z", now, "2026-06-11", false)).toBe(
+      "Pulls missed since 01 May 2026 — this broker states today's trades only; import its file for the days between.",
+    );
+    // the Dhan sentence is unchanged when ranged is omitted or true
+    expect(pullGapNotice("2026-09-04T10:00:00Z", now, null, true)).toBe(pullGapNotice("2026-09-04T10:00:00Z", now, null));
+    expect(pullGapNotice("2026-09-04T10:00:00Z", now, null, false)).not.toMatch(/\b(recommend|should|consider|buy|sell)\b/i);
+  });
+
+  it("pullGapLines carries each row's ranged flag", () => {
+    const stale = { accountId: 1, accountName: "Main", lastPullAt: "2026-08-30T05:00:00Z", catchUpFrom: null };
+    expect(pullGapLines([{ ...stale, ranged: false }], false, now)).toEqual([pullGapNotice(stale.lastPullAt, now, null, false)]);
+    expect(pullGapLines([stale], false, now)).toEqual([pullGapNotice(stale.lastPullAt, now, null)]);
+  });
+});
+
+describe("C6 — the month-level duplicate badge", () => {
+  it("a monthOnly collision reads 'same month (expiry day unstated)'; the others are unchanged", () => {
+    expect(collisionBadge("partial-quantity", true)).toBe("same month (expiry day unstated)");
+    expect(collisionBadge("same-quantity", true)).toBe("same month (expiry day unstated)");
+    expect(collisionBadge("same-quantity", false)).toBe("same quantity");
+    expect(collisionBadge("same-quantity")).toBe("same quantity");
+  });
+});
+
+describe("C6 — the save gate for fyers / kotakneo / nuvama, and the login paste field", () => {
+  const base = { hasSavedRow: false, consentShowing: true, consentAccepted: true, apiSecret: "s", mobileNumber: "9", ucc: "X", mpin: "1", totpSecret: "T" };
+
+  it("the consent sheet, when showing, must be accepted", () => {
+    expect(pullSaveBlocked({ ...base, active: "fyers", consentAccepted: false })).toBe(true);
+    expect(pullSaveBlocked({ ...base, active: "fyers" })).toBe(false);
+    expect(pullSaveBlocked({ ...base, active: "fyers", hasSavedRow: true, consentShowing: false, consentAccepted: false, apiSecret: "" })).toBe(false);
+  });
+
+  it("a FIRST save needs every field; a re-save keeps the stored ones", () => {
+    expect(pullSaveBlocked({ ...base, active: "nuvama", apiSecret: "" })).toBe(true);
+    expect(pullSaveBlocked({ ...base, active: "kotakneo", mpin: "" })).toBe(true);
+    expect(pullSaveBlocked({ ...base, active: "kotakneo", hasSavedRow: true, mpin: "", ucc: "" })).toBe(false);
+  });
+
+  it("is no gate at all for the older brokers (their rule is saveDisabled's)", () => {
+    for (const active of ["zerodha", "dhan", "angelone", "upstox", "openalgo"]) {
+      expect(pullSaveBlocked({ ...base, active, consentAccepted: false, apiSecret: "" })).toBe(false);
+    }
+  });
+
+  it("the paste goes back under the name the route reads", () => {
+    expect(loginPasteField("zerodha")).toBe("requestToken");
+    expect(loginPasteField("fyers")).toBe("authCode");
+    expect(loginPasteField("nuvama")).toBe("requestId");
+  });
+});
+
+describe("C6 — the card imports only the PURE disclosure module, never a server-only API module", () => {
+  it("no lib/import/api/{fyers,kotakneo,nuvama,broker-auth-error} import in the client component", async () => {
+    const src = await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8");
+    expect(src).toMatch(/^"use client";/);
+    expect(src).not.toMatch(/from "@\/lib\/import\/api\/(fyers|kotakneo|nuvama|broker-auth-error)"/);
+    expect(src).toContain('from "@/lib/domain/broker-pull-disclosure"');
+  });
+
+  it("the consent sheet renders the server's own sentences, and the save sends the version it SHOWED", async () => {
+    const src = (await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+    const at = src.indexOf('data-testid="pull-consent"');
+    expect(at).toBeGreaterThan(-1);
+    expect(src.slice(at, at + 800)).toContain("pullSheet.items.map(");
+    expect(src).toContain("...(pullSheet && pullConsent ? { pullConsent: { version: pullSheet.version } } : {})");
+    expect(src).toContain('const consentShowing = pullSheet != null && saveTargetConn?.pullAckCurrent !== true;');
   });
 });

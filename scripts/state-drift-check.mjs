@@ -559,6 +559,31 @@ if (closeOut) {
   }
 }
 
+// ── F. every DECISIONS entry STATE §0 quotes exists as a DECISIONS header ────
+// The C6 prose pass (2026-10-04) found §0 and six other places citing
+// DECISIONS 2026-10-04 "v4.7.0 wave C6 BUILT" before that entry was written —
+// §0 pointed a cold session at nothing. The two sides come from different
+// files: the quoted title in STATE §0, and the `## <date> — <title…>` header in
+// docs/DECISIONS.md (a quote matches a header of that date that STARTS with it).
+{
+  if (!state0) skip("state-decisions-quotes", "STATE §0 not found", "VYUHA-STATE.md");
+  else if (decisions == null) skip("state-decisions-quotes", "docs/DECISIONS.md is absent");
+  else {
+    const headers = [...decisions.matchAll(/^## (\d{4}-\d{2}-\d{2}) — (.+)$/gm)].map((m) => [m[1], m[2].trim()]);
+    const cited = [];
+    for (const m of state0.matchAll(/DECISIONS (\d{4}-\d{2}-\d{2}) ((?:"[^"\n]+"(?:\s*(?:,|and|\+|then|or)\s*)?)+)/g)) {
+      for (const q of m[2].matchAll(/"([^"\n]+)"/g)) cited.push([m[1], q[1].trim()]);
+    }
+    if (cited.length === 0) skip("state-decisions-quotes", "STATE §0 quotes no DECISIONS title", "VYUHA-STATE.md §0");
+    else {
+      const missing = cited.filter(([d, title]) => !headers.some(([hd, ht]) => hd === d && ht.startsWith(title)));
+      const label = `${cited.length} quoted DECISIONS title(s) each match a header`;
+      if (missing.length) fail("state-decisions-quotes", label, missing.map(([d, x]) => `${d} "${t(x, 48)}" has no header`).join("; "), `VYUHA-STATE.md:${state0Line}`);
+      else pass("state-decisions-quotes", label, "all present", `VYUHA-STATE.md:${state0Line}`);
+    }
+  }
+}
+
 // ── output ──────────────────────────────────────────────────────────────────
 for (const r of results) {
   if (r.status === "SKIP") console.log(`SKIP ${r.name}: ${t(r.actual, 110)} (${r.where})`);

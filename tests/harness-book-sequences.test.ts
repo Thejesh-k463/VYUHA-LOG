@@ -15,6 +15,10 @@ import {
   SURVIVOR_IPO_NAME,
   VARIANTS,
   CLINIC_CELL,
+  C6_FILES,
+  C6_LAST,
+  C6_NIFTY,
+  C6_QTY,
   checkInvariants,
   describeViolations,
   freshCtx,
@@ -825,5 +829,79 @@ describe("v4.7.0 C2 — Edge Clinic experiments across the book's operations", (
     expect(ctx.log.map((l) => l.status)).toEqual(["applied", "applied", "applied", "applied"]);
     expect(experiments().filter((e) => e.accountId === ids.acctB)).toHaveLength(1);
     expect(experiments()).toHaveLength(1);
+  }, 60_000);
+});
+
+/**
+ * v4.7.0 C6 (builder B1) — NATIVE read-only pulls through the cross-source check
+ * (C6-DESIGN-2026-10-04 §5: review R1, R2, R4'). Each pull is driven through the
+ * broker route's own decision (`routePull` in book-ops.ts: the real preview, 409
+ * `nothingNew` / `needsForce`, then the real commit) with the route's options,
+ * and every step is checked against I1–I7 like any other sequence.
+ */
+describe("v4.7.0 C6 — native pulls meet the book they restate", () => {
+  const rowsOf = (sym: string) => t.db.select().from(t.schema.trades).all().filter((r) => r.accountId === ids.acctA && r.tradingsymbol === sym);
+  const steps = (ctx: BookCtx) => ctx.log.map((l) => `${l.op}[${l.status}]`);
+
+  it("R2 case 1 — Angel One SBIN intraday at 11:00, delivery at 15:00: today's earlier-snapshot ask (409) survives the contract key", async () => {
+    // The contract key has NO segment and the string bucket is NOT replaced (R2): W2G M1 needs the
+    // 11:00 intraday row in the 15:00 delivery row's candidates, or the conversion books a second
+    // SBIN position with a 200 instead of asking.
+    const { ctx, violations } = await runSequence(["pullAngelOneSbinIntraday", "pullAngelOneSbinDelivery"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullAngelOneSbinIntraday[applied]", "pullAngelOneSbinDelivery[refused]"]);
+    const out = C6_LAST.outcome!;
+    expect([out.status, out.reason]).toEqual([409, "needsForce"]);
+    expect(out.preview.crossSource!.collisions).toHaveLength(1);
+    expect(out.preview.crossSource!.collisions[0]).toMatchObject({ sameSnapshot: true, existing: { buyQty: C6_QTY.sbinMorning } });
+    expect(rowsOf("SBIN").map((r) => [r.segment, r.buyQty])).toEqual([["eq_intraday", C6_QTY.sbinMorning]]);
+  }, 60_000);
+
+  it("a native Fyers pull → Trash → the same pull again → restore: the position is stated exactly once", async () => {
+    const { ctx, violations } = await runSequence(["pullNativeFyersNifty", "deleteNativeFyersPull", "pullNativeFyersNifty", "restoreLatestSnapshot"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual([
+      "pullNativeFyersNifty[applied]", "deleteNativeFyersPull[applied]", "pullNativeFyersNifty[applied]", "restoreLatestSnapshot[applied]",
+    ]);
+    expect(ctx.log.at(-1)!.note, "the restore skipped the row the re-pull already holds").toMatch(/^restored 0, skipped 1/);
+    const held = rowsOf(C6_NIFTY.compact);
+    expect(held.map((r) => [r.sourceFile, r.buyQty, r.sellQty])).toEqual([[C6_FILES.fyers, C6_QTY.nifty, 0]]);
+  }, 60_000);
+
+  it("OpenAlgo-Fyers, then the native Fyers pull of one NIFTY monthly: blocked as RISKY, counted once (R1)", async () => {
+    // `OPT NIFTY 29 Sep 2026 25000 CE` and `NIFTY26SEP25000CE` hash differently (D8's "exact hash
+    // catches it" is false for every Fyers derivative), so the user gets needsForce, not nothingNew.
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNifty", "pullNativeFyersNifty"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNifty[applied]", "pullNativeFyersNifty[refused]"]);
+    expect([C6_LAST.outcome!.status, C6_LAST.outcome!.reason]).toEqual([409, "needsForce"]);
+    expect(C6_LAST.outcome!.preview.crossSource!.collisions[0]).toMatchObject({ kind: "same-quantity" });
+    expect(rowsOf(C6_NIFTY.canonical)).toHaveLength(1);
+    expect(rowsOf(C6_NIFTY.compact)).toHaveLength(0);
+  }, 60_000);
+
+  it("… and the other order: the native pull first, then OpenAlgo-Fyers — blocked the same way", async () => {
+    const { ctx, violations } = await runSequence(["pullNativeFyersNifty", "pullOpenAlgoFyersNifty"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullNativeFyersNifty[applied]", "pullOpenAlgoFyersNifty[refused]"]);
+    expect(C6_LAST.outcome!.reason).toBe("needsForce");
+    expect(rowsOf(C6_NIFTY.compact)).toHaveLength(1);
+    expect(rowsOf(C6_NIFTY.canonical)).toHaveLength(0);
+  }, 60_000);
+
+  it("RESIDUAL R4' (C6-DESIGN §5, recorded, NOT fixed) — OpenAlgo opens the lot, the native pull sells it: the sale lands as a separate opening sell", async () => {
+    // RESIDUAL R4' — the readers the contract key leaves on the raw string: auto-close
+    // (close-open-lots.ts, joins on tradingsymbol), the supersede key (commit.ts), legacy-short and
+    // the cross-broker echoes check. The cross-source check is side-aware (a SELL of a held BUY is
+    // the exit, never a duplicate), so nothing asks; auto-close looks for a lot under the compact
+    // name and finds none. Each of those readers is a pairing rule of its own (LEDGER L-29), named
+    // as a residual in the C6 brief and release copy. This case pins TODAY's behaviour so the day a
+    // fix lands it is changed here on purpose, never by accident.
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyPrevDay", "pullNativeFyersNiftySale"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyPrevDay[applied]", "pullNativeFyersNiftySale[applied]"]);
+    expect(C6_LAST.outcome!.preview.crossSource!.risky).toBe(false);
+    expect(rowsOf(C6_NIFTY.canonical).map((r) => [r.buyQty, r.sellQty, r.isOpen])).toEqual([[C6_QTY.nifty, 0, true]]);
+    expect(rowsOf(C6_NIFTY.compact).map((r) => [r.buyQty, r.sellQty])).toEqual([[0, C6_QTY.nifty]]);
   }, 60_000);
 });

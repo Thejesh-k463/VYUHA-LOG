@@ -26,6 +26,11 @@
 // detail for a person to decide, and the import stays a decision rather than a
 // guess. That is the same rule the product applies to MTF and to product type.
 
+// The ONE non-type import, and still a leaf: `classify.ts` imports only
+// `lib/domain/constants` (no parser, no DB) — `components/import/import-client.tsx`
+// imports this module into the client bundle.
+import { parseInstrumentContract } from "@/lib/engine/classify";
+
 export interface ExistingRow {
   id: number;
   broker: string;
@@ -112,6 +117,14 @@ export interface CrossSourceCollision {
   detail: string;
   /** R43: the existing row is today's earlier snapshot from this same pull file. */
   sameSnapshot?: boolean;
+  /**
+   * v4.7.0 C6 (review R1): the existing row was met ONLY through the contract
+   * key at MONTH level — the two strings differ and one of them states no expiry
+   * day (a compact monthly `CDSL26SEP1400CE` against a dated name) — and the
+   * two rows share no buy or sell date. A monthly contract must not block a
+   * same-month weekly, so this is INFORMATIONAL: reported, never risky.
+   */
+  monthOnly?: boolean;
 }
 
 export interface CrossSourceReport {
@@ -141,9 +154,63 @@ const snapshotOf = (inc: IncomingRow, e: ExistingRow, fileName: string) =>
   inc.snapshotIds?.includes(e.id) === true && (e.sourceFile ?? "") === fileName;
 
 /** Likely a double count. Any overlap with today's earlier snapshot of the same
- *  pull is: a snapshot is cumulative, so "part of" it is the same position grown. */
+ *  pull is: a snapshot is cumulative, so "part of" it is the same position grown.
+ *  A month-only contract match with no shared date (C6) never is. */
 const isRisky = (c: CrossSourceCollision) =>
-  c.kind === "same-quantity" || c.kind === "same-value" || c.sameSnapshot === true;
+  c.monthOnly !== true && (c.kind === "same-quantity" || c.kind === "same-value" || c.sameSnapshot === true);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The CONTRACT key (v4.7.0 wave C6, design review R1 + R2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** An equity series suffix: `SBIN-EQ`, `X-BE`, `X-BZ`, `X-SM`, `X-ST`. */
+const SERIES_SUFFIX = /-(?:EQ|BE|BZ|SM|ST)$/;
+
+/** Trim, upper-case and drop an equity series suffix (`SBIN-EQ` → `SBIN`). */
+export function stripSeriesSuffix(t: string): string {
+  return norm(t).replace(SERIES_SUFFIX, "");
+}
+
+export interface ContractKey {
+  /**
+   * Derivatives: `option|UNDERLYING|YYYY-MM|STRIKE|CE` / `future|UNDERLYING|YYYY-MM||`
+   * — the MONTH, so a compact monthly (`CDSL26SEP1400CE`, day unstated) and a
+   * dated name of the same contract (`OPT CDSL 29 Sep 2026 1400 CE`) share it.
+   * Equity: `equity|TICKER`, series suffix stripped. NO segment anywhere (R2):
+   * a broker-side product conversion keeps its contract.
+   */
+  key: string;
+  /** The expiry DAY the name states (ISO), or null when it states only the month. */
+  day: string | null;
+}
+
+/**
+ * The contract a stored or incoming `tradingsymbol` names, read through the
+ * classifier's own grammar (`parseInstrumentContract`), or null when the name
+ * is a derivative whose month or strike does not parse — such a row is matched
+ * on its string alone, exactly as before C6.
+ */
+export function contractKeyOf(tradingsymbol: string): ContractKey | null {
+  if (!tradingsymbol || !tradingsymbol.trim()) return null;
+  const { parsed, month } = parseInstrumentContract(tradingsymbol);
+  if (parsed.kind === "equity") {
+    const bare = stripSeriesSuffix(tradingsymbol);
+    return bare ? { key: `equity|${bare}`, day: null } : null;
+  }
+  if (!month) return null;
+  if (parsed.kind === "option") {
+    if (parsed.strike == null || !Number.isFinite(parsed.strike) || !parsed.optionType) return null;
+    return { key: `option|${parsed.symbol.toUpperCase()}|${month}|${parsed.strike}|${parsed.optionType}`, day: parsed.expiry };
+  }
+  return { key: `future|${parsed.symbol.toUpperCase()}|${month}||`, day: parsed.expiry };
+}
+
+/**
+ * Two names of one contract key are the SAME contract when their expiry days
+ * are equal or either is unstated (R1); two different stated days are two
+ * expiries of one month (a weekly and the monthly), never the same contract.
+ */
+export const sameContractDay = (a: string | null, b: string | null) => a === null || b === null || a === b;
 
 /**
  * Find incoming rows that look like trades already recorded from a DIFFERENT
@@ -230,17 +297,72 @@ export function detectCrossSourceDuplicates(
    * comes out in the same order as before.
    */
   const byKey = new Map<string, ExistingRow[]>();
-  for (const e of existing) {
+  /**
+   * v4.7.0 C6 (review R1 + R2): EVERY existing row is ALSO indexed under its
+   * contract key, and an incoming row looks up BOTH — the string bucket above
+   * is not replaced, because W2G M1's off-key ask needs same-string rows of
+   * another segment in one bucket. The union is de-duplicated by id and kept in
+   * `existing` order (W2L's priority depends on it). One parse per DISTINCT
+   * tradingsymbol (memoised), so the index stays linear in the book.
+   */
+  const byContract = new Map<string, { e: ExistingRow; pos: number; day: string | null }[]>();
+  const keyMemo = new Map<string, ContractKey | null>();
+  const contractOf = (ts: string) => {
+    let k = keyMemo.get(ts);
+    if (k === undefined) {
+      k = contractKeyOf(ts);
+      keyMemo.set(ts, k);
+    }
+    return k;
+  };
+  const posOf = new Map<ExistingRow, number>();
+  for (const [pos, e] of existing.entries()) {
     const key = `${e.broker}\u0000${norm(e.tradingsymbol)}`;
     const bucket = byKey.get(key);
     if (bucket) bucket.push(e);
     else byKey.set(key, [e]);
+    posOf.set(e, pos);
+    const ck = contractOf(e.tradingsymbol);
+    if (!ck) continue;
+    const cKey = `${e.broker}\u0000${ck.key}`;
+    const cBucket = byContract.get(cKey);
+    if (cBucket) cBucket.push({ e, pos, day: ck.day });
+    else byContract.set(cKey, [{ e, pos, day: ck.day }]);
   }
 
   // D18: the INDEX rides onto every collision this row produces, so the dialog
   // can count the rows the message counts.
   for (const [incRow, inc] of incoming.entries()) {
-    const candidates = (byKey.get(`${inc.broker}\u0000${norm(inc.tradingsymbol)}`) ?? []).filter(
+    const byString = byKey.get(`${inc.broker}\u0000${norm(inc.tradingsymbol)}`) ?? [];
+    // C6: the rows met ONLY through the contract key (their string differs).
+    // `monthLevel` holds those whose match rests on an unstated expiry day.
+    const monthLevel = new Set<number>();
+    let pool = byString;
+    const inCk = contractOf(inc.tradingsymbol);
+    const viaContract = inCk ? byContract.get(`${inc.broker}\u0000${inCk.key}`) : undefined;
+    if (inCk && viaContract) {
+      const seen = new Set(byString.map((e) => e.id));
+      const extra: { e: ExistingRow; pos: number }[] = [];
+      for (const h of viaContract) {
+        if (seen.has(h.e.id) || !sameContractDay(h.day, inCk.day)) continue;
+        seen.add(h.e.id);
+        extra.push(h);
+        if ((h.day === null) !== (inCk.day === null)) monthLevel.add(h.e.id);
+      }
+      if (extra.length > 0) {
+        // Both lists are already in `existing` order (buckets fill in book
+        // order), so a linear merge keeps W2L's order without a sort.
+        const merged: ExistingRow[] = [];
+        let i = 0;
+        for (const x of extra) {
+          while (i < byString.length && posOf.get(byString[i]!)! < x.pos) merged.push(byString[i++]!);
+          merged.push(x.e);
+        }
+        while (i < byString.length) merged.push(byString[i++]!);
+        pool = merged;
+      }
+    }
+    const candidates = pool.filter(
       (e) =>
         // An identical hash is an ordinary duplicate the existing dedup already
         // handles — this is only about rows that slip past it.
@@ -295,6 +417,15 @@ export function detectCrossSourceDuplicates(
 
       if (kind) {
         const sameSnapshot = snapshot;
+        // C6 (R1): a candidate reached only through an unstated expiry day is
+        // the same contract only if the two rows also share a trade date;
+        // without one it may be another expiry of the month — told, not blocked.
+        const sharesDate =
+          (inc.buyDate != null && inc.buyDate === e.buyDate) || (inc.sellDate != null && inc.sellDate === e.sellDate);
+        const monthOnly = monthLevel.has(e.id) && !sharesDate;
+        if (monthOnly) {
+          detail += " Only the contract month matched: one of the two names states no expiry day and they share no trade date, so this may be another expiry of the same month.";
+        }
         const c: CrossSourceCollision = {
           symbol: inc.symbol,
           row: incRow,
@@ -303,6 +434,7 @@ export function detectCrossSourceDuplicates(
           kind,
           detail,
           ...(sameSnapshot ? { sameSnapshot: true } : {}),
+          ...(monthOnly ? { monthOnly: true } : {}),
         };
         // The MOST severe candidate of each kind: a partial overlap met first
         // must not hide a risky one behind it (R43: two products of one

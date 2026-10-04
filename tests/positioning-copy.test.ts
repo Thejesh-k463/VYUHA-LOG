@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { UNVERIFIED_PULL_BROKERS } from "@/lib/domain/broker-pull-disclosure";
 
 /**
  * v3.9.1 — positioning guard.
@@ -155,7 +156,11 @@ describe("positioning copy — 'local-first / 100% local & offline' is retired",
     expect(block, "API_BROKERS object literal not found in app/api/import/broker/route.ts").not.toBeNull();
     const keys = [...block![1].matchAll(/^ {2}([a-z0-9]+): \{/gm)].map((m) => m[1]);
     expect(keys, "API_BROKERS must still list OpenAlgo for the subtraction to mean anything").toContain("openalgo");
-    const brokerApis = keys.filter((k) => k !== "openalgo").length;
+    // v4.7.0 C6: a pull still labelled "documented, not yet verified" is offered
+    // in the app but never advertised — the marketed count is the VERIFIED ones
+    // (DECISIONS 2026-10-04 "v4.7.0 wave C6 BUILT").
+    for (const u of UNVERIFIED_PULL_BROKERS) expect(keys, `${u} must be a route API broker for the subtraction to mean anything`).toContain(u);
+    const brokerApis = keys.filter((k) => k !== "openalgo" && !UNVERIFIED_PULL_BROKERS.includes(k)).length;
 
     const pricing = /indianBrokers: ["`][^"`]*?(\d+) broker-API pulls["`]/.exec(read("lib/domain/pricing-comparison.ts"));
     expect(pricing, "pricing-comparison.ts indianBrokers no longer states a broker-API pull count").not.toBeNull();

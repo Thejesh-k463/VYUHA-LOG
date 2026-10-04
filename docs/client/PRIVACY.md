@@ -60,11 +60,31 @@ Exactly four kinds, and only one of them is automatic:
 3. **Broker API pulls and the Live Desk price poll — only when you start one,
    when you have switched on the once-a-day auto-pull of your saved brokers at
    launch, or when you have chosen the bridge, Upstox or Angel One as the Live
-   Desk's price source.** If you connect a broker (Zerodha, Dhan, Angel One or Upstox — or
-   another broker through the OpenAlgo bridge you run on your own machine),
-   Vyuha talks to *that broker's* API to fetch your own trades. Dhan's
+   Desk's price source.** If you connect a broker (Zerodha, Dhan, Angel One, Upstox, Fyers,
+   Kotak Neo or Nuvama — or another broker through the OpenAlgo bridge you run
+   on your own machine), Vyuha talks to *that broker's* API to fetch your own
+   trades. Dhan's
    connect-once PIN+TOTP mode makes one extra sign-in call, and it goes only to
    Dhan's own endpoint (`auth.dhan.co`) — never anywhere else.
+   The Fyers, Kotak Neo and Nuvama pulls are documented, not yet verified with
+   a real account, and each shows what it stores and calls, and asks you to
+   accept it, before anything is saved. Fyers: your App ID and App Secret are
+   stored; Vyuha calls `api-t1.fyers.in` only when you pull — to exchange the
+   code you paste back after logging in on Fyers' own page, to read your Fyers
+   client id and to read today's trade book — and keeps that day's token until
+   the day ends. Kotak Neo: your Trade API access token, registered mobile
+   number, UCC, MPIN and TOTP secret are stored; each pull — and, if you switch
+   on the once-a-day auto-pull, one pull at launch — signs in afresh at
+   `mis.kotaksecurities.com` and reads the trade book from a
+   `*.kotaksecurities.com` address Kotak's login names (any other address is
+   refused); nothing from the session is kept. Nuvama: your API key and API
+   secret are stored; Vyuha calls `nc.nuvamawealth.com` only when you pull — to
+   sign in with the id you paste back after logging in on Nuvama's own page,
+   and to read today's trade book — and keeps that session until it ends (at
+   most eight hours, never past 12:30 AM). The API secret travels to Nuvama as
+   a password field over HTTPS, and Vyuha never looks up or sends your public
+   IP address. From all three, Vyuha stores the trades it reads, never the raw
+   response, and none of them can place, modify or cancel an order.
    That same bridge can also price your open positions: while the Live Desk is
    open and in the foreground, Vyuha asks it once every 1–5 seconds, at the interval you set in
    Settings → Live feed, and each request carries the trading symbols and

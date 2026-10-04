@@ -19,6 +19,9 @@
 // verified fact is dated, an unverified one is labelled.
 
 import { IMPORT_SOURCES, type ImportSourceMeta } from "@/lib/import/registry-meta";
+// Pure, client-safe (no imports of its own) — the label and the Kotak note are
+// written ONCE there and read here, by the connect card and by the pulls.
+import { KOTAK_TRADE_API_BROKERAGE_NOTE, PULL_UNVERIFIED_LABEL } from "@/lib/domain/broker-pull-disclosure";
 
 export type ImportChannel = "files" | "api" | "openalgo";
 
@@ -216,13 +219,19 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
   {
     id: "fyers",
     title: "Fyers",
-    summary: "Tradebook report by file, with the Realised P&L as a reference; same-day pulls through OpenAlgo.",
-    channels: ["files", "openalgo"],
+    summary: "Tradebook report by file, with the Realised P&L as a reference; today's fills over the Fyers API (documented, not yet verified) or through OpenAlgo.",
+    channels: ["files", "api", "openalgo"],
     formats: sources("fyers-tradebook", "fyers-realised-pnl"),
     steps: [
       "As of Sep 2026: download Fyers' Tradebook report and its Realised P&L report as CSV, for the same window. Keep Fyers' own file name — it starts FYERS_ — because nothing inside the file names the broker, and Vyuha will not claim a file it cannot see is Fyers'.",
       "Verified against one real export of each (Sep 2026, F&O only). Fyers prints every carried-over fill a second time at 12:00:00 AM with the opposite side and product \"-\"; Vyuha skips those mirror rows and says how many. Two identical rows are two real fills and are both kept.",
       "The Realised P&L imports no trades — it is Fyers' own arithmetic over the tradebook's fills, so importing both as trades would count them twice. It stores Fyers' stated figures per contract and its charges block for reconciliation.",
+    ],
+    api: [
+      `As of Oct 2026 (v4.7.0): the Fyers API pull reads today's trade book — ${PULL_UNVERIFIED_LABEL}. Check the first pulls against your contract note.`,
+      "Create an app on Fyers' API dashboard and register https://127.0.0.1/ as its redirect URL. Save the App ID and App Secret once under Import → Connect broker → Fyers, after reading and accepting what the connection stores and calls.",
+      "On each day you pull: press Pull, open the login link Vyuha shows, sign in on Fyers' own page, then paste back the whole address your browser lands on (the page itself shows an error — nothing answers at 127.0.0.1, and that is expected) or the auth_code from it. The day's token is kept, encrypted, until the end of that day, so a second pull the same day needs no paste. Not unattended, so it is not part of the once-a-day auto-pull.",
+      "Today's book only: a day you did not pull comes in from the Fyers tradebook file. The pull only reads — Vyuha's Fyers code contains no order, modify or funds call.",
     ],
     openalgo: [
       "Documented but not yet exercised by Vyuha: OpenAlgo ships a Fyers plugin, and this path follows OpenAlgo's own broker docs. Vyuha's live OpenAlgo pulls have run against Dhan and Upstox (Aug 2026).",
@@ -235,38 +244,64 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
   {
     id: "nuvama",
     title: "Nuvama",
-    summary: "The P&L report (XLSX) by file — realised and open lines with the charges Nuvama billed.",
-    channels: ["files"],
+    summary: "The P&L report (XLSX) by file — realised and open lines with the charges Nuvama billed; today's fills over the Nuvama API (documented, not yet verified).",
+    channels: ["files", "api"],
     formats: sources("nuvama-pnl-report"),
     steps: [
       "As of Sep 2026: download Nuvama's P&L Report as XLSX. It carries five sheets; Vyuha reads Detail Realised and Unrealised Details as your trades, with the charges Nuvama billed on each line stored exactly as stated, and keeps the Summary sheet as Nuvama's own figures for reconciliation.",
       "Verified against one real export (Sep 2026: NSE options and MCX futures and options). The report states one line per instrument, day and side at the day's average price, with no order ids and no times — so entry and exit times stay blank.",
       "The Dividend sheet is not imported: its layout is unverified.",
     ],
+    api: [
+      `As of Oct 2026 (v4.7.0): the Nuvama API pull reads today's trade book — ${PULL_UNVERIFIED_LABEL}. Check the first pulls against your contract note.`,
+      "Create an API Connect app at Nuvama, register https://127.0.0.1/ as its redirect URL, and save the API key and API secret once under Import → Connect broker → Nuvama, after reading and accepting what the connection stores and calls. The secret is sent to Nuvama as a password field over HTTPS at each login, as Nuvama's own SDK does.",
+      "When the Nuvama session has ended: press Pull, open the login link Vyuha shows, sign in on Nuvama's own page, then paste back the whole address your browser lands on (it may show an error page — that is expected) or the request id from it. The session is kept, encrypted, until the earlier of eight hours or 12:30 AM. Not unattended, so it is not part of the once-a-day auto-pull.",
+      "Nuvama's documentation marks a static IP as mandatory and does not exempt read-only calls, so a pull from a home connection whose address changes may be refused. Vyuha does not look up or send your public IP.",
+    ],
     notes: [
-      "OpenAlgo has no Nuvama plugin (its \"Nubra (Nuvama)\" entry is a different broker), so Nuvama trades come in by file only.",
+      "OpenAlgo has no Nuvama plugin (its \"Nubra (Nuvama)\" entry is a different broker), so Nuvama trades come in by file or the native pull above.",
       "Fyers/Nuvama equity row layout not yet verified against a real export: an equity line is read and flagged in the preview. Check the first one against your contract note.",
     ],
   },
   {
-    id: "generic",
-    title: "Any other broker — map the columns",
-    summary: "Kotak Neo, Sahi and anything unrecognised route here: you say whose file it is.",
-    channels: ["files", "openalgo"],
-    formats: sources("generic-table", "pdf"),
+    // v4.7.0 wave C6 — Kotak Neo's PULLS get their own card. Its FILES stay on
+    // the generic card below: no Kotak export format has been published or
+    // verified, so there is no Kotak file parser (AGENTS.md "never invent a
+    // parser") and this card lists no formats.
+    id: "kotakneo",
+    title: "Kotak Neo",
+    summary: "Today's fills over Kotak's Trade API, logging in unattended (documented, not yet verified), or through OpenAlgo; files go through the column mapper.",
+    channels: ["api", "openalgo"],
+    formats: [],
     steps: [
-      "Kotak Neo and Sahi have published no verified export format, so their files go through the column mapper: you match the columns and say whose file it is. No parser is promised for a format nobody has published — a question is always better than a confident wrong answer.",
-      "Same-day pulls for Kotak run through OpenAlgo (see the cards below). Sahi has no MTF at all, so there is nothing to tag on its trades.",
+      "Kotak Neo has published no verified export format, so its files go through the column mapper on the last card — you match the columns and say whose file it is. The two paths below are same-day pulls.",
+    ],
+    api: [
+      `As of Oct 2026 (v4.7.0): the Kotak Neo Trade API pull reads today's trade book — ${PULL_UNVERIFIED_LABEL}. Check the first pulls against your contract note.`,
+      "Get the Trade API access token from the Neo app → More → Trade API, and enable TOTP there to get its base32 SECRET (the string behind the QR code, not the 6-digit code). Under Import → Connect broker → Kotak Neo save five things: the access token, your registered mobile number, your UCC (client code), your 6-digit MPIN and the TOTP secret — after reading and accepting what the connection stores and calls.",
+      "Storing the TOTP secret and MPIN is what lets a pull log in without you: each pull signs in afresh and keeps nothing from the session, so Kotak Neo can join the once-a-day auto-pull. All five are stored encrypted with a machine-bound key and sent nowhere except Kotak itself.",
+      KOTAK_TRADE_API_BROKERAGE_NOTE,
     ],
     openalgo: [
       "Kotak Neo, as of Aug 2026: the instance's .env takes your 5-character UCC (client code) as BROKER_API_KEY and the access token from the Kotak Neo developer dashboard as BROKER_API_SECRET; the redirect callback path is \"kotak\".",
       "Documented but not yet exercised by Vyuha: this path follows OpenAlgo's own broker docs. Vyuha's live OpenAlgo pulls have run against Dhan and Upstox (Aug 2026).",
     ],
+    guide: OPENALGO_GUIDE,
+  },
+  {
+    id: "generic",
+    title: "Any other broker — map the columns",
+    summary: "Kotak Neo files, Sahi and anything unrecognised route here: you say whose file it is.",
+    channels: ["files"],
+    formats: sources("generic-table", "pdf"),
+    steps: [
+      "Kotak Neo and Sahi have published no verified export format, so their files go through the column mapper: you match the columns and say whose file it is. No parser is promised for a format nobody has published — a question is always better than a confident wrong answer.",
+      "Same-day pulls for Kotak Neo have their own card above. Sahi has no MTF at all, so there is nothing to tag on its trades.",
+    ],
     notes: [
       "The mapper refuses a row it cannot read rather than coercing a bad cell to 0 — a trade for zero shares at zero rupees is worse than no trade.",
       "The PDF source reads the text out of a statement so you can check figures against your journal — it does not import trades, because no broker PDF layout has been calibrated.",
     ],
-    guide: OPENALGO_GUIDE,
   },
   {
     id: "openalgo-setup",

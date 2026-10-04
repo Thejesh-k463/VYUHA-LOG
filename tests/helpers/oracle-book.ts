@@ -837,3 +837,69 @@ export function assertLiveFixture(book: OracleBook): void {
   // hand-filed records name zerodha. Same gross, different bill, by design.)
   expect(new Set([ipoNet.linked, ipoNet.legacy, ipoNet.loose]).size, "three distinct IPO nets").toBe(3);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v4.7.0 C6 (builder B1) — a Fyers FILE and a NATIVE Fyers pull of one position
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The equity symbol as Fyers' API states it (`NSE:<ticker>-EQ`, design §1a
+ * F-S1). The Fyers FILE keeps the series on the name (`A1FYERS-EQ`, review R3),
+ * the native pull stores the bare ticker (`fyersTradingsymbol`) — two strings
+ * for one security, which only the cross-source CONTRACT key can see as one.
+ */
+export const ORACLE_FYERS_API_SYMBOL = "NSE:A1FYERS-EQ";
+export const ORACLE_FYERS_FILE_SYMBOL = "A1FYERS-EQ";
+/** The name carries "FYERS", which is the parser's claim on the file (AGENTS.md: no name, no claim). */
+export const ORACLE_FYERS_FILE_NAME = "FYERS_tradebook_XX0000_2025-06-01_to_2025-09-30.csv";
+/** The pull's own file name, as the broker route forms it (`${broker}-api-${today}`). */
+export const ORACLE_FYERS_PULL_FILE = `fyers-api-${ORACLE_SELL_DATE}`;
+
+/**
+ * A Fyers Tradebook report holding ONE closed equity round trip — 10 bought at
+ * ₹100 on the oracle's buy date, 10 sold at ₹150 on its sell date — in the
+ * verified layout (six identity rows, a blank, the exact 11-column header).
+ */
+export function oracleFyersTradebookText(): string {
+  const d = (iso: string, time: string) => {
+    const [y, m, dd] = iso.split("-");
+    const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(m) - 1];
+    return `"${dd} ${mon} ${y}, ${time}"`;
+  };
+  return [
+    "Report Title,Tradebook report,,,,,,,,,",
+    "Date Range,From 01/06/2025 to 30/09/2025,,,,,,,,,",
+    "Client Name,,,,,,,,,,",
+    "Client ID,,,,,,,,,,",
+    "PAN,,,,,,,,,,",
+    "Download Timestamp,30 Sep 2025 06:00 PM IST,,,,,,,,,",
+    ",,,,,,,,,,",
+    "Symbol name,Symbol code,Date & time,Side,Product type,Qty,Traded price,Total value,Segment,Exchange order ID,OMS order ID",
+    `${ORACLE_FYERS_FILE_SYMBOL},A1FYERS,${d(ORACLE_SELL_DATE, "02:10:00 PM")},SELL,CNC,10,150,"1,500.00",Capital Market,1100000012346,2.60825E+13`,
+    `${ORACLE_FYERS_FILE_SYMBOL},A1FYERS,${d(ORACLE_BUY_DATE, "10:15:00 AM")},BUY,CNC,10,100,"1,000.00",Capital Market,1100000012345,2.60825E+13`,
+    "",
+  ].join("\n");
+}
+
+/**
+ * The same SALE as a native Fyers pull states it on the sell day — today's
+ * trade book only, so the sale with no purchase beside it — in the ParsedFile
+ * shape a pull hands the commit (`sourceId` `fyers-api`, format `api`).
+ */
+export function oracleNativeFyersPull(tradingsymbol: string): ParsedFile {
+  return {
+    sourceId: "fyers-api",
+    broker: "fyers",
+    format: "api",
+    warnings: [],
+    trades: [
+      {
+        broker: "fyers", tradingsymbol, isin: null,
+        buyQty: 0, avgBuyPrice: 0, buyValue: 0, buyDate: null,
+        sellQty: 10, avgSellPrice: 150, sellValue: 1500, sellDate: ORACLE_SELL_DATE,
+        closingPrice: null, grossPnl: 0, unrealisedPnl: 0,
+        productHint: "delivery", exchangeHint: "NSE", sourceFile: null,
+      } as NormalizedTrade,
+    ],
+  };
+}

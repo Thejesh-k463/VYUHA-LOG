@@ -183,6 +183,82 @@ describe("findRivalConnection — the identity is the client, not the app key", 
   });
 });
 
+/**
+ * v4.7.0 wave C6 (design review R7): the three native pulls name their client
+ * by the id the BROKER states — Fyers `fy_id` and Nuvama `userID`, stamped at
+ * the first login — and Kotak Neo by the UCC the user saves (its "API key"
+ * column is the Trade API access token, which rotates and names no client).
+ */
+describe("findRivalConnection — the C6 brokers (fyers / kotakneo / nuvama)", () => {
+  it("Fyers compares the stamped fyId, not the App ID", () => {
+    const auth = (fyId: string) => JSON.stringify({ apiSecret: "s", fyId });
+    connect({ accountId: PRIMARY, broker: "fyers", apiKey: "APPID-100", authJson: auth("XA12345") });
+
+    // Same app, different Fyers client → allowed.
+    expect(bi.findRivalConnection({ broker: "fyers", apiKey: "APPID-100", authJson: auth("XB99999"), accountId: SWING })).toBeNull();
+    // Same client through another app → refused.
+    expect(
+      bi.findRivalConnection({ broker: "fyers", apiKey: "OTHER-100", authJson: auth("XA12345"), accountId: SWING })?.accountId,
+    ).toBe(PRIMARY);
+  });
+
+  it("Fyers falls back to the App ID before any fyId has been stamped", () => {
+    connect({ accountId: PRIMARY, broker: "fyers", apiKey: "APPID-100", authJson: JSON.stringify({ apiSecret: "s" }) });
+    expect(
+      bi.findRivalConnection({ broker: "fyers", apiKey: "APPID-100", authJson: JSON.stringify({ apiSecret: "s" }), accountId: SWING })
+        ?.accountId,
+    ).toBe(PRIMARY);
+  });
+
+  it("Kotak Neo compares the UCC (case-blind), never the rotating Trade API token; no UCC → no identity", () => {
+    const auth = (ucc: string) => JSON.stringify({ ucc, mobileNumber: "9999999999", mpin: "123456", totpSecret: "JBSWY3DP" });
+    connect({ accountId: PRIMARY, broker: "kotakneo", apiKey: "token-one", authJson: auth("XAB12") });
+
+    expect(
+      bi.findRivalConnection({ broker: "kotakneo", apiKey: "token-two", authJson: auth("xab12"), accountId: SWING })?.accountId,
+    ).toBe(PRIMARY);
+    expect(bi.findRivalConnection({ broker: "kotakneo", apiKey: "token-one", authJson: auth("ZZZ99"), accountId: SWING })).toBeNull();
+    // The same TOKEN with no UCC is not evidence of the same client.
+    expect(bi.findRivalConnection({ broker: "kotakneo", apiKey: "token-one", authJson: null, accountId: SWING })).toBeNull();
+  });
+
+  it("Nuvama compares the stamped nuvamaUserId, else the API key", () => {
+    const auth = (nuvamaUserId?: string) => JSON.stringify({ apiSecret: "s", ...(nuvamaUserId ? { nuvamaUserId } : {}) });
+    connect({ accountId: PRIMARY, broker: "nuvama", apiKey: "nv-key", authJson: auth("55501234") });
+
+    expect(bi.findRivalConnection({ broker: "nuvama", apiKey: "nv-key", authJson: auth("55509999"), accountId: SWING })).toBeNull();
+    expect(
+      bi.findRivalConnection({ broker: "nuvama", apiKey: "nv-other", authJson: auth("55501234"), accountId: SWING })?.accountId,
+    ).toBe(PRIMARY);
+  });
+});
+
+/**
+ * Design review R5 — ONE writer rule for the C6 brokers' auth_json. The save
+ * and every pull-time stamp used to REPLACE the blob whole, so a re-save
+ * dropped the stamped identity and a pull stamp dropped the consent.
+ */
+describe("mergeAuth — the one auth_json writer rule for fyers / kotakneo / nuvama (R5)", () => {
+  it("keeps the stamped identity and a CURRENT ack across a re-save patch", () => {
+    const merged = bi.mergeAuth("fyers", { apiSecret: "old", fyId: "XA12345", pullAckVersion: 1 }, { apiSecret: "new" });
+    expect(merged).toEqual({ apiSecret: "new", fyId: "XA12345", pullAckVersion: 1 });
+  });
+
+  it("drops a STALE ack (any value that is not the sheet's current version)", () => {
+    expect(bi.mergeAuth("nuvama", { apiSecret: "s", pullAckVersion: 0 }, {})).toEqual({ apiSecret: "s" });
+    expect(bi.mergeAuth("nuvama", { apiSecret: "s", pullAckVersion: "1" }, {})).toEqual({ apiSecret: "s" });
+  });
+
+  it("null in the patch deletes a key; undefined leaves it", () => {
+    const merged = bi.mergeAuth("fyers", { apiSecret: "s", tokenExpiresAt: "2026-10-04T18:30:00.000Z" }, { tokenExpiresAt: null, fyId: undefined });
+    expect(merged).toEqual({ apiSecret: "s" });
+  });
+
+  it("a stored null starts from an empty blob", () => {
+    expect(bi.mergeAuth("kotakneo", null, { ucc: "XAB12", pullAckVersion: 1 })).toEqual({ ucc: "XAB12", pullAckVersion: 1 });
+  });
+});
+
 describe("listDuplicateConnections — installs that made the duplicate already", () => {
   it("groups one client across the accounts holding it, masked", () => {
     connect({ accountId: PRIMARY, broker: "dhan", apiKey: DHAN_CLIENT });

@@ -3,8 +3,9 @@
 Extracted 2026-08-12 from real exports using the project's own `xlsx` module
 (`XLSX.read(buffer)`), so these layouts are what the parsers will actually see.
 
-**Every layout below is VERIFIED against a real file.** Nothing here is inferred
-from documentation. Where a file carried no data rows, that is stated — the
+**Every FILE layout below is VERIFIED against a real file.** Nothing here is inferred
+from documentation — except the "Native API pulls" section (v4.7.0 C6), which is
+the brokers' own docs and SDKs only and says so. Where a file carried no data rows, that is stated — the
 header is still verified, but value-level behaviour is not.
 
 Source files live in `tests/fixtures/private/` (gitignored — they carry client
@@ -552,6 +553,83 @@ Summary (Nuvama's rounding of its four-decimal averages). Never a source of trad
 rows in the only real file, layout unverified — a data row produces one warning, nothing else.
 The owner's account bills a NEGOTIATED card (₹10/lot NSE options, ₹30/lot MCX options, ~0.05% MCX
 futures); only the two published plans are seeded (Lite Plus = default, Elite).
+
+## Native API pulls — Fyers, Kotak Neo, Nuvama (v4.7.0 C6) — DOCUMENTED, NOT VERIFIED
+
+Today's trade book only (owner answer Q1), read-only by surface. **No real response from any of the
+three has been seen** — every row map below is the brokers' own docs / SDKs / Postman, gathered in
+`VYUHA/LIVE-DESK-RESEARCH/23-BROKERS-OPENALGO-2026-09-25/R10-C6-REST-FACTS-2026-10-04.md` (hosts,
+login bodies, envelopes; the fact ids `F-*`, `K-*`, `N-*` below are that brief's). Every pulled trade
+carries "documented, not yet verified with a real account" in its notes until the owner's first live
+pull is recorded (ruling B2, owner Q4). Every number goes through the same refusal as the file parsers:
+a row whose side, quantity, price or instrument cannot be read is REFUSED and counted, never 0.
+**Currency and NCDEX fills are REFUSED and counted on all three pulls** (Fyers segment 12 or a
+`CDS:` / `BCD:` / `NCDEX:` prefix, Kotak `cde_fo`, Nuvama `CDS` / `BCD` / `NCDEX`) with a note naming
+them — no charge profile covers them (seam defect D-C6-2). Rows
+are aggregated per tradingsymbol + product with the executions kept (the Angel One shape); the file
+name is `<broker>-api-<IST day>` and a later pull the same day REPLACES that day's snapshot.
+Code: `lib/import/api/{fyers,kotakneo,nuvama}.ts`, symbols `lib/import/pull-symbols.ts`, wiring
+`app/api/import/broker/route.ts`.
+
+### Fyers — `GET https://api-t1.fyers.in/api/v3/tradebook` → `tradeBook[]` (F-B2/B3)
+
+| Fyers field | Vyuha field |
+|---|---|
+| `symbol` (`NSE:SBIN-EQ`, `NSE:CDSL26SEP1400CE`, `NSE:NIFTY20O0811000CE`) | `tradingsymbol` — the exchange prefix stripped; equity series suffix (`-EQ -BE -BZ -SM -ST`) stripped to the bare ticker and kept in the notes; a derivative keeps the Fyers FILE's compact form byte for byte (the form is INFERRED from order samples, F-S1) |
+| `side` 1 / −1 | buy / sell |
+| `tradedQty` (int) | execution quantity (a non-integer refuses) |
+| `tradePrice` (float) | execution price |
+| `productType` CNC / MARGIN / overnight → delivery; INTRADAY → intraday; MTF → mtf | `productHint` (the file parser's rule) |
+| `exchange` 10 / 11 / 12 | NSE / MCX / BSE (`segment` 12 = currency → refused) |
+| `orderDateTime` (format UNSTATED) | execution time, read ONLY as `04-Oct-2026 10:15:33` or `2026-10-04 10:15:33`; anything else → null (the date is the pull's IST day) |
+| `exchangeOrderNo` + `productType "-"` + a 12:00:00 AM stamp | the file's NDIR mirror signature → skipped and counted (review R11) |
+| `clientId` | the identity fallback when `GET /profile` names no `fy_id` |
+
+Login: the user's browser opens `…/generate-authcode` (never fetched by the app), the redirected
+`auth_code` is pasted back and exchanged at `POST …/validate-authcode` with `appIdHash =
+sha256("<appId>:<secret>")` (F-A5/A6); `fy_id` from `GET …/profile` is stamped as the connection's
+identity. The token is cached until the end of that IST day. `s:"error"` with −8/−15/−16/−17 or HTTP 401
+→ a new login is asked for (F-D2). `/trade-history` has no documented response — not built (Q1).
+
+### Kotak Neo — `GET {baseUrl}/quick/user/trades` → `data[]` (K-B5/B6)
+
+| Kotak field | Vyuha field |
+|---|---|
+| `trdSym` (`IDEA-EQ`) on `nse_cm` / `bse_cm` | `tradingsymbol` — the series suffix stripped |
+| `sym` + `expDt` (`28 Jul, 2026`) + `stkPrc` + `optTp` (`CE`/`PE` option, `XX` future) on `nse_fo` / `bse_fo` / `mcx_fo` | `tradingsymbol` in the OpenAlgo canonical grammar (`OPT CDSL 29 Sep 2026 1400 CE`, `FUT TCS 28 Jul 2026`); an expiry that does not parse REFUSES the row. The only F&O sample is a POSITIONS row (K-S1); no option sample exists |
+| `trnsTp` B / S | buy / sell |
+| `fldQty` (int) | execution quantity |
+| `avgPrc` (a STRING, `"9.39"`) | execution price |
+| `flTm` `14:28:16` | execution time `14:28` (`flDt` `22-Jan-2025` is not used — the pull is today's book) |
+| `prod` CNC / MTF / MIS; NRML → classifier | `productHint` |
+| `exSeg` nse / bse / mcx (`cde_fo` refused) | exchange |
+
+Login at every pull, nothing cached: `POST https://mis.kotaksecurities.com/login/1.0/tradeApiLogin`
+(TOTP) then `…/tradeApiValidate` (MPIN) → `data.baseUrl`, which must be `https:` on
+`kotaksecurities.com` or a subdomain of it (`assertKotakBaseUrl`, review R10). `stat` compared
+case-insensitively; HTTP 401/403 or `stCode 1003` → the session has ended. Every pulled trade carries
+the ₹0 Trade-API brokerage note (owner Q5): the account's plan rate is charged.
+
+### Nuvama — `GET https://nc.nuvamawealth.com/edelmw-eq/eq/tradebook/v1/<userID>/` → `data.trade[]` (N-B1…B4)
+
+| Nuvama field (every value a STRING) | Vyuha field |
+|---|---|
+| `trdSym` — an ISIN-shaped value (`INE…`/`INF…`) | resolved through the bundled ISIN chain, `isin` kept |
+| `trdSym` in the P&L report grammar, or `sym` + `opTyp` + `stkPrc` + `dpExpDt` | `tradingsymbol` = exactly what `nuvamaInstrument` stores for the P&L report (byte-equal; no `dedupLabel` — review R4) |
+| `trsTyp` B / S | buy / sell |
+| `fldQty` | execution quantity — ONLY this field: `flQty` also exists and nothing states which is the fill's own, so a row without a readable `fldQty` refuses |
+| `flPrc` | execution price |
+| `flTim` `…HH:MM:SS` | execution time |
+| `prdCode` CNC / MTF / MIS / INTRADAY; NRML → classifier | `productHint` |
+| `exc` NSE / NFO, BSE / BFO, MCX (`CDS` / `BCD` / `NCDEX` refused) | exchange |
+
+Login: the user's browser opens `www.nuvamawealth.com/api-connect/login?api_key=` (never fetched),
+the redirected request id is pasted back (taken by name: `requestId` / `reqId` / `request_id`), then
+`POST …/edelmw-login/login/accounts/loginvendor/<apiKey>/` and `…/accounts/logindata/` →
+`data.auth` + `eqAccID || coAccID` (the `{userID}`, stamped as the connection's identity). The whole
+session is cached until the earlier of 8 hours or 00:30 IST. Status codes are read EXPLICITLY: 222 on
+the trade book = an EMPTY book (N-B5); 222 on logindata = the request id expired; 401 / `EGN0011`
+"Session Expired" = a new login. No `X-Forwarded-For`, no hard-coded `AppIdKey` (owner Q7).
 
 ## Groww
 

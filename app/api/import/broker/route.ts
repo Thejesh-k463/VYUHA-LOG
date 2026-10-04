@@ -28,7 +28,36 @@ import {
   openAlgoConnectionId,
   toParsedFile as openAlgoToParsedFile,
 } from "@/lib/import/api/openalgo";
-import { brokerLabel, findRivalConnection } from "@/lib/import/broker-identity";
+import { brokerLabel, findRivalConnection, mergeAuth } from "@/lib/import/broker-identity";
+import { randomUUID } from "node:crypto";
+import {
+  exchangeFyersAuthCode,
+  extractFyersAuthCode,
+  fetchFyersProfileId,
+  fetchFyersTradeBook,
+  fyersLoginUrl,
+  normalizeFyersTrades,
+  toParsedFile as fyersToParsedFile,
+} from "@/lib/import/api/fyers";
+import { fetchKotakTrades, kotakLogin, normalizeKotakTrades, toParsedFile as kotakToParsedFile } from "@/lib/import/api/kotakneo";
+import {
+  extractNuvamaRequestId,
+  fetchNuvamaTrades,
+  normalizeNuvamaTrades,
+  nuvamaLogin,
+  nuvamaLoginUrl,
+  toParsedFile as nuvamaToParsedFile,
+  type NuvamaSession,
+} from "@/lib/import/api/nuvama";
+import { isBrokerAuthExpired } from "@/lib/import/api/broker-auth-error";
+import {
+  BROKER_PULL_DISCLOSURES,
+  PULL_UNVERIFIED_LABEL,
+  pullAckCurrent,
+  UNVERIFIED_PULL_BROKERS,
+  type BrokerPullDisclosureId,
+} from "@/lib/domain/broker-pull-disclosure";
+import type { ParsedFile } from "@/lib/import/types";
 import {
   DHAN_UNFETCHED_NOTICE,
   clearUnfetchedLine,
@@ -42,7 +71,7 @@ import type { Broker } from "@/lib/domain/constants";
 import { looksLikeTotpSecret } from "@/lib/totp";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { AccountRequiredError, getWriteAccountId } from "@/lib/queries/accounts";
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { istWallClockIso, todayIstIso } from "@/lib/domain/trading-day";
 import { listBrokerConnections } from "@/lib/queries/broker-connections";
 import { encryptSecret, readSecret, sweepPlaintextSecrets } from "@/lib/vault";
 
@@ -98,7 +127,102 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
     needsToken: false,
     extraFields: ["host", "underlyingBroker"],
   },
+  // v4.7.0 wave C6 — native READ-ONLY pulls. `needsToken: false` for all three:
+  // the access_token column is a CACHE here (Fyers' day token, Nuvama's whole
+  // session), never something the user pastes.
+  fyers: {
+    label: "Fyers (API v3)",
+    keyLabel: "App ID",
+    note: `App ID and App Secret are saved once; on each day you pull, one login on Fyers' own page through the link Vyuha shows, then paste back the address it sends you to — the day's token is kept until that day ends. Fyers' trade-book format is ${PULL_UNVERIFIED_LABEL}.`,
+    needsToken: false,
+    extraFields: ["apiSecret"],
+  },
+  kotakneo: {
+    label: "Kotak Neo (Trade API)",
+    keyLabel: "Trade API access token",
+    note: `Login is unattended: the saved TOTP secret and MPIN log in afresh at every pull, and nothing from the session is kept. Kotak Neo's trade-book format is ${PULL_UNVERIFIED_LABEL}.`,
+    needsToken: false,
+    extraFields: ["mobileNumber", "ucc", "mpin", "totpSecret"],
+  },
+  nuvama: {
+    label: "Nuvama (APIConnect)",
+    keyLabel: "API key",
+    note: `API key and API secret are saved once; when the Nuvama session has ended, one login on Nuvama's own page through the link Vyuha shows, then paste back the address it sends you to. Nuvama's documentation marks a static IP as mandatory, so a pull from a home connection may be refused. Nuvama's trade-book format is ${PULL_UNVERIFIED_LABEL}.`,
+    needsToken: false,
+    extraFields: ["apiSecret"],
+  },
 };
+
+/** The three C6 brokers — each has ONE consent sheet (BROKER_PULL_DISCLOSURES). */
+const isPullBroker = (b: string): b is BrokerPullDisclosureId =>
+  Object.prototype.hasOwnProperty.call(BROKER_PULL_DISCLOSURES, b);
+
+/** The redirect URI the user registers on the Fyers app — Nuvama's own default,
+ *  and no server answers it: the browser shows an error page whose ADDRESS the
+ *  user pastes back (design D2; no callback route, the Kite precedent). */
+const PULL_REDIRECT_URI = "https://127.0.0.1/";
+
+/** The next IST calendar day of an ISO date, by date arithmetic alone. */
+function nextIsoDay(isoDay: string): string {
+  return new Date(Date.parse(`${isoDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+}
+
+/** A Fyers access token dies at the end of the trading day it was minted
+ *  (F-A10): the cache is good until the next IST midnight. */
+function fyersTokenExpiry(now = new Date()): string {
+  return new Date(istWallClockIso(nextIsoDay(todayIstIso(now)), "00:00")).toISOString();
+}
+
+/** A Nuvama session ends at the SHORTER of its two stated lifetimes (R7 §4):
+ *  8 hours, or the next 00:30 IST. */
+function nuvamaSessionExpiry(now = new Date()): string {
+  const today = todayIstIso(now);
+  const tonight = Date.parse(istWallClockIso(today, "00:30"));
+  const next = tonight > now.getTime() ? tonight : Date.parse(istWallClockIso(nextIsoDay(today), "00:30"));
+  return new Date(Math.min(now.getTime() + 8 * 3600_000, next)).toISOString();
+}
+
+/** The C6 needs-login answers, ONE shape each (the pull's 409 vocabulary). */
+function fyersNeedsAuthCode(appId: string, message?: string) {
+  return NextResponse.json(
+    {
+      ok: false,
+      needsAuthCode: true,
+      loginUrl: fyersLoginUrl({ appId, redirectUri: PULL_REDIRECT_URI, state: randomUUID() }),
+      message:
+        message ??
+        "Fyers needs today's login: open the link, sign in on Fyers' own page, then paste the whole address your browser lands on (it starts https://127.0.0.1/ and the page itself shows an error — that is expected) or the auth_code from it. A Fyers token lasts until the end of the day.",
+    },
+    { status: 409 },
+  );
+}
+function nuvamaNeedsLogin(apiKey: string, message?: string) {
+  return NextResponse.json(
+    {
+      ok: false,
+      needsLogin: true,
+      loginUrl: nuvamaLoginUrl(apiKey),
+      message:
+        message ??
+        "Nuvama needs a login: open the link, sign in on Nuvama's own page, then paste the whole address your browser lands on (the page itself may show an error — that is expected) or the request id from it.",
+    },
+    { status: 409 },
+  );
+}
+function needsConsentResponse(broker: BrokerPullDisclosureId, saving: boolean) {
+  const { version } = BROKER_PULL_DISCLOSURES[broker];
+  return NextResponse.json(
+    {
+      ok: false,
+      needsConsent: true,
+      version,
+      message: saving
+        ? `Read and accept what connecting ${brokerLabel(broker)} stores and calls before saving — nothing was saved.`
+        : `${brokerLabel(broker)}'s pull statement has changed since you accepted it (or was never accepted) — read and accept it, then save the connection again. Nothing was pulled.`,
+    },
+    { status: 409 },
+  );
+}
 
 /**
  * Mask a credential for the audit log: reveal a PROPORTION of it, never a
@@ -204,7 +328,7 @@ const rivalMessage = (broker: string, accountName: string) =>
  * validates AT SAVE, with a message naming the field — not at tomorrow's pull
  * as a cryptic broker rejection.
  */
-const packAuth: Record<string, (body: Record<string, unknown>) => PackedAuth> = {
+const packAuth: Record<string, (body: Record<string, unknown>, stored?: Record<string, unknown> | null) => PackedAuth> = {
   angelone: (body) => {
     // Angel One's extras: client code + PIN + TOTP SECRET — all three required.
     const clientCode = str(body.clientCode);
@@ -267,6 +391,62 @@ const packAuth: Record<string, (body: Record<string, unknown>) => PackedAuth> = 
     if (!apiSecret) return { ok: true, authPlain: null };
     return { ok: true, authPlain: JSON.stringify({ apiSecret }), tokenOptional: true };
   },
+  // v4.7.0 wave C6. These three PATCH the stored blob through `mergeAuth`
+  // (review R5) instead of replacing it: a field left empty keeps the stored
+  // one, the stamped identity (fyId / nuvamaUserId) and a still-current consent
+  // ack survive, and the cached token's expiry is dropped because a save clears
+  // the cached token. The merged result must be complete. The consent stamp is
+  // the save handler's, after this.
+  fyers: (body, stored) => {
+    const merged = mergeAuth("fyers", stored, { apiSecret: str(body.apiSecret) || undefined, tokenExpiresAt: null });
+    if (!str(merged.apiSecret)) return { ok: false, message: "The Fyers App Secret is required (Fyers' API dashboard → your app)." };
+    return { ok: true, authPlain: JSON.stringify(merged) };
+  },
+  nuvama: (body, stored) => {
+    const merged = mergeAuth("nuvama", stored, { apiSecret: str(body.apiSecret) || undefined, tokenExpiresAt: null });
+    if (!str(merged.apiSecret)) return { ok: false, message: "The Nuvama API secret is required (Nuvama's API Connect page → your app)." };
+    return { ok: true, authPlain: JSON.stringify(merged) };
+  },
+  kotakneo: (body, stored) => {
+    const mobileNumber = str(body.mobileNumber).replace(/[\s-]/g, "");
+    const ucc = str(body.ucc).toUpperCase();
+    const mpin = str(body.mpin);
+    const totpSecret = str(body.totpSecret);
+    // Each TYPED field is checked for its shape; an empty one keeps the stored value.
+    if (mobileNumber && !/^\+?\d{10,15}$/.test(mobileNumber)) {
+      return { ok: false, message: "The registered mobile number is 10 digits (optionally with its +91 code) — that entry is not." };
+    }
+    if (ucc && !/^[A-Z0-9]{3,12}$/.test(ucc)) {
+      return { ok: false, message: "The UCC is your Kotak client code — letters and digits only, as the Neo app shows it." };
+    }
+    if (mpin && !/^\d{6}$/.test(mpin)) {
+      return { ok: false, message: "The MPIN is the 6-digit Neo app PIN — not the account password." };
+    }
+    if (totpSecret && !looksLikeTotpSecret(totpSecret)) {
+      return {
+        ok: false,
+        message:
+          "That does not look like a TOTP secret. Paste the base32 SECRET shown when you enabled TOTP for Kotak Neo (behind the QR code) — not the 6-digit code it generates.",
+      };
+    }
+    const merged = mergeAuth("kotakneo", stored, {
+      mobileNumber: mobileNumber || undefined,
+      ucc: ucc || undefined,
+      mpin: mpin || undefined,
+      totpSecret: totpSecret || undefined,
+      tokenExpiresAt: null,
+    });
+    const missing = [
+      !str(merged.mobileNumber) && "mobile number",
+      !str(merged.ucc) && "UCC",
+      !str(merged.mpin) && "MPIN",
+      !str(merged.totpSecret) && "TOTP secret",
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      return { ok: false, message: `Kotak Neo needs all four: mobile number, UCC, MPIN and TOTP secret (missing: ${missing.join(", ")}).` };
+    }
+    return { ok: true, authPlain: JSON.stringify(merged) };
+  },
 };
 
 /**
@@ -321,6 +501,11 @@ export async function GET() {
           : r.broker === "angelone"
             ? Boolean(a.pin && a.totpSecret)
             : false);
+      // v4.7.0 C6: the cached token's (or session's) end as the PULL ROUTE
+      // stamped it — Fyers' day token and Nuvama's session JSON carry no
+      // decodable `exp` of their own. Shown only while a cache is stored.
+      const cacheExpiry =
+        (r.broker === "fyers" || r.broker === "nuvama") && tokenPlain && typeof a?.tokenExpiresAt === "string" ? a.tokenExpiresAt : null;
       const out: Record<string, unknown> = {
         broker: r.broker,
         accountId: r.accountId,
@@ -340,10 +525,17 @@ export async function GET() {
         // The stored token's own `exp` (seconds or milliseconds, normalised),
         // as ISO — so the UI can say when a pasted token dies; null when there
         // is no token or it is not a decodable JWT.
-        tokenExpiresAt: tokenPlain ? jwtExpiresAt(tokenPlain) : null,
+        tokenExpiresAt: isPullBroker(r.broker) ? cacheExpiry : tokenPlain ? jwtExpiresAt(tokenPlain) : null,
         lastPullAt: r.lastPullAt,
         updatedAt: r.updatedAt,
       };
+      // v4.7.0 C6 — the consent state the card's sheet keys on (review R6:
+      // `pullAckCurrent: false` re-shows the sheet), and the unverified label
+      // (ruling B2 / owner Q4). Booleans only — nothing from the blob itself.
+      if (isPullBroker(r.broker)) {
+        out.pullAckCurrent = pullAckCurrent(r.broker, a?.pullAckVersion);
+        out.unverified = UNVERIFIED_PULL_BROKERS.includes(r.broker);
+      }
       // C-6, Dhan only: the kept notices, and where the NEXT pull's history
       // window starts — later than the last pull's day means the clamp will
       // leave days out, and the card's gap line says so before the pull.
@@ -370,6 +562,214 @@ export async function GET() {
       return out;
     }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// v4.7.0 wave C6 — the three native read-only pulls (Fyers, Kotak Neo, Nuvama)
+// ---------------------------------------------------------------------------
+
+interface PullBrokerCtx {
+  conn: typeof brokerConnections.$inferSelect;
+  accountId: number;
+  /** The decrypted key column: Fyers App ID, Kotak Trade API access token, Nuvama API key. */
+  key: string;
+  /** The decrypted auth_json blob (readable — the caller refused otherwise). */
+  auth: Record<string, unknown>;
+  /** The decrypted access_token column: Fyers' day token / Nuvama's session JSON, or "". */
+  cached: string;
+  body: Record<string, unknown>;
+}
+
+/**
+ * THE pull-time auth_json + access_token writer for the C6 brokers (review R5):
+ * `mergeAuth` over the row's CURRENT blob — re-read, so a stamp made earlier in
+ * the same pull is never overwritten — and `accessToken` undefined leaves the
+ * column as it is. A vault refusal costs only the stamp or the cache, never the
+ * in-flight pull (the Kite rule); an unreadable stored blob is never rewritten.
+ */
+function writePullAuth(connId: number, broker: BrokerPullDisclosureId, patch: Record<string, unknown>, accessToken?: string) {
+  try {
+    const cur = readAuthBlob(
+      db.select({ authJson: brokerConnections.authJson }).from(brokerConnections).where(eq(brokerConnections.id, connId)).get()?.authJson,
+    );
+    if (cur.state === "unreadable") return;
+    const next = mergeAuth(broker, cur.state === "ok" ? cur.value : null, patch);
+    db.update(brokerConnections)
+      .set({
+        authJson: encryptSecret(JSON.stringify(next)),
+        ...(accessToken !== undefined ? { accessToken: encryptSecret(accessToken) } : {}),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(brokerConnections.id, connId))
+      .run();
+  } catch {
+    /* stamp / cache miss only */
+  }
+}
+
+/**
+ * WHOSE session did this login mint? (review R7, the Kite precedent.) A stored
+ * id that differs refuses the pull (409 `<broker>UserMismatch`); otherwise the
+ * one-client-per-database rival check runs with the pull-time `onlyOlderThan`
+ * (P10/R9). Called BEFORE the stamp, the token/session cache and the trade
+ * fetch — so a refusal leaves nothing behind. Null = proceed.
+ */
+function refuseForeignLogin(c: PullBrokerCtx, broker: "fyers" | "nuvama", id: string): NextResponse | null {
+  const idKey = broker === "fyers" ? "fyId" : "nuvamaUserId";
+  const label = brokerLabel(broker);
+  const stored = str(c.auth[idKey]);
+  if (stored && id !== stored) {
+    return NextResponse.json(
+      {
+        ok: false,
+        [broker === "fyers" ? "fyersUserMismatch" : "nuvamaUserMismatch"]: true,
+        message: `This connection is bound to ${label} ID ${maskId(stored)}, but this login was for a different ${label} ID (${maskId(id)}). Nothing was pulled — log in with the account this connection belongs to, or disconnect and reconnect for the other account.`,
+      },
+      { status: 409 },
+    );
+  }
+  const rival = findRivalConnection({
+    broker,
+    apiKey: c.key,
+    authJson: JSON.stringify(mergeAuth(broker, c.auth, { [idKey]: id })),
+    accountId: c.accountId,
+    onlyOlderThan: c.conn.id,
+  });
+  if (rival) {
+    const message = rivalMessage(broker, rival.accountName);
+    return NextResponse.json({ ok: false, error: message, message }, { status: 409 });
+  }
+  return null;
+}
+
+/** A cached token / session is used only while the pull route's own stamp says it lives. */
+const cacheAlive = (c: PullBrokerCtx) =>
+  Boolean(c.cached) && typeof c.auth.tokenExpiresAt === "string" && Date.parse(c.auth.tokenExpiresAt) > Date.now();
+
+/** Fyers (D3/D3a): the day's cached token, else the pasted auth_code, else the login link. */
+async function pullFyers(c: PullBrokerCtx): Promise<NextResponse | ParsedFile> {
+  const secret = str(c.auth.apiSecret);
+  if (!secret) {
+    return NextResponse.json({ ok: false, message: "No Fyers App Secret is saved — re-save the connection with it." }, { status: 400 });
+  }
+  let token = cacheAlive(c) ? c.cached : "";
+  /** The profile named no id: bind on the trade book's own clientId instead. */
+  let bindAfterFetch = false;
+  if (!token) {
+    const pasted = str(c.body.authCode);
+    if (!pasted) return fyersNeedsAuthCode(c.key);
+    const code = extractFyersAuthCode(pasted);
+    if (!code) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            "That paste carries no Fyers auth_code — paste the whole address your browser landed on after the Fyers login (https://127.0.0.1/?…&auth_code=…), or the auth_code value alone. Nothing was pulled.",
+        },
+        { status: 400 },
+      );
+    }
+    token = (await exchangeFyersAuthCode({ appId: c.key, secret, code })).accessToken;
+    // The profile is the identity's first source; its shape is the SDK's and
+    // unverified with a live account, so a refusal that is NOT a session end
+    // falls back to the trade book's clientId rather than failing the pull.
+    let id: string | null = null;
+    try {
+      id = await fetchFyersProfileId(c.key, token);
+    } catch (e) {
+      if (isBrokerAuthExpired(e)) throw e;
+    }
+    if (id) {
+      const refused = refuseForeignLogin(c, "fyers", id);
+      if (refused) return refused;
+      writePullAuth(c.conn.id, "fyers", { fyId: id, tokenExpiresAt: fyersTokenExpiry() }, token);
+    } else {
+      bindAfterFetch = true;
+    }
+  }
+  const n = normalizeFyersTrades(await fetchFyersTradeBook(c.key, token), todayIstIso());
+  if (bindAfterFetch) {
+    // The trade book is a READ; nothing is stamped, cached or previewed before this check.
+    if (n.clientId) {
+      const refused = refuseForeignLogin(c, "fyers", n.clientId);
+      if (refused) return refused;
+    }
+    writePullAuth(c.conn.id, "fyers", { fyId: n.clientId ?? undefined, tokenExpiresAt: fyersTokenExpiry() }, token);
+  }
+  return fyersToParsedFile(n.trades, n.refused, n.notes);
+}
+
+/** The cached Nuvama session, read back from the vault — null for anything not its shape. */
+function readNuvamaSession(s: string): NuvamaSession | null {
+  try {
+    const v = JSON.parse(s) as Partial<NuvamaSession> | null;
+    if (!v || typeof v.auth !== "string" || typeof v.sourceToken !== "string" || typeof v.userId !== "string") return null;
+    return {
+      auth: v.auth,
+      sourceToken: v.sourceToken,
+      userId: v.userId,
+      appIdKey: typeof v.appIdKey === "string" ? v.appIdKey : null,
+      accTyp: typeof v.accTyp === "string" ? v.accTyp : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Nuvama (D5/D5a): the cached session, else the pasted requestId, else the login link. */
+async function pullNuvama(c: PullBrokerCtx): Promise<NextResponse | ParsedFile> {
+  const secret = str(c.auth.apiSecret);
+  if (!secret) {
+    return NextResponse.json({ ok: false, message: "No Nuvama API secret is saved — re-save the connection with it." }, { status: 400 });
+  }
+  let session = cacheAlive(c) ? readNuvamaSession(c.cached) : null;
+  if (!session) {
+    const pasted = str(c.body.requestId);
+    if (!pasted) return nuvamaNeedsLogin(c.key);
+    const reqId = extractNuvamaRequestId(pasted);
+    if (!reqId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            "That paste carries no Nuvama request id — paste the whole address your browser landed on after the Nuvama login, or the request id alone. Nothing was pulled.",
+        },
+        { status: 400 },
+      );
+    }
+    const fresh = await nuvamaLogin({ apiKey: c.key, apiSecret: secret, reqId });
+    const refused = refuseForeignLogin(c, "nuvama", fresh.userId);
+    if (refused) return refused;
+    // The WHOLE session as ONE vault entry, with its stated end (R8).
+    writePullAuth(c.conn.id, "nuvama", { nuvamaUserId: fresh.userId, tokenExpiresAt: nuvamaSessionExpiry() }, JSON.stringify(fresh));
+    session = fresh;
+  }
+  const rows = await fetchNuvamaTrades(session, c.key);
+  // R11': an AppIdKey the answer carried replaced session.appIdKey in place —
+  // re-save the session so the next pull of the same session sends it.
+  writePullAuth(c.conn.id, "nuvama", {}, JSON.stringify(session));
+  const n = normalizeNuvamaTrades(rows, todayIstIso());
+  return nuvamaToParsedFile(n.trades, n.refused, n.notes);
+}
+
+/** Kotak Neo (D4/D4a): TOTP + MPIN login at every pull, nothing cached (Angel One's precedent). */
+async function pullKotak(c: PullBrokerCtx): Promise<NextResponse | ParsedFile> {
+  const creds = {
+    accessToken: c.key,
+    mobileNumber: str(c.auth.mobileNumber),
+    ucc: str(c.auth.ucc),
+    mpin: str(c.auth.mpin),
+    totpSecret: str(c.auth.totpSecret),
+  };
+  if (!creds.accessToken || !creds.mobileNumber || !creds.ucc || !creds.mpin || !creds.totpSecret) {
+    return NextResponse.json(
+      { ok: false, message: "The saved Kotak Neo login is incomplete — re-save the connection with the Trade API access token, mobile number, UCC, MPIN and TOTP secret." },
+      { status: 400 },
+    );
+  }
+  const session = await kotakLogin(creds);
+  const n = normalizeKotakTrades(await fetchKotakTrades(session), todayIstIso());
+  return kotakToParsedFile(n.trades, n.refused, n.notes);
 }
 
 export async function POST(req: Request) {
@@ -487,6 +887,29 @@ export async function POST(req: Request) {
       // instances (one per broker) coexist as separate rows; saving the same
       // underlying again UPDATES that instance via the (account, broker) upsert.
       broker = openAlgoConnectionId(underlyingBroker as Broker);
+    } else if (isPullBroker(broker)) {
+      // v4.7.0 C6 — CONSENT FIRST (review R6, Dhan's pattern): the ack is
+      // stamped ONLY when the client sends the version it showed AND that is
+      // the server's current version; otherwise the stored ack must already be
+      // current. Neither → 409 before any field is packed or anything stored.
+      const storedRead = readAuthBlob(
+        db
+          .select({ authJson: brokerConnections.authJson })
+          .from(brokerConnections)
+          .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, broker)))
+          .get()?.authJson,
+      );
+      const stored = storedRead.state === "ok" ? storedRead.value : null;
+      const shown = (body.pullConsent as { version?: unknown } | null | undefined)?.version;
+      const consentNow = pullAckCurrent(broker, shown);
+      if (!consentNow && !pullAckCurrent(broker, stored?.pullAckVersion)) return needsConsentResponse(broker, true);
+      const packed = packAuth[broker](body as Record<string, unknown>, stored);
+      if (!packed.ok) return NextResponse.json({ ok: false, message: packed.message }, { status: 400 });
+      authPlain = JSON.stringify(
+        mergeAuth(broker, JSON.parse(packed.authPlain!) as Record<string, unknown>, {
+          pullAckVersion: consentNow ? BROKER_PULL_DISCLOSURES[broker].version : undefined,
+        }),
+      );
     } else if (packAuth[broker]) {
       const packed = packAuth[broker](body as Record<string, unknown>);
       if (!packed.ok) return NextResponse.json({ ok: false, message: packed.message }, { status: 400 });
@@ -906,6 +1329,25 @@ export async function POST(req: Request) {
         // called directly so the unparseable-symbol notes reach the screen.
         const today = todayIstIso();
         parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
+      } else if (isPullBroker(broker)) {
+        // v4.7.0 wave C6. The blob carries the secrets AND the consent, so an
+        // unreadable one refuses (never a silent downgrade), and a stale or
+        // absent ack refuses with 409 needsConsent BEFORE any network call.
+        if (authBlob.state !== "ok") {
+          return NextResponse.json(
+            {
+              ok: false,
+              authUnreadable: authBlob.state === "unreadable",
+              message: `The saved ${brokerLabel(broker)} credentials cannot be read — disconnect and save the connection again.`,
+            },
+            { status: 400 },
+          );
+        }
+        if (!pullAckCurrent(broker, authBlob.value.pullAckVersion)) return needsConsentResponse(broker, false);
+        const ctx: PullBrokerCtx = { conn, accountId, key: keyRead.value, auth: authBlob.value, cached: accessTokenPlain, body };
+        const out = broker === "fyers" ? await pullFyers(ctx) : broker === "nuvama" ? await pullNuvama(ctx) : await pullKotak(ctx);
+        if (out instanceof NextResponse) return out;
+        parsed = out;
       } else {
         // Zerodha. With an api_secret saved (auth_json), the daily ritual is
         // the OFFICIAL session exchange (decision #3, NO enctoken): the user
@@ -1038,6 +1480,22 @@ export async function POST(req: Request) {
         }
       }
     } catch (e) {
+      // v4.7.0 C6 (review R8): the broker STATED the session is over. That is
+      // the daily prompt, not an outage — clear the cached token / session so
+      // the next pull cannot reuse it, and answer the typed 409.
+      if (isPullBroker(broker) && isBrokerAuthExpired(e)) {
+        if (broker !== "kotakneo") writePullAuth(conn.id, broker, { tokenExpiresAt: null }, "");
+        const loginUrl =
+          broker === "fyers"
+            ? fyersLoginUrl({ appId: keyRead.value, redirectUri: PULL_REDIRECT_URI, state: randomUUID() })
+            : broker === "nuvama"
+              ? nuvamaLoginUrl(keyRead.value)
+              : undefined;
+        return NextResponse.json(
+          { ok: false, [e.need]: true, ...(loginUrl ? { loginUrl } : {}), message: e.message },
+          { status: 409 },
+        );
+      }
       return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 502 });
     }
 
@@ -1067,7 +1525,9 @@ export async function POST(req: Request) {
       // R43 / QS-AO (4.3.0): the three pulls that state TODAY's book re-state
       // it on every pull, so a later pull the same day replaces the earlier
       // snapshot of a changed position instead of adding a second row.
-      const snapshotPull = broker === "dhan" || broker === "angelone" || broker === "upstox";
+      // v4.7.0 C6: the three native pulls read TODAY's book too (design D2).
+      const snapshotPull =
+        broker === "dhan" || broker === "angelone" || broker === "upstox" || broker === "fyers" || broker === "kotakneo" || broker === "nuvama";
       const snapshotOpts = snapshotPull ? { supersedeSnapshot: { fileName } } : {};
       // W2b (owner ruling A1, design review revision 13) — a MANUAL pull shows
       // the same per-import toggle as a file import, default unchecked, so

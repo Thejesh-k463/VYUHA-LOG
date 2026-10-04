@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { accounts, brokerConnections, trades } from "@/lib/db/schema";
 import { readSecret, secretsEqual } from "@/lib/vault";
 import { BROKER_LABELS, type Broker } from "@/lib/domain/constants";
+import { pullAckCurrent } from "@/lib/domain/broker-pull-disclosure";
 import {
   isPlainDuplicateCopy,
   type DuplicateConnectionGroup,
@@ -63,6 +64,9 @@ import { isAutoCloseMerged, lotIdentityHashes } from "@/lib/import/close-open-lo
  *                 Upstox connection carries, and it is issued per client.
  *   openalgo:*    apiKey — the OpenAlgo instance's own key. Two accounts
  *                 pointing at one instance are one client.
+ *   fyers         auth_json.fyId (stamped at the first login), else apiKey.
+ *   kotakneo      auth_json.ucc (case-blind); none → no identity.
+ *   nuvama        auth_json.nuvamaUserId (stamped at login), else apiKey.
  *   anything else apiKey.
  *
  * Comparison is `secretsEqual` (lib/vault.ts) — constant time, and it is the
@@ -167,7 +171,58 @@ export function connectionIdentity(c: ConnectionIdentityInput): BrokerIdentity |
     const uid = authString(readAuth(c.authJson), "kiteUserId");
     if (uid) return { kind: "id", value: uid };
   }
+  // v4.7.0 C6 (design review R7). Fyers and Nuvama: the id the broker STATES,
+  // stamped into auth_json by the pull route at the first login (`fyId` from
+  // the profile / trade book, `nuvamaUserId` from the login's account id); the
+  // app key until then, as Zerodha. Kotak Neo: the UCC the user saves IS the
+  // client — its key column is the Trade API access token, which Kotak lets
+  // the user reset, so it is never the identity; no UCC → no identity (the
+  // Angel One rule). UCCs compare case-blind.
+  if (c.broker === "fyers") {
+    const id = authString(readAuth(c.authJson), "fyId");
+    if (id) return { kind: "id", value: id };
+  }
+  if (c.broker === "kotakneo") {
+    const ucc = authString(readAuth(c.authJson), "ucc").toUpperCase();
+    return ucc ? { kind: "id", value: ucc } : null;
+  }
+  if (c.broker === "nuvama") {
+    const id = authString(readAuth(c.authJson), "nuvamaUserId");
+    if (id) return { kind: "id", value: id };
+  }
   return key ? { kind: "secret", value: key } : null;
+}
+
+/**
+ * THE ONE auth_json WRITER RULE for the three C6 brokers (v4.7.0, design
+ * review R5). The save and every pull-time stamp (identity, cached-token
+ * expiry, a cleared session) build the next blob through this — never by
+ * replacing it whole, which is how a re-save used to drop the stamped identity
+ * and a pull stamp the recorded consent.
+ *
+ *   - starts from the stored blob (null → {});
+ *   - a patch value `undefined` leaves the key as stored, `null` DELETES it,
+ *     anything else replaces it;
+ *   - a `pullAckVersion` that is not the broker's CURRENT sheet version
+ *     (`pullAckCurrent`) is dropped — a re-save keeps a current ack, never a
+ *     stale one, and only the save route's consent check can stamp a new one.
+ *
+ * PURE (no DB): it lives here because the identity it preserves is this
+ * module's subject, and a route file may export only its handlers.
+ */
+export function mergeAuth(
+  broker: string,
+  stored: Record<string, unknown> | null | undefined,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...(stored ?? {}) };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    if (v === null) delete out[k];
+    else out[k] = v;
+  }
+  if ("pullAckVersion" in out && !pullAckCurrent(broker, out.pullAckVersion)) delete out.pullAckVersion;
+  return out;
 }
 
 /** The masked form of an identity — the ONLY form that may be displayed. */

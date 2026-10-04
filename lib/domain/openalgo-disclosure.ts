@@ -99,7 +99,9 @@ export const OPENALGO_WHAT_IT_IS: DisclosureItem[] = [
       // Broker names below corrected 2026-09-02 (Upstox native landed v2.99.104).
       // A FACTUAL correction to stale context, not a change to what the user
       // consents to — so the disclosure version deliberately does NOT bump.
-      "One OpenAlgo instance is connected to one broker account. Vyuha then asks that instance for your executed trades over a normal web request to your own machine — the same shape as the Zerodha, Dhan, Angel One and Upstox pulls Vyuha already does directly.",
+      // v4.7.0 C6: the direct pulls named in full — amended, not bumped: "5" is
+      // unreleased (introduced in C5) and the D-6 precedent amends before release.
+      "One OpenAlgo instance is connected to one broker account. Vyuha then asks that instance for your executed trades over a normal web request to your own machine — the same shape as the pulls Vyuha already does directly from Zerodha, Dhan, Angel One, Upstox, Fyers, Kotak Neo and Nuvama.",
   },
   {
     title: "Why it is worth the trouble",
@@ -107,7 +109,9 @@ export const OPENALGO_WHAT_IT_IS: DisclosureItem[] = [
       // v4.6.0 W9: Fyers and Nuvama named — a FACTUAL correction (two brokers
       // joined the list), not a change to what the user consents to, so the
       // disclosure version is amended, never bumped, until v4.6.0 ships (D-6).
-      "Vyuha has direct API pulls for Zerodha, Dhan, Angel One and Upstox only. Through OpenAlgo, Groww, Paytm Money, Kotak and Fyers also get a same-day pull, with no broker-specific code. Sahi and Nuvama have no OpenAlgo plugin and stay on file import.",
+      // v4.7.0 C6: Fyers, Kotak Neo and Nuvama gained direct pulls (documented, not
+      // yet verified) — amended inside the unreleased "5" (D-6), never bumped.
+      "Vyuha has direct API pulls for Zerodha, Dhan, Angel One and Upstox, and for Fyers, Kotak Neo and Nuvama (documented, not yet verified with a real account). Through OpenAlgo, Groww, Paytm Money, Kotak and Fyers also get a same-day pull, with no broker-specific code. Sahi has neither an API nor an OpenAlgo plugin and stays on file import; Nuvama has no OpenAlgo plugin.",
   },
 ];
 

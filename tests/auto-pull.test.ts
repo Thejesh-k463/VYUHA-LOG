@@ -338,3 +338,73 @@ describe("the Dhan catch-up window (R6)", () => {
     expect(out.summary[0]!.detail).toMatch(/pasted 24-hour tokens/i);
   });
 });
+
+/**
+ * v4.7.0 wave C6 (design D10, review R6 + "Smaller"). Kotak Neo logs in from a
+ * stored TOTP secret + MPIN, so it is the one C6 broker that can pull
+ * unattended — but ONLY under a CURRENT consent: the sheet's version is part of
+ * the rule, so a bumped sheet stops the launch pull until the user re-reads it
+ * (design §3 sequence #6). Fyers and Nuvama need a browser login on each pull
+ * day and are never eligible.
+ */
+describe("C6 — kotakneo / fyers / nuvama auto-pull", () => {
+  const KOTAK = { ucc: "XAB12", mobileNumber: "9999999999", mpin: "123456", totpSecret: "JBSWY3DPEHPK3PXP", pullAckVersion: 1 };
+
+  it("kotakneo is eligible with MPIN + TOTP + the CURRENT ack, and says why", () => {
+    const e = job.autoPullEligibility("kotakneo", KOTAK);
+    expect(e).toEqual({ eligible: true, reason: "unattended (TOTP + MPIN login)" });
+  });
+
+  it("sequence #6: an ack of an OLDER sheet (v1 acked, v2 shipped) is notEligible — the reason names re-saving and the consent", () => {
+    for (const stale of [0, 2, "1", null, undefined]) {
+      const e = job.autoPullEligibility("kotakneo", { ...KOTAK, pullAckVersion: stale as never });
+      expect(e.eligible, `ack ${String(stale)}`).toBe(false);
+      expect(e.reason).toMatch(/re-save.*accept/i);
+    }
+    expect(job.autoPullEligibility("kotakneo", { ...KOTAK, mpin: undefined }).eligible).toBe(false);
+    expect(job.autoPullEligibility("kotakneo", null).reason).toMatch(/re-save/i);
+  });
+
+  it("fyers and nuvama are NEVER eligible, whatever is saved", () => {
+    for (const b of ["fyers", "nuvama"]) {
+      const e = job.autoPullEligibility(b, { apiSecret: "s", pullAckVersion: 1 });
+      expect(e.eligible).toBe(false);
+      expect(e.reason).toMatch(/browser login on each pull day/);
+    }
+  });
+
+  it("the sweep: a stale-ack Kotak row is recorded notEligible and the network is never touched", async () => {
+    addConn("kotakneo", { ...KOTAK, pullAckVersion: 0 });
+    const pullOne = vi.fn();
+    const out = await job.runAutoPull(WED_0720_IST, pullOne as never);
+    expect(pullOne).not.toHaveBeenCalled();
+    expect(out.summary.map((e) => [e.broker, e.status])).toEqual([["kotakneo", "notEligible"]]);
+  });
+
+  it("the REAL pull has a kotakneo branch — login, MPIN, trade book; an empty book is 'nothing new', never 'not an auto-pull broker'", async () => {
+    addConn("kotakneo", KOTAK);
+    const hits: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      hits.push(`${u.host}${u.pathname}`);
+      const body = u.pathname.endsWith("/tradeApiLogin")
+        ? { data: { token: "view-token", sid: "view-sid" } }
+        : u.pathname.endsWith("/tradeApiValidate")
+          ? { data: { token: "trade-token", sid: "trade-sid", baseUrl: "https://cis.kotaksecurities.com" } }
+          : { stat: "Ok", stCode: 200, data: [] };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    try {
+      const out = await job.runAutoPull(WED_0720_IST); // the REAL pullOne
+      expect(hits).toEqual([
+        "mis.kotaksecurities.com/login/1.0/tradeApiLogin",
+        "mis.kotaksecurities.com/login/1.0/tradeApiValidate",
+        "cis.kotaksecurities.com/quick/user/trades",
+      ]);
+      expect(out.summary.map((e) => [e.broker, e.status])).toEqual([["kotakneo", "nothingNew"]]);
+      expect(out.line).toContain("Kotak Neo nothing new");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

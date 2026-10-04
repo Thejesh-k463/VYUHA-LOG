@@ -28,7 +28,17 @@ import { Badge } from "@/components/ui/badge";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalgo-disclosure";
 import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
-import { connectionModeLabel, saveDisabled, saveTargetLabel } from "@/components/import/broker-connect-gate";
+import { connectionModeLabel, saveDisabled, saveTargetLabel, type GateBroker } from "@/components/import/broker-connect-gate";
+// PURE consent copy (v4.7.0 C6) — the ONLY C6 module this client file may
+// import: lib/import/api/{fyers,kotakneo,nuvama}.ts are server-only (xlsx via
+// pull-symbols, node:crypto, package.json), and a client import of them fails
+// only at `next build` (AGENTS.md "Verify with npm run verify").
+import {
+  BROKER_PULL_DISCLOSURES,
+  PULL_UNVERIFIED_LABEL,
+  UNVERIFIED_PULL_BROKERS,
+  type BrokerPullDisclosureId,
+} from "@/lib/domain/broker-pull-disclosure";
 import { writeStored } from "@/components/layout/use-stored-value";
 // Pure domain, browser-safe (invariant 2): the ONE +5:30 definition and the
 // trading-day walk-back, so the gap line cannot invent a second calendar.
@@ -80,6 +90,11 @@ interface ConnStatus {
    *  actually connected instead of defaults (host/broker are not secrets). */
   openalgoHost?: string | null;
   openalgoUnderlyingBroker?: string | null;
+  /** v4.7.0 C6 (fyers / kotakneo / nuvama): the stored consent ack is the
+   *  sheet's CURRENT version — false re-shows the consent sheet. */
+  pullAckCurrent?: boolean;
+  /** v4.7.0 C6: the pull is documented, not yet verified with a real account. */
+  unverified?: boolean;
 }
 
 /** One suspected duplicate from the server's cross-source check (409 body). */
@@ -88,6 +103,9 @@ interface CollisionLite {
   kind: string;
   /** The existing row is today's earlier snapshot from this same pull (M3). */
   sameSnapshot?: boolean;
+  /** v4.7.0 C6 (lib/import/cross-source.ts): only the contract MONTH matched —
+   *  one name states no expiry day and the rows share no trade date. */
+  monthOnly?: boolean;
   detail: string;
   incoming: { buyQty: number; sellQty: number; buyValue: number; sellValue: number };
   existing: { id: number; buyQty: number; sellQty: number; sourceFile: string | null };
@@ -206,7 +224,10 @@ export const PULL_FORCE_ROUTE_TAIL =
  * quantity or value relation, so it names what it met — today's earlier pull —
  * instead of falling through to the partial-overlap label.
  */
-export function collisionBadge(kind: string): string {
+export function collisionBadge(kind: string, monthOnly?: boolean): string {
+  // v4.7.0 C6: a month-level contract match (one name states no expiry day,
+  // no shared trade date) is said as exactly that — it may be another expiry.
+  if (monthOnly === true) return "same month (expiry day unstated)";
   if (kind === "same-quantity") return "same quantity";
   if (kind === "same-value") return "same value";
   if (kind === "earlier-snapshot") return "today's earlier pull";
@@ -338,7 +359,59 @@ export function collisionDialogCopy(p: {
   };
 }
 
-type BrokerId = "zerodha" | "dhan" | "angelone" | "upstox" | "openalgo";
+type BrokerId = "zerodha" | "dhan" | "angelone" | "upstox" | "openalgo" | "fyers" | "kotakneo" | "nuvama";
+
+/** v4.7.0 C6 — the three native read-only pulls, each behind its own consent sheet. */
+export const PULL_BROKERS: readonly BrokerPullDisclosureId[] = ["fyers", "kotakneo", "nuvama"];
+const isPullBrokerId = (b: string): b is BrokerPullDisclosureId => (PULL_BROKERS as readonly string[]).includes(b);
+
+/**
+ * Review R9 — which tabs show the missed-pulls gap line (pullGapNotice), and whether the
+ * broker's pull reads a RANGE. Only Dhan's does (`catchUpRange`); the others
+ * state today's trades only, so their line says the days between come from the
+ * broker's file. Angel One and Upstox are listed since v4.7.0 C6 — a NEW line
+ * for their users. Zerodha and OpenAlgo are not listed (unchanged).
+ */
+export const PULL_GAP_RANGED: Readonly<Partial<Record<BrokerId, boolean>>> = {
+  dhan: true,
+  angelone: false,
+  upstox: false,
+  fyers: false,
+  kotakneo: false,
+  nuvama: false,
+};
+
+/**
+ * v4.7.0 C6 — the C6 brokers' own save rule, beside `saveDisabled`
+ * (components/import/broker-connect-gate.ts names only the five older brokers;
+ * the three take its default branch there, which checks the key alone). A
+ * first save needs every field; a re-save may leave fields empty (the server
+ * keeps the stored ones). Either needs the consent sheet accepted when it is
+ * showing — the checkbox is a courtesy, the server's 409 is the control.
+ */
+export function pullSaveBlocked(s: {
+  active: string;
+  hasSavedRow: boolean;
+  consentShowing: boolean;
+  consentAccepted: boolean;
+  apiSecret: string;
+  mobileNumber: string;
+  ucc: string;
+  mpin: string;
+  totpSecret: string;
+}): boolean {
+  if (!isPullBrokerId(s.active)) return false;
+  if (s.consentShowing && !s.consentAccepted) return true;
+  if (s.hasSavedRow) return false;
+  if (s.active === "kotakneo") return !s.mobileNumber.trim() || !s.ucc.trim() || !s.mpin.trim() || !s.totpSecret.trim();
+  return !s.apiSecret.trim();
+}
+
+/** Which box a pull's login paste fills, by broker (Zerodha's request_token,
+ *  Fyers' auth_code, Nuvama's request id) — the route reads it by this name. */
+export function loginPasteField(brokerId: string): "requestToken" | "authCode" | "requestId" {
+  return brokerId === "fyers" ? "authCode" : brokerId === "nuvama" ? "requestId" : "requestToken";
+}
 
 /**
  * The Dhan PIN+TOTP consent, ONE exported const so tests pin it (the
@@ -401,6 +474,9 @@ const OPENALGO_OPTIONS = openAlgoBrokerOptions();
 /** A pasted token whose `exp` is behind us — the pop-up's trigger. */
 function tokenExpired(c: ConnStatus, now = Date.now()): boolean {
   if (c.authMode !== "token" || !c.tokenExpiresAt) return false;
+  // v4.7.0 C6: a Fyers day token / Nuvama session ending is the daily login,
+  // asked for at the next pull — not a pasted token the user must replace.
+  if (isPullBrokerId(c.broker)) return false;
   const t = Date.parse(c.tokenExpiresAt);
   return Number.isFinite(t) && t < now;
 }
@@ -473,6 +549,9 @@ export function pullGapNotice(
   lastPullAt: string | null | undefined,
   now: Date = new Date(),
   fetchFrom?: string | null,
+  // Review R9 (v4.7.0 C6): only a RANGED pull (Dhan's) fetches the gap. A
+  // today-only broker's line says where the days between come from instead.
+  ranged = true,
 ): string | null {
   if (!lastPullAt) return null;
   const t = Date.parse(lastPullAt);
@@ -483,9 +562,11 @@ export function pullGapNotice(
   if (day >= previousTradingDay(todayIstIso(now))) return null;
   const clampedFrom =
     typeof fetchFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fetchFrom) && fetchFrom > day ? fetchFrom : null;
-  const tail = clampedFrom
-    ? `the next pull fetches from ${dayLabel(clampedFrom)}; fills before that are not fetched.`
-    : "the next pull fetches the gap.";
+  const tail = !ranged
+    ? "this broker states today's trades only; import its file for the days between."
+    : clampedFrom
+      ? `the next pull fetches from ${dayLabel(clampedFrom)}; fills before that are not fetched.`
+      : "the next pull fetches the gap.";
   return `Pulls missed since ${dayLabel(day)} — ${tail}`;
 }
 
@@ -495,6 +576,8 @@ export interface GapRow {
   accountName?: string | null;
   lastPullAt: string | null;
   catchUpFrom?: string | null;
+  /** Review R9: does this broker's pull read a range? Absent = true (Dhan's rule, unchanged). */
+  ranged?: boolean;
 }
 
 /**
@@ -511,7 +594,7 @@ export interface GapRow {
 export function pullGapLines(rows: GapRow[], aggregate: boolean, now: Date = new Date()): string[] {
   const named = aggregate || rows.length > 1;
   return rows.flatMap((c) => {
-    const line = pullGapNotice(c.lastPullAt, now, c.catchUpFrom);
+    const line = pullGapNotice(c.lastPullAt, now, c.catchUpFrom, c.ranged ?? true);
     if (!line) return [];
     return [named ? `${c.accountName ?? `Account ${c.accountId}`}: ${line}` : line];
   });
@@ -544,6 +627,13 @@ export function unfetchedNotice(s: UnfetchedSpan): string {
  * while the credential lives in the key column and the row pulls fine.
  */
 function modeLabelOf(c: ConnStatus): string {
+  // v4.7.0 C6 — how each native pull logs in, not "pasted token": nothing is
+  // pasted into a key box, and a Fyers / Nuvama cache ending is the next login.
+  if (c.broker === "kotakneo") return "TOTP + MPIN · logs in at each pull";
+  if (c.broker === "fyers" || c.broker === "nuvama") {
+    const until = c.tokenExpiresAt && Date.parse(c.tokenExpiresAt) > Date.now() ? c.tokenExpiresAt : null;
+    return until ? `logged in · until ${formatTs(until)}` : c.broker === "fyers" ? "browser login on each pull day" : "browser login when the session ends";
+  }
   if (c.authMode === "none" || c.authMode == null) {
     if (c.broker === "upstox") return "Analytics token · lasts about a year";
     if (isOpenAlgoConnectionId(c.broker)) return "API key · does not expire";
@@ -694,6 +784,55 @@ const BROKERS: Record<BrokerId, {
       </>
     ),
   },
+  // v4.7.0 wave C6 — native READ-ONLY pulls of today's trade book. Each tab
+  // shows its consent sheet (BROKER_PULL_DISCLOSURES) before the first save
+  // and carries the unverified label until a live pull is recorded.
+  fyers: {
+    label: "Fyers",
+    tab: "Fyers (API v3)",
+    keyLabel: "App ID",
+    keyPlaceholder: "from Fyers' API dashboard → your app",
+    needsToken: false,
+    blurb: (
+      <>
+        Pulls <span className="font-medium">today&apos;s fills</span> from the Fyers trade book. Save the{" "}
+        <b>App ID and App Secret</b> once (create the app on Fyers&apos; API dashboard with the redirect URL{" "}
+        <span className="font-mono">https://127.0.0.1/</span>); on each day you pull, log in once on Fyers&apos; own
+        page through the link Vyuha shows and paste back the address it lands on — the day&apos;s token is kept until
+        that day ends. Not unattended.
+      </>
+    ),
+  },
+  kotakneo: {
+    label: "Kotak Neo",
+    tab: "Kotak Neo (Trade API)",
+    keyLabel: "Trade API access token",
+    keyPlaceholder: "from the Neo app → More → Trade API",
+    needsToken: false,
+    blurb: (
+      <>
+        Pulls <span className="font-medium">today&apos;s fills</span> from the Kotak Neo trade book, and{" "}
+        <b>logs in unattended</b>: the TOTP <i>secret</i> and the 6-digit MPIN you save here log in afresh at every
+        pull, so it can join the once-a-day auto-pull. The access token comes from the Neo app → More → Trade API.
+      </>
+    ),
+  },
+  nuvama: {
+    label: "Nuvama",
+    tab: "Nuvama (APIConnect)",
+    keyLabel: "API key",
+    keyPlaceholder: "from Nuvama's API Connect page",
+    needsToken: false,
+    blurb: (
+      <>
+        Pulls <span className="font-medium">today&apos;s fills</span> from the Nuvama trade book. Save the{" "}
+        <b>API key and API secret</b> once (register the redirect URL{" "}
+        <span className="font-mono">https://127.0.0.1/</span>); when the Nuvama session has ended, log in once on
+        Nuvama&apos;s own page through the link Vyuha shows and paste back the address it lands on. Nuvama&apos;s
+        documentation marks a static IP as mandatory, so a pull from a home connection may be refused.
+      </>
+    ),
+  },
 };
 
 export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAccountOption[] }) {
@@ -751,7 +890,14 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   // Zerodha's extra — the Kite Connect app secret for the official daily
   // session exchange (request_token paste; decision #3, no enctoken).
   const [apiSecret, setApiSecret] = useState("");
-  // The request_token a 409'd Zerodha pull is waiting for.
+  // v4.7.0 C6 — Kotak Neo's login fields (its MPIN rides in `pin` above, and
+  // its TOTP secret in `totpSecret`; one broker's form is visible at a time and
+  // switchBroker clears them), and the consent sheet's explicit accept.
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [ucc, setUcc] = useState("");
+  const [pullConsent, setPullConsent] = useState(false);
+  // The login paste a 409'd pull is waiting for: Zerodha's request_token,
+  // Fyers' auth_code (or the whole redirected address), Nuvama's request id.
   const [requestToken, setRequestToken] = useState("");
   const [requestTokenPrompt, setRequestTokenPrompt] = useState<{
     brokerId: string;
@@ -818,7 +964,8 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
    *
    *  R47: one line per Dhan ROW with a gap, named by account in the
    *  All-accounts view — never only the lowest account's row. */
-  const gapLines = active === "dhan" ? pullGapLines(brokerConns, aggregate) : [];
+  const gapRanged = PULL_GAP_RANGED[active];
+  const gapLines = gapRanged !== undefined ? pullGapLines(brokerConns.map((c) => ({ ...c, ranged: gapRanged })), aggregate) : [];
   /** C-6 — every kept "not fetched" span on this tab's Dhan rows, derived at
    *  render time from the server's projection (never state, never an effect).
    *  Dhan only: no other puller clamps a window. */
@@ -832,6 +979,21 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         : conn;
   /** Dhan's TOTP toggle: the user's pick, else whatever the saved row does. */
   const dhanTotpMode = dhanTotpPick ?? saveTargetConn?.authMode === "totp";
+  /** v4.7.0 C6 (review R6) — the consent sheet shows on a FIRST save and
+   *  whenever the server says the stored ack is not current. Derived at render
+   *  time from GET's projection — never state synced in an effect. */
+  const pullSheet = isPullBrokerId(active) ? BROKER_PULL_DISCLOSURES[active] : null;
+  const consentShowing = pullSheet != null && saveTargetConn?.pullAckCurrent !== true;
+  /** Seam D-C6-1 — the "not yet verified" badge follows UNVERIFIED_PULL_BROKERS:
+   *  the saved row's own `unverified` (GET reads it from that list) when there is
+   *  one, else the list itself. Removing a broker from the list removes its badge. */
+  const pullUnverified = pullSheet != null && (conn?.unverified ?? UNVERIFIED_PULL_BROKERS.includes(active));
+  /** The intro's unverified clause, named from the same list (never hard-coded). */
+  const unverifiedPullNames = PULL_BROKERS.filter((b) => UNVERIFIED_PULL_BROKERS.includes(b)).map((b) => BROKERS[b].label);
+  const unverifiedPullClause =
+    unverifiedPullNames.length === 0
+      ? ""
+      : ` (${unverifiedPullNames.length > 1 ? `${unverifiedPullNames.slice(0, -1).join(", ")} and ${unverifiedPullNames.at(-1)}` : unverifiedPullNames[0]}: ${PULL_UNVERIFIED_LABEL})`;
   /** Every saved OpenAlgo instance (`openalgo:<broker>` rows) — a user with
    *  accounts at several brokers runs one instance per broker, each on its own
    *  port, and each pulls independently. */
@@ -955,11 +1117,19 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         ...(active === "dhan" && dhanTotpMode ? { pin, totpSecret, dhanTotpConsent: dhanConsent } : {}),
         ...(active === "zerodha" && apiSecret ? { apiSecret } : {}),
         ...(active === "openalgo" ? { host, underlyingBroker } : {}),
+        // v4.7.0 C6: empty fields keep the stored ones (the server merges).
+        ...((active === "fyers" || active === "nuvama") && apiSecret ? { apiSecret } : {}),
+        ...(active === "kotakneo" ? { mobileNumber, ucc, mpin: pin, totpSecret } : {}),
+        // The version the sheet SHOWED, only when the user accepted it — the
+        // server stamps it only if it is the current one (review R6).
+        ...(pullSheet && pullConsent ? { pullConsent: { version: pullSheet.version } } : {}),
       },
       "save",
     );
     if (!data.ok) {
       await fail(res, data, "Could not save the connection.");
+      // A 409 needsConsent: the sheet changed under this page — re-read it.
+      if (res?.status === 409 && data.needsConsent) await refresh();
       return;
     }
     setMsg({ ok: true, text: data.message ?? "" });
@@ -970,6 +1140,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     setTotpSecret("");
     setApiSecret("");
     setDhanConsent(false);
+    setMobileNumber("");
+    setUcc("");
+    setPullConsent(false);
     // host and underlyingBroker are not secrets and are tedious to retype, so
     // they survive a save — only the credentials are cleared.
     await refresh();
@@ -982,9 +1155,10 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     // The connection row's OWN account: a pull belongs to the book the
     // connection was saved in, not to whatever view happens to be selected.
     accountId: number | undefined = conn?.accountId,
-    // A request_token the Zerodha daily-login dialog collected — the server
-    // exchanges it for the day's access token before pulling.
-    withRequestToken?: string,
+    // What the daily-login dialog collected — Zerodha's request_token, Fyers'
+    // auth_code, Nuvama's request id (sent under `loginPasteField`'s name);
+    // the server exchanges it before pulling.
+    withLoginPaste?: string,
   ) {
     // A 409 from the server means the pull collides with trades already in the
     // journal (same trades from another source, hashes a paisa apart). Nothing
@@ -999,17 +1173,27 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         ...(accountId ? { accountId } : {}),
         ...(keepSellsSeparate ? { keepSellsSeparate: true } : {}),
         ...(force ? { force: true } : {}),
-        ...(withRequestToken ? { requestToken: withRequestToken } : {}),
+        ...(withLoginPaste ? { [loginPasteField(brokerId)]: withLoginPaste } : {}),
       },
       mode,
     );
     if (!data.ok) {
-      // Zerodha's daily login: the stored session is dead (or absent) and an
-      // API secret is on file — the server asks for today's request_token.
-      if (res?.status === 409 && data.needsRequestToken) {
+      // The daily login: Zerodha's request_token (stored session dead, API
+      // secret on file), Fyers' auth_code and Nuvama's request id (v4.7.0 C6) —
+      // the server answers 409 with the login link BEFORE any network call.
+      // Kotak's needsLogin carries no link (the next pull logs in itself), so
+      // it falls through to the message.
+      if (res?.status === 409 && (data.needsRequestToken || ((data.needsAuthCode || data.needsLogin) && data.loginUrl))) {
         setRequestToken("");
         setRequestTokenPrompt({ brokerId, accountId, mode, loginUrl: data.loginUrl, message: data.message });
         setMsg(null);
+        return;
+      }
+      // v4.7.0 C6: the stored consent is stale — the message says so, and the
+      // re-read GET (pullAckCurrent: false) shows the sheet on the form.
+      if (res?.status === 409 && data.needsConsent) {
+        await fail(res, data, "Read and accept the statement, then save again.");
+        await refresh();
         return;
       }
       if (res?.status === 409 && data.nothingNew) {
@@ -1093,6 +1277,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     setApiSecret("");
     setDhanTotpPick(null);
     setDhanConsent(false);
+    setMobileNumber("");
+    setUcc("");
+    setPullConsent(false);
     setRequestToken("");
     setRequestTokenPrompt(null);
     setHost(OPENALGO_DEFAULT_HOST);
@@ -1105,7 +1292,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     <Card>
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle>
-          Connect broker (API) — Zerodha, Dhan, Angel One &amp; Upstox
+          Connect broker (API) — Zerodha, Dhan, Angel One, Upstox, Fyers, Kotak Neo &amp; Nuvama
           {openalgoAvailable && <> + OpenAlgo</>}
         </CardTitle>
         {brokerConns.length === 1 && conn && (
@@ -1131,13 +1318,15 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
             would make the copy false. */}
         <p className="rounded-md border border-border bg-card-hover/40 px-3 py-2 text-xs text-muted-foreground">
           <span className="text-foreground">Zerodha</span>, <span className="text-foreground">Dhan</span>,{" "}
-          <span className="text-foreground">Angel One</span> and <span className="text-foreground">Upstox</span> are
-          wired for live API pulls
+          <span className="text-foreground">Angel One</span>, <span className="text-foreground">Upstox</span>,{" "}
+          <span className="text-foreground">Fyers</span>, <span className="text-foreground">Kotak Neo</span> and{" "}
+          <span className="text-foreground">Nuvama</span> are wired for live API pulls
+          {unverifiedPullClause}
           {openalgoAvailable ? (
             <>
               {" "}
-              directly, and <span className="text-foreground">Groww, Paytm Money and Kotak</span> through
-              your own OpenAlgo instance.{" "}
+              directly, and <span className="text-foreground">Groww and Paytm Money</span> through your own
+              OpenAlgo instance (Kotak works through either).{" "}
               <span className="text-foreground">Everything else imports by file</span>
             </>
           ) : (
@@ -1169,6 +1358,13 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           })}
         </div>
 
+        {/* v4.7.0 C6 (ruling B2 / owner Q4): the three native pulls carry the
+            unverified label on their card until a live pull is recorded. */}
+        {pullUnverified && (
+          <Badge variant="warning" data-testid="pull-unverified">
+            {PULL_UNVERIFIED_LABEL}
+          </Badge>
+        )}
         <p className="text-xs text-muted-foreground">
           {spec.blurb} Credentials are encrypted at rest with a key bound to this machine (v2.99.80) — the database
           file alone carries nothing usable — and they are sent nowhere except{" "}
@@ -1472,7 +1668,87 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
               </div>
             </>
           )}
+          {(active === "fyers" || active === "nuvama") && (
+            <div className="space-y-1">
+              <Label>{active === "fyers" ? "App Secret" : "API secret"}</Label>
+              <Input
+                type="password"
+                value={apiSecret}
+                onChange={(e) => setApiSecret(e.target.value)}
+                placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : active === "fyers" ? "from Fyers' API dashboard → your app" : "from Nuvama's API Connect page"}
+                autoComplete="off"
+              />
+            </div>
+          )}
+          {active === "kotakneo" && (
+            <>
+              <div className="space-y-1">
+                <Label>Registered mobile number</Label>
+                <Input
+                  value={mobileNumber}
+                  onChange={(e) => setMobileNumber(e.target.value)}
+                  placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : "10 digits, or with +91"}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>UCC (client code)</Label>
+                <Input
+                  value={ucc}
+                  onChange={(e) => setUcc(e.target.value)}
+                  placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : "as the Neo app shows it"}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>MPIN</Label>
+                <Input
+                  type="password"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : "the 6-digit Neo app PIN"}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>TOTP secret</Label>
+                <Input
+                  type="password"
+                  value={totpSecret}
+                  onChange={(e) => setTotpSecret(e.target.value)}
+                  placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : "the base32 SECRET from TOTP setup — not the 6-digit code"}
+                  autoComplete="off"
+                />
+              </div>
+            </>
+          )}
         </div>
+
+        {/* v4.7.0 C6 (review R6) — the consent sheet: what this connection
+            stores and calls, in the SAME sentences the server's version
+            stands for. Shown before the first save and whenever the stored
+            ack is not current; the save sends the version it SHOWED only
+            when the box is ticked, and the server refuses anything else. */}
+        {pullSheet && consentShowing && (
+          <div className="space-y-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs" data-testid="pull-consent">
+            <p className="font-medium text-foreground">{pullSheet.title}</p>
+            <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+              {pullSheet.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                data-testid="pull-consent-accept"
+                checked={pullConsent}
+                onChange={(e) => setPullConsent(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>I have read this and accept it.</span>
+            </label>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -1485,7 +1761,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
               pickMissing ||
               saveDisabled({
                 busy: busy != null,
-                active,
+                // The C6 brokers take the gate's default branch (key rule only,
+                // needsToken false); their own fields + consent are pullSaveBlocked.
+                active: active as GateBroker,
                 apiKey,
                 hasSavedRow: saveTargetConn != null,
                 token: accessToken,
@@ -1498,6 +1776,17 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 host,
                 underlyingBroker,
                 needsToken: spec.needsToken,
+              }) ||
+              pullSaveBlocked({
+                active,
+                hasSavedRow: saveTargetConn != null,
+                consentShowing,
+                consentAccepted: pullConsent,
+                apiSecret,
+                mobileNumber,
+                ucc,
+                mpin: pin,
+                totpSecret,
               })
             }
           >
@@ -1648,7 +1937,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                     <span className="flex flex-wrap items-baseline gap-1">
                       {[c, ...(c.also ?? [])].map((e, j) => (
                         <Badge key={j} variant="secondary" className="text-[10px]">
-                          {collisionBadge(e.kind)}
+                          {collisionBadge(e.kind, e.monthOnly)}
                         </Badge>
                       ))}
                     </span>
@@ -1718,7 +2007,10 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         {/* Zerodha daily-login dialog: the stored session is dead (or absent)
             and an API secret is on file, so the server asked (409) for today's
             request_token. One browser click + one paste — the honest daily
-            cost of Kite's regulated session expiry. */}
+            cost of Kite's regulated session expiry. Since v4.7.0 C6 the same
+            dialog serves Fyers (409 needsAuthCode) and Nuvama (409 needsLogin):
+            the link opens the broker's own login page, and the paste goes back
+            under loginPasteField's name. */}
         <Dialog
           open={requestTokenPrompt != null}
           onOpenChange={(open) => {
@@ -1731,25 +2023,40 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Zerodha needs today&apos;s login</DialogTitle>
+              <DialogTitle>
+                {loginPasteField(requestTokenPrompt?.brokerId ?? "") === "authCode"
+                  ? "Fyers needs today's login"
+                  : loginPasteField(requestTokenPrompt?.brokerId ?? "") === "requestId"
+                    ? "Nuvama needs a login"
+                    : <>Zerodha needs today&apos;s login</>}
+              </DialogTitle>
               <DialogDescription>
                 {requestTokenPrompt?.message ??
                   "Kite sessions are invalidated around 6 AM IST every day by regulation. Log in once via your Kite Connect URL and paste the request_token from the redirect — Vyuha does the token exchange."}
               </DialogDescription>
             </DialogHeader>
             {requestTokenPrompt?.loginUrl && (
-              <p className="break-all rounded-md border border-border bg-card-hover/40 px-3 py-2 font-mono text-xs">
+              <p className="break-all rounded-md border border-border bg-card-hover/40 px-3 py-2 font-mono text-xs" data-testid="login-link">
                 <a href={requestTokenPrompt.loginUrl} target="_blank" rel="noreferrer" className="underline">
                   {requestTokenPrompt.loginUrl}
                 </a>
               </p>
             )}
             <div className="space-y-1">
-              <Label>request_token (from the redirect URL after login)</Label>
+              <Label>
+                {loginPasteField(requestTokenPrompt?.brokerId ?? "") === "requestToken"
+                  ? "request_token (from the redirect URL after login)"
+                  : "The address your browser landed on after the login (or the code from it)"}
+              </Label>
               <Input
                 value={requestToken}
                 onChange={(e) => setRequestToken(e.target.value)}
-                placeholder="single-use; expires within minutes"
+                placeholder={
+                  loginPasteField(requestTokenPrompt?.brokerId ?? "") === "requestToken"
+                    ? "single-use; expires within minutes"
+                    : "https://127.0.0.1/?… — single-use; expires within minutes"
+                }
+                data-testid="login-paste"
                 autoComplete="off"
                 spellCheck={false}
               />

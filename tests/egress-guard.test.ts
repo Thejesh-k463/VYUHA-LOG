@@ -44,6 +44,14 @@ const ALLOWED_HOSTS: Record<string, string> = {
     "Upstox trades pull (lib/import/api/upstox.ts) — user-triggered; goes over node:https family:4 for the Static-IP gate.",
   "apiconnect.angelone.in":
     "Angel One SmartAPI login + tradebook (lib/import/api/angelone.ts) — user-triggered broker import.",
+  "api-t1.fyers.in":
+    "Fyers API v3 auth-code exchange, profile and trade book (lib/import/api/fyers.ts, v4.7.0 C6) — user-triggered only (no auto-pull: a browser login per pull day), read-only by surface, sends only the user's own App ID, the sha256 appIdHash and the day's token; consent-gated by BROKER_PULL_DISCLOSURES.fyers. The browser login URL (fyersLoginUrl → /generate-authcode) is on this SAME host and is opened in the user's browser, never fetched by the app.",
+  "mis.kotaksecurities.com":
+    "Kotak Neo Trade API login (tradeApiLogin + tradeApiValidate, lib/import/api/kotakneo.ts, v4.7.0 C6) and the SDK's fallback trade-book base (K-A8) — user-triggered or the opt-in once-a-day launch auto-pull, read-only by surface, consent-gated by BROKER_PULL_DISCLOSURES.kotakneo. The trade book goes to the session's baseUrl, which is RUNTIME data: assertKotakBaseUrl refuses anything but https on kotaksecurities.com or a subdomain, at login and again before the fetch (pinned below and in tests/kotakneo-api.test.ts).",
+  "nc.nuvamawealth.com":
+    "Nuvama APIConnect login (loginvendor + logindata) and trade book (lib/import/api/nuvama.ts, v4.7.0 C6) — user-triggered only, read-only by surface, consent-gated by BROKER_PULL_DISCLOSURES.nuvama; sends no X-Forwarded-For (Vyuha never looks up the public IP — no IP-echo host) and no AppIdKey of its own.",
+  "www.nuvamawealth.com":
+    "Nuvama's BROWSER login page (nuvamaLoginUrl in lib/import/api/nuvama.ts) — shown as a link and opened in the user's browser; no request is ever made TO this host by the app (the www.nseindia.com precedent: listed only because nuvama.ts is a dynamic-URL site, whose every URL literal is checked).",
   "api.telegram.org":
     "Telegram EOD digest + test alert (lib/telegram/send.ts, v3.6.0 decision #6) AND, since v4.7.0 C5, the Pro stop/target alerts (lib/jobs/telegram-alerts.ts → the same sendTelegram, behind POST /api/telegram/alerts) — consent-gated: off by default, sends only behind telegramGate (enabled AND current disclosure ack, enforced server-side in app/api/telegram/*, lib/telegram/digest-gate.ts and lib/telegram/alert-gate.ts; the alerts also need Pro, their own toggle, a live feed and an open market), and carries only the user's own recorded numbers and levels. ONE file names this host — pinned below.",
   "nsearchives.nseindia.com":
@@ -83,6 +91,12 @@ const DYNAMIC_URL_CALL_SITES: Record<string, string> = {
     "the OpenAlgo host is USER-CONFIGURED by design (self-hosted instance, default 127.0.0.1) — no fixed host exists to pin.",
   "lib/import/api/dhan.ts":
     "the token-mint URL is built by dhanAuthUrl (auth.dhan.co) so tests can pin its shape — every URL literal in the file is still checked below.",
+  "lib/import/api/fyers.ts":
+    "v4.7.0 C6 — prefixes paths with the FYERS_API constant (api-t1.fyers.in) — the literal is checked below.",
+  "lib/import/api/kotakneo.ts":
+    "v4.7.0 C6 — login URLs are built from KOTAK_LOGIN_BASE (mis.kotaksecurities.com; the literal is checked below), and the trade book from the session's baseUrl, which Kotak names at RUNTIME. The guard cannot read a runtime host, so the RUNTIME assert pins it: assertKotakBaseUrl (https only, kotaksecurities.com or a subdomain) runs at login and again inside the trade-book fetch — asserted below and unit-tested in tests/kotakneo-api.test.ts (review R10).",
+  "lib/import/api/nuvama.ts":
+    "v4.7.0 C6 — prefixes paths with NUVAMA_LOGIN_BASE / NUVAMA_EQ_BASE (nc.nuvamawealth.com) — the literals, and the browser-only login link's host, are checked below.",
 };
 
 /** Files allowed to import node:https / node:http. Their literal `host:`
@@ -273,11 +287,29 @@ describe("egress guard — the zero-telemetry claim is enforced, not asserted", 
       ["lib/import/api/upstox.ts", "api.upstox.com"],
       ["lib/jobs/auto-mtm.ts", "nsearchives.nseindia.com"],
       ["lib/telegram/send.ts", "api.telegram.org"],
+      ["lib/import/api/fyers.ts", "api-t1.fyers.in"],
+      ["lib/import/api/kotakneo.ts", "mis.kotaksecurities.com"],
+      ["lib/import/api/nuvama.ts", "nc.nuvamawealth.com"],
+      ["lib/import/api/nuvama.ts", "www.nuvamawealth.com"],
     ];
     for (const [file, host] of expectHostIn) {
       const src = stripComments(readFileSync(path.join(root, file), "utf8"));
       expect(src, `${file} no longer names ${host} — update the egress map`).toContain(host);
     }
+  });
+
+  it("Kotak's runtime trade-book host goes through assertKotakBaseUrl before any fetch (v4.7.0 C6, review R10)", () => {
+    // The trade book's host is the session's baseUrl — runtime data this scan
+    // cannot read. What it CAN pin is that the runtime check exists and that
+    // every non-literal fetch URL in the file is derived through it.
+    const src = stripComments(readFileSync(path.join(root, "lib/import/api/kotakneo.ts"), "utf8").replace(/\r\n/g, "\n"));
+    expect(src).toMatch(/export function assertKotakBaseUrl\(/);
+    expect(src).toMatch(/host === "kotaksecurities\.com" \|\| host\.endsWith\("\.kotaksecurities\.com"\)/);
+    expect(src).toMatch(/function baseOf\([^)]*\)[^{]*\{\s*const url = assertKotakBaseUrl\(/);
+    const variableFetches = [...src.matchAll(/\bfetch\(\s*([A-Za-z_]\w*)\s*,/g)].map((m) => m[1]);
+    expect(variableFetches).toEqual(["url"]);
+    expect(src).toMatch(/const url = `\$\{baseOf\(session\.baseUrl\)\}\/quick\/user\/trades`;/);
+    expect(src).toMatch(/baseUrl: baseOf\(raw\)/);
   });
 
   it("exactly ONE source file names api.telegram.org — every Telegram path goes through lib/telegram/send.ts (v4.7.0 C5)", () => {

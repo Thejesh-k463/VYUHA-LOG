@@ -54,6 +54,7 @@ import path from "node:path";
 import { tradeRow, type TempDb } from "./temp-db";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
+import type { PreviewResult } from "@/lib/import/commit";
 // Pure (no DB): the note an overnight F&O short carries (v4.6.0 W6).
 import { OVERNIGHT_SHORT_NOTE } from "@/lib/domain/side";
 
@@ -1031,6 +1032,122 @@ export const FOREIGN_IPO_NAME = "G2 Foreign Issue Limited";
 /** D4: the symbol of the trade that takes the dropped duplicate's freed id. */
 export const TAKEN_ID_SYMBOL = "GTAKEN";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v4.7.0 C6 — the pulls the VARIANTS below drive
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The pull day — fixed, because a snapshot pull's day is read off its file name (`snapshotDayOf`). */
+export const C6_DAY = "2026-09-15";
+/** The day BEFORE it — the R4' lot is opened by an OpenAlgo pull the previous session. */
+export const C6_PREV_DAY = "2026-09-14";
+export const C6_FILES = {
+  fyers: `fyers-api-${C6_DAY}`,
+  openalgo: `openalgo-fyers-${C6_DAY}`,
+  openalgoPrev: `openalgo-fyers-${C6_PREV_DAY}`,
+  angelone: `angelone-api-${C6_DAY}`,
+} as const;
+/** One NIFTY monthly option, as each Fyers path names it. */
+export const C6_NIFTY = {
+  /** Fyers' API symbol (§1a F-S1); the native pull stores `fyersTradingsymbol` of it. */
+  fyersApi: "NSE:NIFTY26SEP25000CE",
+  compact: "NIFTY26SEP25000CE",
+  /** OpenAlgo-Fyers' canonical name (`canonicalOpenAlgoSymbol("NIFTY29SEP2625000CE", "NFO")`). */
+  canonical: "OPT NIFTY 29 Sep 2026 25000 CE",
+} as const;
+export const C6_QTY = { nifty: 75, sbinMorning: 10, sbinEvening: 20 } as const;
+
+interface C6Pull {
+  name: string;
+  why: string;
+  broker: NormalizedTrade["broker"];
+  sourceId: string;
+  fileName: string;
+  /** In the route's `snapshotPull` set (Angel One today; fyers once C wires it). */
+  snapshot: boolean;
+  product: NormalizedTrade["productHint"];
+  /** The symbol: a literal, or `fyers` → `fyersTradingsymbol(C6_NIFTY.fyersApi)`. */
+  symbol: string | "fyers";
+  trade: (tradingsymbol: string) => Partial<NormalizedTrade> & { tradingsymbol: string };
+  mayReadShort?: boolean;
+}
+
+const niftyBuy = (day: string) => (tradingsymbol: string) => ({
+  tradingsymbol, exchangeHint: "NSE" as const, buyQty: C6_QTY.nifty, avgBuyPrice: 120, buyValue: 120 * C6_QTY.nifty, buyDate: day,
+});
+
+export const C6_PULLS: C6Pull[] = [
+  {
+    name: "pullAngelOneSbinIntraday",
+    why: "R2 case 1, 11:00 — Angel One states SBIN bought 10 intraday",
+    broker: "angelone", sourceId: "angelone-api", fileName: C6_FILES.angelone, snapshot: true, product: "intraday", symbol: "SBIN",
+    trade: (s) => ({ tradingsymbol: s, buyQty: C6_QTY.sbinMorning, avgBuyPrice: 800, buyValue: 800 * C6_QTY.sbinMorning, buyDate: C6_DAY }),
+  },
+  {
+    name: "pullAngelOneSbinDelivery",
+    why: "R2 case 1, 15:00 — the broker converted it to delivery and the book now states 20 (W2G M1's own example)",
+    broker: "angelone", sourceId: "angelone-api", fileName: C6_FILES.angelone, snapshot: true, product: "delivery", symbol: "SBIN",
+    trade: (s) => ({ tradingsymbol: s, buyQty: C6_QTY.sbinEvening, avgBuyPrice: 800, buyValue: 800 * C6_QTY.sbinEvening, buyDate: C6_DAY }),
+  },
+  {
+    name: "pullNativeFyersNifty",
+    why: "a native Fyers pull (fyers-api-<day>, the compact name) of the NIFTY monthly bought today",
+    broker: "fyers", sourceId: "fyers-api", fileName: C6_FILES.fyers, snapshot: true, product: null, symbol: "fyers",
+    trade: niftyBuy(C6_DAY),
+  },
+  {
+    name: "pullOpenAlgoFyersNifty",
+    why: "OpenAlgo-Fyers (openalgo-fyers-<day>, the canonical name) of the same NIFTY monthly bought today",
+    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgo, snapshot: false, product: null, symbol: C6_NIFTY.canonical,
+    trade: niftyBuy(C6_DAY),
+  },
+  {
+    name: "pullOpenAlgoFyersNiftyPrevDay",
+    why: "R4' — OpenAlgo-Fyers opens the NIFTY monthly lot the session before",
+    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgoPrev, snapshot: false, product: null, symbol: C6_NIFTY.canonical,
+    trade: niftyBuy(C6_PREV_DAY),
+  },
+  {
+    name: "pullNativeFyersNiftySale",
+    why: "R4' — the native pull states today's SALE of that lot under the compact name",
+    broker: "fyers", sourceId: "fyers-api", fileName: C6_FILES.fyers, snapshot: true, product: null, symbol: "fyers",
+    trade: (s) => ({ tradingsymbol: s, exchangeHint: "NSE" as const, sellQty: C6_QTY.nifty, avgSellPrice: 140, sellValue: 140 * C6_QTY.nifty, sellDate: C6_DAY }),
+    mayReadShort: true,
+  },
+];
+
+async function c6Symbol(p: C6Pull): Promise<string> {
+  if (p.symbol !== "fyers") return p.symbol;
+  const { fyersTradingsymbol } = await import("@/lib/import/pull-symbols");
+  return fyersTradingsymbol(C6_NIFTY.fyersApi)!.tradingsymbol;
+}
+
+export interface PullOutcome {
+  status: 200 | 409;
+  reason: "committed" | "nothingNew" | "needsForce";
+  preview: PreviewResult;
+  added: number;
+}
+/** The last C6 pull's outcome, for the named cases to read (one scenario at a time). */
+export const C6_LAST: { outcome: PullOutcome | null } = { outcome: null };
+
+/**
+ * The broker route's pull decision (`app/api/import/broker/route.ts`, the
+ * `mode === "commit"` branch), driven against the REAL preview and commit with
+ * the route's own options: `supersedeSnapshot` for a snapshot pull, `autoClose`
+ * on (the manual pull's default). All rows already held → 409 `nothingNew`; a
+ * RISKY cross-source collision → 409 `needsForce`; neither writes. Never forced.
+ */
+export function routePull(ctx: BookCtx, parsed: ParsedFile, fileName: string, snapshot: boolean, accountId: number): PullOutcome {
+  const opts = { ...(snapshot ? { supersedeSnapshot: { fileName } } : {}), autoClose: true };
+  const preview = ctx.m.commit.previewParsedFile(parsed, null, accountId, fileName, opts);
+  if (preview.summary.total > 0 && preview.summary.newCount === 0 && preview.summary.supersededCount === 0) {
+    return { status: 409, reason: "nothingNew", preview, added: 0 };
+  }
+  if (preview.crossSource?.risky) return { status: 409, reason: "needsForce", preview, added: 0 };
+  const res = ctx.m.commit.commitParsedFile(parsed, fileName, null, accountId, opts);
+  return { status: 200, reason: "committed", preview, added: res.added };
+}
+
 /**
  * FIXTURE VARIANTS (G-G2-1, wave 2M) — a shape a named scenario needs, which is
  * NOT an operation on the book.
@@ -1471,6 +1588,43 @@ export const VARIANTS: BookOp[] = [
       record(ctx, `startExperimentIn${which}`, "applied", `experiment #${res.experiment.id} on ${CLINIC_CELL} in account ${acct}`);
     },
   })),
+  // v4.7.0 C6 (builder B1) — NATIVE read-only pulls through the cross-source
+  // check (design review R1/R2/R4', guard additions). VARIANTS, not OPS: each
+  // case below is a named sequence about the pull's identity, and the pair sweep
+  // crossed with seven pull shapes would be ~300 more scenarios on a runner
+  // measured > 15x slower, asking nothing those sequences do not.
+  ...C6_PULLS.map((p): BookOp => ({
+    name: p.name,
+    needs: "account A exists",
+    drives: `the broker route's pull decision (routePull: previewParsedFile → 409 nothingNew / needsForce → commitParsedFile) — ${p.why}`,
+    run: async (_db, ctx) => {
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, p.name, "skipped", "account A is gone");
+      selectAccount(ctx, acc);
+      const trade = normalized({ broker: p.broker, productHint: p.product, ...p.trade(await c6Symbol(p)) });
+      const out = routePull(ctx, { sourceId: p.sourceId, broker: p.broker, format: "api", trades: [trade], warnings: [] }, p.fileName, p.snapshot, acc);
+      C6_LAST.outcome = out;
+      bump(ctx, trade.tradingsymbol, ((trade.buyQty ?? 0) - (trade.sellQty ?? 0)) * out.added);
+      // R4' (design §5): the one pull that sells a lot another source's NAME opened. Declared, never inferred.
+      if (p.mayReadShort && out.added > 0) ctx.mayReadShort.add(trade.tradingsymbol);
+      if (out.status === 409) return record(ctx, p.name, "refused", `409 ${out.reason}`);
+      record(ctx, p.name, "applied", `${trade.tradingsymbol}: added ${out.added} to ${p.fileName}`);
+    },
+  })),
+  {
+    name: "deleteNativeFyersPull",
+    needs: "a native Fyers pull's rows in account A",
+    drives: "lib/queries/delete.ts deleteTradesByIds on every row of the pull's file (the /trades delete → Trash)",
+    run: async (_db, ctx) => {
+      const rows = allTrades(ctx).filter((r) => r.accountId === ctx.ids.acctA && r.sourceFile === C6_FILES.fyers);
+      if (rows.length === 0) return record(ctx, "deleteNativeFyersPull", "skipped", "no native Fyers pull is in the journal");
+      selectAccount(ctx, ctx.ids.acctA);
+      const res = ctx.m.del.deleteTradesByIds(rows.map((r) => r.id), "G2 harness: the native Fyers pull", "harness");
+      if (!res.ok) return record(ctx, "deleteNativeFyersPull", "refused", res.message);
+      for (const r of rows) bump(ctx, r.tradingsymbol, -netOf(r));
+      record(ctx, "deleteNativeFyersPull", "applied", `deleted ${rows.map((r) => `#${r.id}`).join(", ")}`);
+    },
+  },
 ];
 
 /** v4.7.0 C2 — the seeded Clinic cell (VARIANTS `seedClinicCell`). R on a 0.2 grid: exact at two decimals after any cap halving. */

@@ -156,6 +156,17 @@ describe("the one-time expired-token pop-up", () => {
   });
 });
 
+describe("the 'not yet verified' badge follows UNVERIFIED_PULL_BROKERS (seam D-C6-1)", () => {
+  it("is DERIVED from the row's `unverified`, else the list — never from the tab — and the intro names the list", () => {
+    expect(SRC).toContain("const pullUnverified = pullSheet != null && (conn?.unverified ?? UNVERIFIED_PULL_BROKERS.includes(active));");
+    expect(between('{pullUnverified && (', "</Badge>")).toContain('data-testid="pull-unverified"');
+    expect(SRC).not.toMatch(/\{pullSheet && \(\s*<Badge/);
+    expect(SRC).not.toContain("the last three");
+    expect(SRC).toMatch(/PULL_BROKERS\.filter\(\(b\) => UNVERIFIED_PULL_BROKERS\.includes\(b\)\)/);
+    expect(between("are wired for live API pulls", "{openalgoAvailable")).toContain("{unverifiedPullClause}");
+  });
+});
+
 describe("Dhan's TOTP toggle is DERIVED from the saved row", () => {
   it("no boolean useState for the mode; the user's pick overrides the row's authMode", () => {
     expect(SRC).not.toMatch(/\[dhanTotpMode, setDhanTotpMode\] = useState/);
@@ -233,7 +244,8 @@ describe("the collision dialog renders the pure copy (seam D1)", () => {
     // W2N (D8): one listed ROW can carry two blockers (today's earlier pull AND
     // an older file), so the badge is written once per entry of the row — `e`,
     // the row's own collision and each of its `also`, never a re-typed label.
-    expect(dialog).toContain("{collisionBadge(e.kind)}");
+    // v4.7.0 C6: the row's own `monthOnly` rides along (a month-level contract match).
+    expect(dialog).toContain("{collisionBadge(e.kind, e.monthOnly)}");
     expect(dialog).toContain("{[c, ...(c.also ?? [])].map((e, j) => (");
     expect(SRC.match(/"partial overlap"/g) ?? []).toHaveLength(1);
     expect(SRC.match(/Different sources state the same trade/g) ?? []).toHaveLength(1);
