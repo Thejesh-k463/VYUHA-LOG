@@ -1072,8 +1072,9 @@ describe("SEAM 7 · every place C says /funds is posted, really posts it", () =>
     // the accepted disclosure promises is WRITTEN (see the constant's own note
     // in lib/domain/openalgo-disclosure.ts). Pinned as a literal on purpose: a
     // consent version that follows whatever the module says proves nothing.
+    // "5" since v4.7.0 C5 (the Telegram alert cadence), not for /funds either.
     const { OPENALGO_DISCLOSURE_VERSION } = await import("@/lib/domain/openalgo-disclosure");
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("5");
   });
 
   it("S7b: the egress sentence sends the reader to a Settings section that exists", () => {

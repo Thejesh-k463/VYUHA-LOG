@@ -111,23 +111,26 @@ describe("the stored acknowledgement", () => {
     }
   });
 
-  it("compares with strict === : '1' passes, '0' and an absent key do not", () => {
-    expect(LIVE_FEED_DISCLOSURE_VERSIONS.upstox).toBe("1");
-    expect(isFeedAckCurrent('{"upstox":"1"}', "upstox")).toBe(true);
+  it("compares with strict === : '2' passes, '1', '0' and an absent key do not", () => {
+    // "1" → "2" in v4.7.0 C5 (the Telegram alert cadence). "1" is what every
+    // v4.2–v4.6 install holds, so it is the literal a revert would let back in.
+    expect(LIVE_FEED_DISCLOSURE_VERSIONS.upstox).toBe("2");
+    expect(isFeedAckCurrent('{"upstox":"2"}', "upstox")).toBe(true);
+    expect(isFeedAckCurrent('{"upstox":"1"}', "upstox"), "a v4.2–v4.6 acceptance must re-prompt").toBe(false);
     expect(isFeedAckCurrent('{"upstox":"0"}', "upstox")).toBe(false);
-    expect(isFeedAckCurrent('{"upstox":"2"}', "upstox")).toBe(false);
-    expect(isFeedAckCurrent('{"angelone":"1"}', "upstox"), "one broker's consent is not another's").toBe(false);
+    expect(isFeedAckCurrent('{"upstox":"3"}', "upstox")).toBe(false);
+    expect(isFeedAckCurrent('{"angelone":"2"}', "upstox"), "one broker's consent is not another's").toBe(false);
     expect(isFeedAckCurrent(null, "upstox")).toBe(false);
   });
 
   it("merges an acceptance instead of withdrawing the other provider's", () => {
-    expect(withFeedAck(null, "upstox")).toBe('{"upstox":"1"}');
-    const both = withFeedAck('{"angelone":"1"}', "upstox");
-    expect(parseFeedAcks(both)).toEqual({ angelone: "1", upstox: "1" });
+    expect(withFeedAck(null, "upstox")).toBe('{"upstox":"2"}');
+    const both = withFeedAck('{"angelone":"2"}', "upstox");
+    expect(parseFeedAcks(both)).toEqual({ angelone: "2", upstox: "2" });
     expect(isFeedAckCurrent(both, "upstox")).toBe(true);
     expect(isFeedAckCurrent(both, "angelone")).toBe(true);
     // Writing over garbage yields a readable column, not preserved garbage.
-    expect(parseFeedAcks(withFeedAck("not json", "upstox"))).toEqual({ upstox: "1" });
+    expect(parseFeedAcks(withFeedAck("not json", "upstox"))).toEqual({ upstox: "2" });
   });
 
   it("versions every id it knows, so no provider can be acknowledged as a boolean", () => {
@@ -164,6 +167,20 @@ describe("the Upstox consent sheet", () => {
     expect(flat).toContain(NOT_PRICED_SENTENCE);
     expect(flat).toContain("never uploads them");
     expect(flat).toContain("never resells market data");
+  });
+
+  it("v2 states the Telegram alert path, the shared connection and the one exception to 'stays here' (C5)", () => {
+    expect(flat).toContain(
+      "Only if you turn on Telegram stop/target alerts (Pro), it also sends them about once a minute during market hours while Vyuha is open on any screen, minimised included",
+    );
+    expect(flat).toContain(
+      "every account's checked positions go through one Upstox connection: the one already open, which is the one the Live Desk last used, or else the selected account's",
+    );
+    expect(flat).toContain("this feed gives no Telegram stop/target alert on a futures or options position");
+    expect(flat).toContain("a Telegram stop/target alert carries the price a position was checked at to your own Telegram chat");
+    expect(flat, "the absolute 'never sends them anywhere' is false once an alert carries a price").not.toContain(
+      "never sends them anywhere",
+    );
   });
 
   it("says a poll is not a tick stream, and that a price can be an interval old", () => {
@@ -354,6 +371,24 @@ describe("the Angel One consent sheet", () => {
     expect(flat).toContain("never resells market data");
   });
 
+  it("v2 states the Telegram alert path beside the desk cadence, and the alert-made sign-in (C5)", () => {
+    expect(flat).toContain(
+      "while the Live Desk is open, every 3, 5 or 10 seconds depending on how many scrips you hold open, and the desk says which",
+    );
+    expect(flat).toContain(
+      "Only if you turn on Telegram stop/target alerts (Pro), it also sends them about once a minute during market hours while Vyuha is open on any screen, minimised included",
+    );
+    expect(flat).toContain("under the same one-request-a-second limit");
+    expect(flat).toContain(
+      "every account's checked positions go through one Angel One session: the one already open, which is the one the Live Desk last used, or else the selected account's",
+    );
+    expect(flat).toContain("the alert check reuses the session already open whichever account a screen has selected");
+    expect(flat).toContain("that sign-in can be made by the alert check while the Live Desk was never opened");
+    expect(flat).toContain("this feed gives no Telegram stop/target alert on a futures or options position");
+    expect(flat).toContain("a Telegram stop/target alert carries the price a position was checked at to your own Telegram chat");
+    expect(flat).not.toContain("never sends them anywhere");
+  });
+
   it("says a poll is not a tick stream, and the capability block agrees", () => {
     expect(flat).toMatch(/instead of receiving a live stream of ticks/);
     expect(flat).toMatch(/up to one interval old/);
@@ -396,8 +431,11 @@ describe("the two sheets are two statements, not one", () => {
   });
 
   it("versions them independently, so one can change without re-prompting the other", () => {
-    expect(LIVE_FEED_DISCLOSURE_VERSIONS.upstox).toBe("1");
-    expect(LIVE_FEED_DISCLOSURE_VERSIONS.angelone).toBe("1");
+    // Both "2" since v4.7.0 C5 — bumped together for one reason (the alert
+    // cadence), still stored and compared independently.
+    expect(LIVE_FEED_DISCLOSURE_VERSIONS.upstox).toBe("2");
+    expect(LIVE_FEED_DISCLOSURE_VERSIONS.angelone).toBe("2");
+    expect(isFeedAckCurrent('{"angelone":"1"}', "angelone"), "a v4.2–v4.6 Angel One acceptance must re-prompt").toBe(false);
     const both = withFeedAck(withFeedAck(null, "upstox"), "angelone");
     expect(isFeedAckCurrent(both, "upstox")).toBe(true);
     expect(isFeedAckCurrent(both, "angelone")).toBe(true);

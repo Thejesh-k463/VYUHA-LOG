@@ -9,6 +9,8 @@ import { ShortcutsSheet } from "@/components/help/shortcuts-sheet";
 import { NavHistoryTracker } from "@/components/layout/nav-history-tracker";
 import { OnboardingWizard, type OnboardingWizardProps } from "@/components/system/onboarding-wizard";
 import { TelegramFailureNote } from "@/components/system/telegram-failure-note";
+import { TelegramAlertRunner } from "@/components/system/telegram-alert-runner";
+import { TelegramReconsentStrip } from "@/components/system/telegram-reconsent-strip";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getSettings } from "@/lib/queries/settings";
@@ -73,8 +75,36 @@ export default function RootLayout({
   // install that has never finished a first run, so the steady state pays for
   // nothing. Inside the same try/catch: an unmigrated DB has no column to read.
   let onboarding: OnboardingWizardProps = { show: false, accountId: null, accountName: "", equityCapital: null, activeCapital: null };
+  // v4.7.0 C5 (design D9/D13) — read from the SAME settings row below, no new
+  // query. `alertsKey` remounts the alert runner when a setting its answer
+  // depends on changes (the window, the consent, the feed pick or its consent,
+  // the credentials being on file), so the card's status line is re-asked at
+  // once after a save instead of at the next slow tick.
+  let telegram: { enabled: boolean; ackVersion: number | null; alertsEnabled: boolean; alertsKey: string } = {
+    enabled: false,
+    ackVersion: null,
+    alertsEnabled: false,
+    alertsKey: "",
+  };
   try {
     const s = getSettings();
+    if (s) {
+      telegram = {
+        enabled: s.telegramEnabled,
+        ackVersion: s.telegramAckVersion ?? null,
+        alertsEnabled: s.telegramAlertsEnabled,
+        alertsKey: [
+          s.telegramAckVersion ?? "",
+          s.telegramAlertFrom ?? "",
+          s.telegramAlertTo ?? "",
+          s.liveFeedProvider,
+          s.liveFeedAckJson ?? "",
+          s.openalgoEnabled ? 1 : 0,
+          s.openalgoAckVersion ?? "",
+          s.telegramTokenEnc && s.telegramChatId ? 1 : 0,
+        ].join("|"),
+      };
+    }
     colorblind = s?.colorblindSafe ?? false;
     theme = s?.theme ?? "dark";
     density = s?.density ?? "compact";
@@ -171,6 +201,14 @@ export default function RootLayout({
               the strip so a failed send is visible from any route. */}
           <OnboardingWizard {...onboarding} />
           <TelegramFailureNote />
+          {/* v4.7.0 C5. The re-consent strip (TG6): Telegram on, the accepted
+              disclosure not the current one — the digest is paused until the
+              user re-reads, and this says so on every route. The alert runner
+              (TG1/TG2): renders nothing, POSTs /api/telegram/alerts on the
+              server's cadence; mounted only when both switches are on, and the
+              server gates everything else. */}
+          <TelegramReconsentStrip telegramEnabled={telegram.enabled} ackVersion={telegram.ackVersion} />
+          {telegram.enabled && telegram.alertsEnabled && <TelegramAlertRunner key={`telegram-alerts:${telegram.alertsKey}`} />}
         </TooltipProvider>
         <Toaster />
       </body>

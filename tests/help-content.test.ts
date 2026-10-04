@@ -145,8 +145,24 @@ describe("help describes the app that shipped, not the one that is planned", () 
     expect(text).toContain("are not computed in Vyuha");
   });
 
-  it("/live advertises no alerts — there is no alert code in v4.0", () => {
-    expect(body("/live")).not.toMatch(/\balerts?\b/i);
+  it("/live names the Telegram alerts AND their consent and Pro gate in ONE paragraph (INVERTED in v4.7.0 C5, not deleted)", () => {
+    // History: v4.0 had no alert code, so this asserted /live advertised none.
+    // v4.7.0 C5 ships the Pro Telegram stop/target alerts (ruling Q18, design
+    // D14), so the guard flips — and tightens: naming the alerts is only
+    // honest beside what gates them, so the SAME paragraph carries the word,
+    // the consent (the disclosure, off until switched on) and the Pro gate.
+    const paras = HELP_ENTRIES.find((e) => e.href === "/live")!.body.filter((p) => /\balerts?\b/i.test(p));
+    expect(paras.length, "/live help names no alert — the C5 alerts are undocumented").toBeGreaterThan(0);
+    for (const p of paras) {
+      expect(p, "an alerts paragraph without the Telegram path").toMatch(/Telegram stop\/target alerts/);
+      expect(p, "an alerts paragraph without its consent").toMatch(/disclosure/i);
+      expect(p, "an alerts paragraph without its consent").toMatch(/off until you turn them on/i);
+      expect(p, "an alerts paragraph without its Pro gate").toMatch(/\bPro\b/);
+      // R9: the help never pairs a broker feed with the word "alert".
+      expect(p, "an alerts paragraph names a broker feed").not.toMatch(/upstox|angel one/i);
+    }
+    // And the fact a buyer needs most: it is best-effort, never a risk control.
+    expect(paras.join(" ")).toMatch(/never a risk control/);
   });
 
   /**
@@ -1083,7 +1099,11 @@ describe("the /strategies entry describes the Signal book tab", () => {
 
   it("says the day range may precede the entry, and that Vyuha produces no signal", () => {
     expect(text()).toMatch(/whole session's range, not the range since entry/);
-    expect(entry().refusals?.join(" ") ?? "").toMatch(/generates no signal: Vyuha has no scanner, no zone engine, no OI feed and no alerts/);
+    // v4.7.0 C5: "and no alerts" was true of the app until the Pro Telegram
+    // stop/target alerts shipped; the refusal now names which alerts exist
+    // (none about a signal) rather than claiming there are none.
+    expect(entry().refusals?.join(" ") ?? "").toMatch(/generates no signal: Vyuha has no scanner, no zone engine, no OI feed and no signal alerts/);
+    expect(entry().refusals?.join(" ") ?? "").toMatch(/its only alerts are the Pro Telegram stop\/target alerts on levels you recorded/);
   });
 });
 

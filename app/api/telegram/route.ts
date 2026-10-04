@@ -8,6 +8,7 @@ import { encryptSecret, readSecret } from "@/lib/vault";
 import { sendTelegram, discoverChatId } from "@/lib/telegram/send";
 import { TELEGRAM_TEST_MESSAGE, isTelegramAckCurrent, telegramGate } from "@/lib/domain/telegram-disclosure";
 import { parseSendTime } from "@/lib/telegram/digest-gate";
+import { getEntitlement } from "@/lib/queries/license";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,12 @@ const ActionSchema = z.discriminatedUnion("action", [
     action: z.literal("send-time"),
     sendTime: z.string().refine((s) => parseSendTime(s) != null, "Use HH:MM (24-hour IST)."),
   }),
+  // v4.7.0 C5 — stop/target alerts (design D11). z.boolean(), never coerced,
+  // for the same reason as `toggle` above.
+  z.object({ action: z.literal("alerts-toggle"), enabled: z.boolean() }),
+  // The optional window, IST "HH:MM". Both null clears it; otherwise both must
+  // parse and from < to — checked below, after the union has narrowed.
+  z.object({ action: z.literal("alerts-window"), from: z.string().nullable(), to: z.string().nullable() }),
 ]);
 
 function settingsRow() {
@@ -49,12 +56,65 @@ export async function POST(req: Request) {
   // The consent gate, FIRST, for everything that stores a credential or
   // talks to Telegram. Disconnect and the send-time edit stay open: turning
   // things off or adjusting a preference must never require re-consent.
-  const needsAck = body.action === "save" || body.action === "discover-chat-id" || body.action === "send-test";
+  // Switching alerts ON sends positions' prices off the machine every minute,
+  // so it needs the current acknowledgement too; switching them OFF does not —
+  // turning things off must never require re-consent (the rule above).
+  const needsAck =
+    body.action === "save" ||
+    body.action === "discover-chat-id" ||
+    body.action === "send-test" ||
+    (body.action === "alerts-toggle" && body.enabled);
   if (needsAck && !isTelegramAckCurrent(s.telegramAckVersion)) {
     return NextResponse.json(
       { ok: false, message: "Read and accept the Telegram disclosure first — Settings → Alerts." },
       { status: 403 },
     );
+  }
+
+  if (body.action === "alerts-toggle") {
+    // Pro, checked HERE (design D11) — the card's lock is never the only gate.
+    // Only for switching ON: a lapsed licence keeps the toggle state (the job
+    // refuses `not-pro` anyway), and turning it off is always allowed.
+    if (body.enabled && !getEntitlement().pro) {
+      return NextResponse.json(
+        { ok: false, message: "Telegram stop/target alerts are part of Pro." },
+        { status: 403 },
+      );
+    }
+    db.update(settings).set({ telegramAlertsEnabled: body.enabled }).where(eq(settings.id, s.id)).run();
+    recordAudit({
+      entity: "settings",
+      action: "update",
+      summary: body.enabled ? "Telegram stop/target alerts enabled" : "Telegram stop/target alerts disabled",
+      // Only the switch — never the token or the chat id (see `save` below).
+      before: { telegramAlertsEnabled: s.telegramAlertsEnabled },
+      after: { telegramAlertsEnabled: body.enabled },
+    });
+    return NextResponse.json({
+      ok: true,
+      message: body.enabled ? "Stop/target alerts enabled." : "Stop/target alerts disabled.",
+    });
+  }
+
+  if (body.action === "alerts-window") {
+    const cleared = body.from == null && body.to == null;
+    if (!cleared) {
+      const from = parseSendTime(body.from);
+      const to = parseSendTime(body.to);
+      if (from == null || to == null) {
+        return NextResponse.json({ ok: false, message: "Use HH:MM (24-hour IST) for both ends of the window." }, { status: 400 });
+      }
+      if (from >= to) {
+        return NextResponse.json({ ok: false, message: "The window must start before it ends." }, { status: 400 });
+      }
+    }
+    const from = cleared ? null : body.from!.trim();
+    const to = cleared ? null : body.to!.trim();
+    db.update(settings).set({ telegramAlertFrom: from, telegramAlertTo: to }).where(eq(settings.id, s.id)).run();
+    return NextResponse.json({
+      ok: true,
+      message: cleared ? "Alert window cleared — the market's own hours apply." : `Alerts only between ${from} and ${to} IST, inside market hours.`,
+    });
   }
 
   if (body.action === "toggle") {

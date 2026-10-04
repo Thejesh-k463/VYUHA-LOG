@@ -45,7 +45,7 @@ const ALLOWED_HOSTS: Record<string, string> = {
   "apiconnect.angelone.in":
     "Angel One SmartAPI login + tradebook (lib/import/api/angelone.ts) — user-triggered broker import.",
   "api.telegram.org":
-    "Telegram EOD digest + test alert (lib/telegram/send.ts, v3.6.0 decision #6) — consent-gated: off by default, sends only behind telegramGate (enabled AND current disclosure ack, enforced server-side in app/api/telegram/* and lib/telegram/digest-gate.ts), and carries only the user's own recorded numbers.",
+    "Telegram EOD digest + test alert (lib/telegram/send.ts, v3.6.0 decision #6) AND, since v4.7.0 C5, the Pro stop/target alerts (lib/jobs/telegram-alerts.ts → the same sendTelegram, behind POST /api/telegram/alerts) — consent-gated: off by default, sends only behind telegramGate (enabled AND current disclosure ack, enforced server-side in app/api/telegram/*, lib/telegram/digest-gate.ts and lib/telegram/alert-gate.ts; the alerts also need Pro, their own toggle, a live feed and an open market), and carries only the user's own recorded numbers and levels. ONE file names this host — pinned below.",
   "nsearchives.nseindia.com":
     "NSE bhavcopy CSV for EOD auto-MTM (lib/jobs/auto-mtm.ts) — opt-in, disabled by default.",
   "www.nseindia.com":
@@ -278,6 +278,16 @@ describe("egress guard — the zero-telemetry claim is enforced, not asserted", 
       const src = stripComments(readFileSync(path.join(root, file), "utf8"));
       expect(src, `${file} no longer names ${host} — update the egress map`).toContain(host);
     }
+  });
+
+  it("exactly ONE source file names api.telegram.org — every Telegram path goes through lib/telegram/send.ts (v4.7.0 C5)", () => {
+    // The digest, the test alert and the stop/target alerts all dial through
+    // `sendTelegram` (never throws, the token never in a reason). A second file
+    // naming the host is a second sender with its own error handling — exactly
+    // where a caught message carrying the token-bearing URL would leak.
+    const files = ["lib", "app", "components"].flatMap((d) => walk(path.join(root, d), [".ts", ".tsx", ".js", ".mjs"]));
+    const naming = files.filter((f) => stripComments(readFileSync(f, "utf8")).includes("api.telegram.org")).map(rel);
+    expect(naming).toEqual(["lib/telegram/send.ts"]);
   });
 
   it("the v4.3 strategy-shelf door is same-origin only — it names no host and opens no socket", () => {

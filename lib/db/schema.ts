@@ -919,6 +919,18 @@ export const settings = sqliteTable("settings", {
   lastTelegramSentDate: text("last_telegram_sent_date"),
   telegramTokenEnc: text("telegram_token_enc"),
   telegramChatId: text("telegram_chat_id"),
+  // Telegram stop/target alerts (v4.7.0 C5, migration 0080) — Pro, OFF by
+  // default, behind the same Telegram consent (disclosure v2). The optional
+  // window is IST "HH:MM", both NULL = the market's own hours only; it NARROWS
+  // the calendar's window and can never widen it. The summary date is the
+  // once-per-IST-day claim for the "N more" line after the 20-a-day cap (Q18-i).
+  // All four are MACHINE STATE (SETTINGS_MACHINE_COLUMNS): a switch that only
+  // means anything beside a consent a restore does not carry, its window, and
+  // job bookkeeping.
+  telegramAlertsEnabled: integer("telegram_alerts_enabled", { mode: "boolean" }).notNull().default(false),
+  telegramAlertFrom: text("telegram_alert_from"),
+  telegramAlertTo: text("telegram_alert_to"),
+  lastTelegramAlertSummaryDate: text("last_telegram_alert_summary_date"),
   // Auto-pull on launch (v3.6, WS3) — opt-in sweep of UNATTENDED broker
   // connections, once per day, never forcing past a collision. Machine state
   // for the same restore reasons as auto_mtm's pair.
@@ -1574,6 +1586,33 @@ export const clinicCache = sqliteTable("clinic_cache", {
   reportJson: text("report_json").notNull(),
   computedAt: text("computed_at").notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// telegram_alerts_sent — MACHINE STATE (v4.7.0 C5, migration 0080): one row per
+// Telegram stop/target alert sent, and the row IS the claim — inserted BEFORE
+// the send (`ON CONFLICT DO NOTHING`, changes === 1 → this caller dials) and
+// deleted again if the send fails, so a failure costs nothing and the next run
+// retries. The unit is (trade, symbol, kind, IST day): no same-day re-arm
+// (Q18-d); the symbol keeps a restored DIFFERENT trade under a reused id from
+// being silenced (review R6). NO account_id, deliberately (design D7/R7):
+// `trades.id` is unique across accounts and the one reader reads every
+// account (TG3). `level` / `mark` are per-unit PRICES → REAL (invariant 1).
+// Never backed up (not in BACKUP_TABLES); pruned past seven days.
+// ---------------------------------------------------------------------------
+export const telegramAlertsSent = sqliteTable(
+  "telegram_alerts_sent",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tradeId: integer("trade_id").notNull(),
+    symbol: text("symbol").notNull(),
+    kind: text("kind").$type<"sl" | "tsl" | "target">().notNull(),
+    istDate: text("ist_date").notNull(),
+    level: real("level").notNull(),
+    mark: real("mark").notNull(),
+    sentAt: text("sent_at").notNull(),
+  },
+  (t) => [uniqueIndex("telegram_alerts_sent_uq").on(t.tradeId, t.symbol, t.kind, t.istDate)],
+);
 
 // Type exports
 export type Trade = typeof trades.$inferSelect;

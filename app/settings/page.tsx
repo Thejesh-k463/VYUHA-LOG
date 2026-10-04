@@ -132,6 +132,12 @@ export default function SettingsPage() {
               lastSentDate={settings.lastTelegramSentDate}
               connected={Boolean(settings.telegramTokenEnc && settings.telegramChatId)}
               chatId={settings.telegramChatId}
+              alerts={{
+                pro: getEntitlement().pro,
+                alertsEnabled: settings.telegramAlertsEnabled,
+                alertFrom: settings.telegramAlertFrom,
+                alertTo: settings.telegramAlertTo,
+              }}
             />
           </Section>
           <Section id="settings-live-feed"><SettingsLiveFeedCard /></Section>

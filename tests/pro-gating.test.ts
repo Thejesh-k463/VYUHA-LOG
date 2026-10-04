@@ -158,19 +158,25 @@ describe("Pro gating — the registry and the real gates agree", () => {
     }
   });
 
-  it("the Live Desk label sells only what v4.0 ships — no alerts (owner ruling, 4.1)", () => {
-    // The upsell card is a promise: /live advertised "…chart overlay and
-    // alerts" while no alert code exists anywhere in lib/live or
-    // components/live — Telegram alerts are after v4.2 (Q18, 2026-09-06). A
-    // buyer paying for the Live
-    // Desk on the strength of that line gets four of five things.
+  it("the Live Desk label sells what this build ships — since v4.7.0 C5, Telegram stop/target alerts too (INVERTED, not deleted)", () => {
+    // History: 4.1 removed "…and alerts" from this label because no alert code
+    // existed — a buyer paying on the strength of it got four of five things.
+    // v4.7.0 C5 (ruling Q18, design D14) ships the Pro Telegram stop/target
+    // alerts, so the guard flips: the label must NOW name them, and name them
+    // as TELEGRAM stop/target alerts (the only alerts Pro sells), and the code
+    // that makes the promise true must exist and be Pro-gated server-side.
     const live = PRO_FEATURES.find((f) => f.href === "/live")!;
-    expect(live.label).not.toMatch(/alert/i);
-    // The things it DOES ship stay on the label, so this cannot be satisfied
-    // by deleting the sentence.
+    expect(live.label).toMatch(/alert/i);
+    expect(live.label).toMatch(/Telegram stop\/target alerts/);
+    expect(read("lib/telegram/alert-gate.ts")).toMatch(/if \(!input\.pro\) return no\("not-pro"\)/);
+    expect(read("app/api/telegram/route.ts")).toMatch(/body\.enabled && !getEntitlement\(\)\.pro/);
+    // The things it already shipped stay on the label, so this cannot be
+    // satisfied by replacing the sentence.
     expect(live.label).toMatch(/risk at stop/i);
     expect(live.label).toMatch(/portfolio heat/i);
     expect(live.label).toMatch(/chart overlay/i);
+    // …and the free record stays named as free (invariant 7).
+    expect(live.label).toMatch(/positions, marks and P&L stay free/);
   });
 
   it("PRO_FEATURES labels are unique — two entries with one label is a copy bug", () => {

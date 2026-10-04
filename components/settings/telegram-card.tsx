@@ -1,6 +1,7 @@
 "use client";
 
-// Settings → Alerts: the Telegram EOD digest card (v3.6, owner decision #6).
+// Settings → Alerts — Telegram: the EOD digest card (v3.6, owner decision #6)
+// and, since v4.7.0 C5, the Pro stop/target alerts section.
 //
 // Opt-in flow, in order and enforced server-side at every step:
 //   1. Consent dialog FIRST — every sentence from lib/domain/telegram-
@@ -11,12 +12,16 @@
 //      auto-discovery, then Connect (which IS the test alert: nothing is
 //      stored until "✅ Vyuha connected — test alert" actually arrives).
 //   3. Enabled state — send time, last sent, test alert, disable, disconnect.
+//   4. (v4.7.0 C5, design D11) Stop / target alerts — Pro: one toggle for all
+//      three kinds, an optional narrower window, and ONE status line keyed on
+//      the server's reason code (lib/telegram/alert-gate.ts + the job's
+//      `feed-error`), as last answered to the alert runner.
 //
 // fetch + router.refresh(), never server actions (AGENTS.md).
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Send, TriangleAlert } from "lucide-react";
+import { Lock, Send, TriangleAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -24,9 +29,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
+import { useStoredValue } from "@/components/layout/use-stored-value";
 import { TELEGRAM_DISCLOSURE } from "@/lib/domain/telegram-disclosure";
-import { telegramCardView } from "@/lib/telegram/card-state";
-import { DEFAULT_SEND_TIME } from "@/lib/telegram/digest-gate";
+import { TELEGRAM_ALERT_STATUS_KEY, parseTelegramAlertStatus } from "@/lib/domain/telegram-failure";
+import { telegramAlertsCardView, telegramCardView } from "@/lib/telegram/card-state";
+import { DEFAULT_SEND_TIME, parseSendTime } from "@/lib/telegram/digest-gate";
+import type { AlertRefusal } from "@/lib/telegram/alert-gate";
+
+/** The alerts section's server state. Optional so the card renders without it
+ *  (the section is then omitted rather than guessed). */
+export interface TelegramAlertsProps {
+  /** `getEntitlement().pro` — the section shows either way; switching ON is Pro. */
+  pro: boolean;
+  alertsEnabled: boolean;
+  alertFrom: string | null;
+  alertTo: string | null;
+}
 
 export interface TelegramCardProps {
   enabled: boolean;
@@ -36,6 +54,65 @@ export interface TelegramCardProps {
   /** Token + chat id are on file (the token itself never reaches the client). */
   connected: boolean;
   chatId: string | null;
+  alerts?: TelegramAlertsProps;
+}
+
+/** Every code the door can answer with: the gate's refusals plus the job's own. */
+export type AlertStatusCode = AlertRefusal | "feed-error";
+
+/**
+ * The ONE status line, per reason code. `satisfies Record<AlertStatusCode, …>`
+ * so a refusal added to alert-gate.ts without a line here fails the typecheck
+ * rather than rendering a raw code.
+ */
+export const ALERT_STATUS_COPY = {
+  "not-pro": "Stop/target alerts are part of Vyuha Pro. The end-of-day digest above is not affected.",
+  "telegram-off": "Telegram is switched off above, so no alert is checked.",
+  "ack-stale": "Paused — accept the updated Telegram disclosure above to resume.",
+  "alerts-off": "Stop/target alerts are off.",
+  "no-credentials": "Paused — the bot token and chat id are not both readable on this machine. Reconnect the bot above.",
+  // The GENERIC line, shown only when the runner holds no `detail` (an older
+  // server, or an envelope written before D-C5-1). It names both places and
+  // asserts no cause: the feed's consent may be stale, or OpenAlgo's
+  // integration may simply be off.
+  "feed-reaccept":
+    "Paused — the live feed you picked is not cleared to run on this machine. Upstox and Angel One are reviewed in Settings → Live feed; OpenAlgo is switched on and accepted in Settings → Integrations.",
+  "end-of-day-feed": "Paused — alerts need a live feed, picked in Settings → Live feed. The end-of-day feed gives no alerts.",
+  "no-checkable-position":
+    "Nothing to check — no open position carries a recorded stop, trailing stop or target in a market Vyuha checks (NSE and BSE cash, futures and options).",
+  "calendar-unverified":
+    "Paused — the bundled market calendar has run out, so no session after its last covered day is verified and nothing alerts until an update brings a new one.",
+  "market-closed": "Waiting — no open position's own market is trading now, or it is outside your window. The next check waits for the next session.",
+  "feed-error": "The live feed did not answer the last check. The next check asks again.",
+} as const satisfies Record<AlertStatusCode, string>;
+
+/**
+ * A code the card has no line for (an older or newer server) reads as nothing.
+ * `detail` is the door's own sentence beside the refusal (the runner's status
+ * envelope): on `feed-reaccept` it is the feed's blocked reason, which names
+ * the right screen and the real cause, so it replaces the generic line
+ * (review R4, seam defect D-C5-1). Every other code ignores it.
+ */
+export function alertStatusLine(code: string | null, detail?: string | null): string | null {
+  if (!code) return null;
+  if (code === "feed-reaccept" && detail) return `Paused — ${detail}`;
+  return (ALERT_STATUS_COPY as Record<string, string>)[code] ?? null;
+}
+
+/** R8's fact, in the CARD (help copy never pairs a broker with alerts). */
+export const ALERT_FEED_SCOPE =
+  "Upstox and Angel One price equities only, so alerts on futures and options need the OpenAlgo bridge; commodity and currency positions never alert.";
+
+/** The window form's verdict, mirroring the route's own checks (it re-checks). */
+export function alertWindowError(from: string, to: string): string | null {
+  const f = from.trim();
+  const t = to.trim();
+  if (!f && !t) return null; // both blank = clear the window
+  const pf = parseSendTime(f);
+  const pt = parseSendTime(t);
+  if (pf == null || pt == null) return "Use HH:MM (24-hour IST) for both ends of the window.";
+  if (pf >= pt) return "The window's start is not before its end.";
+  return null;
 }
 
 async function post(body: Record<string, unknown>): Promise<{ ok: boolean; message?: string; chatId?: string }> {
@@ -60,6 +137,33 @@ export function TelegramCard(props: TelegramCardProps) {
   // pinned by tests, not only by this JSX.
   const view = telegramCardView({ enabled: props.enabled, ackVersion: props.ackVersion, connected: props.connected });
   const ackStale = view.ackStale;
+
+  // The alerts section (v4.7.0 C5). The status code is the alert runner's last
+  // answer, DERIVED from its per-device envelope at render — never mirrored
+  // into state (AGENTS.md: derive, never set state in an effect).
+  const lastStatus = parseTelegramAlertStatus(useStoredValue(TELEGRAM_ALERT_STATUS_KEY));
+  const alertsView = props.alerts
+    ? telegramAlertsCardView({
+        enabled: props.enabled,
+        ackVersion: props.ackVersion,
+        connected: props.connected,
+        pro: props.alerts.pro,
+        alertsEnabled: props.alerts.alertsEnabled,
+        windowFrom: props.alerts.alertFrom,
+        windowTo: props.alerts.alertTo,
+        lastRefusal: lastStatus ? lastStatus.refused : undefined,
+      })
+    : null;
+  const [windowFrom, setWindowFrom] = React.useState(props.alerts?.alertFrom ?? "");
+  const [windowTo, setWindowTo] = React.useState(props.alerts?.alertTo ?? "");
+  const windowError = alertWindowError(windowFrom, windowTo);
+  const windowDirty =
+    windowFrom.trim() !== (props.alerts?.alertFrom ?? "") || windowTo.trim() !== (props.alerts?.alertTo ?? "");
+  // The detail belongs to the stored refusal; it is shown only while that
+  // refusal IS the status (a "not-pro" status never borrows it).
+  const statusDetail = lastStatus && alertsView && lastStatus.refused === alertsView.status ? lastStatus.detail : undefined;
+  const statusLine = alertsView ? alertStatusLine(alertsView.status, statusDetail) : null;
+  const armed = Boolean(alertsView?.alertsOn && alertsView.status === null && lastStatus && lastStatus.refused === null);
 
   async function run(body: Record<string, unknown>, after?: (r: { ok: boolean; message?: string; chatId?: string }) => void) {
     setPending(true);
@@ -95,7 +199,7 @@ export function TelegramCard(props: TelegramCardProps) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Send className="size-4" /> Alerts — Telegram EOD digest
+          <Send className="size-4" /> Alerts — Telegram
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3" data-testid="telegram-card">
@@ -231,6 +335,104 @@ export function TelegramCard(props: TelegramCardProps) {
           </div>
         )}
 
+        {alertsView?.showAlertsSection && (
+          <div className="space-y-3 rounded-md border border-border bg-card-hover/40 px-3 py-3" data-testid="telegram-alerts">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  Stop / target alerts
+                  <span className="rounded border border-border px-1.5 text-[0.8125rem] text-muted-foreground">Pro</span>
+                </div>
+                <p className="mt-1 text-[0.8125rem] text-muted-foreground">
+                  One switch for all three kinds — a recorded stop, trailing stop or target crossed by the price your own
+                  live feed returns. During market hours, about once a minute while Vyuha is open, minimised included;
+                  each position only while its own market is trading, never in the pre-open. Every account&apos;s open
+                  positions are checked, and with more than one account the message names the account. Each alert
+                  carries the symbol, the price it was checked at, the recorded level, the check time in IST and the
+                  feed&apos;s name — never a quantity or a rupee figure. At most 20 a day, then one summary line; one
+                  per trade per kind per day. {ALERT_FEED_SCOPE}
+                </p>
+              </div>
+              <Switch
+                checked={alertsView.alertsOn}
+                disabled={pending || (!alertsView.alertsOn && !alertsView.canEnable)}
+                onCheckedChange={(v) => void run({ action: "alerts-toggle", enabled: Boolean(v) })}
+                aria-label="Stop / target alerts"
+                data-testid="telegram-alerts-switch"
+              />
+            </div>
+
+            {alertsView.proLocked && (
+              <p className="flex items-center gap-1.5 text-[0.8125rem] text-warning" data-testid="telegram-alerts-pro">
+                <Lock className="size-3.5 shrink-0" />
+                {ALERT_STATUS_COPY["not-pro"]}
+              </p>
+            )}
+
+            {!alertsView.proLocked && (
+              <div className="space-y-1.5">
+                <Label className="text-[0.8125rem]">Only between (IST, optional — narrows the market&apos;s hours, never widens them)</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    value={windowFrom}
+                    onChange={(e) => setWindowFrom(e.target.value)}
+                    placeholder="HH:MM"
+                    className="w-24"
+                    aria-label="Alert window from"
+                    data-testid="telegram-alerts-from"
+                  />
+                  <span className="text-[0.8125rem] text-muted-foreground">to</span>
+                  <Input
+                    value={windowTo}
+                    onChange={(e) => setWindowTo(e.target.value)}
+                    placeholder="HH:MM"
+                    className="w-24"
+                    aria-label="Alert window to"
+                    data-testid="telegram-alerts-to"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={pending || !windowDirty || windowError !== null}
+                    onClick={() => {
+                      const from = windowFrom.trim();
+                      const to = windowTo.trim();
+                      void run({ action: "alerts-window", from: from || null, to: to || null });
+                    }}
+                    data-testid="telegram-alerts-window-save"
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={pending || alertsView.window === null}
+                    onClick={() => {
+                      setWindowFrom("");
+                      setWindowTo("");
+                      void run({ action: "alerts-window", from: null, to: null });
+                    }}
+                    data-testid="telegram-alerts-window-clear"
+                  >
+                    Clear
+                  </Button>
+                </div>
+                {windowDirty && windowError && (
+                  <p className="text-[0.8125rem] text-loss" data-testid="telegram-alerts-window-error">
+                    {windowError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!alertsView.proLocked && (statusLine || armed) && (
+              <p className="text-[0.8125rem] text-muted-foreground" data-testid="telegram-alerts-status">
+                {statusLine ?? "On — the last check ran during market hours."}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Deleting a stored credential must NEVER require accepting a
             disclosure: whenever a token is on file and the status block above
             is not on screen (digest off, or the disclosure changed), the
@@ -313,7 +515,7 @@ function TelegramDialog({
           </section>
 
           <p className="text-muted-foreground">
-            Every digest ends with: <span className="text-foreground">“{TELEGRAM_DISCLOSURE.footer}”</span>
+            Every digest and alert ends with: <span className="text-foreground">“{TELEGRAM_DISCLOSURE.footer}”</span>
           </p>
         </div>
 

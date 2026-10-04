@@ -90,7 +90,7 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
  * `breach-banner.tsx` is a client component whose import graph is React, lucide,
  * the button and `Breach` as a TYPE, so it cannot bind the connection either. */
 import { BreachBanner, lastNotifiedKey, markNotified } from "@/components/risk/breach-banner";
-import { ANGELONE_FEED_ITEMS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
+import { ANGELONE_FEED_ITEMS, LIVE_FEED_DISCLOSURE_VERSIONS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
 import type { Breach } from "@/lib/risk/alerts";
@@ -578,7 +578,7 @@ describe("C2 — the Angel One key carries the five triggers and nothing else (S
       expect(base, `the Angel One key still carries a \`${token}\` field (S-2)`).not.toContain(token);
     }
     // Its own consent IS there — a stale acknowledgement must rebuild.
-    expect(base, "the Angel One key lost its own acknowledgement entry").toContain("ack:1");
+    expect(base, "the Angel One key lost its own acknowledgement entry").toContain(`ack:${LIVE_FEED_DISCLOSURE_VERSIONS.angelone}`);
     // …and the slider is not a field however far it is moved.
     expect(
       await registry.liveFeedInstanceKey("angelone", 5),
@@ -614,7 +614,7 @@ describe("C2 — the Angel One key carries the five triggers and nothing else (S
     ).toBe(base);
     // And no other feed's ack version is anywhere in the string: the Upstox
     // entry above is a DIFFERENT version, so a whole-column key would show it.
-    setSettings({ liveFeedAckJson: JSON.stringify({ angelone: "1", upstox: "77" }) });
+    setSettings({ liveFeedAckJson: JSON.stringify({ angelone: LIVE_FEED_DISCLOSURE_VERSIONS.angelone, upstox: "77" }) });
     expect(
       await registry.liveFeedInstanceKey("angelone", 3),
       "the Angel One key carries the Upstox acknowledgement version (S-2)",

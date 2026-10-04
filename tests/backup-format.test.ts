@@ -81,6 +81,11 @@ describe("validateBackup", () => {
     //   clinic_experiments, which IS listed) and every row is recomputed from the
     //   restored trades on the next Clinic visit; a restore deletes the table
     //   inside its transaction so a report of the replaced book is never shown.
+    //   telegram_alerts_sent — the v4.7.0 C5 Telegram alert RECEIPTS (migration
+    //   0080): job bookkeeping for THIS machine's sends, the per-row twin of
+    //   last_telegram_sent_date. Carried in a file, a receipt from the donor's
+    //   machine (or from your own, later the same IST day) would silence today's
+    //   alert here; they carry no account_id and nothing the user typed.
     const EXCLUDED: string[] = [
       "data_fixes",
       "atlas_daily",
@@ -88,6 +93,7 @@ describe("validateBackup", () => {
       "atlas_staleness",
       "angelone_instrument_tokens",
       "clinic_cache",
+      "telegram_alerts_sent",
     ];
 
     const expected = allTables.filter((n) => !EXCLUDED.includes(n)).sort();
@@ -101,7 +107,7 @@ describe("validateBackup", () => {
     // "exactly one persisted mark per position per day" guard (migration 0067,
     // whose header names this list by name); without it here, a restore hands
     // the desk a stamp for today and persist-mark.ts refuses today's mark.
-    for (const col of ["lastTelegramSentDate", "lastAutoPullDate", "lastLiveMarkDate"]) {
+    for (const col of ["lastTelegramSentDate", "lastAutoPullDate", "lastLiveMarkDate", "lastTelegramAlertSummaryDate"]) {
       expect(SETTINGS_MACHINE_COLUMNS as readonly string[], col).toContain(col);
     }
     // …and every one of them is a real settings column, not a typo that would

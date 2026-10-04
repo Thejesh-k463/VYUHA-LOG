@@ -8,8 +8,9 @@ import {
   officialCloseAvailableAt,
   tradingDayStatus,
 } from "@/lib/domain/market-calendar";
+import { positionKeys } from "@/lib/live/position-keys";
 import { isCashKey } from "./mapping";
-import { fromPaise, quoteKeyId, type Exchange, type ProviderId, type Quote, type QuoteKey } from "./types";
+import { fromPaise, type ProviderId, type Quote, type QuoteKey } from "./types";
 
 /**
  * The ONE number the live feed is allowed to write (owner answer Q25:
@@ -46,42 +47,22 @@ import { fromPaise, quoteKeyId, type Exchange, type ProviderId, type Quote, type
  * exactly once, here, at the write edge.
  */
 
-const EXCHANGES: readonly Exchange[] = ["NSE", "BSE", "NFO", "BFO", "MCX", "CDS"];
-
-/** Ceiling on one subscription set — the same 500 the SSE route applies. */
-export const MAX_POSITION_KEYS = 500;
+/** Ceiling on one subscription set — the same 500 the SSE route applies (one constant, lib/live/position-keys.ts). */
+export { MAX_POSITION_KEYS } from "@/lib/live/position-keys";
 
 /**
  * The open positions of the SELECTED account, as provider keys.
  *
- * The SAME rule `app/api/live/stream/route.ts` applies, in a place a second
- * caller can reach: `is_open` is the open predicate (never `sell_date IS
- * NULL`, which is a sort key on this table), the account scope comes from
- * `getTrackerTrades()` (invariant 8), and duplicates collapse on
- * `quoteKeyId()`. The stream route keeps its own copy because it is outside
- * this wave's file set — fold the two together when one wave owns both.
+ * The ONE rule — `positionKeys()` in lib/live/position-keys.ts, shared since
+ * v4.7.0 C5 with `app/api/live/stream/route.ts` and the Telegram alert job:
+ * `is_open` is the open predicate (never `sell_date IS NULL`, which is a sort
+ * key on this table), duplicates collapse on `quoteKeyId()`, at most
+ * `MAX_POSITION_KEYS`. The account scope is THIS caller's: `getTrackerTrades()`
+ * (invariant 8). Behaviour unchanged from the private copy it replaced.
  */
 export async function openPositionKeys(): Promise<QuoteKey[]> {
   const { getTrackerTrades } = await import("@/lib/queries/trades");
-  const out: QuoteKey[] = [];
-  const seen = new Set<string>();
-  for (const t of getTrackerTrades()) {
-    if (!t.isOpen) continue;
-    const raw = (t.exchange ?? "").trim().toUpperCase();
-    const key: QuoteKey = {
-      symbol: t.symbol.trim().toUpperCase(),
-      exchange: (EXCHANGES as readonly string[]).includes(raw) ? (raw as Exchange) : "NSE",
-      ...(t.tradingsymbol && t.tradingsymbol !== t.symbol
-        ? { tradingsymbol: t.tradingsymbol.trim().toUpperCase() }
-        : {}),
-    };
-    const id = quoteKeyId(key);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(key);
-    if (out.length >= MAX_POSITION_KEYS) break;
-  }
-  return out;
+  return positionKeys(getTrackerTrades());
 }
 
 /**

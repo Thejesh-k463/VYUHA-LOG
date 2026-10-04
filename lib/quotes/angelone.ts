@@ -820,7 +820,30 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
     consecutiveSessionInvalidations += 1;
   }
 
-  async function snapshot(keys: readonly QuoteKey[], _signal?: AbortSignal): Promise<QuoteMap> {
+  /**
+   * ONE SNAPSHOT AT A TIME ON THIS INSTANCE (v4.7.0 C5, review R3).
+   *
+   * The instance is shared process-wide (registry A-2), and since C5 it has two
+   * callers: the desk's poll (`subscribe()` below) and the Telegram alert job
+   * (`lib/jobs/telegram-alerts.ts`, through `peekLiveFeedProvider()`). Two
+   * overlapping sweeps raced for `slot()`: the second request inside the same
+   * second was REFUSED by the 1 req/s guard — dropping that sweep's remaining
+   * batches and writing the guard's sentence into `lastError`, i.e. onto the
+   * desk's health pill — and both could mint a session at once. A promise chain
+   * queues each sweep behind the previous one instead, so the pacing in
+   * `slot()` sees them in order and the guard stays the safety net it was
+   * written as. A failed sweep never blocks the next (the chain swallows its
+   * rejection; the caller still receives it).
+   */
+  let snapshotChain: Promise<unknown> = Promise.resolve();
+
+  function snapshot(keys: readonly QuoteKey[], signal?: AbortSignal): Promise<QuoteMap> {
+    const run = snapshotChain.then(() => snapshotNow(keys, signal));
+    snapshotChain = run.catch(() => undefined);
+    return run;
+  }
+
+  async function snapshotNow(keys: readonly QuoteKey[], _signal?: AbortSignal): Promise<QuoteMap> {
     const out: QuoteMap = new Map();
     if (keys.length === 0) return out;
     // WHAT THE INVALIDATION COUNT WAS WHEN THIS POLL STARTED (ruling S-1).
@@ -830,7 +853,11 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
     const invalidationsBefore = consecutiveSessionInvalidations;
     const gate = await readGate();
     if (gate.state !== "ready") throw new Error(gate.reason);
-    lastCadence = angelOneCadenceSeconds(keys.length);
+    // NO CADENCE WRITE HERE (review R3). `lastCadence` is what health() reports
+    // as "polling every N seconds", and the desk's poll interval is set by
+    // `subscribe()` from ITS key count. The alert job's snapshot carries a
+    // different count (every account's alertable positions), and writing it
+    // here made the pill state a cadence nothing was polling at.
 
     let token: string;
     try {

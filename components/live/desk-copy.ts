@@ -72,10 +72,12 @@ export const DESK_COPY = {
   keyboardHelp: "j / k move · Enter expands · L opens the Sizing Lab · / filters · Esc returns to the table",
 
   /**
-   * Q55, and nothing beyond it. The word "alerts" is deliberately ABSENT: no
-   * alert code exists under `lib/live` or `components/live` and Telegram alerts
-   * ship after v4.2 (Q18, 2026-09-06). A Pro label naming a capability this build does not have sells
-   * something the buyer cannot receive.
+   * Q55, and nothing beyond it. The word "alerts" is deliberately ABSENT here
+   * even though v4.7.0 C5 ships Telegram stop/target alerts (Pro): this line
+   * labels the desk's locked COLUMNS, and an alert is not a column — it is
+   * switched on in Settings → Alerts — Telegram, and sold on the `/live`
+   * PRO_FEATURES label (lib/license.ts). A column caption naming it would
+   * promise something no column on this screen shows.
    */
   proColumns: "Pro — R, risk at stop, portfolio heat and the chart overlay.",
 } as const;

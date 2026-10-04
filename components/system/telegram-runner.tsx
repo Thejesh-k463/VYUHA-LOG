@@ -38,11 +38,18 @@ export function TelegramRunner() {
         if (d?.ran) {
           setNote(d.reason);
           // A confirmed send is the only thing that clears a recorded failure.
+          // A DIGEST send clears either sender's record (v4.7.0 C5, D-C5-2:
+          // it proves the bot path works; an alert send clears only its own).
           writeStored(TELEGRAM_FAILURE_KEY, null);
         } else if (d?.failed) {
           writeStored(
             TELEGRAM_FAILURE_KEY,
-            serializeTelegramFailure({ date: d.date ?? null, reason: String(d.reason), at: new Date().toISOString() }),
+            serializeTelegramFailure({
+              date: d.date ?? null,
+              reason: String(d.reason),
+              at: new Date().toISOString(),
+              source: "digest",
+            }),
           );
         }
       })

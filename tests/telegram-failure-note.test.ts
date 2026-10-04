@@ -8,8 +8,10 @@ import {
   TELEGRAM_FAILURE_KEY,
   TELEGRAM_FAILURE_REASSURANCE,
   digestFailureSignature,
+  failureSource,
   parseTelegramFailure,
   serializeTelegramFailure,
+  shouldClearFailureOnSend,
   shouldRaiseDigestNotification,
   telegramFailureHeadline,
 } from "@/lib/domain/telegram-failure";
@@ -50,6 +52,31 @@ describe("the stored record", () => {
     expect(parseTelegramFailure(serializeTelegramFailure(rec))).toEqual(rec);
     expect(parseTelegramFailure(serializeTelegramFailure({ ...rec, dismissed: true }))?.dismissed).toBe(true);
     expect(parseTelegramFailure(serializeTelegramFailure(rec))?.dismissed).toBeUndefined();
+  });
+
+  it("v4.7.0 C5 (D-C5-2): an optional `source`, still v:1 — absent reads as the digest, garbage is dropped", () => {
+    expect(failureSource(rec)).toBe("digest"); // the pre-C5 shape: only the digest ever wrote one
+    const alert = { ...rec, source: "alert" as const };
+    expect(parseTelegramFailure(serializeTelegramFailure(alert))).toEqual(alert);
+    expect(JSON.parse(serializeTelegramFailure(alert)).v).toBe(1);
+    expect(failureSource(parseTelegramFailure(serializeTelegramFailure(alert))!)).toBe("alert");
+    expect(parseTelegramFailure(JSON.stringify({ v: 1, ...rec, source: "email" }))).toEqual(rec);
+  });
+
+  it("v4.7.0 C5 (D-C5-2): a digest send clears any record; an alert send clears only an alert record", () => {
+    const alert = { ...rec, source: "alert" as const };
+    const digest = { ...rec, source: "digest" as const };
+    expect(shouldClearFailureOnSend(null, "digest")).toBe(false);
+    expect(shouldClearFailureOnSend(null, "alert")).toBe(false);
+    expect(shouldClearFailureOnSend(rec, "digest")).toBe(true);
+    expect(shouldClearFailureOnSend(alert, "digest")).toBe(true);
+    expect(shouldClearFailureOnSend(alert, "alert")).toBe(true);
+    expect(shouldClearFailureOnSend(digest, "alert")).toBe(false);
+    expect(shouldClearFailureOnSend(rec, "alert")).toBe(false);
+  });
+
+  it("the digest runner stamps its failures source 'digest'", () => {
+    expect(RUNNER).toMatch(/source: "digest"/);
   });
 
   it("keeps a null date — a job that never reached a trading day still failed", () => {

@@ -429,7 +429,7 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
  * makes its published ceiling true process-wide — and it re-reads its gate on
  * every call, so there is nothing in it that must not be shared.
  */
-let cachedLiveFeedProvider: { key: string; provider: QuoteProvider } | null = null;
+let cachedLiveFeedProvider: { key: string; provider: QuoteProvider; dbPath: string } | null = null;
 
 /** The ids whose instance is shared. Everything else is built per call. */
 const MEMOISED_PROVIDER_IDS: readonly ProviderId[] = ["angelone", "upstox", "openalgo"];
@@ -570,8 +570,42 @@ export async function getLiveFeedProvider(): Promise<QuoteProvider> {
   const key = await liveFeedInstanceKey(id, feed.refreshSeconds);
   if (cachedLiveFeedProvider && cachedLiveFeedProvider.key === key) return cachedLiveFeedProvider.provider;
   const provider = createProvider(id, feed.refreshSeconds);
-  cachedLiveFeedProvider = { key, provider };
+  cachedLiveFeedProvider = { key, provider, dbPath: process.env.VYUHA_DB_PATH ?? "" };
   return provider;
+}
+
+/**
+ * The feed instance the Telegram alert job reads through (v4.7.0 C5, review R1)
+ * — THE CACHED ONE whenever it is the provider that may run, and only otherwise
+ * `getLiveFeedProvider()`.
+ *
+ * WHY NOT `getLiveFeedProvider()` ITSELF: its key carries the SELECTED account
+ * (invariant 8 — the desk reads one book's connection), and the alert job runs
+ * every minute from whichever tab POSTed, reading every account's positions
+ * (ruling TG3). Keyed on the selection, a two-account install would rebuild the
+ * instance — a fresh Angel One SIGN-IN, both ceilings back to zero — almost
+ * every run, breaking "signed in at most once a day" on the consent sheet and
+ * fix A-2's one-instance rule. So the job PEEKS: the same provider id the
+ * settings allow now (and the same database file) → the instance the desk
+ * already holds, whichever account it was built for; anything else → the
+ * normal build, which then becomes the cached instance.
+ *
+ * Consent is not bypassed: the id compared is `resolveLiveFeed().effective`,
+ * re-derived from the stored consent on every call, and every adapter re-reads
+ * its own gate and credentials on every request. What the peek shares is the
+ * SESSION — which is the point. The disclosure says so (design D12): with more
+ * than one account, every account's symbols go through the connection the desk
+ * last used.
+ */
+export async function peekLiveFeedProvider(): Promise<QuoteProvider> {
+  const feed = await resolveLiveFeed();
+  const env = process.env.VYUHA_QUOTE_PROVIDER;
+  const id = env && env.trim() ? resolveProviderId(env) : feed.effective;
+  const cached = cachedLiveFeedProvider;
+  if (cached && cached.provider.id === id && cached.dbPath === (process.env.VYUHA_DB_PATH ?? "")) {
+    return cached.provider;
+  }
+  return getLiveFeedProvider();
 }
 
 /**

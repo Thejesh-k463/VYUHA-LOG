@@ -302,9 +302,17 @@ describe("GET — the two facts the card renders the Upstox radio from", () => {
   it("says neither half holds on a fresh install", async () => {
     const body = await (await get()).json();
     expect(body.ok).toBe(true);
-    expect(body.upstox).toEqual({ connected: false, ackCurrent: false, disclosureVersion: "1" });
+    expect(body.upstox).toEqual({
+      connected: false,
+      ackCurrent: false,
+      disclosureVersion: LIVE_FEED_DISCLOSURE_VERSIONS.upstox,
+    });
     // Angel One's block is a SIBLING and never a rename of this one.
-    expect(body.angelone).toMatchObject({ connected: false, ackCurrent: false, disclosureVersion: "1" });
+    expect(body.angelone).toMatchObject({
+      connected: false,
+      ackCurrent: false,
+      disclosureVersion: LIVE_FEED_DISCLOSURE_VERSIONS.angelone,
+    });
     expect(body.upstox.disclosureVersion).toBe(LIVE_FEED_DISCLOSURE_VERSIONS.upstox);
   });
 
@@ -373,7 +381,7 @@ describe("POST ack — the acknowledgement round-trips through parseFeedAcks", (
     // Accepting again restores it — and replaces the old version rather than
     // adding a second entry for the same provider.
     await post({ action: "ack", provider: "upstox" });
-    expect(parseFeedAcks(settingsRow()?.liveFeedAckJson)).toEqual({ upstox: "1" });
+    expect(parseFeedAcks(settingsRow()?.liveFeedAckJson)).toEqual({ upstox: LIVE_FEED_DISCLOSURE_VERSIONS.upstox });
   });
 });
 

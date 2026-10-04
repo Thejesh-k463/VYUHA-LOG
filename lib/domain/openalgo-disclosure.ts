@@ -54,8 +54,25 @@
  * written into "4" rather than a "5", because no install has accepted "4" yet
  * (v4.5.0 ships "3") — a second number would only re-prompt nobody twice.
  * Once v4.6.0 is published, "4" is frozen and the rule above applies again.
+ *
+ * "4" → "5" (v4.7.0 wave C5, owner answers TG1/TG2, DECISIONS 2026-10-04): the
+ * accepted cadence item said the requests run only while the Live Desk is open
+ * and that "nothing polls in the background". With Telegram stop/target alerts
+ * on (Pro), the alert check asks this same bridge for the open positions'
+ * prices about once a minute during market hours while Vyuha is open on ANY
+ * page, minimised included — a sentence already accepted stopped being true
+ * about WHEN requests are made, and every account's alertable symbols now go
+ * through the one connection the desk last used (design review R1,
+ * `peekLiveFeedProvider()` in lib/quotes/registry.ts). THIS bump also closes
+ * the OpenAlgo IMPORT pull until the user re-accepts — the import route applies
+ * the same `openAlgoGate` (app/api/import/broker/route.ts,
+ * `currentOpenAlgoGate()`) — so the release notes say so.
+ *
+ * "5" is NOT final for v4.7.0: wave C7 AMENDS the "5" text before v4.7.0 ships
+ * rather than bumping to "6" (the D-6 precedent above — no install accepts "5"
+ * before the release, so a second number would re-prompt nobody twice).
  */
-export const OPENALGO_DISCLOSURE_VERSION = "4";
+export const OPENALGO_DISCLOSURE_VERSION = "5";
 
 /** Where the user gets OpenAlgo. Shown as text, never auto-opened. */
 export const OPENALGO_SITE = "https://openalgo.in";
@@ -138,8 +155,20 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       "The Live Desk prices your open positions from the end-of-day bhavcopy, or from marks you type, until you pick the OpenAlgo bridge as its source in Settings → Live feed. That choice is yours and reversible, and it is offered only while this disclosure is accepted and the integration is on.",
   },
   {
-    title: "It asks every 1 to 5 seconds, while the Live Desk is open",
+    title: "It asks every 1 to 5 seconds while the Live Desk is open — and, with Telegram alerts on, about once a minute",
     body:
+      // v "5" (C5): the desk's poll is unchanged — it still starts and stops
+      // with the desk and pauses on a hidden tab (S5a in
+      // tests/seams-v41-fix.test.ts holds the client to that). What is NEW is
+      // the alert check (`runTelegramAlerts()` in lib/jobs/telegram-alerts.ts,
+      // POSTed by components/system/telegram-alert-runner.tsx from the root
+      // layout): Pro + Telegram on + alerts on only, market hours only, about
+      // once a minute (15 s while on /live — "more often"), ONE `snapshot()`
+      // per run through `peekLiveFeedProvider()`, which keeps the cached
+      // instance — the connection the desk last used — whatever account each
+      // tab has selected (design review R1). The runner does NOT pause on
+      // `visibilitychange` (owner answer TG2), so "nothing polls in the
+      // background" became false and is gone.
       // Interval: `clampRefreshSeconds()` lib/quotes/openalgo.ts:59-71
       // (REFRESH_SECONDS_MIN/MAX/DEFAULT + `clampRefreshSeconds()`; 1–5 s,
       // default 3); the poll is a `setInterval` started by `subscribe()`
@@ -149,7 +178,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // `signal` abort). Ceiling: RATE_LIMIT_PER_SECOND = 10 (:64), enforced
       // by `createRateGuard()` (:290-300, whose `take(now)` returns false past
       // the limit), which REFUSES rather than queues.
-      "You set the interval on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code. The requests start when the Live Desk opens and stop when it closes or when its tab goes to the background — nothing polls in the background — and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says.",
+      "You set the interval on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code. The desk's requests start when the Live Desk opens and stop when it closes or when its tab goes to the background, and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says. Only if you turn on Telegram stop/target alerts (Pro), Vyuha also asks the bridge for the prices of your open positions about once a minute during market hours while Vyuha is open on any screen, minimised included (more often while the Live Desk is open). With more than one account, every account's checked symbols go through one bridge connection: the one already open, which is the one the Live Desk last used, or else the selected account's.",
   },
   {
     title: "Each request carries your symbols, and nothing about your book",
@@ -166,6 +195,11 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // Identifiers, not line numbers: both moved in this wave. No quantity,
       // no average price, no stop, no P&L, no account id is in the body —
       // those columns are never read on this path.
+      // v "5" (C5): the alert check sends the SAME body shape through the same
+      // `snapshot()`, but its key list is every account's open positions that
+      // can alert right now (a recorded stop / trailing stop / target, their
+      // market trading — design review R8), built by the shared key builder;
+      // still no quantity, price paid, stop or account name in the request.
       "One request holds your OpenAlgo API key and a list of the trading symbols and exchanges of the positions your book has open — at most 500 of them. Your quantities, entry prices, stops, P&L and account names are not in it: the bridge is told which scrips to price, never how much of them you hold or what you paid.",
   },
   {
@@ -203,7 +237,11 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // (`post()`: `const base = normalizeHost(creds.host)` and the single
       // `doFetch(`${base}/api/v1/${path}`, …)` it feeds). No other host is
       // reachable from that file.
-      "By default the feed talks to your own OpenAlgo at http://127.0.0.1:5000 — this machine talking to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to that machine every few seconds while the desk is open. Vyuha adds no other host for prices, and no market-data provider of its own.",
+      // v "5" (C5): the second clause gained the alert cadence, and the
+      // Telegram path is named as a SEPARATE egress with its own disclosure —
+      // a Telegram alert carries a symbol and its price to Telegram's Bot API,
+      // which only lib/telegram/send.ts dials, never this adapter.
+      "By default the feed talks to your own OpenAlgo at http://127.0.0.1:5000 — this machine talking to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to that machine every few seconds while the desk is open, and about once a minute during market hours while Telegram alerts are on. Vyuha adds no other host for prices, and no market-data provider of its own. A Telegram alert, if you turn those on, is a separate path with its own disclosure.",
   },
   {
     title: "Prices refresh on screen only — ticks are never written",

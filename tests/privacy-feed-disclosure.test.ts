@@ -269,8 +269,9 @@ describe("the consent sheet and the privacy sheet agree about the feed", () => {
     // what re-prompts every v2 install after item 6 stopped being true (v4.2:
     // the bundled NSE holiday list makes the close mark refuse a holiday, so
     // the accepted "weekend only" sentence no longer described what the app
-    // writes — docs/DECISIONS.md 2026-09-07, v4.2 wave).
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
+    // writes — docs/DECISIONS.md 2026-09-07, v4.2 wave). "5" (v4.7.0 C5):
+    // the Telegram alert check polls outside the Live Desk.
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("5");
   });
 });
 

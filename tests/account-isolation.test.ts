@@ -412,6 +412,18 @@ describe("account-scoped table registry", () => {
     // (tests/trade-identity-db.test.ts diffs every column of every row it
     // touches, and every column of the ones it must not).
     //
+    // v4.7.0 C5 — a READER across accounts, for an owner ruling (TG3):
+    //   lib/jobs/telegram-alerts.ts  `runTelegramAlerts`
+    // The Telegram stop/target alert job checks EVERY account's open positions
+    // and never calls `getSelectedAccountId()`: the selection is what the user
+    // is LOOKING at, and switching the on-screen book must never silence an
+    // alert they expect. With more than one account each message names its own
+    // account. It writes no `trades` row; its writes are its own receipts
+    // (`telegram_alerts_sent`, NO account_id — design D7/R7: `trades.id` is
+    // unique across accounts) and one settings stamp. Pinned below by a source
+    // check (it never resolves the selection) and in
+    // tests/telegram-alerts-db.test.ts by a two-account book that alerts on both.
+    //
     // v4.5.0 wave TP — THE ONE DELIBERATE WIDENING OF INVARIANT 8, named here
     // in prose because `accounts` carries no `account_id` of its own and the
     // file below would demand of it a resolver rule it deliberately generalises:
@@ -757,6 +769,20 @@ describe("account-scoped table registry", () => {
         ).toBe(true);
       }
     }
+  });
+
+  it("the Telegram alert job reads EVERY account's open book and never resolves the selection (v4.7.0 C5, TG3)", async () => {
+    // Declared in prose in the OWNERS comment above (the risk-cap precedent):
+    // a READ across accounts on purpose, so switching the on-screen book never
+    // silences an alert. The moment it resolves the selected account it has
+    // become a selected-account reader and the ruling is broken.
+    const fs = await import("node:fs");
+    const src = codeOnly(fs.readFileSync("lib/jobs/telegram-alerts.ts", "utf8"));
+    expect(src, "the alert job resolves the selected account — ruling TG3 reads every account").not.toMatch(/getSelectedAccountId/);
+    expect(src, "the alert job no longer reads trades at all — update this registration").toMatch(/\.from\(tradesTable\)/);
+    // It writes no trades row and no account-scoped table: its only writes are
+    // its own receipts (no account_id, design D7) and one settings stamp.
+    expect(src).not.toMatch(/\.(?:insert|update|delete)\(tradesTable\)/);
   });
 
   it("every declared owner actually resolves the account", async () => {

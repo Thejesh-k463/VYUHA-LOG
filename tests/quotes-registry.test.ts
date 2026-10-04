@@ -12,6 +12,7 @@ import {
   getQuoteProvider,
   liveFeedAckGate,
   liveFeedInstanceKey,
+  peekLiveFeedProvider,
   resetLiveFeedProviderCache,
   resolveProviderId,
   selectProviderId,
@@ -26,6 +27,24 @@ import {
 import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
 import { LIVE_FEED_DISCLOSURE_VERSIONS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
+
+/**
+ * Every Angel One instance the registry builds, COUNTED (v4.7.0 C5, review R1).
+ * A pass-through: the real factory runs and returns the real adapter. An
+ * instance is a session — its jwt, its login stamp and both ceilings live in
+ * it — so "one construction" is "at most one sign-in" (registry A-2).
+ */
+const angelBuilds = vi.hoisted(() => ({ n: 0 }));
+vi.mock("@/lib/quotes/angelone", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/quotes/angelone")>();
+  return {
+    ...real,
+    createAngelOneProvider: (...args: Parameters<typeof real.createAngelOneProvider>) => {
+      angelBuilds.n += 1;
+      return real.createAngelOneProvider(...args);
+    },
+  };
+});
 
 /**
  * The registry: which provider runs, and what happens to the ones v4.0
@@ -148,8 +167,8 @@ describe("the providers v4.0 did NOT build", () => {
 });
 
 describe("v4.2 — BOTH broker feeds ship, each behind its own consent", () => {
-  const ACK = withFeedAck(null, "upstox"); // '{"upstox":"1"}'
-  const ANGEL_ACK = withFeedAck(null, "angelone"); // '{"angelone":"1"}'
+  const ACK = withFeedAck(null, "upstox"); // '{"upstox":"2"}'
+  const ANGEL_ACK = withFeedAck(null, "angelone"); // '{"angelone":"2"}'
 
   it("moves `upstox` out of the planned list and into the shipped one", () => {
     expect(UPSTOX_FEED_ENABLED).toBe(true);
@@ -162,7 +181,7 @@ describe("v4.2 — BOTH broker feeds ship, each behind its own consent", () => {
 
   it("gates it on the STORED ACKNOWLEDGEMENT, exactly as OpenAlgo is gated", () => {
     const base = { liveFeedProvider: "upstox", openalgoEnabled: false, openalgoAckVersion: null };
-    expect(LIVE_FEED_DISCLOSURE_VERSIONS.upstox).toBe("1");
+    expect(LIVE_FEED_DISCLOSURE_VERSIONS.upstox).toBe("2");
     expect(selectProviderId({ ...base, liveFeedAckJson: ACK }), "a current acknowledgement").toBe("upstox");
     expect(selectProviderId({ ...base, liveFeedAckJson: null }), "never acknowledged").toBe("eod");
     expect(selectProviderId({ ...base, liveFeedAckJson: undefined }), "column absent").toBe("eod");
@@ -217,7 +236,7 @@ describe("v4.2 — BOTH broker feeds ship, each behind its own consent", () => {
 
   it("gates Angel One on ITS OWN key in the same column — one broker's consent is not the other's", () => {
     const base = { liveFeedProvider: "angelone", openalgoEnabled: false, openalgoAckVersion: null };
-    expect(LIVE_FEED_DISCLOSURE_VERSIONS.angelone).toBe("1");
+    expect(LIVE_FEED_DISCLOSURE_VERSIONS.angelone).toBe("2");
     expect(selectProviderId({ ...base, liveFeedAckJson: ANGEL_ACK }), "a current acknowledgement").toBe("angelone");
     expect(selectProviderId({ ...base, liveFeedAckJson: null }), "never acknowledged").toBe("eod");
     expect(selectProviderId({ ...base, liveFeedAckJson: ACK }), "the UPSTOX consent must not open it").toBe("eod");
@@ -274,7 +293,7 @@ describe("v4.2 — BOTH broker feeds ship, each behind its own consent", () => {
  * and the correct one agree while it is.
  */
 describe("a feed this build WITHHOLDS is never effective, acknowledged or not", () => {
-  const ANGEL_ACK = withFeedAck(null, "angelone"); // '{"angelone":"1"}'
+  const ANGEL_ACK = withFeedAck(null, "angelone"); // '{"angelone":"2"}'
   const UPSTOX_ACK = withFeedAck(null, "upstox");
   const base = { liveFeedProvider: "angelone", openalgoEnabled: false, openalgoAckVersion: null };
 
@@ -725,5 +744,43 @@ describe("S-2  one memo key per provider: OpenAlgo and a broker share no field",
       expect(a.id, `${label}: the wrong feed is effective`).toBe(id);
       expect(await getLiveFeedProvider(), `${label}: the memo missed and opened a second session`).toBe(a);
     }
+  });
+
+  /* ---- (5) the Telegram alert door shares the desk's instance (C5, R1) ---- */
+
+  it("5a  alternating the selected account between the alert door and the stream -> ONE instance, one sign-in", async () => {
+    configBrokerOnly();
+    angelBuilds.n = 0;
+    // The desk's stream, on account 1.
+    const desk = await getLiveFeedProvider();
+    expect(desk.id).toBe("angelone");
+    for (let i = 0; i < 3; i += 1) {
+      // Another tab's view is account 2 when the alert door fires…
+      setSettings({ selectedAccountId: SECOND_ACCOUNT });
+      expect(await peekLiveFeedProvider(), `round ${i}: the alert door built its own session`).toBe(desk);
+      // …and account 1 again when the desk reconnects.
+      setSettings({ selectedAccountId: ACCOUNT });
+      expect(await getLiveFeedProvider(), `round ${i}: the desk lost its session to the alert door`).toBe(desk);
+    }
+    expect(angelBuilds.n, "more than one Angel One instance = more than one sign-in").toBe(1);
+  });
+
+  it("5b  with nothing cached the door builds the SELECTED account's instance, which the desk then reuses", async () => {
+    configBrokerOnly();
+    angelBuilds.n = 0;
+    const door = await peekLiveFeedProvider();
+    expect(door.id).toBe("angelone");
+    expect(await getLiveFeedProvider()).toBe(door);
+    expect(angelBuilds.n).toBe(1);
+  });
+
+  it("5c  the door never hands out an instance the stored consent no longer allows", async () => {
+    configBrokerOnly();
+    const desk = await getLiveFeedProvider();
+    expect(desk.id).toBe("angelone");
+    setSettings({ liveFeedAckJson: JSON.stringify({ angelone: "0" }) });
+    const door = await peekLiveFeedProvider();
+    expect(door).not.toBe(desk);
+    expect(door.id).toBe("eod");
   });
 });

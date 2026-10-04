@@ -1,12 +1,14 @@
 "use client";
 
-// v3.7 §5.3a — the DURABLE, route-independent note that a Telegram EOD digest
-// failed. Mounted once in app/layout.tsx, so it is visible from every route;
-// the record it reads is a versioned localStorage envelope written by
-// <TelegramRunner> (lib/domain/telegram-failure.ts explains why the settings
-// column the plan preferred could not be used in this wave).
+// v3.7 §5.3a — the DURABLE, route-independent note that a Telegram send
+// failed: the EOD digest, or since v4.7.0 C5 a Pro stop/target alert. Mounted
+// once in app/layout.tsx, so it is visible from every route; the record it
+// reads is a versioned localStorage envelope written by <TelegramRunner> (the
+// digest) and <TelegramAlertRunner> (the alerts) — lib/domain/telegram-
+// failure.ts explains why the settings column the plan preferred could not be
+// used in that wave.
 //
-// What it must not become: an alarm. The digest is best-effort by design, the
+// What it must not become: an alarm. Both paths are best-effort by design, the
 // journal is untouched by a failed send, and the strip says so.
 //
 // §5.3b — the OS-notification probe rides here rather than in a new dependency.

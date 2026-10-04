@@ -56,14 +56,17 @@ describe("the gate", () => {
    * already exist. A test that derived them would go green the moment someone
    * put the version back.
    */
-  it("refuses an install that accepted disclosure v1 or v2 — 4.2's statement is not covered by either", () => {
-    for (const stale of ["1", "2"]) {
+  it("refuses an install that accepted disclosure v1 to v4 — the current statement is not covered by any", () => {
+    // "3" is what v4.5.0 installs hold and "4" what v4.6.0 installs hold; "5"
+    // (v4.7.0 C5) re-prompts both because the cadence item's "nothing polls in
+    // the background" stopped being true once Telegram alerts can poll.
+    for (const stale of ["1", "2", "3", "4"]) {
       const g = openAlgoGate({ enabled: true, ackVersion: stale });
       expect(g.allowed, `a v${stale} acceptance must not unlock the current feed`).toBe(false);
       expect(g.reason).toMatch(/changed since you accepted/i);
       expect(isAckCurrent(stale), "isAckCurrent must agree with the gate").toBe(false);
     }
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("5");
   });
 
   it("allows only when the switch is on AND the acceptance is current", () => {
@@ -225,7 +228,24 @@ describe("the live price feed disclosure (v2)", () => {
     expect(all, "the disclosure still says holidays are not modelled").not.toMatch(/not modelled/i);
     // A changed consent SENTENCE is a new consent VERSION (the constant's own
     // rule). Literal, so it cannot silently follow the module back down.
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("4");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("5");
+  });
+
+  it("v5 states the Telegram alert cadence and drops the promise it broke (C5)", () => {
+    // "nothing polls in the background" was an ACCEPTED sentence; the alert
+    // check (Pro, alerts on) asks the bridge about once a minute while Vyuha is
+    // open, minimised included — so the sentence is gone and the new one is here.
+    const cadence = OPENALGO_FEED_ITEMS[1];
+    expect(cadence.body, "the broken promise is back").not.toMatch(/nothing polls in the background/i);
+    expect(cadence.body).toContain("Only if you turn on Telegram stop/target alerts (Pro)");
+    expect(cadence.body).toContain("about once a minute during market hours while Vyuha is open on any screen, minimised included");
+    expect(cadence.body).toContain(
+      "every account's checked symbols go through one bridge connection: the one already open, which is the one the Live Desk last used, or else the selected account's",
+    );
+    // The desk's own poll is unchanged and still says so.
+    expect(cadence.body).toContain("stop when it closes or when its tab goes to the background");
+    // The address item's cadence clause follows.
+    expect(all).toContain("about once a minute during market hours while Telegram alerts are on");
   });
 
   it("attributes the daily re-sign-in to the BROKER and to no regulator", () => {

@@ -708,7 +708,11 @@ const clientSource = () =>
 describe("SEAM 5 · the disclosure and PRIVACY promise a hidden tab holds no stream", () => {
   it("S5a: item 2 and PRIVACY item 3 say it, and the client closes the EventSource on hidden", () => {
     const item2 = OPENALGO_FEED_ITEMS[1];
-    expect(item2.title).toBe("It asks every 1 to 5 seconds, while the Live Desk is open");
+    // v "5" (C5): the title names the Telegram alert cadence too; the desk's
+    // own stream still closes on a hidden tab, which is what this seam holds.
+    expect(item2.title).toBe(
+      "It asks every 1 to 5 seconds while the Live Desk is open — and, with Telegram alerts on, about once a minute",
+    );
     expect(item2.body).toContain("or when its tab goes to the background");
 
     const privacy = fs.readFileSync(path.join(process.cwd(), "docs", "client", "PRIVACY.md"), "utf8");

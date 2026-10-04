@@ -55,7 +55,7 @@ export const PAGE_SECTIONS: Record<PageId, readonly SectionDef[]> = {
     { id: "settings-defaults", label: "My Default Settings" },
     { id: "settings-risk-rules", label: "Risk rules" },
     { id: "settings-charge-rates", label: "Charge rates" },
-    { id: "settings-telegram", label: "Telegram digest" },
+    { id: "settings-telegram", label: "Telegram" },
     { id: "settings-live-feed", label: "Live feed" },
     { id: "settings-integrations", label: "Integrations (advanced)" },
     { id: "settings-license", label: "License" },

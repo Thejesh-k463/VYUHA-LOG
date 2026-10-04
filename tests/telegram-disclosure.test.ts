@@ -6,6 +6,7 @@ import {
   telegramGate,
 } from "@/lib/domain/telegram-disclosure";
 import { DEFAULT_SEND_TIME, parseSendTime, shouldSendDigest, type DigestGateState } from "@/lib/telegram/digest-gate";
+import { PRESCRIPTIVE_LANGUAGE } from "@/lib/intelligence/insight";
 
 /**
  * The disclosure is a RECORD, not decoration: consent is stored against its
@@ -15,9 +16,63 @@ import { DEFAULT_SEND_TIME, parseSendTime, shouldSendDigest, type DigestGateStat
  */
 
 describe("TELEGRAM_DISCLOSURE is pinned", () => {
-  it("is version 1 (an integer — bump ONLY for a materially changed risk)", () => {
-    expect(TELEGRAM_DISCLOSURE.version).toBe(1);
+  it("is version 2 (an integer — bump ONLY for a materially changed risk)", () => {
+    // 1 → 2 in v4.7.0 wave C5: the stop/target alert path is a NEW risk (a
+    // live-feed request about once a minute during market hours, every
+    // account, an account name in the message) that the v1 statement never
+    // named. Literal on purpose — a pin that followed the constant would go
+    // green the moment someone put the number back.
+    expect(TELEGRAM_DISCLOSURE.version).toBe(2);
     expect(Number.isInteger(TELEGRAM_DISCLOSURE.version)).toBe(true);
+  });
+
+  it("refuses an install that accepted v1 — the digest-only statement does not cover alerts", () => {
+    // 1 is the value sitting in `settings.telegram_ack_version` on every
+    // install that turned the digest on before v4.7.0. It must close the gate
+    // for BOTH paths until the user re-reads (owner answer TG6: the strip).
+    expect(isTelegramAckCurrent(1)).toBe(false);
+    const g = telegramGate({ enabled: true, ackVersion: 1 });
+    expect(g.allowed).toBe(false);
+    expect(g.reason).toMatch(/changed since you accepted/i);
+  });
+
+  it("v2 states the alert path truthfully: opt-in Pro, cadence, contents, caps, best-effort", () => {
+    const head = `${TELEGRAM_DISCLOSURE.title} ${TELEGRAM_DISCLOSURE.intro}`;
+    expect(head, "the title/intro must name BOTH paths").toMatch(/digest/i);
+    expect(head).toMatch(/stop\/target alerts/i);
+    expect(head).toMatch(/Pro/);
+
+    const alert = TELEGRAM_DISCLOSURE.risks.find((r) => /stop\/target alerts/i.test(r.title));
+    expect(alert, "the alert risk item is gone").toBeDefined();
+    const body = alert!.body;
+    expect(body).toMatch(/^Only if you turn them on \(Pro\)/);
+    expect(body).toContain("about once a minute while Vyuha is open, minimised included");
+    expect(body).toContain("never in the pre-open");
+    expect(body).toContain("in every account");
+    expect(body).toContain("stops, trailing stops and targets you recorded");
+    expect(body).toContain("The end-of-day feed gives no alerts");
+    expect(body).toContain("the time of the check in IST");
+    expect(body).toContain("the feed's name");
+    expect(body).toContain("when you have more than one account, the account's name");
+    expect(body).toContain("never a quantity and never a rupee figure");
+    expect(body).toContain("At most 20 alerts a day, then one summary line");
+    expect(body).toContain("one alert per trade per kind per day");
+    // "checked", never "as of": the adapters stamp receipt time (review R2).
+    expect(body).not.toMatch(/\bas of\b/i);
+
+    const all = TELEGRAM_DISCLOSURE.risks.map((r) => r.body).join(" ");
+    expect(all).toMatch(/risk control/);
+    expect(all).toMatch(/a blocked Telegram means no alert/);
+  });
+
+  it("carries no prescriptive language anywhere a user reads it", () => {
+    const text = [
+      TELEGRAM_DISCLOSURE.title,
+      TELEGRAM_DISCLOSURE.intro,
+      ...TELEGRAM_DISCLOSURE.risks.flatMap((r) => [r.title, r.body]),
+      ...TELEGRAM_DISCLOSURE.refusals,
+    ].join(" ");
+    expect(text).not.toMatch(PRESCRIPTIVE_LANGUAGE);
   });
 
   it("names the three load-bearing risks: Telegram's servers, the India block, own-risk delivery", () => {
@@ -38,7 +93,7 @@ describe("TELEGRAM_DISCLOSURE is pinned", () => {
   });
 
   it("points at the card's real home — Settings → Alerts, not Integrations", () => {
-    // The Telegram card renders under its own "Alerts — Telegram EOD digest"
+    // The Telegram card renders under its own "Alerts — Telegram"
     // card on /settings; OpenAlgo is the thing under Integrations.
     expect(telegramGate({ enabled: false, ackVersion: null }).reason).toContain("Settings → Alerts");
     expect(telegramGate({ enabled: true, ackVersion: null }).reason).toContain("Settings → Alerts");

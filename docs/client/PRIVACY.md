@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated:** 2026-09-26 · **Applies to:** Vyuha v4.6.0 and later
+**Last updated:** 2026-10-04 · **Applies to:** Vyuha v4.6.0 and later
 
 Vyuha Desktop has no account, no server and no telemetry. This page exists because that
 claim deserves to be written down precisely rather than asserted in a slogan —
@@ -76,7 +76,13 @@ Exactly four kinds, and only one of them is automatic:
    (`/auth/app-info`, which carries nothing, not even the key) after each of
    those and before each trade pull, used only to warn, or to refuse the pull,
    when the bridge is older than the minimum release the OpenAlgo setup guide
-   names. It is off until you
+   names. Only if you have also switched on Telegram stop/target messages
+   (Pro, item 4), the bridge is asked the same way outside the desk too: about
+   once a minute during market hours while Vyuha is open, minimised included,
+   for the open positions of every account that carry a recorded stop,
+   trailing stop or target, each only while its own market is trading — the
+   same symbols and exchanges and nothing else about them, held in memory and
+   never written to your journal. It is off until you
    switch the integration on, accept the disclosure and pick that source, it
    goes to your own machine
    (`http://127.0.0.1:5000`) unless you enter another address, and the prices
@@ -93,11 +99,17 @@ Exactly four kinds, and only one of them is automatic:
    about a year, so there is no daily sign-in to do. It carries the instrument
    keys of the open positions of the selected account, at most 500 of them,
    once every 1–5 seconds while the desk is open, and nothing else about
-   them — no quantity, no entry price, no P&L, no account. Equities only in
+   them — no quantity, no entry price, no P&L, no account. Only if you have
+   also switched on Telegram stop/target messages (Pro, item 4), the same host
+   is asked about once a minute during market hours while Vyuha is open,
+   minimised included, for the equity positions of every account that carry a
+   recorded stop, trailing stop or target — the same keys and nothing else.
+   Equities only in
    this release. Futures and options rows are not priced by this feed: each
    shows the position's recorded close, or a dash when no close is
    recorded, and says so on the row. The prices stay on this machine: never
-   uploaded, never resold.
+   uploaded, never resold — except the one price each Telegram stop/target
+   message carries to your own chat, once you have switched those on.
    Angel One can price the desk instead, on the same terms and behind the same
    switch, from the credentials you already saved under Import → Connect
    broker. Vyuha signs in to Angel One's own API host
@@ -118,18 +130,41 @@ Exactly four kinds, and only one of them is automatic:
    most 50 symbols, at most one request a second, every 3, 5 or 10 seconds
    depending on how many scrips you hold open, and only for the open positions of
    the selected account, at most 500 of them, and for nothing else about them —
-   no quantity, no entry price, no P&L, no account. Equities only in this
+   no quantity, no entry price, no P&L, no account. Only if you have also
+   switched on Telegram stop/target messages (Pro, item 4), the same host is
+   asked about once a minute during market hours while Vyuha is open,
+   minimised included — which can open the day's session even when the desk
+   was never opened — for the equity positions of every account that carry a
+   recorded stop, trailing stop or target, through the one session the desk
+   last used, and for nothing else about them. Equities only in this
    release. Futures and options rows are not priced by this feed: each shows
    the position's recorded close, or a dash when no close is recorded,
    and says so on the row.
-   The prices stay on this machine: never uploaded, never resold.
+   The prices stay on this machine: never uploaded, never resold — except the
+   one price each Telegram stop/target message carries to your own chat, once
+   you have switched those on.
    Your credentials are encrypted at rest, bound to your
    machine, and sent nowhere except the broker itself. We never see them.
-4. **The Telegram end-of-day digest — only if you switch it on, and this one
-   is an upload.** It sends a summary of your own recorded numbers to a
-   Telegram bot you create yourself, which means that content transits and is
-   stored on Telegram's servers. It is off by default and can only be enabled
-   behind a disclosure that says exactly that.
+4. **The Telegram path — an end-of-day digest and, if you turn them on (Pro),
+   stop/target alerts during market hours. Only if you switch it on, and this
+   one is an upload.** Both go to a Telegram bot you create yourself, which
+   means their content transits and is stored on Telegram's servers. Both are
+   off by default and can only be enabled behind one disclosure that says
+   exactly that; the alerts are part of Vyuha Pro and have a switch of their
+   own on top of it.
+   *The digest* sends a summary of your own recorded numbers, once per market
+   day.
+   *The alerts* send one message when the price your chosen live feed returns
+   (item 3) is through a stop, trailing stop or target you recorded. Each
+   carries the symbol, that price, the recorded level, the time of the check
+   in IST, the feed's name and — only when you have more than one account —
+   the account's name; never a quantity and never a rupee figure. At most 20
+   go out a day, then one summary line for the rest, and one per trade per
+   kind per day. They are checked about once a minute during market hours
+   while Vyuha is open, minimised included, each position only while its own
+   market is trading; the end-of-day feed gives none, and commodity and
+   currency positions are never checked. An alert is best-effort: a closed
+   app, a feed that does not answer or a blocked Telegram means no alert.
 
 <!--
   Item 3, second paragraph — every claim and the code that performs it:
@@ -139,8 +174,20 @@ Exactly four kinds, and only one of them is automatic:
                                   `const timer = setInterval(() => void poll(), periodMs)`),
                                   :420-427 (`const stop: Unsubscribe` → clearInterval(timer)
                                   on the signal abort — stopped with the desk's stream)
-    • only while the desk is open  app/api/live/stream/route.ts (the SSE route is
+    • the desk's poll: only while the desk is open
+                                  app/api/live/stream/route.ts (the SSE route is
                                   what starts and aborts the subscription)
+    • the alert check (v4.7.0 C5): about once a minute, market hours, Vyuha open
+                                  components/system/telegram-alert-runner.tsx (the
+                                  root-layout runner; mounted only with Telegram AND
+                                  alerts on; no visibilitychange pause, ruling TG2)
+                                  → POST /api/telegram/alerts → runTelegramAlerts()
+                                  in lib/jobs/telegram-alerts.ts (alertsGate(): Pro,
+                                  disclosure, alerts switch, a live feed, the
+                                  position's own market open per
+                                  lib/domain/market-calendar.ts; ONE snapshot via
+                                  peekLiveFeedProvider(); every account, keys only
+                                  for positions with a recorded level)
     • symbols + exchange, nothing else
                                   lib/quotes/openalgo.ts:357-361 (snapshot()'s
                                   `symbols` array → post(…, "multiquotes", { symbols })),

@@ -151,6 +151,20 @@ export const SETTINGS_MACHINE_COLUMNS = [
   // nor revoke somebody's acceptance of a live broker feed. Nullable, so the
   // blank is null — no SETTINGS_MACHINE_BLANKS entry is needed.
   "liveFeedAckJson",
+  // Telegram stop/target alerts (v4.7.0 C5, migration 0080). The toggle is
+  // telegramEnabled's kind: a switch that sends the user's positions' prices to
+  // a third party and means nothing without the Telegram consent this list
+  // already keeps on the machine — so a restored file can neither switch alerts
+  // on nor off here (NOT NULL; blanks to off below). The window is
+  // telegramSendTime's kind: a preference that only means anything beside that
+  // consent. The summary date is job bookkeeping like lastTelegramSentDate: a
+  // restored "summary sent today" stamp would silence today's line here. (The
+  // receipts table, telegram_alerts_sent, is machine state too and is simply
+  // not in BACKUP_TABLES — tests/backup-format.test.ts names it.)
+  "telegramAlertsEnabled",
+  "telegramAlertFrom",
+  "telegramAlertTo",
+  "lastTelegramAlertSummaryDate",
 ] as const;
 
 /**
@@ -170,6 +184,8 @@ export const SETTINGS_MACHINE_BLANKS: Readonly<Record<string, unknown>> = {
   autoPullEnabled: false,
   // '15:45' since v4.6.0 (migration 0075) — the schema default, past the F&O close.
   telegramSendTime: "15:45",
+  // v4.7.0 C5 (migration 0080): the alerts toggle is NOT NULL — a gate, so off.
+  telegramAlertsEnabled: false,
 };
 
 /** The value a redacted machine column carries in a dump / after a restore. */

@@ -41,12 +41,29 @@ export type { DisclosureItem };
  * The disclosure version each broker feed's consent is recorded against.
  *
  * Angel One was listed at "1" before its adapter existed, so the sheet was
- * versioned from the day the STORAGE was. It stays "1" now the adapter ships:
- * no install could have accepted a sheet that rendered nothing, so
- * `ANGELONE_FEED_ITEMS` below is the first statement anyone can agree to, and
- * bumping the number would re-prompt nobody while pretending otherwise.
+ * versioned from the day the STORAGE was, and it shipped at "1" in v4.2: no
+ * install could have accepted a sheet that rendered nothing, so the v4.2
+ * `ANGELONE_FEED_ITEMS` were the first statement anyone could agree to.
+ *
+ * BOTH "1" → "2" (v4.7.0 wave C5, owner answers TG1/TG2, design review R5,
+ * DECISIONS 2026-10-04). The rule is OpenAlgo's: bump when a sentence already
+ * accepted stops being true about what the app does. With Telegram stop/target
+ * alerts on (Pro), the alert check asks the chosen feed for the open
+ * positions' prices about once a minute during market hours while Vyuha is
+ * open on any screen, minimised included — so Upstox's "while the Live Desk is
+ * open" and Angel One's desk-only cadence ("every 3, 5 or 10 seconds … the desk
+ * says which") no longer described every request; Angel One's sign-in can now
+ * be made by the alert check with the desk never opened; with more than one
+ * account every account's checked symbols go through the one connection the
+ * desk last used (`peekLiveFeedProvider()`, design review R1); and "never sends
+ * them anywhere" became false the moment an alert carries a price to Telegram.
+ * Angel One bumps UNCONDITIONALLY (R5): its cadence promise is broken whether
+ * or not its sheet used the Live Desk phrase. `isFeedAckCurrent()` compares
+ * with `===`, so a stored "1" closes that feed — the desk falls back to the
+ * end-of-day source and alerts refuse with a re-accept reason (R4) — until
+ * the user reads the sheet again.
  */
-export const LIVE_FEED_DISCLOSURE_VERSIONS = { upstox: "1", angelone: "1" } as const;
+export const LIVE_FEED_DISCLOSURE_VERSIONS = { upstox: "2", angelone: "2" } as const;
 
 /** The provider ids that have (or will have) their own consent sheet. */
 export type LiveFeedDisclosureId = keyof typeof LIVE_FEED_DISCLOSURE_VERSIONS;
@@ -56,7 +73,7 @@ export const LIVE_FEED_DISCLOSURE_IDS = Object.keys(
 ) as readonly LiveFeedDisclosureId[];
 
 /**
- * THE UPSTOX CONSENT SHEET (v4.2, disclosure version 1).
+ * THE UPSTOX CONSENT SHEET (v4.2, disclosure version 1; version 2 in v4.7.0 C5).
  *
  * Every sentence below is checked against the code that performs it:
  *
@@ -64,6 +81,22 @@ export const LIVE_FEED_DISCLOSURE_IDS = Object.keys(
  *     lib/quotes/upstox.ts, which reaches `api.upstox.com` and nothing else;
  *   • the 1–5 s cadence and its 3 s default — `clampRefreshSeconds()` shared
  *     with the OpenAlgo adapter, applied again by the SSE route;
+ *   • the alert cadence (v2) — `runTelegramAlerts()` in
+ *     lib/jobs/telegram-alerts.ts makes ONE `snapshot()` per run through
+ *     `peekLiveFeedProvider()` (lib/quotes/registry.ts), POSTed about once a
+ *     minute by the root layout's alert runner, Pro + Telegram + alerts on
+ *     only, during market hours only, not paused when the window is hidden
+ *     (TG2); the cached instance is the connection the desk last used, so with
+ *     more than one account every account's checked symbols go through it (R1);
+ *   • "no Telegram alert on a futures or options position" — follows from
+ *     "equity only" below (design review R8): no derivative key, so no
+ *     derivative price to check. The sheet says "only a feed that prices them
+ *     can" and does NOT name OpenAlgo: a sheet names no other provider
+ *     (tests/live-feed-angelone-settings.test.ts, "names no OTHER provider"),
+ *     so "F&O alerts need OpenAlgo" is the Settings card's line, not this one;
+ *   • the Telegram exception to "the prices stay on this machine" — an alert
+ *     carries the checked price to the user's own chat (lib/telegram/format.ts
+ *     `formatAlert()`), under TELEGRAM_DISCLOSURE v2;
  *   • "equity only" — `upstoxInstrumentKey()`, which returns null for any key
  *     that is not a cash-segment scrip, so no derivative key is ever sent;
  *   • "never uploads them" — there is not one write in that file and no host
@@ -73,7 +106,7 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "It sends the instrument keys of your open positions to Upstox",
     body:
-      "Vyuha will send the instrument keys of your open positions to api.upstox.com to fetch last traded prices, as often as every 1 to 5 seconds while the Live Desk is open.",
+      "Vyuha will send the instrument keys of your open positions to api.upstox.com to fetch last traded prices, as often as every 1 to 5 seconds while the Live Desk is open. Only if you turn on Telegram stop/target alerts (Pro), it also sends them about once a minute during market hours while Vyuha is open on any screen, minimised included (more often while the Live Desk is open). With more than one account, every account's checked positions go through one Upstox connection: the one already open, which is the one the Live Desk last used, or else the selected account's.",
   },
   {
     title: "It uses the read-only Analytics token you already saved",
@@ -83,12 +116,12 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "Equity positions only in this release",
     body:
-      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
+      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row. For the same reason this feed gives no Telegram stop/target alert on a futures or options position; only a feed that prices them can.",
   },
   {
-    title: "The prices stay on this machine",
+    title: "The prices stay on this machine, unless you turn on Telegram alerts",
     body:
-      "Prices are shown to you, on this machine. Vyuha never uploads them, never sends them anywhere, and never resells market data.",
+      "Prices are shown to you, on this machine. Vyuha never uploads them on its own and never resells market data. The one exception is yours to switch on: a Telegram stop/target alert carries the price a position was checked at to your own Telegram chat, under the Telegram disclosure.",
   },
   {
     title: "A poll is not a tick stream",
@@ -98,7 +131,21 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
 ];
 
 /**
- * THE ANGEL ONE CONSENT SHEET (v4.2, disclosure version 1).
+ * THE ANGEL ONE CONSENT SHEET (v4.2, disclosure version 1; version 2 in v4.7.0
+ * C5 — see LIVE_FEED_DISCLOSURE_VERSIONS for why it bumped unconditionally).
+ *
+ * v2 keeps the sign-in sentence BYTE FOR BYTE (five surfaces pin it — help,
+ * PRIVACY.md, both READMEs and this sheet, tests/live-feed-disclosure.test.ts):
+ * it is still true, because the alert check reuses the cached instance
+ * (`peekLiveFeedProvider()`, design review R1) instead of building one per
+ * account cookie, so it adds no trigger to the five. What v2 ADDS beside it is
+ * that the alert check can be the one that signs in, with the desk never
+ * opened; beside the cadence, the alert path's once-a-minute requests under
+ * the same one-a-second guard (the instance serialises `snapshot()`, R3) and
+ * the one-session-for-every-account fact (R1); beside equity-only, that this
+ * feed gives no F&O alert (R8 — worded without naming another provider, see
+ * the Upstox note above); and the Telegram exception to "stay on this
+ * machine".
  *
  * The sheet that has to say the hard thing. Upstox could truthfully offer a
  * read-only token; Angel One has no such thing, and the honest disclosure is
@@ -169,12 +216,12 @@ export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "It signs in to your Angel One account at most once a day",
     body:
-      "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials, and again when you switch the selected account, including to or from All accounts. Each sign-in sends four things from what you saved under Import → Connect broker, without asking you: the client code, the PIN, the one-time code derived from the TOTP secret — the secret itself is never sent — and the SmartAPI app key. If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials or relaunch Vyuha. If Angel One reports an accepted session invalid, Vyuha signs in at most three times in a row without a priced answer in between, and then stops until you re-save the credentials or relaunch Vyuha.",
+      "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials, and again when you switch the selected account, including to or from All accounts. Each sign-in sends four things from what you saved under Import → Connect broker, without asking you: the client code, the PIN, the one-time code derived from the TOTP secret — the secret itself is never sent — and the SmartAPI app key. If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials or relaunch Vyuha. If Angel One reports an accepted session invalid, Vyuha signs in at most three times in a row without a priced answer in between, and then stops until you re-save the credentials or relaunch Vyuha. With Telegram stop/target alerts on (Pro), that sign-in can be made by the alert check while the Live Desk was never opened, and the alert check reuses the session already open whichever account a screen has selected.",
   },
   {
     title: "It sends the tokens of your open positions to fetch prices",
     body:
-      "It then sends the tokens of your open positions to apiconnect.angelone.in to fetch prices, in batches of 50, no more than once a second — every 3, 5 or 10 seconds depending on how many scrips you hold open, and the desk says which.",
+      "It then sends the tokens of your open positions to apiconnect.angelone.in to fetch prices, in batches of 50, no more than once a second — while the Live Desk is open, every 3, 5 or 10 seconds depending on how many scrips you hold open, and the desk says which. Only if you turn on Telegram stop/target alerts (Pro), it also sends them about once a minute during market hours while Vyuha is open on any screen, minimised included (more often while the Live Desk is open), under the same one-request-a-second limit. With more than one account, every account's checked positions go through one Angel One session: the one already open, which is the one the Live Desk last used, or else the selected account's.",
   },
   {
     title: "Angel One offers no read-only key, so the code carries the limit",
@@ -189,12 +236,12 @@ export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "This feed prices your equity positions and nothing else",
     body:
-      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
+      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row. For the same reason this feed gives no Telegram stop/target alert on a futures or options position; only a feed that prices them can.",
   },
   {
-    title: "The prices Angel One returns stay on this machine",
+    title: "The prices Angel One returns stay on this machine, unless you turn on Telegram alerts",
     body:
-      "Prices are shown to you, on this machine. Vyuha never uploads them, never sends them anywhere, and never resells market data.",
+      "Prices are shown to you, on this machine. Vyuha never uploads them on its own and never resells market data. The one exception is yours to switch on: a Telegram stop/target alert carries the price a position was checked at to your own Telegram chat, under the Telegram disclosure.",
   },
   {
     title: "Angel One is polled on a timer, not streamed",

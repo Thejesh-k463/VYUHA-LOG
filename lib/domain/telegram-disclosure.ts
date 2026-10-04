@@ -32,22 +32,46 @@ export interface TelegramDisclosureItem {
  * v3.6 is UNRELEASED, so no user has ever acknowledged this v1 copy — until
  * v3.6 ships, the copy may be edited freely without a bump. The FIRST copy
  * change AFTER the v3.6 release must bump `version`.
+ *
+ * 1 → 2 (v4.7.0 wave C5, ruling Q18 + owner answers TG1–TG6, DECISIONS
+ * 2026-10-04). A NEW RISK, so a new number: v1 described one end-of-day digest
+ * of recorded numbers; v2 adds a second, separately-switched path — Pro
+ * stop/target alerts — that during market hours asks the user's own live feed
+ * for prices about once a minute while Vyuha is open (minimised included, TG2),
+ * checks every account's open positions (TG3) and sends a market price, a
+ * recorded level, a check time, the feed's name and, with more than one account,
+ * an ACCOUNT NAME to Telegram. None of that was in the statement a v1 install
+ * accepted. `isTelegramAckCurrent()` compares with `===`, so a stored 1 closes
+ * the gate for BOTH paths until the user re-reads — the digest included, which
+ * is why the root layout carries a re-consent strip (TG6, design D13).
+ * Every alert sentence below describes the C5 design's job
+ * (`lib/jobs/telegram-alerts.ts`, `lib/telegram/alert-plan.ts`,
+ * `lib/telegram/format.ts`): the cap of 20 then one summary line (Q18-i), one
+ * alert per trade × kind × IST day (Q18-d), the quiet window per position's own
+ * market from `lib/domain/market-calendar.ts` (TG4), no quantity / no rupees (TG5).
+ * "checked" and never "as of": the adapters stamp receipt time, not source time
+ * (design review R2).
  */
 export const TELEGRAM_DISCLOSURE = {
-  version: 1,
-  title: "Before you turn on Telegram alerts",
+  version: 2,
+  title: "Before you turn on the Telegram digest or stop/target alerts",
   intro:
-    "Vyuha can send you one end-of-day digest of your own recorded numbers through a Telegram bot YOU create. Read what that costs before turning it on.",
+    "Vyuha can send you one end-of-day digest of your own recorded numbers through a Telegram bot YOU create — and, only if you also turn them on (Pro), stop/target alerts during market hours. Read what each costs before turning it on.",
   risks: [
     {
       title: "Your trading numbers leave this machine",
       body:
-        "The digest transits Telegram's servers and is stored in your chat history there, under Telegram's own security and retention — not Vyuha's. Anyone with access to that chat, or to your bot's token, can read every digest.",
+        "The digest, and every alert if you turn alerts on, transits Telegram's servers and is stored in your chat history there, under Telegram's own security and retention — not Vyuha's. Anyone with access to that chat, or to your bot's token, can read every message.",
+    },
+    {
+      title: "Stop/target alerts ask your live feed for prices, about once a minute",
+      body:
+        "Only if you turn them on (Pro): during market hours — each position only while its own market is trading, never in the pre-open — and about once a minute while Vyuha is open, minimised included (more often while the Live Desk itself is open), Vyuha asks the live feed you chose in Settings → Live feed for the prices of your open positions, in every account, and checks them against the stops, trailing stops and targets you recorded. The end-of-day feed gives no alerts, and commodity and currency positions are never checked. Each alert carries the symbol, the price it was checked at, the recorded level, the time of the check in IST, the feed's name and, when you have more than one account, the account's name — never a quantity and never a rupee figure. At most 20 alerts a day, then one summary line for the rest; one alert per trade per kind per day.",
     },
     {
       title: "Telegram has been blocked in India before",
       body:
-        "Court and government orders have blocked or throttled Telegram in India in the past and could again. When Telegram is unreachable the digest simply does not arrive — Vyuha degrades to an in-app notice and never routes around a block. No proxies, ever.",
+        "Court and government orders have blocked or throttled Telegram in India in the past and could again. When Telegram is unreachable the digest and any alert simply do not arrive — Vyuha degrades to an in-app notice and never routes around a block. No proxies, ever.",
     },
     {
       title: "The bot token is a key, and you hold it",
@@ -57,11 +81,11 @@ export const TELEGRAM_DISCLOSURE = {
     {
       title: "Delivery is best-effort, at your own risk",
       body:
-        "One attempt window per market day: a few quick retries, then it stops until the next launch of the app — never a night queue, never a proxy. Do not rely on this digest as a risk control; the journal itself is the record.",
+        "The digest gets one attempt window per market day: a few quick retries, then it stops until the next launch of the app — never a night queue, never a proxy. An alert whose send fails is tried again at the next check while the price is still through the level, and never queued. An alert arrives only while Vyuha is open and your feed answers; a closed app, a slow or signed-out feed, or a blocked Telegram means no alert. Do not rely on the digest or an alert as a risk control; the journal itself is the record.",
     },
   ] satisfies TelegramDisclosureItem[],
   refusals: [
-    "Vyuha sends only your own recorded data — never advice, signals or anyone else's numbers.",
+    "Vyuha sends only your own recorded data and, in an alert, the price your own feed returned — never advice, never a signal of its own, never anyone else's numbers.",
     "Vyuha never reads your Telegram messages beyond the one chat-id discovery you trigger yourself.",
     "Turning this off deletes nothing from your journal; disconnecting deletes the stored token.",
   ],

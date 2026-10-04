@@ -4,7 +4,8 @@ import { getTrackerTrades } from "@/lib/queries/trades";
 import { isWithinLiveWindow } from "@/lib/quotes/mapping";
 import { catchUpDailyMark } from "@/lib/quotes/persist-mark";
 import { getLiveFeedProvider } from "@/lib/quotes/registry";
-import { quoteKeyId, type Exchange, type Quote, type QuoteKey, type Unsubscribe } from "@/lib/quotes/types";
+import { quoteKeyId, type Quote, type QuoteKey, type Unsubscribe } from "@/lib/quotes/types";
+import { positionKeys } from "@/lib/live/position-keys";
 
 /**
  * `GET /api/live/stream` — the Live Desk's one Server-Sent Events channel.
@@ -37,11 +38,6 @@ export const dynamic = "force-dynamic";
 const COALESCE_MS = 250;
 /** Idle keep-alive. Under any proxy's 30–60 s idle timeout. */
 const HEARTBEAT_MS = 25_000;
-/** Ceiling on the subscription set, before the provider's own cap applies. */
-const MAX_KEYS = 500;
-
-const EXCHANGES: readonly Exchange[] = ["NSE", "BSE", "NFO", "BFO", "MCX", "CDS"];
-
 /** The desktop shell and the dev server; anything else must match the host. */
 const LOCAL_ORIGINS = /^(?:tauri\.localhost|localhost|127\.0\.0\.1|\[::1\]|::1)$/i;
 
@@ -67,31 +63,15 @@ function isSameOrigin(req: Request): boolean {
   }
 }
 
-function toExchange(raw: string | null | undefined): Exchange {
-  const v = (raw ?? "").trim().toUpperCase();
-  return (EXCHANGES as readonly string[]).includes(v) ? (v as Exchange) : "NSE";
-}
-
-/** The open positions of the SELECTED account, as provider keys. */
+/**
+ * The open positions of the SELECTED account, as provider keys. The rule itself
+ * (open predicate, symbol/exchange/contract, dedupe, ≤ 500) lives in
+ * `lib/live/position-keys.ts` since v4.7.0 C5, shared with the Telegram alert
+ * job; THIS route's half is the account scope — `getTrackerTrades()` reads the
+ * selected account only (invariant 8).
+ */
 function openPositionKeys(): QuoteKey[] {
-  const out: QuoteKey[] = [];
-  const seen = new Set<string>();
-  for (const t of getTrackerTrades()) {
-    // `is_open` is the open predicate — never `sell_date IS NULL`, which is a
-    // sort key on this table (lib/analytics/positions.ts).
-    if (!t.isOpen) continue;
-    const key: QuoteKey = {
-      symbol: t.symbol.trim().toUpperCase(),
-      exchange: toExchange(t.exchange),
-      ...(t.tradingsymbol && t.tradingsymbol !== t.symbol ? { tradingsymbol: t.tradingsymbol.trim().toUpperCase() } : {}),
-    };
-    const id = quoteKeyId(key);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(key);
-    if (out.length >= MAX_KEYS) break;
-  }
-  return out;
+  return positionKeys(getTrackerTrades());
 }
 
 export async function GET(req: Request): Promise<Response> {

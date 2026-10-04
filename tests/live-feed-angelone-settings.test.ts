@@ -572,7 +572,12 @@ describe("GET — the facts the card renders the Angel One radio from", () => {
   it("says neither half holds on a fresh install, and reports the open count", async () => {
     const body = await (await get()).json();
     expect(body.ok).toBe(true);
-    expect(body.angelone).toEqual({ connected: false, ackCurrent: false, disclosureVersion: "1", openCount: 0 });
+    expect(body.angelone).toEqual({
+      connected: false,
+      ackCurrent: false,
+      disclosureVersion: LIVE_FEED_DISCLOSURE_VERSIONS.angelone,
+      openCount: 0,
+    });
     expect(body.angelone.disclosureVersion).toBe(LIVE_FEED_DISCLOSURE_VERSIONS.angelone);
   });
 
@@ -651,7 +656,10 @@ describe("POST ack — the acknowledgement round-trips, per provider", () => {
   it("accepting the OTHER sheet does not withdraw this one", async () => {
     await post({ action: "ack", provider: "upstox" });
     const stored = settingsRow()?.liveFeedAckJson;
-    expect(parseFeedAcks(stored)).toEqual({ angelone: "1", upstox: "1" });
+    expect(parseFeedAcks(stored)).toEqual({
+      angelone: LIVE_FEED_DISCLOSURE_VERSIONS.angelone,
+      upstox: LIVE_FEED_DISCLOSURE_VERSIONS.upstox,
+    });
   });
 
   it("a version bump re-asks: a stored older version is refused, and the pick with it", async () => {
@@ -664,7 +672,7 @@ describe("POST ack — the acknowledgement round-trips, per provider", () => {
     expect(settingsRow()?.liveFeedProvider).toBe("eod");
 
     await post({ action: "ack", provider: "angelone" });
-    expect(parseFeedAcks(settingsRow()?.liveFeedAckJson)).toEqual({ angelone: "1" });
+    expect(parseFeedAcks(settingsRow()?.liveFeedAckJson)).toEqual({ angelone: LIVE_FEED_DISCLOSURE_VERSIONS.angelone });
   });
 });
 

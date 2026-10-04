@@ -14,6 +14,9 @@
 // assembles it from the existing queries and this module stays exhaustively
 // unit-testable (AGENTS.md invariant 2).
 
+import { TELEGRAM_DISCLOSURE } from "@/lib/domain/telegram-disclosure";
+import { hhmmOf, istClock } from "@/lib/domain/market-calendar";
+
 /** Telegram's hard per-message limit for text. */
 export const TELEGRAM_MESSAGE_CAP = 4096;
 
@@ -133,6 +136,92 @@ export function formatEodDigest(input: EodDigestInput, cap: number = TELEGRAM_ME
   if (shown < lines.length) list.push(`… +${lines.length - shown} more`);
 
   return [...head, ...list, ...tail].join("\n");
+}
+
+/* ───────────────────── stop / target alerts (v4.7.0 C5) ───────────────────── */
+//
+// Design D8 + review R2/R9, owner answer TG5: LEVELS ONLY. Symbol · account
+// (only when the install has more than one), the mark, the recorded level and
+// its kind, how far through it the mark is, the IST time of THIS check, the
+// feed's name, "Open Vyuha to review your plan.", the pinned footer. No
+// quantity, no rupee figure, no risk number, and no transaction verb from
+// /\b(buy|sell|book|exit|square|trail|hold|add|average)\b/i anywhere in the
+// TEMPLATE — tests/telegram-alert-format.test.ts renders every kind × side ×
+// account case and runs that regex and PRESCRIPTIVE_LANGUAGE over it. The
+// user's own strings (symbol, account name) are ESCAPED, never scanned: an
+// account called "Long hold" is the user's word, not Vyuha's advice (R9).
+//
+// "checked HH:MM IST", never "as of": the three live adapters stamp `asOf` with
+// the time the answer ARRIVED, not a source time (R2), so the honest claim is
+// when Vyuha looked.
+
+/** The footer every alert ends on — the disclosure's own constant. */
+export const ALERT_FOOTER: string = TELEGRAM_DISCLOSURE.footer;
+
+/** The feed's short name in a message. */
+const ALERT_FEED_LABELS: Record<string, string> = {
+  openalgo: "OpenAlgo",
+  upstox: "Upstox",
+  angelone: "Angel One",
+  mock: "the mock feed",
+};
+
+export function alertFeedLabel(providerId: string): string {
+  return ALERT_FEED_LABELS[providerId] ?? providerId;
+}
+
+export interface AlertMessageInput {
+  /** Display symbol — the contract for a derivative. */
+  symbol: string;
+  kind: "sl" | "tsl" | "target";
+  side: "long" | "short";
+  level: number;
+  mark: number;
+  throughPct: number;
+  /** Shown only when `multiAccount`. */
+  accountName: string | null;
+  multiAccount: boolean;
+  /** The instant of THIS check. */
+  checkedAt: Date;
+  providerId: string;
+}
+
+/** A per-unit price: Indian grouping, two decimals ("1,228.40"). */
+export function alertPrice(n: number): string {
+  return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function depth(pct: number): string {
+  if (!(pct > 0)) return "at the level";
+  if (pct < 0.1) return "under 0.1%";
+  return `${pct.toFixed(1)}%`;
+}
+
+const KIND_WORDS: Record<AlertMessageInput["kind"], string> = {
+  sl: "is through your recorded stop",
+  tsl: "is through your recorded trailing stop",
+  target: "has reached your recorded target",
+};
+
+/** One alert, Telegram HTML parse mode. */
+export function formatAlert(a: AlertMessageInput): string {
+  const who = a.multiAccount && a.accountName ? ` · ${escapeHtml(a.accountName)}` : "";
+  const at = hhmmOf(istClock(a.checkedAt).minutes);
+  return [
+    `<b>${escapeHtml(a.symbol)}</b>${who}: mark ${alertPrice(a.mark)} ${KIND_WORDS[a.kind]} ${alertPrice(a.level)} (${depth(a.throughPct)}) · checked ${at} IST via ${escapeHtml(alertFeedLabel(a.providerId))}. Open Vyuha to review your plan.`,
+    "",
+    ALERT_FOOTER,
+  ].join("\n");
+}
+
+/** The day's one summary line, once the daily cap is spent (Q18-i). */
+export function formatAlertSummary(count: number, cap: number): string {
+  const n = Math.max(0, Math.floor(count));
+  return [
+    `<b>Vyuha</b>: ${n} more ${n === 1 ? "breach" : "breaches"} of your recorded levels today, past the daily limit of ${cap} alerts. Open Vyuha to review your plan.`,
+    "",
+    ALERT_FOOTER,
+  ].join("\n");
 }
 
 /**

@@ -75,7 +75,7 @@ import {
   feedHealthText,
   type FeedState,
 } from "@/components/settings/live-feed-card";
-import { ANGELONE_FEED_ITEMS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
+import { ANGELONE_FEED_ITEMS, LIVE_FEED_DISCLOSURE_VERSIONS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { showConnectPrompt } from "@/lib/live/connect-prompt";
 import { todayIstIso } from "@/lib/domain/trading-day";
@@ -728,7 +728,7 @@ describe("S3 — every gesture that rebuilds the Angel One instance is named on 
     // Upstox entry changes neither the key nor the instance — it is not a
     // trigger, and the sheet rightly does not name it.
     const keyBefore = await registry.liveFeedInstanceKey("angelone", 3);
-    expect(keyBefore, "the Angel One key no longer carries its own ack entry").toContain("ack:1");
+    expect(keyBefore, "the Angel One key no longer carries its own ack entry").toContain(`ack:${LIVE_FEED_DISCLOSURE_VERSIONS.angelone}`);
     t.db.update(t.schema.settings).set({ liveFeedAckJson: withFeedAck(withFeedAck(null, "upstox"), "angelone") }).run();
     expect(await registry.liveFeedInstanceKey("angelone", 3), "the Upstox acknowledgement re-keyed Angel One (S-2)").toBe(keyBefore);
     expect(await registry.getLiveFeedProvider(), "the Upstox acknowledgement rebuilt the Angel One instance (S-2)").toBe(afterResave);
