@@ -99,7 +99,9 @@ describe("telegramCardView — the full matrix", () => {
 // ---------------------------------------------------------------------------
 
 const root = path.resolve(__dirname, "..");
-const cardSrc = readFileSync(path.join(root, "components/settings/telegram-card.tsx"), "utf8");
+// CRLF-normalised: the Windows CI checkout carries \r\n, and a newline-anchored pin
+// would fail there only (FAIL-AI).
+const cardSrc = readFileSync(path.join(root, "components/settings/telegram-card.tsx"), "utf8").replace(/\r\n/g, "\n");
 
 describe("telegram-card.tsx wiring and copy", () => {
   it("renders its sections from telegramCardView, not from re-derived JSX conditions", () => {
