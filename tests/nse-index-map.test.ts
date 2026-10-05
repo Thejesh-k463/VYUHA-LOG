@@ -175,7 +175,8 @@ describe("nse-index-map — size indices", () => {
     expect([...bands].sort()).toEqual(["large", "micro", "mid", "small", "unclassified"]);
   });
 
-  it("the sectoral half is unchanged: 54 labels, 1155 symbols, 1985 membership rows", () => {
+  // Re-pinned 2026-10-05 (v4.8.0 data refresh, the build's own output): 1155 → 1149 symbols, 1985 → 1984 rows.
+  it("the sectoral half is unchanged: 54 labels, 1149 symbols, 1984 membership rows", () => {
     const labels = new Set<string>();
     let rows = 0, withSectoral = 0;
     for (const v of Object.values(map.symbols)) {
@@ -184,8 +185,8 @@ describe("nse-index-map — size indices", () => {
       for (const i of v.indices) labels.add(i);
     }
     expect(labels.size).toBe(54);
-    expect(withSectoral).toBe(1155);
-    expect(rows).toBe(1985);
+    expect(withSectoral).toBe(1149);
+    expect(rows).toBe(1984);
     // No size index leaked into the sectoral membership array.
     for (const e of EIGHT) expect(labels.has(e)).toBe(false);
     expect(map.indexCount).toBe(62); // 54 sectoral + 8 size
@@ -201,5 +202,29 @@ describe("nse-index-map — size indices", () => {
     );
     const gz = zlib.gzipSync(bytes).length;
     expect(gz, `${(gz / 1024).toFixed(1)} KB gz`).toBeLessThan(300 * 1024);
+  });
+});
+
+// v4.8.0 data refresh (2026-10-05): a fresh download drops a RENAMED ticker that the journal still carries
+// (option legs say TATAMOTORS; the listing now names the ISIN TMPV). The build records it in `formerSymbols`
+// and `bundledIsinBySymbol` reads it last — without it, tests/strategies-ul-join.test.ts's P13 / L5 cases go red.
+describe("nse-index-map — formerSymbols (renamed tickers a journal still carries)", () => {
+  const former = (nseIndexMap as { formerSymbols?: Record<string, { isin: string; lastSeen: string | null }> }).formerSymbols ?? {};
+  const symbols = (nseIndexMap as { symbols: Record<string, unknown> }).symbols;
+
+  it("carries the five tickers the 2026-10-05 refresh dropped, each with the old map's own ISIN", () => {
+    expect(Object.keys(former).sort()).toEqual(["AMARAJABAT", "HEG", "MINDAIND", "TATAMOTORS", "TATAMTRDVR"]);
+    expect(former.TATAMOTORS.isin).toBe("INE155A01022");
+    expect(former.MINDAIND.isin).toBe("INE405E01023");
+    expect(former.AMARAJABAT.isin).toBe("INE885A01032");
+  });
+
+  it("never shadows a current symbol, and resolves through bundledIsinBySymbol", async () => {
+    const { bundledIsinBySymbol, bundledSymbolByIsin } = await import("@/lib/import/isin-symbol");
+    for (const [sym, v] of Object.entries(former)) {
+      expect(symbols[sym], sym).toBeUndefined();
+      expect(bundledIsinBySymbol(sym), sym).toBe(v.isin);
+    }
+    expect(bundledSymbolByIsin("INE155A01022")).toBe("TMPV");
   });
 });

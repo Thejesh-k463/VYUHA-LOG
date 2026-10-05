@@ -305,9 +305,9 @@ Atlas's "index membership" lens). **Since v4.6.0 W2 that field is index MEMBERSH
 only in this lens. The JSON field keeps its old name; the code calls it `IndexBand`. `--as-of` dates the SECTORAL snapshot only; `--captured-at` is the build date. A size
 list is refused by the sectoral pass even when it sits in `--src` — a 500-name "theme" would swamp
 every real one in edge analytics — and Nifty Midsmallcap 400 is ignored outright (it is Midcap 150
-+ Smallcap 250 restated). A symbol in two bands takes the LARGER one. Current file: 62 indices
-(54 sectoral + 8 size), 1,379 symbols, `capBand` large 100 / mid 150 / small 250 / micro 254 /
-unclassified 625; `tests/nse-index-map.test.ts` and `tests/cap-band.test.ts` pin the shape.
++ Smallcap 250 restated). A symbol in two bands takes the LARGER one. Current file (as of 2026-10-05): 62 indices
+(54 sectoral + 8 size), 1,404 symbols, `capBand` large 100 / mid 150 / small 251 / micro 254 /
+unclassified 649; `tests/nse-index-map.test.ts` and `tests/cap-band.test.ts` pin the shape.
 
 **Every membership row is effective-dated** (owner ruling Q50, a standing rule for all
 classification data): `effective_at` = the list's own as-of, `captured_at` = the build date, both
@@ -405,7 +405,7 @@ declared "no-mtf", not omitted.
 
 # Bundled NSE ETF list
 
-`lib/data/etf-list.json` is a SNAPSHOT of NSE's own published ETF list (`eq_etfseclist.csv`, 350 ETFs: ISIN → symbol,
+`lib/data/etf-list.json` is a SNAPSHOT of NSE's own published ETF list (`eq_etfseclist.csv`, 351 ETFs as of NSE's Last-Modified 2026-09-17: ISIN → symbol,
 the RAW `ETF Underlying` value, and a `kind` of `equity-oriented` or `other`), built by
 `node scripts/build-etf-list.mjs --src <dir>` from a folder the owner downloads — never hand-edited, no network in the
 app. Refresh is MANUAL, once per MINOR release (owner ruling T4, 2026-09-22), like the index map. Rules the code enforces

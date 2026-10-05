@@ -40,7 +40,8 @@ type Snapshot = {
 const snap = raw as unknown as Snapshot;
 
 /** The real vendor input lives OUTSIDE the repo, with the other build inputs. */
-const SRC = "T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/_data/etf-list-2026-09-11";
+// Re-pointed 2026-10-05 (v4.8.0 data refresh; the 2026-09-11 folder stays for provenance).
+const SRC = "T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/_data/etf-list-2026-10-05";
 const haveSrc = fs.existsSync(path.join(SRC, "eq_etfseclist.csv"));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "vyuha-etf-build-"));
@@ -59,30 +60,30 @@ function runBuild(args: string[]): { code: number; out: string } {
 }
 
 describe("the bundled ETF snapshot (lib/data/etf-list.json)", () => {
-  it("carries 350 ISINs and 350 symbols, 260 equity-oriented and 90 other, and its own counts agree with its own maps", () => {
-    expect(Object.keys(snap.byIsin)).toHaveLength(350);
-    expect(Object.keys(snap.bySymbol)).toHaveLength(350);
-    expect(snap.counts.byIsin).toBe(350);
-    expect(snap.counts.bySymbol).toBe(350);
-    expect(snap.counts.kinds).toEqual({ "equity-oriented": 260, other: 90 });
+  it("carries 351 ISINs and 351 symbols, 261 equity-oriented and 90 other, and its own counts agree with its own maps", () => {
+    expect(Object.keys(snap.byIsin)).toHaveLength(351);
+    expect(Object.keys(snap.bySymbol)).toHaveLength(351);
+    expect(snap.counts.byIsin).toBe(351);
+    expect(snap.counts.bySymbol).toBe(351);
+    expect(snap.counts.kinds).toEqual({ "equity-oriented": 261, other: 90 });
     // The counts block is emitted by the builder; re-derive it from the maps so
     // the file cannot agree with itself.
     const kinds: Record<string, number> = {};
     for (const r of Object.values(snap.byIsin)) kinds[r.kind] = (kinds[r.kind] ?? 0) + 1;
-    expect(kinds).toEqual({ "equity-oriented": 260, other: 90 });
-    expect(ETF_LIST_COUNT).toBe(350);
+    expect(kinds).toEqual({ "equity-oriented": 261, other: 90 });
+    expect(ETF_LIST_COUNT).toBe(351);
   });
 
-  it("is dated by NSE's Last-Modified (2026-09-07), NOT by the build date, and states its source url and sha256", () => {
-    expect(snap.asOf).toBe("2026-09-07");
-    expect(ETF_LIST_AS_OF).toBe("2026-09-07");
+  it("is dated by NSE's Last-Modified (2026-09-17), NOT by the build date, and states its source url and sha256", () => {
+    expect(snap.asOf).toBe("2026-09-17");
+    expect(ETF_LIST_AS_OF).toBe("2026-09-17");
     // Q50: `capturedAt` is the build date. If they were ever made equal the
     // snapshot would be dated to when a script happened to run.
     expect(snap.capturedAt).not.toBe(snap.asOf);
     expect(snap.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(ETF_LIST_SHA256).toBe("f246cdf059b005db06e71d19c6288b135a6d19ba49e4dee09347c0094a45d420");
+    expect(ETF_LIST_SHA256).toBe("35eda34e5ec5b8f0bf3b5de72f8180e25d17de7da3351ea514dcb5c103ce918c");
     expect(snap.provenance.sha256).toBe(ETF_LIST_SHA256);
-    expect(snap.provenance.rows).toBe(350);
+    expect(snap.provenance.rows).toBe(351);
     expect(ETF_LIST_URL).toBe("https://nsearchives.nseindia.com/content/equities/eq_etfseclist.csv");
   });
 
@@ -115,7 +116,7 @@ describe("the bundled ETF snapshot (lib/data/etf-list.json)", () => {
     }
     // The five values NSE publishes today. A sixth is a build failure, not a row.
     expect([...seen].sort()).toEqual(["COMMODITY", "DEBT", "EQUITY", "GLOBAL INDICES", "Hybrid"]);
-    expect(snap.counts.underlying).toEqual({ EQUITY: 260, DEBT: 38, COMMODITY: 45, "GLOBAL INDICES": 6, Hybrid: 1 });
+    expect(snap.counts.underlying).toEqual({ EQUITY: 261, DEBT: 38, COMMODITY: 45, "GLOBAL INDICES": 6, Hybrid: 1 });
   });
 });
 

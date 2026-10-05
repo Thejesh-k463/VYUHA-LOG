@@ -1,6 +1,6 @@
 {
- "asOf": "2026-08-06",
- "capturedAt": "2026-09-06",
+ "asOf": "2026-10-05",
+ "capturedAt": "2026-10-05",
  "source": "NSE index constituent lists (niftyindices.com)",
  "indexCount": 62,
  "provenance": {
@@ -10,9 +10,9 @@
  },
  "sizeIndices": {
   "Nifty 100": {
-   "asOf": "2026-08-14",
-   "effective_at": "2026-08-14",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_nifty100list.csv",
    "file": "ind_nifty100list.csv",
    "count": 100,
@@ -37,6 +37,7 @@
     "BOSCHLTD",
     "BPCL",
     "BRITANNIA",
+    "BSE",
     "CANBK",
     "CGPOWER",
     "CHOLAFIN",
@@ -63,7 +64,7 @@
     "HINDZINC",
     "HYUNDAI",
     "ICICIBANK",
-    "INDHOTEL",
+    "IDEA",
     "INDIGO",
     "INFY",
     "IOC",
@@ -73,7 +74,6 @@
     "JIOFIN",
     "JSWSTEEL",
     "KOTAKBANK",
-    "LODHA",
     "LT",
     "LTM",
     "M&M",
@@ -88,12 +88,12 @@
     "PFC",
     "PIDILITIND",
     "PNB",
+    "POLYCAB",
     "POWERGRID",
-    "RECLTD",
+    "POWERINDIA",
     "RELIANCE",
     "SBILIFE",
     "SBIN",
-    "SHREECEM",
     "SHRIRAMFIN",
     "SIEMENS",
     "SOLARINDS",
@@ -112,7 +112,7 @@
     "TVSMOTOR",
     "ULTRACEMCO",
     "UNIONBANK",
-    "UNITDSPR",
+    "VAML",
     "VBL",
     "VEDL",
     "WIPRO",
@@ -120,9 +120,9 @@
    ]
   },
   "Nifty 200": {
-   "asOf": "2026-09-06",
-   "effective_at": "2026-09-06",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_nifty200list.csv",
    "file": "ind_nifty200list.csv",
    "count": 200,
@@ -135,8 +135,8 @@
     "ADANIGREEN",
     "ADANIPORTS",
     "ADANIPOWER",
-    "ALKEM",
     "AMBUJACEM",
+    "APARINDS",
     "APLAPOLLO",
     "APOLLOHOSP",
     "ASHOKLEY",
@@ -172,7 +172,6 @@
     "COFORGE",
     "COLPAL",
     "CONCOR",
-    "COROMANDEL",
     "CUMMINSIND",
     "DABUR",
     "DIVISLAB",
@@ -203,10 +202,10 @@
     "HDFCLIFE",
     "HEROMOTOCO",
     "HINDALCO",
+    "HINDCOPPER",
     "HINDPETRO",
     "HINDUNILVR",
     "HINDZINC",
-    "HUDCO",
     "HYUNDAI",
     "ICICIAMC",
     "ICICIBANK",
@@ -232,11 +231,11 @@
     "KALYANKJIL",
     "KEI",
     "KOTAKBANK",
-    "KPITTECH",
     "LAURUSLABS",
     "LENSKART",
     "LGEINDIA",
     "LICHSGFIN",
+    "LICI",
     "LODHA",
     "LT",
     "LTF",
@@ -244,12 +243,14 @@
     "LUPIN",
     "M&M",
     "M&MFIN",
+    "MAHABANK",
     "MANKIND",
     "MARICO",
     "MARUTI",
     "MAXHEALTH",
     "MAZDOCK",
     "MCX",
+    "MEESHO",
     "MFSL",
     "MOTHERSON",
     "MOTILALOFS",
@@ -260,6 +261,7 @@
     "NAUKRI",
     "NESTLEIND",
     "NHPC",
+    "NLCINDIA",
     "NMDC",
     "NTPC",
     "NYKAA",
@@ -290,7 +292,6 @@
     "SBICARD",
     "SBILIFE",
     "SBIN",
-    "SHREECEM",
     "SHRIRAMFIN",
     "SIEMENS",
     "SOLARINDS",
@@ -302,8 +303,6 @@
     "TATACAP",
     "TATACOMM",
     "TATACONSUM",
-    "TATAELXSI",
-    "TATAINVEST",
     "TATAPOWER",
     "TATASTEEL",
     "TCS",
@@ -319,6 +318,7 @@
     "UNIONBANK",
     "UNITDSPR",
     "UPL",
+    "VAML",
     "VBL",
     "VEDL",
     "VMM",
@@ -330,15 +330,14 @@
    ]
   },
   "Nifty 500": {
-   "asOf": "2026-08-14",
-   "effective_at": "2026-08-14",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_nifty500list.csv",
    "file": "ind_nifty500list.csv",
-   "count": 500,
+   "count": 501,
    "symbols": [
     "360ONE",
-    "3MINDIA",
     "AADHARHFC",
     "AARTIIND",
     "AAVAS",
@@ -346,8 +345,6 @@
     "ABBOTINDIA",
     "ABCAPITAL",
     "ABDL",
-    "ABFRL",
-    "ABLBL",
     "ABREL",
     "ABSLAMC",
     "ACC",
@@ -361,6 +358,7 @@
     "ADANIPOWER",
     "AEGISLOG",
     "AEGISVOPAK",
+    "AETHER",
     "AFCONS",
     "AFFLE",
     "AIAENG",
@@ -390,8 +388,11 @@
     "ATUL",
     "AUBANK",
     "AUROPHARMA",
+    "AVANTIFEED",
     "AWL",
     "AXISBANK",
+    "AZAD",
+    "BAGMANE",
     "BAJAJ-AUTO",
     "BAJAJFINSV",
     "BAJAJHFL",
@@ -403,22 +404,20 @@
     "BANKBARODA",
     "BANKINDIA",
     "BATAINDIA",
-    "BAYERCROP",
-    "BBTC",
+    "BBOX",
     "BDL",
     "BEL",
     "BELRISE",
     "BEML",
     "BERGEPAINT",
+    "BHARATCOAL",
     "BHARATFORG",
     "BHARTIARTL",
     "BHARTIHEXA",
     "BHEL",
-    "BIKAJI",
     "BIOCON",
+    "BIRET",
     "BLS",
-    "BLUEDART",
-    "BLUEJET",
     "BLUESTARCO",
     "BOSCHLTD",
     "BPCL",
@@ -442,7 +441,6 @@
     "CESC",
     "CGCL",
     "CGPOWER",
-    "CHALET",
     "CHAMBLFERT",
     "CHENNPETRO",
     "CHOICEIN",
@@ -451,6 +449,8 @@
     "CIEINDIA",
     "CIPLA",
     "CLEAN",
+    "CLEANMAX",
+    "CMPDI",
     "COALINDIA",
     "COCHINSHIP",
     "COFORGE",
@@ -466,11 +466,11 @@
     "CROMPTON",
     "CUB",
     "CUMMINSIND",
+    "CUPID",
     "CYIENT",
     "DABUR",
     "DALBHARAT",
     "DATAPATTNS",
-    "DCMSHRIRAM",
     "DEEPAKFERT",
     "DEEPAKNTR",
     "DELHIVERY",
@@ -481,6 +481,7 @@
     "DMART",
     "DOMS",
     "DRREDDY",
+    "DUMMYHEG",
     "ECLERX",
     "EICHERMOT",
     "EIDPARRY",
@@ -488,12 +489,12 @@
     "ELECON",
     "ELGIEQUIP",
     "EMAMILTD",
+    "EMBASSY",
     "EMCURE",
     "EMMVEE",
     "ENDURANCE",
     "ENGINERSIN",
     "ENRIN",
-    "ERIS",
     "ESCORTS",
     "ETERNAL",
     "EXIDEIND",
@@ -505,6 +506,7 @@
     "FLUOROCHEM",
     "FORCEMOT",
     "FORTIS",
+    "FRACTAL",
     "FSL",
     "GABRIEL",
     "GAIL",
@@ -518,7 +520,6 @@
     "GMDCLTD",
     "GMRAIRPORT",
     "GODFRYPHLP",
-    "GODIGIT",
     "GODREJCP",
     "GODREJIND",
     "GODREJPROP",
@@ -538,7 +539,7 @@
     "HDFCAMC",
     "HDFCBANK",
     "HDFCLIFE",
-    "HEG",
+    "HEGAM",
     "HEROMOTOCO",
     "HEXT",
     "HFCL",
@@ -566,7 +567,6 @@
     "IGL",
     "IIFL",
     "IKS",
-    "INDGN",
     "INDHOTEL",
     "INDIACEM",
     "INDIAMART",
@@ -575,6 +575,7 @@
     "INDUSINDBK",
     "INDUSTOWER",
     "INFY",
+    "INOXINDIA",
     "INOXWIND",
     "INTELLECT",
     "IOB",
@@ -600,13 +601,11 @@
     "JPPOWER",
     "JSL",
     "JSWCEMENT",
-    "JSWDULUX",
     "JSWENERGY",
     "JSWINFRA",
     "JSWSTEEL",
     "JUBLFOOD",
     "JUBLINGREA",
-    "JUBLPHARMA",
     "JWL",
     "JYOTICNC",
     "KAJARIACER",
@@ -617,13 +616,14 @@
     "KEI",
     "KFINTECH",
     "KIMS",
+    "KIRLOSBROS",
     "KIRLOSENG",
     "KOTAKBANK",
     "KPIL",
     "KPITTECH",
     "KPRMILL",
+    "KSB",
     "LALPATHLAB",
-    "LATENTVIEW",
     "LAURUSLABS",
     "LEMONTREE",
     "LENSKART",
@@ -644,7 +644,6 @@
     "MAHABANK",
     "MANAPPURAM",
     "MANKIND",
-    "MAPMYINDIA",
     "MARICO",
     "MARUTI",
     "MAXHEALTH",
@@ -662,6 +661,7 @@
     "MRF",
     "MRPL",
     "MSUMI",
+    "MTARTECH",
     "MUTHOOTFIN",
     "NAM-INDIA",
     "NATCOPHARM",
@@ -674,11 +674,9 @@
     "NESTLEIND",
     "NETWEB",
     "NEULANDLAB",
-    "NEWGEN",
     "NH",
     "NHPC",
     "NIACL",
-    "NIVABUPA",
     "NLCINDIA",
     "NMDC",
     "NSLNISP",
@@ -702,7 +700,6 @@
     "PERSISTENT",
     "PETRONET",
     "PFC",
-    "PFIZER",
     "PFOCUS",
     "PGEL",
     "PHOENIXLTD",
@@ -721,6 +718,7 @@
     "PPLPHARMA",
     "PREMIERENE",
     "PRESTIGE",
+    "PRIVISCL",
     "PTCIL",
     "PVRINOX",
     "PWL",
@@ -737,15 +735,14 @@
     "RKFORGE",
     "RPOWER",
     "RRKABEL",
+    "RUBICON",
     "RVNL",
     "SAGILITY",
     "SAIL",
     "SAILIFE",
     "SAMMAANCAP",
-    "SAPPHIRE",
+    "SANSERA",
     "SARDAEN",
-    "SAREGAMA",
-    "SBFC",
     "SBICARD",
     "SBILIFE",
     "SBIN",
@@ -753,6 +750,7 @@
     "SCHNEIDER",
     "SCI",
     "SHREECEM",
+    "SHRIPISTON",
     "SHRIRAMFIN",
     "SHYAMMETL",
     "SIEMENS",
@@ -761,10 +759,9 @@
     "SOBHA",
     "SOLARINDS",
     "SONACOMS",
-    "SONATSOFTW",
-    "SPLPETRO",
     "SRF",
     "STARHEALTH",
+    "STLTECH",
     "SUMICHEM",
     "SUNDARMFIN",
     "SUNPHARMA",
@@ -787,12 +784,13 @@
     "TATATECH",
     "TBOTEK",
     "TCS",
+    "TDPOWERSYS",
     "TECHM",
     "TECHNOE",
     "TEGA",
     "TEJASNET",
     "TENNIND",
-    "THELEELA",
+    "THANGAMAYL",
     "THERMAX",
     "TIINDIA",
     "TIMKEN",
@@ -802,7 +800,6 @@
     "TMPV",
     "TORNTPHARM",
     "TORNTPOWER",
-    "TRAVELFOOD",
     "TRENT",
     "TRIDENT",
     "TRITURBINE",
@@ -818,10 +815,14 @@
     "URBANCO",
     "USHAMART",
     "UTIAMC",
+    "VAML",
     "VBL",
     "VEDL",
+    "VEDPOWER",
     "VIJAYA",
+    "VISL",
     "VMM",
+    "VOGL",
     "VOLTAS",
     "VTL",
     "WAAREEENER",
@@ -840,9 +841,9 @@
    ]
   },
   "Nifty 50": {
-   "asOf": "2026-09-06",
-   "effective_at": "2026-09-06",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_nifty50list.csv",
    "file": "ind_nifty50list.csv",
    "count": 50,
@@ -857,6 +858,7 @@
     "BAJFINANCE",
     "BEL",
     "BHARTIARTL",
+    "BSE",
     "CIPLA",
     "COALINDIA",
     "DRREDDY",
@@ -895,69 +897,60 @@
     "TITAN",
     "TMPV",
     "TRENT",
-    "ULTRACEMCO",
-    "WIPRO"
+    "ULTRACEMCO"
    ]
   },
   "Nifty Microcap 250": {
-   "asOf": "2026-09-06",
-   "effective_at": "2026-09-06",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_niftymicrocap250_list.csv",
    "file": "ind_niftymicrocap250_list.csv",
    "count": 254,
    "symbols": [
-    "AARTIDRUGS",
     "AARTIPHARM",
+    "ABFRL",
+    "ABLBL",
     "ACI",
     "ADVENZYMES",
     "AEQUS",
-    "AETHER",
-    "AGARWALEYE",
-    "AHLUCONT",
+    "AEROFLEX",
     "AKUMS",
-    "ALIVUS",
     "ALKYLAMINE",
-    "ALOKINDS",
-    "ANUP",
-    "APLLTD",
+    "AMAGI",
     "APOLLO",
     "ARVIND",
     "ARVINDFASN",
     "ASHAPURMIN",
     "ASHOKA",
-    "ASKAUTOLTD",
     "ASTRAMICRO",
     "ATLANTAELE",
     "AURIONPRO",
     "AVALON",
-    "AVANTIFEED",
     "AVL",
-    "AWFIS",
     "AXISCADES",
-    "AZAD",
-    "BAJAJELEC",
+    "BAJAJCON",
     "BALAMINES",
     "BALUFORGE",
     "BANCOINDIA",
-    "BBOX",
     "BECTORFOOD",
     "BIRLACORPN",
     "BLACKBUCK",
+    "BLUEJET",
     "BLUESTONE",
     "BORORENEW",
     "CAMPUS",
     "CAPILLARY",
     "CCAVENUE",
+    "CEIGALL",
     "CELLO",
-    "CENTURYPLY",
+    "CENTUM",
     "CERA",
+    "CHALET",
+    "CMRGREEN",
     "CMSINFO",
-    "CORONA",
     "CRAMC",
-    "CRIZAC",
     "CSBBANK",
-    "CUPID",
     "DATAMATICS",
     "DBL",
     "DBREALTY",
@@ -968,6 +961,8 @@
     "DUMMYINXGN",
     "DUMMYTRVN",
     "DYNAMATECH",
+    "E2E",
+    "EBGNG",
     "EDELWEISS",
     "EIEL",
     "ELECTCAST",
@@ -977,101 +972,103 @@
     "ENTERO",
     "EPL",
     "EQUITASBNK",
-    "ETHOSLTD",
-    "EUREKAFORB",
+    "ERIS",
     "FEDFINA",
     "FIEMIND",
     "FINPIPE",
     "GAEL",
-    "GHCL",
-    "GMMPFAUDLR",
+    "GENUSPOWER",
     "GMRP&UI",
     "GNFC",
     "GODREJAGRO",
     "GOKEX",
     "GOKULAGRO",
+    "GOLDIAM",
     "GPPL",
     "GREAVESCOT",
     "GRINDWELL",
     "GRWRHITECH",
     "GSFC",
+    "GUJALKALI",
     "HAPPSTMNDS",
+    "HAPPYFORGE",
     "HCC",
     "HCG",
-    "HEMIPROP",
     "HERITGFOOD",
     "HGINFRA",
     "ICIL",
     "IFBIND",
     "IIFLCAPS",
     "IMFA",
+    "INDGN",
     "INDIAGLYCO",
-    "INDIASHLTR",
     "INDIGOPNTS",
-    "INOXGREEN",
-    "INOXINDIA",
     "IONEXCHANG",
     "IXIGO",
     "JAIBALAJI",
     "JAMNAAUTO",
     "JAYNECOIND",
-    "JKLAKSHMI",
     "JKPAPER",
-    "JLHL",
     "JSFB",
     "JSLL",
+    "JUBLPHARMA",
     "JUSTDIAL",
     "JYOTHYLAB",
     "KANSAINER",
-    "KIRLOSBROS",
     "KIRLPNU",
+    "KISSHT",
     "KITEX",
+    "KMEW",
     "KNRCON",
     "KPIGREEN",
     "KRBL",
     "KRN",
-    "KSB",
     "KSCL",
     "KTKBANK",
+    "KWIL",
+    "LATENTVIEW",
     "LLOYDSENGG",
     "LLOYDSENT",
     "LOTUSDEV",
+    "LUMAXIND",
     "LUMAXTECH",
     "LXCHEM",
-    "MAHSCOOTER",
-    "MAHSEAMLES",
     "MANORAMA",
     "MANYAVAR",
+    "MAPMYINDIA",
     "MARKSANS",
     "MASTEK",
+    "MBAPL",
     "MEDPLUS",
     "METROPOLIS",
     "MIDHANI",
     "MOIL",
     "MSTCLTD",
-    "MTARTECH",
     "NAZARA",
     "NEOGEN",
-    "NESCO",
+    "NEPHROPLUS",
     "NETWORK18",
+    "NEWGEN",
     "NFL",
-    "OPTIEMUS",
-    "ORIENTCEM",
-    "ORKLAINDIA",
+    "NIVABUPA",
+    "NORTHARC",
+    "OMNI",
     "OSWALPUMPS",
+    "PAISALO",
     "PARAS",
     "PARKHOSPS",
     "PCJEWELLER",
+    "PDSL",
+    "PGHL",
     "PGIL",
     "PICCADIL",
     "PNCINFRA",
     "PNGJL",
+    "POWERICA",
     "POWERMECH",
     "PRAJIND",
+    "PRECWIRE",
     "PRICOLLTD",
-    "PRIVISCL",
-    "PRSMJOHNSN",
-    "PRUDENT",
     "PTC",
     "PURVA",
     "QPOWER",
@@ -1083,69 +1080,73 @@
     "RAYMONDLSL",
     "RBA",
     "RCF",
-    "REDTAPE",
     "REFEX",
     "RELAXO",
     "RELIGARE",
     "RENUKA",
+    "RESPONIND",
     "ROUTE",
-    "RTNINDIA",
     "RTNPOWER",
-    "RUBICON",
-    "SAATVIKGL",
     "SAFARI",
     "SAMHI",
     "SANDUMA",
-    "SANOFICONR",
-    "SANSERA",
+    "SAPPHIRE",
+    "SAREGAMA",
+    "SBFC",
+    "SEDEMAC",
     "SENCO",
+    "SENORES",
     "SFL",
+    "SGMART",
+    "SHADOWFAX",
     "SHAILY",
     "SHAKTIPUMP",
     "SHARDACROP",
     "SHAREINDIA",
+    "SHILCTECH",
     "SHILPAMED",
-    "SHRIPISTON",
-    "SKFINDIA",
-    "SKFINDUS",
+    "SHREEJISPG",
+    "SIGMAADV",
+    "SJS",
     "SKIPPER",
     "SKYGOLD",
-    "SMARTWORKS",
     "SMLMAH",
+    "SONATSOFTW",
     "SOUTHBANK",
     "SPARC",
+    "SPLPETRO",
     "STAR",
-    "STARCEMENT",
-    "STLTECH",
-    "STYL",
-    "STYRENIX",
+    "STYLAMIND",
     "SUBROS",
     "SUDARSCHEM",
     "SUDEEPPHRM",
+    "SUNDRMFAST",
+    "SUNFLAG",
     "SUNTECK",
     "SUPRIYA",
     "SURYAROSNI",
+    "SUVEN",
     "SWSOLAR",
     "TANLA",
     "TARC",
-    "TDPOWERSYS",
     "TEXRAIL",
-    "THANGAMAYL",
+    "THELEELA",
     "THOMASCOOK",
     "THYROCARE",
     "TI",
     "TIMETECHNO",
+    "TIMEX",
     "TIPSMUSIC",
     "TMB",
     "TRANSRAILL",
-    "TRIVENI",
-    "TSFINV",
+    "TTKPRESTIG",
     "TVSSCS",
     "UJJIVANSFB",
+    "UNIMECH",
     "UTLSOLAR",
     "V2RETAIL",
     "VAIBHAVGBL",
-    "VARROC",
+    "VESUVIUS",
     "VGUARD",
     "VIKRAMSOLR",
     "VIPIND",
@@ -1164,18 +1165,16 @@
    ]
   },
   "Nifty Midcap 150": {
-   "asOf": "2026-08-14",
-   "effective_at": "2026-08-14",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_niftymidcap150list.csv",
    "file": "ind_niftymidcap150list.csv",
    "count": 150,
    "symbols": [
     "360ONE",
-    "3MINDIA",
     "ABBOTINDIA",
     "ABCAPITAL",
-    "ACC",
     "AIAENG",
     "AIIL",
     "AJANTPHARM",
@@ -1183,13 +1182,12 @@
     "ANTHEM",
     "APARINDS",
     "APLAPOLLO",
-    "APOLLOTYRE",
     "ASHOKLEY",
+    "ASTERDM",
     "ASTRAL",
     "ATGL",
     "AUBANK",
     "AUROPHARMA",
-    "AWL",
     "BAJAJHFL",
     "BALKRISIND",
     "BANKINDIA",
@@ -1200,7 +1198,6 @@
     "BHEL",
     "BIOCON",
     "BLUESTARCO",
-    "BSE",
     "COCHINSHIP",
     "COFORGE",
     "COLPAL",
@@ -1210,9 +1207,11 @@
     "DABUR",
     "DALBHARAT",
     "DIXON",
+    "EMBASSY",
     "ENDURANCE",
     "ESCORTS",
     "EXIDEIND",
+    "FACT",
     "FEDERALBNK",
     "FLUOROCHEM",
     "FORTIS",
@@ -1229,17 +1228,18 @@
     "HDBFS",
     "HEROMOTOCO",
     "HEXT",
+    "HINDCOPPER",
     "HINDPETRO",
-    "HONAUT",
     "HUDCO",
     "ICICIAMC",
     "ICICIGI",
     "ICICIPRULI",
-    "IDEA",
     "IDFCFIRSTB",
+    "INDHOTEL",
     "INDIANB",
     "INDUSINDBK",
     "INDUSTOWER",
+    "IOB",
     "IPCALAB",
     "IRCTC",
     "IREDA",
@@ -1251,7 +1251,6 @@
     "JUBLFOOD",
     "KALYANKJIL",
     "KEI",
-    "KPITTECH",
     "KPRMILL",
     "LAURUSLABS",
     "LENSKART",
@@ -1260,6 +1259,7 @@
     "LICI",
     "LINDEINDIA",
     "LLOYDSME",
+    "LODHA",
     "LTF",
     "LTTS",
     "LUPIN",
@@ -1269,6 +1269,7 @@
     "MARICO",
     "MCX",
     "MEDANTA",
+    "MEESHO",
     "MFSL",
     "MOTILALOFS",
     "MPHASIS",
@@ -1276,8 +1277,8 @@
     "NAM-INDIA",
     "NATIONALUM",
     "NAUKRI",
+    "NH",
     "NHPC",
-    "NIACL",
     "NLCINDIA",
     "NMDC",
     "NTPCGREEN",
@@ -1292,29 +1293,29 @@
     "PETRONET",
     "PHOENIXLTD",
     "PIIND",
+    "PIRAMALFIN",
     "POLICYBZR",
-    "POLYCAB",
-    "POWERINDIA",
     "PREMIERENE",
     "PRESTIGE",
     "RADICO",
+    "RECLTD",
     "RVNL",
     "SAIL",
     "SBICARD",
     "SCHAEFFLER",
-    "SJVN",
+    "SHREECEM",
     "SRF",
     "SUNDARMFIN",
     "SUPREMEIND",
     "SUZLON",
     "SWIGGY",
     "TATACOMM",
-    "TATAELXSI",
     "TATAINVEST",
     "THERMAX",
     "TIINDIA",
     "TORNTPOWER",
     "UBL",
+    "UNITDSPR",
     "UNOMINDA",
     "UPL",
     "VMM",
@@ -1324,9 +1325,9 @@
    ]
   },
   "Nifty Next 50": {
-   "asOf": "2026-09-06",
-   "effective_at": "2026-09-06",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_niftynext50list.csv",
    "file": "ind_niftynext50list.csv",
    "count": 50,
@@ -1355,11 +1356,10 @@
     "HDFCAMC",
     "HINDZINC",
     "HYUNDAI",
-    "INDHOTEL",
+    "IDEA",
     "IOC",
     "IRFC",
     "JINDALSTEL",
-    "LODHA",
     "LTM",
     "MAZDOCK",
     "MOTHERSON",
@@ -1367,8 +1367,8 @@
     "PFC",
     "PIDILITIND",
     "PNB",
-    "RECLTD",
-    "SHREECEM",
+    "POLYCAB",
+    "POWERINDIA",
     "SIEMENS",
     "SOLARINDS",
     "TATACAP",
@@ -1377,33 +1377,34 @@
     "TORNTPHARM",
     "TVSMOTOR",
     "UNIONBANK",
-    "UNITDSPR",
+    "VAML",
     "VBL",
     "VEDL",
+    "WIPRO",
     "ZYDUSLIFE"
    ]
   },
   "Nifty Smallcap 250": {
-   "asOf": "2026-08-14",
-   "effective_at": "2026-08-14",
-   "captured_at": "2026-09-06",
+   "asOf": "2026-10-05",
+   "effective_at": "2026-10-05",
+   "captured_at": "2026-10-05",
    "source": "https://niftyindices.com/IndexConstituent/ind_niftysmallcap250list.csv",
    "file": "ind_niftysmallcap250list.csv",
-   "count": 250,
+   "count": 251,
    "symbols": [
     "AADHARHFC",
     "AARTIIND",
     "AAVAS",
     "ABDL",
-    "ABFRL",
-    "ABLBL",
     "ABREL",
     "ABSLAMC",
+    "ACC",
     "ACE",
     "ACMESOLAR",
     "ACUTAAS",
     "AEGISLOG",
     "AEGISVOPAK",
+    "AETHER",
     "AFCONS",
     "AFFLE",
     "AMBER",
@@ -1411,23 +1412,25 @@
     "ANANTRAJ",
     "ANGELONE",
     "ANURAS",
+    "APOLLOTYRE",
     "APTUS",
     "ARE&M",
     "ASAHIINDIA",
-    "ASTERDM",
     "ATHERENERG",
     "ATUL",
+    "AVANTIFEED",
+    "AWL",
+    "AZAD",
+    "BAGMANE",
     "BALRAMCHIN",
     "BANDHANBNK",
     "BATAINDIA",
-    "BAYERCROP",
-    "BBTC",
+    "BBOX",
     "BELRISE",
     "BEML",
-    "BIKAJI",
+    "BHARATCOAL",
+    "BIRET",
     "BLS",
-    "BLUEDART",
-    "BLUEJET",
     "BRIGADE",
     "BSOFT",
     "CAMS",
@@ -1444,13 +1447,14 @@
     "CENTRALBK",
     "CESC",
     "CGCL",
-    "CHALET",
     "CHAMBLFERT",
     "CHENNPETRO",
     "CHOICEIN",
     "CHOLAHLDNG",
     "CIEINDIA",
     "CLEAN",
+    "CLEANMAX",
+    "CMPDI",
     "COHANCE",
     "CONCORDBIO",
     "CPPLUS",
@@ -1458,14 +1462,15 @@
     "CREDITACC",
     "CROMPTON",
     "CUB",
+    "CUPID",
     "CYIENT",
     "DATAPATTNS",
-    "DCMSHRIRAM",
     "DEEPAKFERT",
     "DEEPAKNTR",
     "DELHIVERY",
     "DEVYANI",
     "DOMS",
+    "DUMMYHEG",
     "ECLERX",
     "EIDPARRY",
     "EIHOTEL",
@@ -1475,12 +1480,11 @@
     "EMCURE",
     "EMMVEE",
     "ENGINERSIN",
-    "ERIS",
-    "FACT",
     "FINCABLES",
     "FIRSTCRY",
     "FIVESTAR",
     "FORCEMOT",
+    "FRACTAL",
     "FSL",
     "GABRIEL",
     "GALLANTT",
@@ -1488,18 +1492,17 @@
     "GILLETTE",
     "GLAND",
     "GMDCLTD",
-    "GODIGIT",
     "GPIL",
     "GRANULES",
     "GRAPHITE",
     "GRAVITA",
     "GRSE",
     "HBLENGINE",
-    "HEG",
+    "HEGAM",
     "HFCL",
-    "HINDCOPPER",
     "HOMEFIRST",
     "HONASA",
+    "HONAUT",
     "HSCL",
     "IDBI",
     "IEX",
@@ -1508,12 +1511,11 @@
     "IGL",
     "IIFL",
     "IKS",
-    "INDGN",
     "INDIACEM",
     "INDIAMART",
+    "INOXINDIA",
     "INOXWIND",
     "INTELLECT",
-    "IOB",
     "IRB",
     "IRCON",
     "ITI",
@@ -1525,9 +1527,7 @@
     "JMFINANCIL",
     "JPPOWER",
     "JSWCEMENT",
-    "JSWDULUX",
     "JUBLINGREA",
-    "JUBLPHARMA",
     "JWL",
     "JYOTICNC",
     "KAJARIACER",
@@ -1536,20 +1536,21 @@
     "KEC",
     "KFINTECH",
     "KIMS",
+    "KIRLOSBROS",
     "KIRLOSENG",
     "KPIL",
+    "KPITTECH",
+    "KSB",
     "LALPATHLAB",
-    "LATENTVIEW",
     "LEMONTREE",
     "LTFOODS",
     "MANAPPURAM",
-    "MAPMYINDIA",
-    "MEESHO",
     "MGL",
     "MINDACORP",
     "MMTC",
     "MRPL",
     "MSUMI",
+    "MTARTECH",
     "NATCOPHARM",
     "NAVA",
     "NAVINFLUOR",
@@ -1557,9 +1558,7 @@
     "NCC",
     "NETWEB",
     "NEULANDLAB",
-    "NEWGEN",
-    "NH",
-    "NIVABUPA",
+    "NIACL",
     "NSLNISP",
     "NUVAMA",
     "NUVOCO",
@@ -1568,15 +1567,14 @@
     "ONESOURCE",
     "PARADEEP",
     "PCBL",
-    "PFIZER",
     "PFOCUS",
     "PGEL",
     "PINELABS",
-    "PIRAMALFIN",
     "PNBHOUSING",
     "POLYMED",
     "POONAWALLA",
     "PPLPHARMA",
+    "PRIVISCL",
     "PTCIL",
     "PVRINOX",
     "PWL",
@@ -1590,22 +1588,22 @@
     "RKFORGE",
     "RPOWER",
     "RRKABEL",
+    "RUBICON",
     "SAGILITY",
     "SAILIFE",
     "SAMMAANCAP",
-    "SAPPHIRE",
+    "SANSERA",
     "SARDAEN",
-    "SAREGAMA",
-    "SBFC",
     "SCHNEIDER",
     "SCI",
+    "SHRIPISTON",
     "SHYAMMETL",
     "SIGNATURE",
+    "SJVN",
     "SOBHA",
     "SONACOMS",
-    "SONATSOFTW",
-    "SPLPETRO",
     "STARHEALTH",
+    "STLTECH",
     "SUMICHEM",
     "SUNTV",
     "SWANCORP",
@@ -1613,16 +1611,17 @@
     "SYRMA",
     "TARIL",
     "TATACHEM",
+    "TATAELXSI",
     "TATATECH",
     "TBOTEK",
+    "TDPOWERSYS",
     "TECHNOE",
     "TEGA",
     "TEJASNET",
     "TENNIND",
-    "THELEELA",
+    "THANGAMAYL",
     "TIMKEN",
     "TITAGARH",
-    "TRAVELFOOD",
     "TRIDENT",
     "TRITURBINE",
     "TTML",
@@ -1630,7 +1629,10 @@
     "URBANCO",
     "USHAMART",
     "UTIAMC",
+    "VEDPOWER",
     "VIJAYA",
+    "VISL",
+    "VOGL",
     "VTL",
     "WELCORP",
     "WELSPUNLIV",
@@ -1653,15 +1655,6 @@
    "indices": [
     "Nifty Capital Markets",
     "Nifty India New Age Consumption"
-   ]
-  },
-  "3MINDIA": {
-   "industry": "Diversified",
-   "isin": "INE470A01017",
-   "name": "3M India Ltd.",
-   "capBand": "mid",
-   "indices": [
-    "Nifty MNC"
    ]
   },
   "AADHARHFC": {
@@ -1690,13 +1683,6 @@
    "indices": [
     "Nifty Sme"
    ]
-  },
-  "AARTIDRUGS": {
-   "industry": "Healthcare",
-   "isin": "INE767A01016",
-   "name": "Aarti Drugs Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "AARTIIND": {
    "industry": "Chemicals",
@@ -1785,7 +1771,7 @@
    "industry": "Consumer Services",
    "isin": "INE647O01011",
    "name": "Aditya Birla Fashion and Retail Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": [
     "Nifty Retail"
    ]
@@ -1803,9 +1789,8 @@
    "industry": "Consumer Services",
    "isin": "INE14LE01019",
    "name": "Aditya Birla Lifestyle Brands Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": [
-    "Nifty India New Age Consumption",
     "Nifty Retail"
    ]
   },
@@ -1826,7 +1811,8 @@
    "name": "Aditya Birla Sun Life AMC Ltd.",
    "capBand": "small",
    "indices": [
-    "Nifty Capital Markets"
+    "Nifty Capital Markets",
+    "Nifty India New Age Consumption"
    ]
   },
   "ABSMARINE": {
@@ -1842,10 +1828,9 @@
    "industry": "Construction Materials",
    "isin": "INE012A01025",
    "name": "ACC Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
     "Nifty Cement",
-    "Nifty Core Housing",
     "Nifty Housing",
     "Nifty India Infrastructure Logistics"
    ]
@@ -1987,10 +1972,11 @@
    "indices": [
     "Nifty Commodities",
     "Nifty Conglomerate 50",
-    "Nifty Consumption",
     "Nifty Energy",
     "Nifty India Infrastructure Logistics",
-    "Nifty Power"
+    "Nifty Infra",
+    "Nifty Power",
+    "Nifty Service"
    ]
   },
   "ADDICTIVE": {
@@ -2009,15 +1995,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "ADVANCE": {
-   "industry": "Chemicals",
-   "isin": "INE1B0W01010",
-   "name": "Advance Agrolife Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "ADVENZYMES": {
@@ -2057,6 +2034,13 @@
     "Nifty Indiadefence"
    ]
   },
+  "AEROFLEX": {
+   "industry": "Capital Goods",
+   "isin": "INE024001021",
+   "name": "Aeroflex Industries Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "AERON": {
    "industry": "Capital Goods",
    "isin": "INE0WL801011",
@@ -2088,7 +2072,7 @@
    "industry": "Chemicals",
    "isin": "INE0BWX01014",
    "name": "Aether Industries Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "AFCONS": {
@@ -2114,7 +2098,7 @@
    "industry": "Healthcare",
    "isin": "INE943P01029",
    "name": "Dr. Agarwal's Health Care Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Hospitals"
    ]
@@ -2155,20 +2139,11 @@
     "Nifty Sme"
    ]
   },
-  "AHCL": {
-   "industry": "Healthcare",
-   "isin": "INE0Y8W01025",
-   "name": "Anlon Healthcare Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "AHLUCONT": {
    "industry": "Construction",
    "isin": "INE758C01029",
    "name": "Ahluwalia Contracts (India) Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Construction"
    ]
@@ -2180,8 +2155,7 @@
    "capBand": "mid",
    "indices": [
     "Nifty Capital Goods",
-    "Nifty Indiamanufacturing",
-    "Nifty Transportationandlogistics"
+    "Nifty Indiamanufacturing"
    ]
   },
   "AIIL": {
@@ -2263,13 +2237,6 @@
     "Nifty Sme"
    ]
   },
-  "ALIVUS": {
-   "industry": "Healthcare",
-   "isin": "INE03Q201024",
-   "name": "Alivus Life Sciences Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
   "ALKEM": {
    "industry": "Healthcare",
    "isin": "INE540L01014",
@@ -2296,22 +2263,6 @@
    "indices": [
     "Nifty Sme"
    ]
-  },
-  "ALLTIME": {
-   "industry": "Consumer Durables",
-   "isin": "INE0GV601021",
-   "name": "All Time Plastics Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
-  "ALOKINDS": {
-   "industry": "Textiles",
-   "isin": "INE270A01029",
-   "name": "Alok Industries Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "ALPEXSOLAR": {
    "industry": "Capital Goods",
@@ -2344,18 +2295,9 @@
    "industry": "Information Technology",
    "isin": "INE121R01077",
    "name": "Amagi Media Labs Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
-   ]
-  },
-  "AMARAJABAT": {
-   "industry": "Automobile and Auto Components",
-   "isin": "INE885A01032",
-   "name": "Amara Raja Batteries Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Transportationandlogistics"
    ]
   },
   "AMBAAUTO": {
@@ -2384,7 +2326,8 @@
    "indices": [
     "Nifty Consumerdurables",
     "Nifty Core Housing",
-    "Nifty India New Age Consumption"
+    "Nifty India New Age Consumption",
+    "Nifty Indiamanufacturing"
    ]
   },
   "AMBUJACEM": {
@@ -2399,7 +2342,6 @@
     "Nifty Core Housing",
     "Nifty Housing",
     "Nifty India Infrastructure Logistics",
-    "Nifty Infra",
     "Nifty MNC"
    ]
   },
@@ -2470,13 +2412,13 @@
     "Nifty Sme"
    ]
   },
-  "ANNAPURNA": {
-   "industry": "Fast Moving Consumer Goods",
-   "isin": "INE0MGM01017",
-   "name": "Annapurna Swadisht Ltd.",
+  "ANNU": {
+   "industry": "Construction",
+   "isin": "INE103001017",
+   "name": "Annu Projects Ltd.",
    "capBand": "unclassified",
    "indices": [
-    "Nifty Sme"
+    "Nifty IPO"
    ]
   },
   "ANONDITA": {
@@ -2494,16 +2436,8 @@
    "name": "Anthem Biosciences Ltd.",
    "capBand": "mid",
    "indices": [
-    "Nifty IPO",
     "Nifty Indiamanufacturing"
    ]
-  },
-  "ANUP": {
-   "industry": "Capital Goods",
-   "isin": "INE294Z01018",
-   "name": "The Anup Engineering Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "ANURAS": {
    "industry": "Chemicals",
@@ -2551,13 +2485,6 @@
     "Nifty Metal"
    ]
   },
-  "APLLTD": {
-   "industry": "Healthcare",
-   "isin": "INE901L01018",
-   "name": "Alembic Pharmaceuticals Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
   "APOLLO": {
    "industry": "Capital Goods",
    "isin": "INE713T01028",
@@ -2584,7 +2511,7 @@
    "industry": "Automobile and Auto Components",
    "isin": "INE438A01022",
    "name": "Apollo Tyres Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
     "Nifty Transportationandlogistics"
    ]
@@ -2643,6 +2570,24 @@
     "Nifty Sme"
    ]
   },
+  "ARCIL": {
+   "industry": "Financial Services",
+   "isin": "INE148G01016",
+   "name": "Asset Reconstruction Company (India) Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
+  "ARDEE": {
+   "industry": "Metals & Mining",
+   "isin": "INE0XNF01022",
+   "name": "Ardee Industries Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "ARE&M": {
    "industry": "Automobile and Auto Components",
    "isin": "INE885A01032",
@@ -2673,7 +2618,7 @@
   "ARISTO": {
    "industry": "Chemicals",
    "isin": "INE082101010",
-   "name": "Aristo Bio-Tech and Lifescience Ltd.",
+   "name": "ARISTO BIO-TECH AND LIFESCIENCE Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -2686,15 +2631,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "ARSSBL": {
-   "industry": "Financial Services",
-   "isin": "INE549H01021",
-   "name": "Anand Rathi Share and Stock Brokers Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "ARUNAYA": {
@@ -2819,13 +2755,6 @@
     "Nifty Non Cyclicalconsumer"
    ]
   },
-  "ASKAUTOLTD": {
-   "industry": "Automobile and Auto Components",
-   "isin": "INE491J01022",
-   "name": "ASK Automotive Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
   "ASPIRE": {
    "industry": "Consumer Durables",
    "isin": "INE0S7801010",
@@ -2839,7 +2768,7 @@
    "industry": "Healthcare",
    "isin": "INE914M01019",
    "name": "Aster DM Healthcare Ltd.",
-   "capBand": "small",
+   "capBand": "mid",
    "indices": [
     "Nifty Hospitals"
    ]
@@ -2891,6 +2820,7 @@
    "name": "Ather Energy Ltd.",
    "capBand": "small",
    "indices": [
+    "Nifty EV New Age Automotive",
     "Nifty India New Age Consumption"
    ]
   },
@@ -2899,9 +2829,7 @@
    "isin": "INE0Z4F01028",
    "name": "Atlanta Electricals Ltd.",
    "capBand": "micro",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "indices": []
   },
   "ATMASTCO": {
    "industry": "Construction",
@@ -2929,6 +2857,15 @@
    "indices": [
     "Nifty Bank",
     "Nifty SFBS MFIS"
+   ]
+  },
+  "AUGMONT": {
+   "industry": "Metals & Mining",
+   "isin": "INE16W401027",
+   "name": "Augmont Enterprises Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "AURIONPRO": {
@@ -2987,7 +2924,7 @@
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE871C01038",
    "name": "Avanti Feeds Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "AVATAR": {
@@ -3003,6 +2940,15 @@
    "industry": "Textiles",
    "isin": "INE0TFB01017",
    "name": "Avi Ansh Textile Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
+   ]
+  },
+  "AVIENCE": {
+   "industry": "Healthcare",
+   "isin": "INE0V9I01017",
+   "name": "Avience Biomedicals Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -3030,7 +2976,7 @@
    "industry": "Services",
    "isin": "INE108V01019",
    "name": "Awfis Space Solutions Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Commercial Transport Services"
    ]
@@ -3039,7 +2985,7 @@
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE699H01024",
    "name": "AWL Agri Business Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
     "Nifty MNC"
    ]
@@ -3079,8 +3025,10 @@
    "industry": "Capital Goods",
    "isin": "INE02IJ01035",
    "name": "Azad Engineering Ltd.",
-   "capBand": "micro",
-   "indices": []
+   "capBand": "small",
+   "indices": [
+    "Nifty India Infrastructure Logistics"
+   ]
   },
   "BABAFP": {
    "industry": "Fast Moving Consumer Goods",
@@ -3099,6 +3047,13 @@
    "indices": [
     "Nifty Sme"
    ]
+  },
+  "BAGMANE": {
+   "industry": "Realty",
+   "isin": "INE2OVN25015",
+   "name": "Bagmane Prime Office REIT",
+   "capBand": "small",
+   "indices": []
   },
   "BAHETI": {
    "industry": "Capital Goods",
@@ -3125,10 +3080,10 @@
     "Nifty Transportationandlogistics"
    ]
   },
-  "BAJAJELEC": {
-   "industry": "Consumer Durables",
-   "isin": "INE193E01025",
-   "name": "Bajaj Electricals Ltd",
+  "BAJAJCON": {
+   "industry": "Fast Moving Consumer Goods",
+   "isin": "INE933K01021",
+   "name": "Bajaj Consumer Care Ltd.",
    "capBand": "micro",
    "indices": []
   },
@@ -3149,7 +3104,6 @@
    "name": "Bajaj Housing Finance Ltd.",
    "capBand": "mid",
    "indices": [
-    "Nifty Conglomerate 50",
     "Nifty Core Housing",
     "Nifty Housing Finance"
    ]
@@ -3314,7 +3268,7 @@
    "industry": "Chemicals",
    "isin": "INE462A01022",
    "name": "Bayer Cropscience Ltd.",
-   "capBand": "small",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Chemicals"
    ]
@@ -3323,15 +3277,10 @@
    "industry": "Information Technology",
    "isin": "INE676A01027",
    "name": "Black Box Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
-  "BBTC": {
-   "industry": "Fast Moving Consumer Goods",
-   "isin": "INE050A01025",
-   "name": "Bombay Burmah Trading Corporation Ltd.",
    "capBand": "small",
-   "indices": []
+   "indices": [
+    "Nifty Indiadigital"
+   ]
   },
   "BCLIND": {
    "industry": "Fast Moving Consumer Goods",
@@ -3356,7 +3305,7 @@
   "BEACON": {
    "industry": "Financial Services",
    "isin": "INE639X01027",
-   "name": "Beacon Trusteeship Ltd.",
+   "name": "BEACON TRUSTEESHIP Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -3435,7 +3384,7 @@
    "industry": "Oil Gas & Consumable Fuels",
    "isin": "INE05XR01022",
    "name": "Bharat Coking Coal Ltd.",
-   "capBand": "unclassified",
+   "capBand": "small",
    "indices": [
     "Nifty IPO"
    ]
@@ -3493,16 +3442,8 @@
     "Nifty Energy",
     "Nifty India Infrastructure Logistics",
     "Nifty India Railways PSU",
-    "Nifty Indiamanufacturing",
     "Nifty Pse"
    ]
-  },
-  "BIKAJI": {
-   "industry": "Fast Moving Consumer Goods",
-   "isin": "INE00E101023",
-   "name": "Bikaji Foods International Ltd.",
-   "capBand": "small",
-   "indices": []
   },
   "BIKEWO": {
    "industry": "Automobile and Auto Components",
@@ -3535,11 +3476,18 @@
   "BIRDYS": {
    "industry": "Consumer Services",
    "isin": "INE0PC901019",
-   "name": "Grill Splendour Services Ltd.",
+   "name": "GRILL SPLENDOUR SERVICES Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
    ]
+  },
+  "BIRET": {
+   "industry": "Realty",
+   "isin": "INE0FDU25010",
+   "name": "Brookfield India Real Estate Trust",
+   "capBand": "small",
+   "indices": []
   },
   "BIRLACORPN": {
    "industry": "Construction Materials",
@@ -3559,6 +3507,15 @@
     "Nifty Commercial Transport Services"
    ]
   },
+  "BLEL": {
+   "industry": "Capital Goods",
+   "isin": "INE1EEM01017",
+   "name": "Behari Lal Engineering Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "BLS": {
    "industry": "Consumer Services",
    "isin": "INE153T01027",
@@ -3573,23 +3530,22 @@
    "industry": "Services",
    "isin": "INE233B01017",
    "name": "Blue Dart Express Ltd.",
-   "capBand": "small",
+   "capBand": "unclassified",
    "indices": [
-    "Nifty Commercial Transport Services",
-    "Nifty India Infrastructure Logistics"
+    "Nifty Commercial Transport Services"
    ]
   },
   "BLUEJET": {
    "industry": "Healthcare",
    "isin": "INE0KBH01020",
    "name": "Blue Jet Healthcare Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": []
   },
   "BLUEPEBBLE": {
    "industry": "Services",
    "isin": "INE0SAK01011",
-   "name": "Blue Pebble Ltd.",
+   "name": "BLUE PEBBLE Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -3612,9 +3568,7 @@
    "isin": "INE304W01038",
    "name": "BlueStone Jewellery and Lifestyle Ltd.",
    "capBand": "micro",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "indices": []
   },
   "BLUEWATER": {
    "industry": "Services",
@@ -3634,13 +3588,13 @@
     "Nifty Sme"
    ]
   },
-  "BMWVENTLTD": {
-   "industry": "Metals & Mining",
-   "isin": "INE965W01036",
-   "name": "BMW Ventures Ltd.",
+  "BMLL": {
+   "industry": "Healthcare",
+   "isin": "INE1BKA01015",
+   "name": "Bio Medica Laboratories Ltd.",
    "capBand": "unclassified",
    "indices": [
-    "Nifty IPO"
+    "Nifty Sme"
    ]
   },
   "BORORENEW": {
@@ -3719,15 +3673,6 @@
     "Nifty Realty"
    ]
   },
-  "BRIGHOTEL": {
-   "industry": "Consumer Services",
-   "isin": "INE03NU01014",
-   "name": "Brigade Hotel Ventures Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "BRITANNIA": {
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE216A01030",
@@ -3744,7 +3689,7 @@
    "industry": "Financial Services",
    "isin": "INE118H01025",
    "name": "BSE Ltd.",
-   "capBand": "mid",
+   "capBand": "large",
    "indices": [
     "Nifty Capital Markets",
     "Nifty Finance",
@@ -3863,8 +3808,7 @@
    "name": "Carborundum Universal Ltd.",
    "capBand": "small",
    "indices": [
-    "Nifty Capital Goods",
-    "Nifty Transportationandlogistics"
+    "Nifty Capital Goods"
    ]
   },
   "CARTRADE": {
@@ -3886,7 +3830,6 @@
    "capBand": "small",
    "indices": [
     "Nifty Energy",
-    "Nifty Indiamanufacturing",
     "Nifty MNC",
     "Nifty Oilgas"
    ]
@@ -3894,7 +3837,7 @@
   "CBAZAAR": {
    "industry": "Consumer Services",
    "isin": "INE518X01015",
-   "name": "Net Avenue Technologies Ltd.",
+   "name": "NET AVENUE TECHNOLOGIES Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -3943,6 +3886,13 @@
     "Nifty Sme"
    ]
   },
+  "CEIGALL": {
+   "industry": "Construction",
+   "isin": "INE0AG901020",
+   "name": "Ceigall India Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "CELLECOR": {
    "industry": "Consumer Durables",
    "isin": "INE0OMO01025",
@@ -3986,12 +3936,14 @@
     "Nifty Psubank"
    ]
   },
-  "CENTURYPLY": {
-   "industry": "Consumer Durables",
-   "isin": "INE348B01021",
-   "name": "Century Plyboards (India) Ltd.",
+  "CENTUM": {
+   "industry": "Capital Goods",
+   "isin": "INE320B01020",
+   "name": "Centum Electronics Ltd.",
    "capBand": "micro",
-   "indices": []
+   "indices": [
+    "Nifty Indiadefence"
+   ]
   },
   "CERA": {
    "industry": "Consumer Durables",
@@ -4049,11 +4001,8 @@
    "industry": "Consumer Services",
    "isin": "INE427F01016",
    "name": "Chalet Hotels Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty India New Age Consumption",
-    "Nifty Indiatourism"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "CHAMBLFERT": {
    "industry": "Chemicals",
@@ -4172,6 +4121,15 @@
     "Nifty Sme"
    ]
   },
+  "CLAYCRAFT": {
+   "industry": "Consumer Durables",
+   "isin": "INE1QGM01024",
+   "name": "Clay Craft India Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
+   ]
+  },
   "CLEAN": {
    "industry": "Chemicals",
    "isin": "INE227W01023",
@@ -4183,7 +4141,7 @@
    "industry": "Power",
    "isin": "INE647U01026",
    "name": "Clean Max Enviro Energy Solutions Ltd.",
-   "capBand": "unclassified",
+   "capBand": "small",
    "indices": [
     "Nifty IPO"
    ]
@@ -4219,8 +4177,9 @@
    "industry": "Services",
    "isin": "INE05HV01027",
    "name": "Central Mine Planning & Design Institute Ltd.",
-   "capBand": "unclassified",
+   "capBand": "small",
    "indices": [
+    "Nifty Conglomerate 50",
     "Nifty IPO"
    ]
   },
@@ -4228,7 +4187,7 @@
    "industry": "Capital Goods",
    "isin": "INE00WV01027",
    "name": "CMR Green Technologies Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
    ]
@@ -4259,6 +4218,7 @@
    "indices": [
     "Nifty CPSE",
     "Nifty Commodities",
+    "Nifty Conglomerate 50",
     "Nifty Energy",
     "Nifty Pse"
    ]
@@ -4291,9 +4251,7 @@
    "isin": "INE03QK01018",
    "name": "Cohance Lifesciences Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty MNC"
-   ]
+   "indices": []
   },
   "COLPAL": {
    "industry": "Fast Moving Consumer Goods",
@@ -4365,7 +4323,7 @@
   },
   "CORDELIA": {
    "industry": "Consumer Services",
-   "isin": "INE0LZF01013",
+   "isin": "INE0LZF01039",
    "name": "Waterways Leisure Tourism Ltd.",
    "capBand": "unclassified",
    "indices": [
@@ -4387,7 +4345,7 @@
    "industry": "Healthcare",
    "isin": "INE02ZQ01018",
    "name": "CORONA Remedies Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty IPO"
    ]
@@ -4397,9 +4355,7 @@
    "isin": "INE819V01029",
    "name": "Aditya Infotech Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "indices": []
   },
   "CPS": {
    "industry": "Textiles",
@@ -4422,9 +4378,7 @@
    "isin": "INE218I01013",
    "name": "Canara Robeco Asset Management Company Ltd.",
    "capBand": "micro",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "indices": []
   },
   "CRAYONS": {
    "industry": "Media Entertainment & Publication",
@@ -4457,10 +4411,8 @@
    "industry": "Consumer Services",
    "isin": "INE0S4R01014",
    "name": "Crizac Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
-    "Nifty IPO",
-    "Nifty India Internet",
     "Nifty Retail"
    ]
   },
@@ -4537,7 +4489,7 @@
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE509F01029",
    "name": "Cupid Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "CURIS": {
@@ -4675,13 +4627,6 @@
     "Nifty Sme"
    ]
   },
-  "DCMSHRIRAM": {
-   "industry": "Diversified",
-   "isin": "INE499A01024",
-   "name": "DCM Shriram Ltd.",
-   "capBand": "small",
-   "indices": []
-  },
   "DECCANTRAN": {
    "industry": "Services",
    "isin": "INE0S7C01019",
@@ -4698,6 +4643,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
+   ]
+  },
+  "DEEPA": {
+   "industry": "Consumer Durables",
+   "isin": "INE1M2N01020",
+   "name": "Deepa Jewellers Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "DEEPAKFERT": {
@@ -4732,7 +4686,9 @@
    "capBand": "small",
    "indices": [
     "Nifty Commercial Transport Services",
-    "Nifty India Infrastructure Logistics"
+    "Nifty India Infrastructure Logistics",
+    "Nifty Mobility",
+    "Nifty Transportationandlogistics"
    ]
   },
   "DELTIC": {
@@ -4815,6 +4771,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
+   ]
+  },
+  "DHOOTTRANS": {
+   "industry": "Automobile and Auto Components",
+   "isin": "INE01NH01023",
+   "name": "Dhoot Transmission Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "DHTL": {
@@ -4932,15 +4897,6 @@
     "Nifty Service"
    ]
   },
-  "DOLLEX": {
-   "industry": "Fast Moving Consumer Goods",
-   "isin": "INE0JHH01011",
-   "name": "Dollex Agrotech Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Sme"
-   ]
-  },
   "DOMS": {
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE321T01012",
@@ -5004,6 +4960,13 @@
     "Nifty Sme"
    ]
   },
+  "DUMMYHEG": {
+   "industry": "Capital Goods",
+   "isin": "DUM545A01024",
+   "name": "Dummy HEG Ltd.",
+   "capBand": "small",
+   "indices": []
+  },
   "DUMMYINGL1": {
    "industry": "Healthcare",
    "isin": "DU1560A01023",
@@ -5059,6 +5022,13 @@
     "Nifty Sme"
    ]
   },
+  "E2E": {
+   "industry": "Information Technology",
+   "isin": "INE255Z01027",
+   "name": "E2E NETWORKS Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "E2ERAIL": {
    "industry": "Construction",
    "isin": "INE1CEJ01017",
@@ -5072,10 +5042,8 @@
    "industry": "Information Technology",
    "isin": "INE18JU01028",
    "name": "GNG Electronics Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "ECLERX": {
    "industry": "Services",
@@ -5227,9 +5195,7 @@
    "isin": "INE548C01032",
    "name": "Emami Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty FMCG"
-   ]
+   "indices": []
   },
   "EMAPARTNER": {
    "industry": "Services",
@@ -5239,6 +5205,13 @@
    "indices": [
     "Nifty Sme"
    ]
+  },
+  "EMBASSY": {
+   "industry": "Realty",
+   "isin": "INE041025011",
+   "name": "EMBASSY OFFICE PARKS REIT",
+   "capBand": "mid",
+   "indices": []
   },
   "EMBDL": {
    "industry": "Realty",
@@ -5304,9 +5277,7 @@
    "isin": "INE913H01037",
    "name": "Endurance Technologies Ltd.",
    "capBand": "mid",
-   "indices": [
-    "Nifty Transportationandlogistics"
-   ]
+   "indices": []
   },
   "ENFUSE": {
    "industry": "Information Technology",
@@ -5367,15 +5338,6 @@
     "Nifty Sme"
    ]
   },
-  "EPACKPEB": {
-   "industry": "Capital Goods",
-   "isin": "INE0MLS01022",
-   "name": "EPack Prefab Technologies Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "EPL": {
    "industry": "Capital Goods",
    "isin": "INE255A01020",
@@ -5405,7 +5367,7 @@
    "industry": "Healthcare",
    "isin": "INE406M01024",
    "name": "Eris Lifesciences Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": []
   },
   "ESCONET": {
@@ -5425,8 +5387,16 @@
    "indices": [
     "Nifty Capital Goods",
     "Nifty Indiamanufacturing",
-    "Nifty MNC",
-    "Nifty Transportationandlogistics"
+    "Nifty MNC"
+   ]
+  },
+  "ESDS": {
+   "industry": "Information Technology",
+   "isin": "INE0DRI01029",
+   "name": "ESDS Software Solution Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "ESFL": {
@@ -5460,15 +5430,9 @@
     "Nifty Mobility",
     "Nifty Non Cyclicalconsumer",
     "Nifty Retail",
-    "Nifty Service"
+    "Nifty Service",
+    "Nifty Transportationandlogistics"
    ]
-  },
-  "ETHOSLTD": {
-   "industry": "Consumer Durables",
-   "isin": "INE04TZ01018",
-   "name": "Ethos Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "ETL": {
    "industry": "Capital Goods",
@@ -5486,22 +5450,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "EUREKAFORB": {
-   "industry": "Consumer Durables",
-   "isin": "INE0KCE01017",
-   "name": "Eureka Forbes Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
-  "EUROPRATIK": {
-   "industry": "Consumer Durables",
-   "isin": "INE198501012",
-   "name": "Euro Pratik Sales Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "EXCELLENT": {
@@ -5528,7 +5476,6 @@
    "name": "Exide Industries Ltd.",
    "capBand": "mid",
    "indices": [
-    "Nifty Auto",
     "Nifty EV New Age Automotive",
     "Nifty Transportationandlogistics"
    ]
@@ -5542,20 +5489,11 @@
     "Nifty Sme"
    ]
   },
-  "FABTECH": {
-   "industry": "Healthcare",
-   "isin": "INE0HF201011",
-   "name": "Fabtech Technologies Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "FACT": {
    "industry": "Chemicals",
    "isin": "INE188A01015",
    "name": "Fertilisers and Chemicals Travancore Ltd.",
-   "capBand": "small",
+   "capBand": "mid",
    "indices": []
   },
   "FALCONTECH": {
@@ -5575,7 +5513,8 @@
    "indices": [
     "Nifty Bank",
     "Nifty Housing",
-    "Nifty Privatebank"
+    "Nifty Privatebank",
+    "Nifty Service"
    ]
   },
   "FEDFINA": {
@@ -5712,6 +5651,7 @@
    "name": "Force Motors Ltd.",
    "capBand": "small",
    "indices": [
+    "Nifty EV New Age Automotive",
     "Nifty India New Age Consumption"
    ]
   },
@@ -5730,6 +5670,7 @@
    "name": "Fortis Healthcare Ltd.",
    "capBand": "mid",
    "indices": [
+    "Nifty Consumption",
     "Nifty Healthcare",
     "Nifty Hospitals",
     "Nifty Infra"
@@ -5739,9 +5680,10 @@
    "industry": "Information Technology",
    "isin": "INE212S01015",
    "name": "Fractal Analytics Ltd.",
-   "capBand": "unclassified",
+   "capBand": "small",
    "indices": [
-    "Nifty IPO"
+    "Nifty IPO",
+    "Nifty Indiadigital"
    ]
   },
   "FRESHARA": {
@@ -5817,8 +5759,16 @@
     "Nifty Infra",
     "Nifty Mobility",
     "Nifty Oilgas",
-    "Nifty Pse",
-    "Nifty Service"
+    "Nifty Pse"
+   ]
+  },
+  "GAJA": {
+   "industry": "Financial Services",
+   "isin": "INE18UN01038",
+   "name": "Gaja Alternative Asset Management Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "GAJANAND": {
@@ -5836,15 +5786,6 @@
    "name": "Gallantt Ispat Ltd.",
    "capBand": "small",
    "indices": []
-  },
-  "GANESHCP": {
-   "industry": "Fast Moving Consumer Goods",
-   "isin": "INE652V01016",
-   "name": "Ganesh Consumer Products Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
   },
   "GANESHIN": {
    "industry": "Construction",
@@ -5882,13 +5823,20 @@
     "Nifty Sme"
    ]
   },
-  "GEMAROMA": {
-   "industry": "Chemicals",
-   "isin": "INE06XZ01023",
-   "name": "Gem Aromatics Ltd.",
+  "GENUSPOWER": {
+   "industry": "Capital Goods",
+   "isin": "INE955D01029",
+   "name": "Genus Power Infrastructures Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
+  "GENXAI": {
+   "industry": "Information Technology",
+   "isin": "INE1W0N01014",
+   "name": "GenXAI Analytics Ltd.",
    "capBand": "unclassified",
    "indices": [
-    "Nifty IPO"
+    "Nifty Sme"
    ]
   },
   "GESHIP": {
@@ -5898,8 +5846,7 @@
    "capBand": "small",
    "indices": [
     "Nifty Commercial Transport Services",
-    "Nifty India Infrastructure Logistics",
-    "Nifty Transportationandlogistics"
+    "Nifty India Infrastructure Logistics"
    ]
   },
   "GGBL": {
@@ -5910,13 +5857,6 @@
    "indices": [
     "Nifty Sme"
    ]
-  },
-  "GHCL": {
-   "industry": "Chemicals",
-   "isin": "INE539A01019",
-   "name": "GHCL Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "GICRE": {
    "industry": "Financial Services",
@@ -5952,15 +5892,6 @@
     "Nifty Sme"
    ]
   },
-  "GKENERGY": {
-   "industry": "Construction",
-   "isin": "INE1AG301022",
-   "name": "GK Energy Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "GKSL": {
    "industry": "Healthcare",
    "isin": "INE0V0W01025",
@@ -5976,8 +5907,18 @@
    "name": "Gland Pharma Ltd.",
    "capBand": "small",
    "indices": [
+    "Nifty Healthcare",
     "Nifty MNC",
     "Nifty Pharma"
+   ]
+  },
+  "GLASSWALL": {
+   "industry": "Construction Materials",
+   "isin": "INE644Q01039",
+   "name": "Glass Wall Systems (India) Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "GLAXO": {
@@ -6015,15 +5956,6 @@
     "Nifty Sugar Ethanol"
    ]
   },
-  "GLOTTIS": {
-   "industry": "Services",
-   "isin": "INE0TQE01026",
-   "name": "Glottis Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "GMDCLTD": {
    "industry": "Metals & Mining",
    "isin": "INE131A01031",
@@ -6040,13 +5972,6 @@
     "Nifty Sme"
    ]
   },
-  "GMMPFAUDLR": {
-   "industry": "Capital Goods",
-   "isin": "INE541A01023",
-   "name": "GMM Pfaudler Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
   "GMRAIRPORT": {
    "industry": "Services",
    "isin": "INE776C01039",
@@ -6056,7 +5981,8 @@
     "Nifty Commercial Transport Services",
     "Nifty India Infrastructure Logistics",
     "Nifty Indiatourism",
-    "Nifty Mobility"
+    "Nifty Mobility",
+    "Nifty Transportationandlogistics"
    ]
   },
   "GMRP&UI": {
@@ -6091,13 +6017,15 @@
    "isin": "INE260B01028",
    "name": "Godfrey Phillips India Ltd.",
    "capBand": "mid",
-   "indices": []
+   "indices": [
+    "Nifty FMCG"
+   ]
   },
   "GODIGIT": {
    "industry": "Financial Services",
    "isin": "INE03JT01014",
    "name": "Go Digit General Insurance Ltd.",
-   "capBand": "small",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Insurance"
    ]
@@ -6155,6 +6083,13 @@
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE314T01033",
    "name": "Gokul Agro Resources Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
+  "GOLDIAM": {
+   "industry": "Consumer Durables",
+   "isin": "INE025B01025",
+   "name": "Goldiam International Ltd.",
    "capBand": "micro",
    "indices": []
   },
@@ -6303,9 +6238,7 @@
    "isin": "INE536A01023",
    "name": "Grindwell Norton Ltd.",
    "capBand": "micro",
-   "indices": [
-    "Nifty Transportationandlogistics"
-   ]
+   "indices": []
   },
   "GROWW": {
    "industry": "Financial Services",
@@ -6371,6 +6304,13 @@
     "Nifty Sme"
    ]
   },
+  "GUJALKALI": {
+   "industry": "Chemicals",
+   "isin": "INE186A01019",
+   "name": "Gujarat Alkalies & Chemicals Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "GURUNANAK": {
    "industry": "Capital Goods",
    "isin": "INE1CCX01012",
@@ -6389,7 +6329,8 @@
     "Nifty Capital Goods",
     "Nifty Energy",
     "Nifty India Infrastructure Logistics",
-    "Nifty Indiamanufacturing"
+    "Nifty Indiamanufacturing",
+    "Nifty Infra"
    ]
   },
   "HAL": {
@@ -6412,14 +6353,21 @@
    "capBand": "micro",
    "indices": []
   },
-  "HATHWAY": {
-   "industry": "Media Entertainment & Publication",
-   "isin": "INE982F01036",
-   "name": "Hathway Cable & Datacom Ltd.",
+  "HAPPY": {
+   "industry": "Automobile and Auto Components",
+   "isin": "INE1GFG01011",
+   "name": "Happy Steels Ltd.",
    "capBand": "unclassified",
    "indices": [
-    "Nifty Media"
+    "Nifty Sme"
    ]
+  },
+  "HAPPYFORGE": {
+   "industry": "Capital Goods",
+   "isin": "INE330T01021",
+   "name": "Happy Forgings Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "HAVELLS": {
    "industry": "Consumer Durables",
@@ -6428,7 +6376,6 @@
    "capBand": "mid",
    "indices": [
     "Nifty Consumerdurables",
-    "Nifty Consumption",
     "Nifty Core Housing",
     "Nifty Housing",
     "Nifty India New Age Consumption",
@@ -6480,7 +6427,6 @@
    "name": "HDB Financial Services Ltd.",
    "capBand": "mid",
    "indices": [
-    "Nifty IPO",
     "Nifty NBFC"
    ]
   },
@@ -6527,10 +6473,10 @@
     "Nifty Service"
    ]
   },
-  "HEG": {
+  "HEGAM": {
    "industry": "Capital Goods",
    "isin": "INE545A01024",
-   "name": "H.E.G. Ltd.",
+   "name": "HEG Advanced Materials Ltd.",
    "capBand": "small",
    "indices": []
   },
@@ -6538,7 +6484,7 @@
    "industry": "Services",
    "isin": "INE0AJG01018",
    "name": "Hemisphere Properties India Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Commercial Transport Services"
    ]
@@ -6562,6 +6508,15 @@
     "Nifty India New Age Consumption",
     "Nifty Mobility",
     "Nifty Transportationandlogistics"
+   ]
+  },
+  "HEROMOTORS": {
+   "industry": "Automobile and Auto Components",
+   "isin": "INE012G01022",
+   "name": "Hero Motors Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "HEXAGON": {
@@ -6610,15 +6565,6 @@
     "Nifty Sme"
    ]
   },
-  "HILINFRA": {
-   "industry": "Services",
-   "isin": "INE00RL01028",
-   "name": "Highway Infrastructure Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "HINDALCO": {
    "industry": "Metals & Mining",
    "isin": "INE038A01020",
@@ -6635,7 +6581,7 @@
    "industry": "Metals & Mining",
    "isin": "INE531E01026",
    "name": "Hindustan Copper Ltd.",
-   "capBand": "small",
+   "capBand": "mid",
    "indices": [
     "Nifty Indiamanufacturing",
     "Nifty Metal"
@@ -6674,6 +6620,7 @@
    "name": "Hindustan Zinc Ltd.",
    "capBand": "large",
    "indices": [
+    "Nifty Conglomerate 50",
     "Nifty Indiamanufacturing",
     "Nifty Metal"
    ]
@@ -6725,10 +6672,18 @@
    "industry": "Capital Goods",
    "isin": "INE671A01010",
    "name": "Honeywell Automation India Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
-    "Nifty Capital Goods",
-    "Nifty Indiamanufacturing"
+    "Nifty Capital Goods"
+   ]
+  },
+  "HORIZONIND": {
+   "industry": "Realty",
+   "isin": "INE685T01010",
+   "name": "Horizon Industrial Parks Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "HPTL": {
@@ -6760,6 +6715,15 @@
     "Nifty Indiamanufacturing"
    ]
   },
+  "HTEL": {
+   "industry": "Capital Goods",
+   "isin": "INE0LEG01024",
+   "name": "Hy-Tech Engineers Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "HUDCO": {
    "industry": "Financial Services",
    "isin": "INE031A01017",
@@ -6782,10 +6746,13 @@
    "name": "Hyundai Motor India Ltd.",
    "capBand": "large",
    "indices": [
+    "Nifty Auto",
+    "Nifty EV New Age Automotive",
     "Nifty India New Age Consumption",
     "Nifty Indiamanufacturing",
     "Nifty MNC",
-    "Nifty Mobility"
+    "Nifty Mobility",
+    "Nifty Transportationandlogistics"
    ]
   },
   "IBLFL": {
@@ -6804,6 +6771,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Housing"
+   ]
+  },
+  "ICELCO": {
+   "industry": "Capital Goods",
+   "isin": "INE0XE501015",
+   "name": "IC Electricals Company Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
    ]
   },
   "ICICIAMC": {
@@ -6867,12 +6843,13 @@
    "industry": "Telecommunication",
    "isin": "INE669E01016",
    "name": "Vodafone Idea Ltd.",
-   "capBand": "mid",
+   "capBand": "large",
    "indices": [
     "Nifty Conglomerate 50",
     "Nifty India Infrastructure Logistics",
     "Nifty India New Age Consumption",
     "Nifty Indiadigital",
+    "Nifty Non Cyclicalconsumer",
     "Nifty Telecommunications"
    ]
   },
@@ -6937,15 +6914,6 @@
    "capBand": "small",
    "indices": []
   },
-  "IGCL": {
-   "industry": "Chemicals",
-   "isin": "INE05J901018",
-   "name": "Indogulf Cropsciences Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "IGIL": {
    "industry": "Services",
    "isin": "INE0Q9301021",
@@ -7005,14 +6973,14 @@
    "industry": "Healthcare",
    "isin": "INE065X01017",
    "name": "Indegene Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": []
   },
   "INDHOTEL": {
    "industry": "Consumer Services",
    "isin": "INE053A01029",
    "name": "Indian Hotels Co. Ltd.",
-   "capBand": "large",
+   "capBand": "mid",
    "indices": [
     "Nifty Consumption",
     "Nifty India New Age Consumption",
@@ -7064,7 +7032,7 @@
    "industry": "Financial Services",
    "isin": "INE922K01024",
    "name": "India Shelter Finance Corporation Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Housing Finance"
    ]
@@ -7103,10 +7071,10 @@
    "capBand": "micro",
    "indices": []
   },
-  "INDIQUBE": {
-   "industry": "Services",
-   "isin": "INE06ST01018",
-   "name": "Indiqube Spaces Ltd.",
+  "INDOMIM": {
+   "industry": "Capital Goods",
+   "isin": "INE084101034",
+   "name": "INDO-MIM Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty IPO"
@@ -7204,7 +7172,7 @@
    "industry": "Services",
    "isin": "INE510W01014",
    "name": "Inox Green Energy Services Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Commercial Transport Services"
    ]
@@ -7213,7 +7181,7 @@
    "industry": "Capital Goods",
    "isin": "INE616N01034",
    "name": "INOX India Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "INOXWIND": {
@@ -7230,7 +7198,7 @@
   "INSPIRE": {
    "industry": "Media Entertainment & Publication",
    "isin": "INE0NDX01019",
-   "name": "Inspire Films Ltd.",
+   "name": "INSPIRE FILMS Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -7267,7 +7235,7 @@
    "industry": "Financial Services",
    "isin": "INE565A01014",
    "name": "Indian Overseas Bank",
-   "capBand": "small",
+   "capBand": "mid",
    "indices": [
     "Nifty Psubank"
    ]
@@ -7354,9 +7322,6 @@
     "Nifty India Railways PSU",
     "Nifty Indiadigital",
     "Nifty Indiatourism",
-    "Nifty Mobility",
-    "Nifty Non Cyclicalconsumer",
-    "Nifty Pse",
     "Nifty Transportationandlogistics"
    ]
   },
@@ -7436,15 +7401,6 @@
     "Nifty Sme"
    ]
   },
-  "IVALUE": {
-   "industry": "Information Technology",
-   "isin": "INE056801025",
-   "name": "Ivalue Infosolutions Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "IWARE": {
    "industry": "Services",
    "isin": "INE1AII01014",
@@ -7500,9 +7456,7 @@
    "isin": "INE0YD401026",
    "name": "Jain Resource Recycling Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "indices": []
   },
   "JALAN": {
    "industry": "Services",
@@ -7519,15 +7473,6 @@
    "name": "Jamna Auto Industries Ltd.",
    "capBand": "micro",
    "indices": []
-  },
-  "JARO": {
-   "industry": "Consumer Services",
-   "isin": "INE00YJ01010",
-   "name": "Jaro Institute of Technology Management and Research Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
   },
   "JAYBEE": {
    "industry": "Capital Goods",
@@ -7556,7 +7501,7 @@
   },
   "JBMA": {
    "industry": "Automobile and Auto Components",
-   "isin": "INE927D01044",
+   "isin": "INE927D01051",
    "name": "JBM Auto Ltd.",
    "capBand": "small",
    "indices": [
@@ -7636,7 +7581,7 @@
    "industry": "Construction Materials",
    "isin": "INE786A01032",
    "name": "JK Lakshmi Cement Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Cement"
    ]
@@ -7659,7 +7604,7 @@
    "industry": "Healthcare",
    "isin": "INE682M01012",
    "name": "Jupiter Life Line Hospitals Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Hospitals"
    ]
@@ -7670,6 +7615,15 @@
    "name": "JM Financial Ltd.",
    "capBand": "small",
    "indices": []
+  },
+  "JNPR": {
+   "industry": "Power",
+   "isin": "INE05C901015",
+   "name": "Juniper Green Energy Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
   },
   "JPPOWER": {
    "industry": "Power",
@@ -7689,6 +7643,15 @@
    "capBand": "micro",
    "indices": [
     "Nifty SFBS MFIS"
+   ]
+  },
+  "JSIPL": {
+   "industry": "Capital Goods",
+   "isin": "INE1DLO01028",
+   "name": "Jindal Supreme (India) Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "JSL": {
@@ -7714,16 +7677,8 @@
    "name": "JSW Cement Ltd.",
    "capBand": "small",
    "indices": [
-    "Nifty Cement",
-    "Nifty IPO"
+    "Nifty Cement"
    ]
-  },
-  "JSWDULUX": {
-   "industry": "Consumer Durables",
-   "isin": "INE133A01011",
-   "name": "JSW Dulux Ltd.",
-   "capBand": "small",
-   "indices": []
   },
   "JSWENERGY": {
    "industry": "Power",
@@ -7768,10 +7723,8 @@
    "name": "Jubilant Foodworks Ltd.",
    "capBand": "mid",
    "indices": [
-    "Nifty Conglomerate 50",
     "Nifty India New Age Consumption",
-    "Nifty Indiatourism",
-    "Nifty Non Cyclicalconsumer"
+    "Nifty Indiatourism"
    ]
   },
   "JUBLINGREA": {
@@ -7779,18 +7732,14 @@
    "isin": "INE0BY001018",
    "name": "Jubilant Ingrevia Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty Conglomerate 50"
-   ]
+   "indices": []
   },
   "JUBLPHARMA": {
    "industry": "Healthcare",
    "isin": "INE700A01033",
    "name": "Jubilant Pharmova Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty Conglomerate 50"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "JUSTDIAL": {
    "industry": "Consumer Services",
@@ -7885,6 +7834,15 @@
     "Nifty Sme"
    ]
   },
+  "KANOHAR": {
+   "industry": "Capital Goods",
+   "isin": "INE877D01025",
+   "name": "Kanohar Electricals Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "KANSAINER": {
    "industry": "CONSUMER GOODS",
    "isin": "INE531A01024",
@@ -7892,6 +7850,15 @@
    "capBand": "micro",
    "indices": [
     "Nifty Housing"
+   ]
+  },
+  "KARAMTARA": {
+   "industry": "Capital Goods",
+   "isin": "INE590T01012",
+   "name": "Karamtara Engineering Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "KARNIKA": {
@@ -7950,7 +7917,7 @@
   "KCK": {
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE0J1E01027",
-   "name": "Kck Industries Ltd.",
+   "name": "KCK INDUSTRIES Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -7984,16 +7951,8 @@
    "indices": [
     "Nifty Capital Goods",
     "Nifty Core Housing",
+    "Nifty EV New Age Automotive",
     "Nifty Indiamanufacturing"
-   ]
-  },
-  "KEL": {
-   "industry": "Consumer Durables",
-   "isin": "INE0OWX01025",
-   "name": "Kundan Edifice Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Sme"
    ]
   },
   "KEN": {
@@ -8029,6 +7988,7 @@
    "name": "Krishna Institute of Medical Sciences Ltd.",
    "capBand": "small",
    "indices": [
+    "Nifty Healthcare",
     "Nifty Hospitals"
    ]
   },
@@ -8036,7 +7996,7 @@
    "industry": "Capital Goods",
    "isin": "INE732A01036",
    "name": "Kirloskar Brothers Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "KIRLOSENG": {
@@ -8060,7 +8020,7 @@
    "industry": "Financial Services",
    "isin": "INE12F801023",
    "name": "OnEMI Technology Solutions Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
    ]
@@ -8099,6 +8059,13 @@
     "Nifty Sme"
    ]
   },
+  "KMEW": {
+   "industry": "Services",
+   "isin": "INE0CJD01029",
+   "name": "Knowledge Marine & Engineering Works Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "KNACK": {
    "industry": "Capital Goods",
    "isin": "INE17QZ01016",
@@ -8120,7 +8087,7 @@
   "KODYTECH": {
    "industry": "Information Technology",
    "isin": "INE0Q7P01013",
-   "name": "Kody Technolab Ltd.",
+   "name": "KODY TECHNOLAB Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -8189,7 +8156,7 @@
    "industry": "Information Technology",
    "isin": "INE04I401011",
    "name": "KPIT Technologies Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
     "Nifty EV New Age Automotive",
     "Nifty Indiadigital"
@@ -8243,7 +8210,7 @@
    "industry": "Capital Goods",
    "isin": "INE999A01023",
    "name": "KSB Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "KSCL": {
@@ -8278,6 +8245,13 @@
     "Nifty IPO"
    ]
   },
+  "KWIL": {
+   "industry": "Fast Moving Consumer Goods",
+   "isin": "INE2KCE01013",
+   "name": "Kwality Wall's (India) Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "LAKSHYA": {
    "industry": "Construction",
    "isin": "INE0VZS01015",
@@ -8285,6 +8259,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
+   ]
+  },
+  "LALITHAA": {
+   "industry": "Consumer Durables",
+   "isin": "INE0K9O01026",
+   "name": "Lalithaa Jewellery Mart Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "LALPATHLAB": {
@@ -8316,10 +8299,8 @@
    "industry": "Information Technology",
    "isin": "INE0I7C01011",
    "name": "Latent View Analytics Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty Indiadigital"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "LAURUSLABS": {
    "industry": "Healthcare",
@@ -8332,10 +8313,28 @@
     "Nifty Pharma"
    ]
   },
-  "LAXMIINDIA": {
-   "industry": "Financial Services",
-   "isin": "INE06WU01026",
-   "name": "Laxmi India Finance Ltd.",
+  "LCCPROJECT": {
+   "industry": "Construction",
+   "isin": "INE1FPN01026",
+   "name": "LCC Projects Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
+  "LCL": {
+   "industry": "Capital Goods",
+   "isin": "INE0QJW01029",
+   "name": "Lohia Corp Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
+  "LEAPIND": {
+   "industry": "Services",
+   "isin": "INE00GO01025",
+   "name": "LEAP India Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty IPO"
@@ -8359,6 +8358,7 @@
    "indices": [
     "Nifty IPO",
     "Nifty India New Age Consumption",
+    "Nifty Non Cyclicalconsumer",
     "Nifty Retail"
    ]
   },
@@ -8369,8 +8369,9 @@
    "capBand": "mid",
    "indices": [
     "Nifty Consumerdurables",
-    "Nifty IPO",
-    "Nifty India New Age Consumption"
+    "Nifty Core Housing",
+    "Nifty India New Age Consumption",
+    "Nifty MNC"
    ]
   },
   "LICHSGFIN": {
@@ -8408,7 +8409,7 @@
   "LLOYDS": {
    "industry": "Consumer Services",
    "isin": "INE0DTQ01028",
-   "name": "Lloyds Luxuries Ltd.",
+   "name": "LLOYDS LUXURIES Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -8441,7 +8442,7 @@
    "industry": "Realty",
    "isin": "INE670K01029",
    "name": "Lodha Developers Ltd.",
-   "capBand": "large",
+   "capBand": "mid",
    "indices": [
     "Nifty Core Housing",
     "Nifty India Infrastructure Logistics",
@@ -8452,11 +8453,9 @@
   "LOTUSDEV": {
    "industry": "Realty",
    "isin": "INE0V9Q01010",
-   "name": "Sri Lotus Developers and Realty Ltd.",
+   "name": "SRI LOTUS DEVELOPERS AND REALTY Ltd.",
    "capBand": "micro",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "indices": []
   },
   "LRRPL": {
    "industry": "Capital Goods",
@@ -8515,9 +8514,15 @@
    "capBand": "mid",
    "indices": [
     "Nifty Conglomerate 50",
-    "Nifty EV New Age Automotive",
     "Nifty Indiadigital"
    ]
+  },
+  "LUMAXIND": {
+   "industry": "Automobile and Auto Components",
+   "isin": "INE162B01018",
+   "name": "Lumax Industries Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "LUMAXTECH": {
    "industry": "Automobile and Auto Components",
@@ -8525,6 +8530,15 @@
    "name": "Lumax Auto Technologies Ltd.",
    "capBand": "micro",
    "indices": []
+  },
+  "LUMINO": {
+   "industry": "Capital Goods",
+   "isin": "INE185Q01025",
+   "name": "Lumino Industries Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
   },
   "LUPIN": {
    "industry": "Healthcare",
@@ -8624,20 +8638,6 @@
     "Nifty Sme"
    ]
   },
-  "MAHSCOOTER": {
-   "industry": "Financial Services",
-   "isin": "INE288A01013",
-   "name": "Maharashtra Scooters Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
-  "MAHSEAMLES": {
-   "industry": "Capital Goods",
-   "isin": "INE271B01025",
-   "name": "Maharashtra Seamless Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
   "MAITREYA": {
    "industry": "Healthcare",
    "isin": "INE0PLQ01011",
@@ -8701,6 +8701,15 @@
     "Nifty Sme"
    ]
   },
+  "MANIPALHOS": {
+   "industry": "Healthcare",
+   "isin": "INE459N01021",
+   "name": "Manipal Health Enterprises Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "MANKIND": {
    "industry": "Healthcare",
    "isin": "INE634S01028",
@@ -8731,10 +8740,8 @@
    "industry": "Information Technology",
    "isin": "INE0BV301023",
    "name": "C.E. Info Systems Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty Indiadigital"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "MARC": {
    "industry": "Services",
@@ -8879,17 +8886,16 @@
     "Nifty Capital Goods",
     "Nifty India Infrastructure Logistics",
     "Nifty Indiadefence",
-    "Nifty Indiamanufacturing"
+    "Nifty Indiamanufacturing",
+    "Nifty Transportationandlogistics"
    ]
   },
-  "MBEL": {
-   "industry": "Construction",
-   "isin": "INE08N601015",
-   "name": "M & B Engineering Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
+  "MBAPL": {
+   "industry": "Chemicals",
+   "isin": "INE900L01028",
+   "name": "Madhya Bharat Agro Products Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "MCON": {
    "industry": "Construction Materials",
@@ -8958,10 +8964,11 @@
    "industry": "Consumer Services",
    "isin": "INE0VDM01015",
    "name": "Meesho Ltd.",
-   "capBand": "small",
+   "capBand": "mid",
    "indices": [
     "Nifty IPO",
     "Nifty India Internet",
+    "Nifty India New Age Consumption",
     "Nifty Indiadigital",
     "Nifty Retail"
    ]
@@ -8982,15 +8989,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "MEIL": {
-   "industry": "Capital Goods",
-   "isin": "INE0PKD01011",
-   "name": "Mangal Electrical Industries Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "METROPOLIS": {
@@ -9076,6 +9074,15 @@
     "Nifty Sme"
    ]
   },
+  "MILKYMIST": {
+   "industry": "Fast Moving Consumer Goods",
+   "isin": "INE00IT01020",
+   "name": "Milky Mist Dairy Food Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "MILTON": {
    "industry": "Consumer Durables",
    "isin": "INE376Y01016",
@@ -9090,18 +9097,7 @@
    "isin": "INE842C01021",
    "name": "Minda Corporation Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty EV New Age Automotive"
-   ]
-  },
-  "MINDAIND": {
-   "industry": "Automobile and Auto Components",
-   "isin": "INE405E01023",
-   "name": "Minda Industries Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Transportationandlogistics"
-   ]
+   "indices": []
   },
   "MMEL": {
    "industry": "Services",
@@ -9136,6 +9132,15 @@
    "name": "MOIL Ltd.",
    "capBand": "micro",
    "indices": []
+  },
+  "MOLBIO": {
+   "industry": "Healthcare",
+   "isin": "INE869T01028",
+   "name": "Molbio Diagnostics Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
   },
   "MONOLITH": {
    "industry": "Capital Goods",
@@ -9174,7 +9179,8 @@
     "Nifty EV New Age Automotive",
     "Nifty Indiamanufacturing",
     "Nifty Infra",
-    "Nifty Mobility"
+    "Nifty Mobility",
+    "Nifty Transportationandlogistics"
    ]
   },
   "MOTILALOFS": {
@@ -9214,6 +9220,24 @@
    "indices": [
     "Nifty IT",
     "Nifty Indiadigital"
+   ]
+  },
+  "MPIMANIPAL": {
+   "industry": "Financial Services",
+   "isin": "INE241U01028",
+   "name": "Manipal Payment and Identity Solutions Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
+  "MPSLTD": {
+   "industry": "Media Entertainment & Publication",
+   "isin": "INE943D01017",
+   "name": "MPS Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Media"
    ]
   },
   "MPTODAY": {
@@ -9276,7 +9300,7 @@
    "industry": "Capital Goods",
    "isin": "INE864I01014",
    "name": "MTAR Technologies Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": [
     "Nifty Indiadefence"
    ]
@@ -9307,6 +9331,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty SFBS MFIS"
+   ]
+  },
+  "MVELECTRO": {
+   "industry": "Capital Goods",
+   "isin": "INE0OWZ01020",
+   "name": "MV Electrosystems Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "MVKAGRO": {
@@ -9369,7 +9402,8 @@
    "name": "National Aluminium Co. Ltd.",
    "capBand": "mid",
    "indices": [
-    "Nifty Metal"
+    "Nifty Metal",
+    "Nifty Pse"
    ]
   },
   "NAUKRI": {
@@ -9383,8 +9417,7 @@
     "Nifty India New Age Consumption",
     "Nifty Indiadigital",
     "Nifty Non Cyclicalconsumer",
-    "Nifty Retail",
-    "Nifty Service"
+    "Nifty Retail"
    ]
   },
   "NAVA": {
@@ -9477,7 +9510,7 @@
    "industry": "Healthcare",
    "isin": "INE428V01029",
    "name": "Nephrocare Health Services Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
    ]
@@ -9495,7 +9528,7 @@
    "industry": "Services",
    "isin": "INE317F01035",
    "name": "NESCO Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Commercial Transport Services"
    ]
@@ -9541,10 +9574,8 @@
    "industry": "Information Technology",
    "isin": "INE619B01017",
    "name": "Newgen Software Technologies Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty Indiadigital"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "NEWJAISA": {
    "industry": "Information Technology",
@@ -9562,11 +9593,20 @@
    "capBand": "micro",
    "indices": []
   },
+  "NFPSAMPOOR": {
+   "industry": "Fast Moving Consumer Goods",
+   "isin": "INE0T1501010",
+   "name": "NFP Sampoorna Foods Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
+   ]
+  },
   "NH": {
    "industry": "Healthcare",
    "isin": "INE410P01011",
    "name": "Narayana Hrudayalaya Ltd.",
-   "capBand": "small",
+   "capBand": "mid",
    "indices": [
     "Nifty Hospitals"
    ]
@@ -9589,7 +9629,7 @@
    "industry": "Financial Services",
    "isin": "INE470Y01017",
    "name": "The New India Assurance Company Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
     "Nifty Insurance"
    ]
@@ -9625,7 +9665,7 @@
    "industry": "Financial Services",
    "isin": "INE995S01015",
    "name": "Niva Bupa Health Insurance Company Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": [
     "Nifty Insurance"
    ]
@@ -9661,6 +9701,13 @@
    "indices": [
     "Nifty Sme"
    ]
+  },
+  "NORTHARC": {
+   "industry": "Financial Services",
+   "isin": "INE850M01015",
+   "name": "Northern Arc Capital Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "NRVANDANA": {
    "industry": "Textiles",
@@ -9791,6 +9838,7 @@
    "name": "Ola Electric Mobility Ltd.",
    "capBand": "small",
    "indices": [
+    "Nifty EV New Age Automotive",
     "Nifty India New Age Consumption"
    ]
   },
@@ -9825,7 +9873,7 @@
    "industry": "Capital Goods",
    "isin": "INE0UH301010",
    "name": "Omnitech Engineering Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
    ]
@@ -9883,7 +9931,7 @@
    "industry": "Telecommunication",
    "isin": "INE350C01017",
    "name": "Optiemus Infracom Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Telecommunications"
    ]
@@ -9899,7 +9947,7 @@
   },
   "ORIANA": {
    "industry": "Capital Goods",
-   "isin": "INE0OUT01019",
+   "isin": "INE0OUT01027",
    "name": "Oriana Power Ltd.",
    "capBand": "unclassified",
    "indices": [
@@ -9910,7 +9958,7 @@
    "industry": "Construction Materials",
    "isin": "INE876N01018",
    "name": "Orient Cement Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Cement"
    ]
@@ -9919,7 +9967,7 @@
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE16NZ01023",
    "name": "Orkla India Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty IPO"
    ]
@@ -9949,15 +9997,6 @@
     "Nifty Sme"
    ]
   },
-  "PACEDIGITK": {
-   "industry": "Telecommunication",
-   "isin": "INE0S3G01027",
-   "name": "Pace Digitek Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "PAGEIND": {
    "industry": "Textiles",
    "isin": "INE761H01022",
@@ -9968,6 +10007,13 @@
     "Nifty Indiamanufacturing",
     "Nifty Non Cyclicalconsumer"
    ]
+  },
+  "PAISALO": {
+   "industry": "Financial Services",
+   "isin": "INE420C01059",
+   "name": "Paisalo Digital Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "PARADEEP": {
    "industry": "Chemicals",
@@ -9997,7 +10043,7 @@
   "PARAMOUNT": {
    "industry": "Textiles",
    "isin": "INE0TG801013",
-   "name": "Paramount Dye Tec Ltd.",
+   "name": "PARAMOUNT DYE TEC Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -10019,15 +10065,6 @@
    "capBand": "micro",
    "indices": [
     "Nifty Indiadefence"
-   ]
-  },
-  "PARIN": {
-   "industry": "Consumer Durables",
-   "isin": "INE00U801010",
-   "name": "Parin Enterprises Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Sme"
    ]
   },
   "PARKHOSPS": {
@@ -10067,28 +10104,10 @@
     "Nifty FMCG"
    ]
   },
-  "PATELRMART": {
-   "industry": "Consumer Services",
-   "isin": "INE0R8B01010",
-   "name": "Patel Retail Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "PATILAUTOM": {
    "industry": "Capital Goods",
    "isin": "INE17GV01016",
    "name": "Patil Automation Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Sme"
-   ]
-  },
-  "PATTECH": {
-   "industry": "Capital Goods",
-   "isin": "INE0NZW01014",
-   "name": "Pattech Fitwell Tube Components Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -10131,6 +10150,13 @@
    "capBand": "micro",
    "indices": []
   },
+  "PDSL": {
+   "industry": "Textiles",
+   "isin": "INE111Q01021",
+   "name": "PDS Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "PELATRO": {
    "industry": "Media Entertainment & Publication",
    "isin": "INE0VG601013",
@@ -10147,6 +10173,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
+   ]
+  },
+  "PERNIASPOP": {
+   "industry": "Consumer Services",
+   "isin": "INE0I1B01016",
+   "name": "Purple Style Labs Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "PERSISTENT": {
@@ -10182,19 +10217,13 @@
     "Nifty Pse"
    ]
   },
-  "PFIZER": {
-   "industry": "Healthcare",
-   "isin": "INE182A01018",
-   "name": "Pfizer Ltd.",
-   "capBand": "small",
-   "indices": []
-  },
   "PFOCUS": {
    "industry": "Media Entertainment & Publication",
    "isin": "INE367G01038",
    "name": "Prime Focus Ltd.",
    "capBand": "small",
    "indices": [
+    "Nifty India New Age Consumption",
     "Nifty Media"
    ]
   },
@@ -10208,6 +10237,13 @@
     "Nifty Core Housing",
     "Nifty India New Age Consumption"
    ]
+  },
+  "PGHL": {
+   "industry": "Healthcare",
+   "isin": "INE199A01012",
+   "name": "Procter & Gamble Health Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "PGIL": {
    "industry": "Textiles",
@@ -10273,7 +10309,6 @@
    "capBand": "mid",
    "indices": [
     "Nifty Chemicals",
-    "Nifty Commodities",
     "Nifty Indiamanufacturing"
    ]
   },
@@ -10285,6 +10320,7 @@
    "indices": [
     "Nifty IPO",
     "Nifty India Internet",
+    "Nifty India New Age Consumption",
     "Nifty Indiadigital"
    ]
   },
@@ -10292,7 +10328,7 @@
    "industry": "Financial Services",
    "isin": "INE202B01038",
    "name": "Piramal Finance Ltd.",
-   "capBand": "small",
+   "capBand": "mid",
    "indices": [
     "Nifty NBFC"
    ]
@@ -10367,7 +10403,7 @@
    "industry": "Capital Goods",
    "isin": "INE455K01017",
    "name": "Polycab India Ltd.",
-   "capBand": "mid",
+   "capBand": "large",
    "indices": [
     "Nifty Capital Goods",
     "Nifty Core Housing",
@@ -10427,7 +10463,7 @@
    "industry": "Capital Goods",
    "isin": "INE921L01032",
    "name": "Powerica Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
    ]
@@ -10436,11 +10472,12 @@
    "industry": "Capital Goods",
    "isin": "INE07Y701011",
    "name": "Hitachi Energy India Ltd.",
-   "capBand": "mid",
+   "capBand": "large",
    "indices": [
     "Nifty Capital Goods",
     "Nifty Energy",
     "Nifty India Infrastructure Logistics",
+    "Nifty Indiamanufacturing",
     "Nifty MNC"
    ]
   },
@@ -10459,7 +10496,6 @@
    "name": "Piramal Pharma Ltd.",
    "capBand": "small",
    "indices": [
-    "Nifty Healthcare",
     "Nifty Pharma"
    ]
   },
@@ -10490,6 +10526,15 @@
     "Nifty Sme"
    ]
   },
+  "PRANAV": {
+   "industry": "Realty",
+   "isin": "INE0H4201019",
+   "name": "Pranav Constructions Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "PRANIK": {
    "industry": "Services",
    "isin": "INE0VJG01014",
@@ -10497,6 +10542,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
+   ]
+  },
+  "PRASOLCHEM": {
+   "industry": "Chemicals",
+   "isin": "INE455U01024",
+   "name": "Prasol Chemicals Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "PRATHAM": {
@@ -10516,6 +10570,13 @@
    "indices": [
     "Nifty Sme"
    ]
+  },
+  "PRECWIRE": {
+   "industry": "Capital Goods",
+   "isin": "INE372C01037",
+   "name": "Precision Wires India Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "PREMIERENE": {
    "industry": "Capital Goods",
@@ -10585,7 +10646,7 @@
    "industry": "Chemicals",
    "isin": "INE959A01019",
    "name": "Privi Speciality Chemicals Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "PRIZOR": {
@@ -10646,17 +10707,10 @@
    "industry": "Construction Materials",
    "isin": "INE010A01011",
    "name": "Prism Johnson Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Cement"
    ]
-  },
-  "PRUDENT": {
-   "industry": "Financial Services",
-   "isin": "INE00F201020",
-   "name": "Prudent Corporate Advisory Services Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "PSB": {
    "industry": "Financial Services",
@@ -10777,6 +10831,15 @@
     "Nifty Sme"
    ]
   },
+  "QLINE": {
+   "industry": "Healthcare",
+   "isin": "INE1G2W01011",
+   "name": "Q-Line Biotech Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
+   ]
+  },
   "QPOWER": {
    "industry": "Capital Goods",
    "isin": "INE0SII01026",
@@ -10787,7 +10850,7 @@
   "QUADPRO": {
    "industry": "Information Technology",
    "isin": "INE0GOJ01027",
-   "name": "Quadpro ITeS Ltd.",
+   "name": "QUADPRO ITES Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -11023,7 +11086,7 @@
    "industry": "Financial Services",
    "isin": "INE020B01018",
    "name": "REC Ltd.",
-   "capBand": "large",
+   "capBand": "mid",
    "indices": [
     "Nifty Finance",
     "Nifty Pse"
@@ -11037,13 +11100,6 @@
    "indices": [
     "Nifty Commercial Transport Services"
    ]
-  },
-  "REDTAPE": {
-   "industry": "Consumer Durables",
-   "isin": "INE0LXT01019",
-   "name": "Redtape Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "REFEX": {
    "industry": "Utilities",
@@ -11059,15 +11115,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "REGAAL": {
-   "industry": "Fast Moving Consumer Goods",
-   "isin": "INE0MHO01029",
-   "name": "Regaal Resources Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "RELAXO": {
@@ -11108,6 +11155,15 @@
     "Nifty Sme"
    ]
   },
+  "RENTOMOJO": {
+   "industry": "Services",
+   "isin": "INE08T701025",
+   "name": "Rentomojo Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "RENUKA": {
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE087H01022",
@@ -11116,6 +11172,13 @@
    "indices": [
     "Nifty Sugar Ethanol"
    ]
+  },
+  "RESPONIND": {
+   "industry": "Consumer Durables",
+   "isin": "INE688D01026",
+   "name": "Responsive Industries Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "REXPIPES": {
    "industry": "Capital Goods",
@@ -11130,6 +11193,15 @@
    "industry": "Consumer Durables",
    "isin": "INE113601012",
    "name": "Rexpro Enterprises Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
+   ]
+  },
+  "RFBL": {
+   "industry": "Capital Goods",
+   "isin": "INE0V2V01015",
+   "name": "RFBL Flexi Pack Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -11167,7 +11239,6 @@
    "capBand": "small",
    "indices": [
     "Nifty Construction",
-    "Nifty India Infrastructure Logistics",
     "Nifty India Railways PSU"
    ]
   },
@@ -11281,10 +11352,8 @@
    "industry": "Consumer Services",
    "isin": "INE834M01019",
    "name": "RattanIndia Enterprises Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
-    "Nifty EV New Age Automotive",
-    "Nifty India Internet",
     "Nifty Retail"
    ]
   },
@@ -11301,10 +11370,8 @@
    "industry": "Healthcare",
    "isin": "INE506V01022",
    "name": "Rubicon Research Ltd.",
-   "capBand": "micro",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "capBand": "small",
+   "indices": []
   },
   "RULKA": {
    "industry": "Services",
@@ -11323,8 +11390,7 @@
    "indices": [
     "Nifty Construction",
     "Nifty India Infrastructure Logistics",
-    "Nifty India Railways PSU",
-    "Nifty Pse"
+    "Nifty India Railways PSU"
    ]
   },
   "SAAKSHI": {
@@ -11334,15 +11400,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "SAATVIKGL": {
-   "industry": "Capital Goods",
-   "isin": "INE13B501022",
-   "name": "Saatvik Green Energy Ltd.",
-   "capBand": "micro",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "SABAR": {
@@ -11441,7 +11498,8 @@
    "indices": [
     "Nifty Housing",
     "Nifty India Railways PSU",
-    "Nifty Metal"
+    "Nifty Metal",
+    "Nifty Pse"
    ]
   },
   "SAILIFE": {
@@ -11480,15 +11538,6 @@
     "Nifty Sme"
    ]
   },
-  "SAMBHV": {
-   "industry": "Capital Goods",
-   "isin": "INE12NJ01018",
-   "name": "Sambhv Steel Tubes Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "SAMHI": {
    "industry": "Consumer Services",
    "isin": "INE08U801020",
@@ -11521,29 +11570,21 @@
     "Nifty Sme"
    ]
   },
-  "SANOFICONR": {
-   "industry": "Healthcare",
-   "isin": "INE0UOS01011",
-   "name": "Sanofi Consumer Healthcare India Ltd.",
-   "capBand": "micro",
-   "indices": []
-  },
   "SANSERA": {
    "industry": "Automobile and Auto Components",
    "isin": "INE953O01021",
    "name": "Sansera Engineering Ltd.",
-   "capBand": "micro",
-   "indices": []
+   "capBand": "small",
+   "indices": [
+    "Nifty EV New Age Automotive"
+   ]
   },
   "SAPPHIRE": {
    "industry": "Consumer Services",
    "isin": "INE806T01020",
    "name": "Sapphire Foods India Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty India New Age Consumption",
-    "Nifty Indiatourism"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "SARDAEN": {
    "industry": "Metals & Mining",
@@ -11556,10 +11597,8 @@
    "industry": "Media Entertainment & Publication",
    "isin": "INE979A01025",
    "name": "Saregama India Ltd",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": [
-    "Nifty Conglomerate 50",
-    "Nifty India New Age Consumption",
     "Nifty Media"
    ]
   },
@@ -11639,7 +11678,7 @@
    "industry": "Financial Services",
    "isin": "INE423Y01016",
    "name": "SBFC Finance Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": [
     "Nifty NBFC"
    ]
@@ -11739,7 +11778,7 @@
    "industry": "Automobile and Auto Components",
    "isin": "INE00XB01019",
    "name": "SEDEMAC Mechatronics Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
    ]
@@ -11769,6 +11808,13 @@
    "capBand": "micro",
    "indices": []
   },
+  "SENORES": {
+   "industry": "Healthcare",
+   "isin": "INE0RB801010",
+   "name": "Senores Pharmaceuticals Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "SERVICE": {
    "industry": "Services",
    "isin": "INE0P1Q01015",
@@ -11794,11 +11840,18 @@
     "Nifty Sme"
    ]
   },
+  "SGMART": {
+   "industry": "Metals & Mining",
+   "isin": "INE385F01024",
+   "name": "SG Mart Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "SHADOWFAX": {
    "industry": "Services",
    "isin": "INE12UN01015",
    "name": "Shadowfax Technologies Ltd.",
-   "capBand": "unclassified",
+   "capBand": "micro",
    "indices": [
     "Nifty IPO"
    ]
@@ -11817,6 +11870,15 @@
    "capBand": "micro",
    "indices": []
   },
+  "SHANKESH": {
+   "industry": "Consumer Durables",
+   "isin": "INE1WFC01025",
+   "name": "Shankesh Jewellers Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "SHANTHALA": {
    "industry": "Services",
    "isin": "INE0Q9Q01017",
@@ -11824,15 +11886,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "SHANTIGOLD": {
-   "industry": "Consumer Durables",
-   "isin": "INE06ZD01017",
-   "name": "Shanti Gold International Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "SHARDACROP": {
@@ -11894,12 +11947,28 @@
     "Nifty Sme"
    ]
   },
+  "SHILCTECH": {
+   "industry": "Capital Goods",
+   "isin": "INE024F01011",
+   "name": "Shilchar Technologies Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "SHILPAMED": {
    "industry": "Healthcare",
    "isin": "INE790G01031",
    "name": "Shilpa Medicare Ltd.",
    "capBand": "micro",
    "indices": []
+  },
+  "SHIPROCKET": {
+   "industry": "Services",
+   "isin": "INE0FOO01011",
+   "name": "Shiprocket Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
   },
   "SHIVASHRIT": {
    "industry": "Fast Moving Consumer Goods",
@@ -11923,24 +11992,30 @@
    "industry": "Construction Materials",
    "isin": "INE070A01015",
    "name": "Shree Cement Ltd.",
-   "capBand": "large",
+   "capBand": "mid",
    "indices": [
     "Nifty Cement",
     "Nifty Commodities",
     "Nifty Core Housing",
     "Nifty Housing",
-    "Nifty India Infrastructure Logistics",
-    "Nifty Infra"
+    "Nifty India Infrastructure Logistics"
+   ]
+  },
+  "SHREEDHAR": {
+   "industry": "Textiles",
+   "isin": "INE0K3301012",
+   "name": "Shreedhar Spinners Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
    ]
   },
   "SHREEJISPG": {
    "industry": "Services",
    "isin": "INE1B6101010",
    "name": "Shreeji Shipping Global Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "SHREEKARNI": {
    "industry": "Textiles",
@@ -11978,20 +12053,11 @@
     "Nifty Sme"
    ]
   },
-  "SHRINGARMS": {
-   "industry": "Consumer Durables",
-   "isin": "INE1B3L01017",
-   "name": "Shringar House of Mangalsutra Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
   "SHRIPISTON": {
    "industry": "Automobile and Auto Components",
    "isin": "INE526E01018",
    "name": "SPR Auto Technologies Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": []
   },
   "SHRIRAMFIN": {
@@ -12079,14 +12145,21 @@
     "Nifty MNC"
    ]
   },
+  "SIGMAADV": {
+   "industry": "Capital Goods",
+   "isin": "INE933B01012",
+   "name": "SIGMA ADVANCED SYSTEMS LTD.",
+   "capBand": "micro",
+   "indices": [
+    "Nifty Indiadefence"
+   ]
+  },
   "SIGNATURE": {
    "industry": "Realty",
    "isin": "INE903U01023",
    "name": "Signatureglobal (India) Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty India Infrastructure Logistics"
-   ]
+   "indices": []
   },
   "SIGNORIA": {
    "industry": "Textiles",
@@ -12133,33 +12206,23 @@
     "Nifty Sme"
    ]
   },
+  "SJS": {
+   "industry": "Automobile and Auto Components",
+   "isin": "INE284S01014",
+   "name": "S.J.S. Enterprises Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "SJVN": {
    "industry": "Power",
    "isin": "INE002L01015",
    "name": "SJVN Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
     "Nifty CPSE",
-    "Nifty Energy",
     "Nifty India Infrastructure Logistics",
     "Nifty Power"
    ]
-  },
-  "SKFINDIA": {
-   "industry": "Capital Goods",
-   "isin": "INE640A01023",
-   "name": "SKF India Ltd.",
-   "capBand": "micro",
-   "indices": [
-    "Nifty Transportationandlogistics"
-   ]
-  },
-  "SKFINDUS": {
-   "industry": "Capital Goods",
-   "isin": "INE2J8701016",
-   "name": "SKF India (Industrial) Ltd.",
-   "capBand": "micro",
-   "indices": []
   },
   "SKIPPER": {
    "industry": "Capital Goods",
@@ -12184,6 +12247,15 @@
    "capBand": "micro",
    "indices": []
   },
+  "SKYWAYS": {
+   "industry": "Services",
+   "isin": "INE0PX301025",
+   "name": "Skyways Air Services Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "SLONE": {
    "industry": "Information Technology",
    "isin": "INE0SMA01017",
@@ -12206,10 +12278,9 @@
    "industry": "Services",
    "isin": "INE0NAZ01010",
    "name": "Smartworks Coworking Spaces Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
-    "Nifty Commercial Transport Services",
-    "Nifty IPO"
+    "Nifty Commercial Transport Services"
    ]
   },
   "SMLMAH": {
@@ -12268,10 +12339,10 @@
     "Nifty Indiamanufacturing"
    ]
   },
-  "SOLARWORLD": {
-   "industry": "Construction",
-   "isin": "INE0TY101024",
-   "name": "Solarworld Energy Solutions Ltd.",
+  "SONA": {
+   "industry": "Textiles",
+   "isin": "INE0LLZ01011",
+   "name": "Sonaselection India Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty IPO"
@@ -12286,7 +12357,8 @@
     "Nifty Auto",
     "Nifty EV New Age Automotive",
     "Nifty Indiamanufacturing",
-    "Nifty Mobility"
+    "Nifty Mobility",
+    "Nifty Transportationandlogistics"
    ]
   },
   "SONAMAC": {
@@ -12302,10 +12374,8 @@
    "industry": "Information Technology",
    "isin": "INE269A01021",
    "name": "Sonata Software Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty Indiadigital"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "SONUINFRA": {
    "industry": "Construction",
@@ -12388,7 +12458,7 @@
    "industry": "Chemicals",
    "isin": "INE663A01033",
    "name": "Supreme Petrochem Ltd.",
-   "capBand": "small",
+   "capBand": "micro",
    "indices": []
   },
   "SPPPOLY": {
@@ -12456,6 +12526,15 @@
     "Nifty Sme"
    ]
   },
+  "SSRETAIL": {
+   "industry": "Consumer Services",
+   "isin": "INE1EQW01028",
+   "name": "SS Retail Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "STAR": {
    "industry": "Healthcare",
    "isin": "INE939A01011",
@@ -12467,7 +12546,7 @@
    "industry": "Construction Materials",
    "isin": "INE460H01021",
    "name": "Star Cement Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Cement"
    ]
@@ -12481,12 +12560,23 @@
     "Nifty Insurance"
    ]
   },
+  "STEAMHOUSE": {
+   "industry": "Chemicals",
+   "isin": "INE0FRO01022",
+   "name": "Steamhouse India Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "STLTECH": {
    "industry": "Telecommunication",
    "isin": "INE089C01029",
    "name": "Sterlite Technologies Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": [
+    "Nifty India Infrastructure Logistics",
+    "Nifty Indiadigital",
     "Nifty Telecommunications"
    ]
   },
@@ -12517,20 +12607,10 @@
     "Nifty Sme"
    ]
   },
-  "STYL": {
-   "industry": "Financial Services",
-   "isin": "INE04VU01023",
-   "name": "Seshaasai Technologies Ltd.",
-   "capBand": "micro",
-   "indices": [
-    "Nifty IPO",
-    "Nifty India Internet"
-   ]
-  },
-  "STYRENIX": {
-   "industry": "Chemicals",
-   "isin": "INE189B01011",
-   "name": "Styrenix Performance Materials Ltd.",
+  "STYLAMIND": {
+   "industry": "Consumer Durables",
+   "isin": "INE239C01020",
+   "name": "Stylam Industries Ltd.",
    "capBand": "micro",
    "indices": []
   },
@@ -12588,10 +12668,15 @@
    "industry": "Automobile and Auto Components",
    "isin": "INE387A01021",
    "name": "Sundram Fasteners Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Transportationandlogistics"
-   ]
+   "capBand": "micro",
+   "indices": []
+  },
+  "SUNFLAG": {
+   "industry": "Capital Goods",
+   "isin": "INE947A01014",
+   "name": "Sunflag Iron & Steel Company Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "SUNLITE": {
    "industry": "Capital Goods",
@@ -12620,6 +12705,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
+   ]
+  },
+  "SUNSHINE": {
+   "industry": "Media Entertainment & Publication",
+   "isin": "INE1B3O01011",
+   "name": "Sunshine Pictures Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "SUNTECH": {
@@ -12698,6 +12792,13 @@
     "Nifty SFBS MFIS"
    ]
   },
+  "SUVEN": {
+   "industry": "Healthcare",
+   "isin": "INE495B01038",
+   "name": "Suven Life Sciences Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "SUZLON": {
    "industry": "Capital Goods",
    "isin": "INE040H01021",
@@ -12738,7 +12839,8 @@
     "Nifty Indiadigital",
     "Nifty Mobility",
     "Nifty Non Cyclicalconsumer",
-    "Nifty Retail"
+    "Nifty Retail",
+    "Nifty Transportationandlogistics"
    ]
   },
   "SWSOLAR": {
@@ -12759,14 +12861,21 @@
     "Nifty Sme"
    ]
   },
+  "SYMBIOTEC": {
+   "industry": "Healthcare",
+   "isin": "INE899I01028",
+   "name": "Symbiotec Pharmalab Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "SYNGENE": {
    "industry": "Healthcare",
    "isin": "INE398R01022",
    "name": "Syngene International Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty Healthcare"
-   ]
+   "indices": []
   },
   "SYNOPTICS": {
    "industry": "Information Technology",
@@ -12796,7 +12905,7 @@
   "TAC": {
    "industry": "Information Technology",
    "isin": "INE0SOY01013",
-   "name": "TAC Infosec Ltd.",
+   "name": "TAC INFOSEC Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -12839,9 +12948,7 @@
    "isin": "INE763I01026",
    "name": "Transformers And Rectifiers (India) Ltd.",
    "capBand": "small",
-   "indices": [
-    "Nifty India Infrastructure Logistics"
-   ]
+   "indices": []
   },
   "TATACAP": {
    "industry": "Financial Services",
@@ -12849,7 +12956,6 @@
    "name": "Tata Capital Ltd.",
    "capBand": "large",
    "indices": [
-    "Nifty IPO",
     "Nifty NBFC"
    ]
   },
@@ -12891,7 +12997,7 @@
    "industry": "Information Technology",
    "isin": "INE670A01012",
    "name": "Tata Elxsi Ltd.",
-   "capBand": "mid",
+   "capBand": "small",
    "indices": [
     "Nifty EV New Age Automotive",
     "Nifty Indiadigital"
@@ -12903,25 +13009,6 @@
    "name": "Tata Investment Corporation Ltd.",
    "capBand": "mid",
    "indices": []
-  },
-  "TATAMOTORS": {
-   "industry": "Automobile and Auto Components",
-   "isin": "INE155A01022",
-   "name": "Tata Motors Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty EV New Age Automotive",
-    "Nifty Transportationandlogistics"
-   ]
-  },
-  "TATAMTRDVR": {
-   "industry": "Automobile and Auto Components",
-   "isin": "IN9155A01020",
-   "name": "Tata Motors Ltd DVR",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Transportationandlogistics"
-   ]
   },
   "TATAPOWER": {
    "industry": "Power",
@@ -13016,9 +13103,20 @@
    "industry": "Capital Goods",
    "isin": "INE419M01027",
    "name": "TD Power Systems Ltd.",
-   "capBand": "micro",
+   "capBand": "small",
    "indices": [
-    "Nifty Capital Goods"
+    "Nifty Capital Goods",
+    "Nifty Energy",
+    "Nifty India Infrastructure Logistics"
+   ]
+  },
+  "TEAMTECH": {
+   "industry": "Construction Materials",
+   "isin": "INE2OL601013",
+   "name": "Teamtech Formwork Solutions Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
    ]
   },
   "TECHD": {
@@ -13060,6 +13158,15 @@
     "Nifty Service"
    ]
   },
+  "TECHNOCRAF": {
+   "industry": "Utilities",
+   "isin": "INE1D0W01018",
+   "name": "Technocraft Ventures Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
+   ]
+  },
   "TECHNOE": {
    "industry": "Construction",
    "isin": "INE285K01026",
@@ -13076,6 +13183,15 @@
    "name": "Tega Industries Ltd.",
    "capBand": "small",
    "indices": []
+  },
+  "TEJA": {
+   "industry": "Oil Gas & Consumable Fuels",
+   "isin": "INE0R1301019",
+   "name": "Teja Engineering Industries Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
+   ]
   },
   "TEJASCARGO": {
    "industry": "Services",
@@ -13095,6 +13211,15 @@
     "Nifty India Infrastructure Logistics",
     "Nifty Indiadigital",
     "Nifty Telecommunications"
+   ]
+  },
+  "TEMPSENS": {
+   "industry": "Capital Goods",
+   "isin": "INE1KZI01025",
+   "name": "Tempsens Instruments (India) Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "TENNIND": {
@@ -13126,17 +13251,17 @@
    "industry": "Consumer Durables",
    "isin": "INE085J01014",
    "name": "Thangamayil Jewellery Ltd.",
-   "capBand": "micro",
-   "indices": []
+   "capBand": "small",
+   "indices": [
+    "Nifty Consumerdurables"
+   ]
   },
   "THELEELA": {
    "industry": "Consumer Services",
    "isin": "INE0AQ201015",
    "name": "Leela Palaces Hotels & Resorts Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty Indiatourism"
-   ]
+   "capBand": "micro",
+   "indices": []
   },
   "THERMAX": {
    "industry": "Capital Goods",
@@ -13211,6 +13336,13 @@
    "capBand": "micro",
    "indices": []
   },
+  "TIMEX": {
+   "industry": "Consumer Durables",
+   "isin": "INE064A01026",
+   "name": "Timex Group India Ltd.",
+   "capBand": "micro",
+   "indices": []
+  },
   "TIMKEN": {
    "industry": "Capital Goods",
    "isin": "INE325A01013",
@@ -13277,9 +13409,11 @@
    "indices": [
     "Nifty Capital Goods",
     "Nifty Conglomerate 50",
+    "Nifty EV New Age Automotive",
     "Nifty India Infrastructure Logistics",
     "Nifty Indiamanufacturing",
-    "Nifty Mobility"
+    "Nifty Mobility",
+    "Nifty Transportationandlogistics"
    ]
   },
   "TMPV": {
@@ -13289,9 +13423,11 @@
    "capBand": "large",
    "indices": [
     "Nifty Auto",
+    "Nifty EV New Age Automotive",
     "Nifty India New Age Consumption",
     "Nifty Indiamanufacturing",
-    "Nifty Mobility"
+    "Nifty Mobility",
+    "Nifty Transportationandlogistics"
    ]
   },
   "TORNTPHARM": {
@@ -13300,6 +13436,7 @@
    "name": "Torrent Pharmaceuticals Ltd.",
    "capBand": "large",
    "indices": [
+    "Nifty Consumption",
     "Nifty Healthcare",
     "Nifty Indiamanufacturing",
     "Nifty Pharma"
@@ -13341,16 +13478,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "TRAVELFOOD": {
-   "industry": "Consumer Services",
-   "isin": "INE103V01028",
-   "name": "Travel Food Services Ltd.",
-   "capBand": "small",
-   "indices": [
-    "Nifty IPO",
-    "Nifty Indiatourism"
    ]
   },
   "TRENT": {
@@ -13396,7 +13523,7 @@
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE256C01024",
    "name": "Triveni Engineering & Industries Ltd.",
-   "capBand": "micro",
+   "capBand": "unclassified",
    "indices": [
     "Nifty Sugar Ethanol"
    ]
@@ -13408,15 +13535,6 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
-   ]
-  },
-  "TRUALT": {
-   "industry": "Fast Moving Consumer Goods",
-   "isin": "INE0MWH01014",
-   "name": "TruAlt Bioenergy Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
    ]
   },
   "TRUST": {
@@ -13437,10 +13555,10 @@
     "Nifty Sme"
    ]
   },
-  "TSFINV": {
-   "industry": "Financial Services",
-   "isin": "INE202Z01029",
-   "name": "TSF Investments Ltd.",
+  "TTKPRESTIG": {
+   "industry": "Consumer Durables",
+   "isin": "INE690A01028",
+   "name": "TTK Prestige Ltd.",
    "capBand": "micro",
    "indices": []
   },
@@ -13584,6 +13702,15 @@
     "Nifty Sme"
    ]
   },
+  "UNIMECH": {
+   "industry": "Capital Goods",
+   "isin": "INE0U3I01011",
+   "name": "Unimech Aerospace and Manufacturing Ltd.",
+   "capBand": "micro",
+   "indices": [
+    "Nifty Indiadefence"
+   ]
+  },
   "UNIONBANK": {
    "industry": "Financial Services",
    "isin": "INE692A01016",
@@ -13598,7 +13725,7 @@
    "industry": "Fast Moving Consumer Goods",
    "isin": "INE854D01024",
    "name": "United Spirits Ltd.",
-   "capBand": "large",
+   "capBand": "mid",
    "indices": [
     "Nifty Consumption",
     "Nifty FMCG",
@@ -13614,7 +13741,8 @@
    "indices": [
     "Nifty Auto",
     "Nifty EV New Age Automotive",
-    "Nifty Indiamanufacturing"
+    "Nifty Indiamanufacturing",
+    "Nifty Transportationandlogistics"
    ]
   },
   "UPL": {
@@ -13643,7 +13771,6 @@
    "name": "Urban Company Ltd.",
    "capBand": "small",
    "indices": [
-    "Nifty IPO",
     "Nifty India Internet",
     "Nifty Indiadigital",
     "Nifty Retail"
@@ -13683,6 +13810,15 @@
    "capBand": "small",
    "indices": [
     "Nifty Capital Markets"
+   ]
+  },
+  "UTKAL": {
+   "industry": "Forest Materials",
+   "isin": "INE1V1R01014",
+   "name": "Utkal Speciality Industries India Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty Sme"
    ]
   },
   "UTKARSHBNK": {
@@ -13746,13 +13882,17 @@
     "Nifty Sme"
    ]
   },
-  "VARROC": {
-   "industry": "Automobile and Auto Components",
-   "isin": "INE665L01035",
-   "name": "Varroc Engineering Ltd.",
-   "capBand": "micro",
+  "VAML": {
+   "industry": "Metals & Mining",
+   "isin": "INE1CDF01017",
+   "name": "Vedanta Aluminium Metal Ltd.",
+   "capBand": "large",
    "indices": [
-    "Nifty EV New Age Automotive"
+    "Nifty Commodities",
+    "Nifty Conglomerate 50",
+    "Nifty Indiamanufacturing",
+    "Nifty MNC",
+    "Nifty Metal"
    ]
   },
   "VBL": {
@@ -13782,24 +13922,34 @@
    "capBand": "large",
    "indices": [
     "Nifty Commodities",
+    "Nifty Conglomerate 50",
     "Nifty Indiamanufacturing",
     "Nifty MNC",
     "Nifty Metal"
+   ]
+  },
+  "VEDPOWER": {
+   "industry": "Power",
+   "isin": "INE694L01019",
+   "name": "Vedanta Power Ltd.",
+   "capBand": "small",
+   "indices": [
+    "Nifty India Infrastructure Logistics"
+   ]
+  },
+  "VEEGALAND": {
+   "industry": "Realty",
+   "isin": "INE1JTV01015",
+   "name": "Veegaland Developers Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "VEEKAYEM": {
    "industry": "Textiles",
    "isin": "INE0KTW01013",
    "name": "Veekayem Fashion and Apparels Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty Sme"
-   ]
-  },
-  "VELS": {
-   "industry": "Media Entertainment & Publication",
-   "isin": "INE0I3H01019",
-   "name": "Vels Film International Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -13822,6 +13972,13 @@
    "indices": [
     "Nifty Sme"
    ]
+  },
+  "VESUVIUS": {
+   "industry": "Capital Goods",
+   "isin": "INE386A01023",
+   "name": "Vesuvius India Ltd.",
+   "capBand": "micro",
+   "indices": []
   },
   "VGINFOTECH": {
    "industry": "Information Technology",
@@ -13905,18 +14062,7 @@
    "isin": "INE078V01014",
    "name": "Vikram Solar Ltd.",
    "capBand": "micro",
-   "indices": [
-    "Nifty IPO"
-   ]
-  },
-  "VIKRAN": {
-   "industry": "Construction",
-   "isin": "INE01R501028",
-   "name": "Vikran Engineering Ltd.",
-   "capBand": "unclassified",
-   "indices": [
-    "Nifty IPO"
-   ]
+   "indices": []
   },
   "VILAS": {
    "industry": "Capital Goods",
@@ -13930,7 +14076,7 @@
   "VILINBIO": {
    "industry": "Healthcare",
    "isin": "INE0L4V01013",
-   "name": "VILIN BIO MED LTD.",
+   "name": "VILIN BIO MED Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -13961,10 +14107,10 @@
    "capBand": "micro",
    "indices": []
   },
-  "VISAMAN": {
-   "industry": "Capital Goods",
-   "isin": "INE0BHK01012",
-   "name": "Visaman Global Sales Ltd.",
+  "VISDEM": {
+   "industry": "Consumer Durables",
+   "isin": "INE0OWX01025",
+   "name": "Visdem Technosys Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -13987,6 +14133,13 @@
    "indices": [
     "Nifty Sme"
    ]
+  },
+  "VISL": {
+   "industry": "Metals & Mining",
+   "isin": "INE1CLE01013",
+   "name": "Vedanta Iron and Steel Ltd.",
+   "capBand": "small",
+   "indices": []
   },
   "VIVIDEL": {
    "industry": "Capital Goods",
@@ -14051,14 +14204,21 @@
     "Nifty Retail"
    ]
   },
-  "VMSTMT": {
-   "industry": "Capital Goods",
-   "isin": "INE0SJA01013",
-   "name": "VMS TMT Ltd.",
+  "VMOBILE": {
+   "industry": "Consumer Services",
+   "isin": "INE27V201011",
+   "name": "Vinit Mobile Ltd.",
    "capBand": "unclassified",
    "indices": [
-    "Nifty IPO"
+    "Nifty Sme"
    ]
+  },
+  "VOGL": {
+   "industry": "Oil Gas & Consumable Fuels",
+   "isin": "INE704J01044",
+   "name": "Vedanta Oil and Gas Ltd.",
+   "capBand": "small",
+   "indices": []
   },
   "VOLERCAR": {
    "industry": "Services",
@@ -14104,7 +14264,7 @@
   "VSCL": {
    "industry": "Chemicals",
    "isin": "INE551Q01028",
-   "name": "VADIVARHE SPECIALITY CHEMICALS LTD.",
+   "name": "VADIVARHE SPECIALITY CHEMICALS Ltd.",
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
@@ -14172,7 +14332,7 @@
    "capBand": "small",
    "indices": [
     "Nifty Capital Goods",
-    "Nifty Metal"
+    "Nifty Indiamanufacturing"
    ]
   },
   "WELENT": {
@@ -14204,8 +14364,7 @@
    "name": "WeWork India Management Ltd.",
    "capBand": "micro",
    "indices": [
-    "Nifty Commercial Transport Services",
-    "Nifty IPO"
+    "Nifty Commercial Transport Services"
    ]
   },
   "WHIRLPOOL": {
@@ -14291,6 +14450,15 @@
    "capBand": "unclassified",
    "indices": [
     "Nifty Sme"
+   ]
+  },
+  "XTRANET": {
+   "industry": "Information Technology",
+   "isin": "INE0NG701011",
+   "name": "Xtranet Technologies Ltd.",
+   "capBand": "unclassified",
+   "indices": [
+    "Nifty IPO"
    ]
   },
   "YAAP": {
@@ -14409,7 +14577,9 @@
    "isin": "INE342J01019",
    "name": "ZF Commercial Vehicle Control Systems India Ltd.",
    "capBand": "small",
-   "indices": []
+   "indices": [
+    "Nifty EV New Age Automotive"
+   ]
   },
   "ZTECH": {
    "industry": "Utilities",
@@ -14437,6 +14607,28 @@
    "name": "Zydus Wellness Ltd.",
    "capBand": "small",
    "indices": []
+  }
+ },
+ "formerSymbols": {
+  "AMARAJABAT": {
+   "isin": "INE885A01032",
+   "lastSeen": "2026-08-06"
+  },
+  "HEG": {
+   "isin": "INE545A01024",
+   "lastSeen": "2026-08-06"
+  },
+  "MINDAIND": {
+   "isin": "INE405E01023",
+   "lastSeen": "2026-08-06"
+  },
+  "TATAMOTORS": {
+   "isin": "INE155A01022",
+   "lastSeen": "2026-08-06"
+  },
+  "TATAMTRDVR": {
+   "isin": "IN9155A01020",
+   "lastSeen": "2026-08-06"
   }
  }
 }

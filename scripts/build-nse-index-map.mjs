@@ -246,6 +246,41 @@ if (sizeSrc) {
   }
 }
 
+const dest = path.join(root, "lib", "data", "nse-index-map.json");
+
+/**
+ * FORMER SYMBOLS (v4.8.0 data refresh). A journal keeps the ticker a trade was
+ * made under — option legs still say TATAMOTORS after the listing renamed the
+ * ISIN to TMPV. Until 2026-10-05 the only memory of such a ticker was a STALE
+ * constituent list that still named it; a fresh download drops it, and
+ * `bundledIsinBySymbol` then answers null. So, before overwriting, compare with
+ * the snapshot being replaced: a ticker that leaves `symbols` AND that the
+ * listing snapshot (lib/data/isin-symbols.json) no longer names is recorded
+ * ticker → { isin, lastSeen } and carried forward on every later build. The
+ * ISIN is the old map's own — the same security, so no issuer check is needed
+ * (the ISIN builder's `superseded` is the precedent). A ticker that comes back
+ * (listed again, or in a list again) leaves the block.
+ */
+const prevPath = opt("--prev", dest);
+const prev = fs.existsSync(prevPath) ? JSON.parse(fs.readFileSync(prevPath, "utf8")) : null;
+const listingPath = path.join(root, "lib", "data", "isin-symbols.json");
+const listedSymbols = new Set();
+if (fs.existsSync(listingPath)) {
+  for (const row of Object.values(JSON.parse(fs.readFileSync(listingPath, "utf8")).byIsin ?? {})) {
+    if (Array.isArray(row) && row[0]) listedSymbols.add(String(row[0]).toUpperCase());
+  }
+}
+const formerSymbols = {};
+if (prev) {
+  for (const [s, v] of Object.entries(prev.formerSymbols ?? {})) formerSymbols[s] = v;
+  for (const [s, v] of Object.entries(prev.symbols ?? {})) {
+    if (!symbols[s] && v?.isin) formerSymbols[s] = { isin: v.isin, lastSeen: prev.asOf ?? null };
+  }
+}
+for (const s of Object.keys(formerSymbols)) {
+  if (symbols[s] || listedSymbols.has(s)) delete formerSymbols[s];
+}
+
 const out = {
   asOf,
   capturedAt,
@@ -269,9 +304,9 @@ const out = {
         indices: [...v.indices].sort(),
       }]),
   ),
+  formerSymbols: Object.fromEntries(Object.entries(formerSymbols).sort(([a], [b]) => a.localeCompare(b))),
 };
 
-const dest = path.join(root, "lib", "data", "nse-index-map.json");
 fs.mkdirSync(path.dirname(dest), { recursive: true });
 fs.writeFileSync(dest, JSON.stringify(out, null, 1) + "\n");
 const n = Object.keys(out.symbols).length;
@@ -279,6 +314,7 @@ console.log(`✓ ${dest}`);
 console.log(`  ${files.length} sectoral + ${Object.keys(sizeIndices).length} size files → ${n} symbols (${rowsRead} rows) · sectoral as of ${asOf}, captured ${capturedAt}`);
 const bands = {};
 for (const v of Object.values(out.symbols)) bands[v.capBand] = (bands[v.capBand] ?? 0) + 1;
+console.log(`  formerSymbols: ${Object.keys(out.formerSymbols).length} (${Object.keys(out.formerSymbols).join(", ") || "none"})`);
 console.log(`  capBand: ${["large", "mid", "small", "micro", "unclassified"].map((b) => `${b} ${bands[b] ?? 0}`).join(" · ")}`);
 if (!sizeSrc) console.warn("  ⚠ no --size-src: every capBand is \"unclassified\" and sizeIndices is empty");
 const noInd = Object.values(out.symbols).filter((v) => !v.industry).length;

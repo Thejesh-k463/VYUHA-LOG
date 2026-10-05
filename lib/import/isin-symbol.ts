@@ -248,14 +248,19 @@ function successorSymbol(isin: string): string | null {
 }
 
 /** The reverse of `bundledSymbolByIsin`: SYMBOL → ISIN, listing first (NSE
- *  main board beats Emerge beats BSE), index map second. */
+ *  main board beats Emerge beats BSE), index map second, then the index map's
+ *  `formerSymbols` — a renamed ticker a journal still carries (TATAMOTORS → the
+ *  ISIN now listed as TMPV), recorded by the build when a refresh dropped it. */
 export function bundledIsinBySymbol(symbol: string): string | null {
   const key = String(symbol ?? "").trim().toUpperCase();
   if (!key) return null;
   const fromListing = listing.isinBySymbol(key);
   if (fromListing) return fromListing;
-  const meta = (nseIndexMap as { symbols?: Record<string, { isin?: string | null }> }).symbols?.[key];
-  const isin = String(meta?.isin ?? "").trim().toUpperCase();
+  const map = nseIndexMap as {
+    symbols?: Record<string, { isin?: string | null }>;
+    formerSymbols?: Record<string, { isin?: string | null }>;
+  };
+  const isin = String(map.symbols?.[key]?.isin ?? map.formerSymbols?.[key]?.isin ?? "").trim().toUpperCase();
   return isin || null;
 }
 
