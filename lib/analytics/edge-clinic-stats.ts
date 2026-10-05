@@ -453,14 +453,17 @@ export function empiricalGrowth(f: number, rs: readonly number[]): number {
 /**
  * Empirical Kelly: argmax over f ∈ [0, 0.99] (step 0.001) of mean ln(1 + f·Rᵢ)
  * (Thorp (vi), "maximizes E log(1 + f U)"). Null when no R is negative (the
- * maximiser runs off the grid — no loss measured, nothing to size against) or
- * when the argmax is 0 (no positive growth at any fraction).
+ * maximiser runs off the grid — no loss measured, nothing to size against), when
+ * the argmax is 0 (no positive growth at any fraction), and when the argmax is
+ * the grid's EDGE, 0.99 (v4.7.0 audit CG-1): growth was still rising there, so
+ * the maximum lies off the grid and 0.99 is not it — "off grid", not a figure.
  */
 export function kellyEmpirical(rs: readonly number[]): number | null {
   if (rs.length === 0 || rs.every((r) => r >= 0)) return null;
+  const GRID_EDGE = 990;
   let bestF = 0;
   let bestG = 0;
-  for (let i = 1; i <= 990; i++) {
+  for (let i = 1; i <= GRID_EDGE; i++) {
     const f = i / 1000;
     const g = empiricalGrowth(f, rs);
     if (!Number.isFinite(g)) break; // past ruin — every larger f is ruin too
@@ -471,7 +474,7 @@ export function kellyEmpirical(rs: readonly number[]): number | null {
       break; // E log is concave in f: once it falls it keeps falling
     }
   }
-  return bestF > 0 ? bestF : null;
+  return bestF > 0 && bestF < GRID_EDGE / 1000 ? bestF : null;
 }
 
 function bisectRoot(g: (f: number) => number, lo: number, hi: number): number {
@@ -496,13 +499,20 @@ export function zeroGrowthFraction(p: number, b: number): number | null {
   return bisectRoot((f) => kellyGrowth(f, p, b), fStar, 1);
 }
 
-/** fc for the empirical E log, beyond the empirical f*. Null when f* is null. */
+/**
+ * fc for the empirical E log, beyond the empirical f*. Null when f* is null, and
+ * null when growth at the ruin bound is still ≥ 0 (v4.7.0 audit CG-1): there is
+ * no zero crossing in [f*, ruin] for bisection to find — its invariant needs
+ * g(hi) < 0 — so no fc is stated rather than the bracket's end.
+ */
 export function zeroGrowthFractionEmpirical(rs: readonly number[]): number | null {
   const fStar = kellyEmpirical(rs);
   if (fStar == null) return null;
   const worst = Math.min(...rs);
   const ruin = worst < 0 ? Math.min(1, 1 / -worst) : 1;
-  return bisectRoot((f) => empiricalGrowth(f, rs), fStar, ruin);
+  const g = (f: number) => empiricalGrowth(f, rs);
+  if (!(g(ruin) < 0)) return null;
+  return bisectRoot(g, fStar, ruin);
 }
 
 // ── One-sided (downward) CUSUM ──────────────────────────────────────────────

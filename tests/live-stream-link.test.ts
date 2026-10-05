@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   CLOSE_REOPEN_JITTER_MS,
   LIVE_GRACE_MS,
   RECONNECT_BASE_MS,
   SOURCE_CONNECTING,
   LINK_IDLE,
+  accountOfStreamKey,
   createStreamLink,
   linkStateFor,
   msUntilCloseReopen,
   nextTransport,
+  parseAccountId,
   parseSymbolCount,
   parseTransport,
   streamKeyOf,
@@ -84,12 +88,14 @@ class FakeSource implements StreamSource {
   }
 }
 
-function harness(at: string, opts: { hidden?: boolean; random?: number } = {}) {
+function harness(at: string, opts: { hidden?: boolean; random?: number; openedFor?: number } = {}) {
   vi.setSystemTime(new Date(at));
   const sources: FakeSource[] = [];
   const states: LinkState[] = [];
   const batches: TickQuote[][] = [];
   const paints: (() => void)[] = [];
+  /** Every `onAccountMismatch` call, with the account the server said it served. */
+  const mismatches: number[] = [];
   let hidden = opts.hidden ?? false;
 
   const link = createStreamLink<ReturnType<typeof setTimeout>>({
@@ -110,6 +116,9 @@ function harness(at: string, opts: { hidden?: boolean; random?: number } = {}) {
     random: () => opts.random ?? 0,
     onState: (s) => states.push(s),
     onQuotes: (q) => batches.push(q),
+    ...(opts.openedFor === undefined
+      ? {}
+      : { openedForAccountId: opts.openedFor, onAccountMismatch: (served: number) => mismatches.push(served) }),
   });
 
   return {
@@ -117,6 +126,7 @@ function harness(at: string, opts: { hidden?: boolean; random?: number } = {}) {
     sources,
     states,
     batches,
+    mismatches,
     paint: () => {
       for (const fn of paints.splice(0, paints.length)) fn();
     },
@@ -578,6 +588,107 @@ describe("the link carries the last tick's transport (v4.7.0 C7)", () => {
     s.emit("error", { message: "OpenAlgo is not answering." });
     s.emit("heartbeat", { at: "z", streaming: false });
     expect(h.last()).toMatchObject({ phase: "stopped", reason: "OpenAlgo is not answering." });
+    h.link.destroy();
+  });
+});
+
+/* ───────────── UJ-4 — the snapshot's account vs the link's (R2) ───────────── */
+
+describe("UJ-4 — a snapshot for another account asks the desk to refresh, once per link (review R2)", () => {
+  // The route resolves `getSelectedAccountId()` per REQUEST and states it on the
+  // snapshot frame (`accountId`, app/api/live/stream/route.ts). A switch made in
+  // ANOTHER tab changes the cookie the stream reads but not this desk's payload,
+  // so the stream can serve account 2 to a desk rendered for account 1.
+
+  it("parseAccountId is strict: only a non-negative whole number is an account", () => {
+    expect(parseAccountId({ accountId: 0 })).toBe(0);
+    expect(parseAccountId({ accountId: 7 })).toBe(7);
+    for (const bad of [{}, { accountId: "1" }, { accountId: 1.5 }, { accountId: -1 }, { accountId: null }, null, "x"]) {
+      expect(parseAccountId(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it("accountOfStreamKey reads back the account streamKeyOf was built for — the desk's opened-for value", () => {
+    const rows = [{ accountId: 2, exchange: "NSE", tradingsymbol: "TCS" }];
+    for (const id of [0, 1, 2, 17]) expect(accountOfStreamKey(streamKeyOf(id, rows))).toBe(id);
+    expect(accountOfStreamKey(streamKeyOf(3, []))).toBe(3);
+    expect(accountOfStreamKey(""), "the desk's idle key names no account").toBeNull();
+  });
+
+  it("the desk wires it: opened-for from the effect's OWN streamKey, mismatch → router.refresh via an effect event, deps unchanged", () => {
+    // SOURCE, and only for the wiring (the behaviour is driven above): what this
+    // file cannot run is the React effect, so it pins that the effect hands the
+    // link the closure's account and a refresh — and still re-opens on the key alone.
+    const src = readFileSync(path.resolve(__dirname, "..", "components/live/tracker-client.tsx"), "utf8").replace(
+      /\/\/.*$/gm,
+      "",
+    );
+    expect(src).toMatch(/openedForAccountId:\s*accountOfStreamKey\(streamKey\)/);
+    expect(src).toMatch(/onAccountMismatch:\s*refreshForAccount/);
+    expect(src).toMatch(/const refreshForAccount = React\.useEffectEvent\(\(\) => router\.refresh\(\)\)/);
+    expect(src).toMatch(/\}, \[streaming, streamKey\]\);/);
+  });
+
+  it("a snapshot for the account the link was opened for says nothing", () => {
+    const h = harness(IST_1600, { openedFor: 1 });
+    h.link.open();
+    h.sources[0].emit("snapshot", { accountId: 1, symbols: 1, quotes: [QUOTE] });
+    expect(h.mismatches).toEqual([]);
+    h.link.destroy();
+  });
+
+  it("a snapshot for ANOTHER account calls onAccountMismatch with the served id — and the frame is still read", () => {
+    const h = harness(IST_1600, { openedFor: 1 });
+    h.link.open();
+    h.sources[0].emit("snapshot", { accountId: 2, symbols: 3, quotes: [QUOTE], marketOpen: false });
+    expect(h.mismatches, "the desk was never told its stream serves another account").toEqual([2]);
+    // Quotes are keyed per SYMBOL, so the mismatched snapshot's prices are harmless;
+    // the link keeps reporting the connection exactly as before.
+    expect(h.last()).toMatchObject({ phase: "connected", symbolCount: 3 });
+    h.link.destroy();
+  });
+
+  it("at most ONE call per link, across reconnects of the same link", () => {
+    const h = harness(IST_1600, { openedFor: 1 });
+    h.link.open();
+    h.sources[0].emit("snapshot", { accountId: 2, quotes: [] });
+    h.sources[0].emit("snapshot", { accountId: 3, quotes: [] });
+    h.link.close();
+    h.link.open(); // the same link re-opened (a visible tab again)
+    h.sources[1].emit("snapshot", { accountId: 2, quotes: [] });
+    expect(h.mismatches).toEqual([2]);
+    h.link.destroy();
+  });
+
+  it("only the SNAPSHOT is compared — a tick or heartbeat carrying another account is not a claim", () => {
+    const h = harness(IST_1600, { openedFor: 1 });
+    h.link.open();
+    h.sources[0].emit("tick", { accountId: 2, quotes: [QUOTE] });
+    h.sources[0].emit("heartbeat", { accountId: 2, at: "x" });
+    expect(h.mismatches).toEqual([]);
+    h.link.destroy();
+  });
+
+  it("a snapshot that names no account, or a link opened without one, never calls", () => {
+    const named = harness(IST_1600, { openedFor: 1 });
+    named.link.open();
+    named.sources[0].emit("snapshot", { symbols: 1, quotes: [] });
+    named.sources[0].emit("snapshot", { accountId: "2", quotes: [] });
+    expect(named.mismatches).toEqual([]);
+    named.link.destroy();
+
+    const unnamed = harness(IST_1600);
+    unnamed.link.open();
+    unnamed.sources[0].emit("snapshot", { accountId: 2, quotes: [] });
+    expect(unnamed.mismatches).toEqual([]);
+    unnamed.link.destroy();
+  });
+
+  it("the aggregate view (0) is an account like any other: 0 opened, 1 served → one call", () => {
+    const h = harness(IST_1600, { openedFor: 0 });
+    h.link.open();
+    h.sources[0].emit("snapshot", { accountId: 1, quotes: [] });
+    expect(h.mismatches).toEqual([1]);
     h.link.destroy();
   });
 });

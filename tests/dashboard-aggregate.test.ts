@@ -7,6 +7,7 @@ import {
 import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analytics/win-loss";
 import { isLotSegment, perLotAggregateResolved, perLotSecondLine, type PerLotAggregate } from "@/lib/analytics/per-lot";
 import { inrCompact } from "@/lib/format";
+import { calendarDaysHeld } from "@/lib/domain/trading-day";
 import {
   ALL_BUCKETS_PARAM, dashboardAggregate, dashboardExportRows, dashboardQuery, filterDashRows,
   parseDashboardFilters, sanitizeDashboardFilters,
@@ -71,26 +72,11 @@ function headClientMaths(trades: DashRow[], f: DashboardFilters) {
   })();
   const setupStats = bySetup(filtered);
   const spark = curve.slice(-30).map((p) => p.cum);
-  const weekDelta = (() => {
-    const dates = Object.keys(daily).sort();
-    if (dates.length === 0) return null;
-    const latest = new Date(dates[dates.length - 1] + "T00:00:00");
-    const cutoff = (d: number) => {
-      const x = new Date(latest);
-      x.setDate(x.getDate() - d);
-      return x.toISOString().slice(0, 10);
-    };
-    const wk1 = cutoff(7);
-    const wk2 = cutoff(14);
-    let thisWeek = 0;
-    let lastWeek = 0;
-    for (const [d, v] of Object.entries(daily)) {
-      if (d > wk1) thisWeek += v;
-      else if (d > wk2) lastWeek += v;
-    }
-    const value = Math.round(thisWeek - lastWeek);
-    return { value, label: "vs prior wk", formatted: inrCompact(Math.abs(value)) };
-  })();
+  // weekDelta is NOT frozen here (v4.7.0 release audit M-B2): HEAD's body cut
+  // the weeks at a LOCAL midnight read back through toISOString(), which in IST
+  // (UTC+5:30) lands on the previous UTC day — an 8-day "this week". Copying it
+  // here made the oracle agree with the bug. It is checked below against an
+  // independent definition (`weekDeltaByDayCount`) and against concrete dates.
   const dayStats = (() => {
     const entries = Object.entries(daily);
     if (entries.length === 0) return { best: 0, worst: 0, bestDate: null as string | null, worstDate: null as string | null };
@@ -122,8 +108,28 @@ function headClientMaths(trades: DashRow[], f: DashboardFilters) {
   })();
   return {
     trades, filtered, k, curve, undatedNet, undatedCount, daily, undatedClosed, segStats,
-    perLotBySegment, setupStats, spark, weekDelta, dayStats, rStats, monthly,
+    perLotBySegment, setupStats, spark, dayStats, rStats, monthly,
   };
+}
+
+/**
+ * The week comparison by its DEFINITION, not by HEAD's code: "this week" is the
+ * latest P&L day and the six calendar days before it, "prior week" the seven
+ * before those — counted with `calendarDaysHeld` (UTC-parsed ISO dates, so the
+ * machine's time zone cannot move a day). Null on an empty book.
+ */
+function weekDeltaByDayCount(daily: Record<string, number>): number | null {
+  const dates = Object.keys(daily).sort();
+  if (dates.length === 0) return null;
+  const latest = dates[dates.length - 1];
+  let thisWeek = 0;
+  let lastWeek = 0;
+  for (const [d, v] of Object.entries(daily)) {
+    const back = calendarDaysHeld(d, latest);
+    if (back < 7) thisWeek += v;
+    else if (back < 14) lastWeek += v;
+  }
+  return Math.round(thisWeek - lastWeek);
 }
 
 /** What the NEW DashboardClient derives from the aggregate (the two client-side steps). */
@@ -158,7 +164,11 @@ function assertIdentical(book: DashRow[], f: DashboardFilters) {
   expect(a.setupStats, `${tag} setupStats`).toEqual(old.setupStats);
   expect([...neu.perLotBySegment.entries()].sort(), `${tag} perLot`).toEqual([...old.perLotBySegment.entries()].sort());
   expect(a.spark, `${tag} spark`).toEqual(old.spark);
-  expect(neu.weekDelta, `${tag} weekDelta`).toEqual(old.weekDelta);
+  const wd = weekDeltaByDayCount(old.daily);
+  expect(a.weekDelta, `${tag} weekDelta`).toBe(wd);
+  expect(neu.weekDelta, `${tag} weekDelta chip`).toEqual(
+    wd == null ? null : { value: wd, label: "vs prior wk", formatted: inrCompact(Math.abs(wd)) },
+  );
   expect(a.dayStats, `${tag} dayStats`).toEqual(old.dayStats);
   expect(a.rStats, `${tag} rStats`).toEqual(old.rStats);
   expect(a.monthly, `${tag} monthly`).toEqual(old.monthly);
@@ -304,8 +314,8 @@ describe("oracle — the aggregate equals the HEAD client maths, field by field"
   });
 
   it("the empty book: first-run figures, no throw", () => {
-    const old = assertIdentical([], { broker: "", bucket: "", segment: "", from: "", to: "" });
-    expect(old.weekDelta).toBeNull();
+    assertIdentical([], { broker: "", bucket: "", segment: "", from: "", to: "" });
+    expect(dashboardAggregate([], { broker: "", bucket: "", segment: "", from: "", to: "" }).weekDelta).toBeNull();
   });
 
   it("a book of only open positions and undated sales plots no curve", () => {
@@ -325,6 +335,48 @@ describe("oracle — the aggregate equals the HEAD client maths, field by field"
       expect(Object.keys(row).sort()).toEqual([...cols].sort());
       for (const c of cols) expect(row[c]).toBe(want[i][c]);
     });
+  });
+});
+
+/**
+ * v4.7.0 release audit M-B2: the week comparison on CONCRETE dates and sums,
+ * not a copy of the code. Each date below is a sale day; the latest is
+ * Wed 2026-10-07, so "this week" is 2026-10-01..2026-10-07 and "prior week"
+ * 2026-09-24..2026-09-30. Under the old body, a machine in IST cut "this week"
+ * at 2026-09-29 (a local midnight read back in UTC) and pulled 2026-09-30 —
+ * exactly seven days back — into it. Run under TZ=Asia/Kolkata as well as UTC.
+ */
+describe("weekDelta on IST calendar dates — concrete days and sums (M-B2)", () => {
+  const base = BOOK.find((t) => !t.isOpen && t.sellDate && edgeMeasurable(t))!;
+  let id = 9000;
+  const sale = (sellDate: string, netPnl: number): DashRow => ({ ...base, id: ++id, buyDate: sellDate, sellDate, netPnl, grossPnl: netPnl, chargesTotal: 0 });
+  const NONE: DashboardFilters = { broker: "", bucket: "", segment: "", from: "", to: "" };
+
+  it("seven days back is the PRIOR week, fourteen back is neither", () => {
+    const rows = [
+      sale("2026-10-07", 100), //  0 days back → this week
+      sale("2026-10-01", 10), //   6 days back → this week
+      sale("2026-09-30", 1000), // 7 days back → prior week
+      sale("2026-09-24", 50), //  13 days back → prior week
+      sale("2026-09-23", 5000), // 14 days back → neither
+    ];
+    // this week 110, prior week 1050 → −940. (The IST bug read 1110 − 5050 = −3940.)
+    expect(dashboardAggregate(rows, NONE).weekDelta).toBe(-940);
+  });
+
+  it("across a month and a year boundary", () => {
+    const rows = [
+      sale("2026-01-02", 300), //  0 → this week
+      sale("2025-12-27", 7), //    6 → this week
+      sale("2025-12-26", 40), //   7 → prior week
+      sale("2025-12-20", 2), //   13 → prior week
+      sale("2025-12-19", 900), // 14 → neither
+    ];
+    expect(dashboardAggregate(rows, NONE).weekDelta).toBe(307 - 42);
+  });
+
+  it("one sale day: the whole figure is this week's", () => {
+    expect(dashboardAggregate([sale("2026-03-31", -250.4)], NONE).weekDelta).toBe(-250);
   });
 });
 

@@ -1,10 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { telegramAlertsCardView, telegramCardView } from "@/lib/telegram/card-state";
 import { TELEGRAM_DISCLOSURE } from "@/lib/domain/telegram-disclosure";
 import { SETTINGS_REFUSALS, type AlertRefusal } from "@/lib/telegram/alert-gate";
-import { ALERT_FEED_SCOPE, ALERT_STATUS_COPY, alertStatusLine, alertWindowError } from "@/components/settings/telegram-card";
+import {
+  ALERT_FEED_SCOPE,
+  ALERT_STATUS_COPY,
+  ALERT_STATUS_STALE_ACTIONS,
+  alertStatusLine,
+  alertWindowError,
+  postTelegramAction,
+} from "@/components/settings/telegram-card";
+import {
+  TELEGRAM_ALERT_STATUS_KEY,
+  parseTelegramAlertStatus,
+  serializeTelegramAlertStatus,
+} from "@/lib/domain/telegram-failure";
 
 /**
  * The settings Telegram card's render matrix, pinned as a pure state machine
@@ -274,5 +286,102 @@ describe("telegram-card.tsx — the alerts wiring", () => {
     expect(start).toBeGreaterThan(-1);
     const section = cardSrc.slice(start, end);
     expect(section).not.toMatch(/text-xs|text-\[(?:0\.6|0\.7|1[0-2]px)/);
+  });
+});
+
+/**
+ * v4.7.0 release audit UJ-1 (review R3): the alerts status line is the RUNNER's
+ * last answer, stored per device — so a refusal ("off", "Paused — …") outlived
+ * the toggle that answered it, and the card rendered the old answer against the
+ * new settings. The card's write now clears it BEFORE `router.refresh()`. The
+ * runner needs no second wake (the layout keys it on the alert settings).
+ *
+ * The order is pinned on the REAL path: a stored envelope, the card's own
+ * derivation (parse → telegramAlertsCardView → alertStatusLine), then the card's
+ * own write function over a stubbed /api/telegram.
+ */
+describe("UJ-1: a stored refusal does not outlive the write that answers it", () => {
+  class MemoryStorage {
+    m = new Map<string, string>();
+    getItem(k: string) {
+      return this.m.has(k) ? this.m.get(k)! : null;
+    }
+    setItem(k: string, v: string) {
+      this.m.set(k, String(v));
+    }
+    removeItem(k: string) {
+      this.m.delete(k);
+    }
+  }
+  const view = {
+    enabled: true,
+    ackVersion: CURRENT,
+    connected: true,
+    pro: true,
+    alertsEnabled: true,
+    windowFrom: null,
+    windowTo: null,
+  };
+  /** What the card's status line reads from storage right now (telegram-card.tsx's own chain). */
+  const cardLine = (store: MemoryStorage): string | null => {
+    const last = parseTelegramAlertStatus(store.getItem(TELEGRAM_ALERT_STATUS_KEY));
+    const v = telegramAlertsCardView({ ...view, lastRefusal: last ? last.refused : undefined });
+    return alertStatusLine(v.status, last && last.refused === v.status ? last.detail : undefined);
+  };
+  function setup(answer: { ok: boolean; message?: string }) {
+    const store = new MemoryStorage();
+    vi.stubGlobal("localStorage", store);
+    const posted: unknown[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+      posted.push(JSON.parse(init.body));
+      return new Response(JSON.stringify(answer), { headers: { "content-type": "application/json" } });
+    });
+    store.setItem(
+      TELEGRAM_ALERT_STATUS_KEY,
+      serializeTelegramAlertStatus({ refused: "feed-reaccept", at: "2026-10-05T04:00:00.000Z", detail: "OpenAlgo is switched off in Settings → Integrations." }),
+    );
+    // seen by refresh(): the stored value at the moment the route re-renders
+    const atRefresh: (string | null)[] = [];
+    const refresh = () => atRefresh.push(store.getItem(TELEGRAM_ALERT_STATUS_KEY));
+    return { store, posted, atRefresh, refresh };
+  }
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a stored refusal, then switching alerts on → the card no longer shows it, and it was gone before refresh()", async () => {
+    const { store, posted, atRefresh, refresh } = setup({ ok: true });
+    expect(cardLine(store)).toMatch(/^Paused — OpenAlgo is switched off/);
+    const r = await postTelegramAction({ action: "alerts-toggle", enabled: true }, refresh);
+    expect(r.ok).toBe(true);
+    expect(posted).toEqual([{ action: "alerts-toggle", enabled: true }]);
+    expect(atRefresh).toEqual([null]); // cleared BEFORE the route refreshed, exactly one refresh
+    expect(store.getItem(TELEGRAM_ALERT_STATUS_KEY)).toBeNull();
+    expect(cardLine(store)).toBeNull();
+  });
+
+  it("accepting the disclosure (toggle) clears it the same way", async () => {
+    const { store, atRefresh, refresh } = setup({ ok: true });
+    await postTelegramAction({ action: "toggle", enabled: true, ackVersion: CURRENT }, refresh);
+    expect(atRefresh).toEqual([null]);
+    expect(cardLine(store)).toBeNull();
+  });
+
+  it("a refused write changes nothing: the refusal stays and nothing refreshes", async () => {
+    const { store, atRefresh, refresh } = setup({ ok: false, message: "no" });
+    await postTelegramAction({ action: "alerts-toggle", enabled: true }, refresh);
+    expect(atRefresh).toEqual([]);
+    expect(cardLine(store)).toMatch(/^Paused — /);
+  });
+
+  it("a digest-only write (test message, send time) keeps the runner's still-true answer", async () => {
+    for (const action of ["send-test", "send-time", "discover-chat-id"]) {
+      const { store, atRefresh, refresh } = setup({ ok: true });
+      await postTelegramAction({ action }, refresh);
+      expect(atRefresh, action).toHaveLength(1);
+      expect(cardLine(store), action).toMatch(/^Paused — /);
+    }
+    // `save` is NOT here (seam pass D-FIX-1): a credential re-save does not re-key the runner.
+    expect([...ALERT_STATUS_STALE_ACTIONS].sort()).toEqual(["alerts-toggle", "alerts-window", "disconnect", "toggle"]);
   });
 });

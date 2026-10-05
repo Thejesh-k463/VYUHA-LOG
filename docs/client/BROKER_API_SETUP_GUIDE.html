@@ -113,11 +113,13 @@
 <header class="hero">
   <div class="kicker">Vyuha · Broker connections</div>
   <h1>Connecting your broker's own API</h1>
-  <p class="sub">Plain-language setup for the four brokers Vyuha talks to directly — <b>Angel One</b>,
-    <b>Dhan</b>, <b>Upstox</b> and <b>Zerodha</b>. What each form asks for, what to paste where in
+  <p class="sub">Plain-language setup for the four brokers Vyuha talks to directly and has checked
+    against real accounts — <b>Angel One</b>, <b>Dhan</b>, <b>Upstox</b> and <b>Zerodha</b>. Three
+    more connect directly too — <b>Fyers</b>, <b>Kotak Neo</b> and <b>Nuvama</b> — documented, not yet
+    verified with a real account (section 9). What each form asks for, what to paste where in
     Vyuha, and what to do when something is refused. No programming knowledge assumed.</p>
   <div style="margin-top:14px">
-    <span class="chip"><b>As of Sep 2026</b></span>
+    <span class="chip"><b>As of Oct 2026</b></span>
     <span class="chip">Windows</span>
     <span class="chip">Read-only pull</span>
     <span class="chip">Credentials encrypted on this computer</span>
@@ -136,6 +138,7 @@
     <li><a href="#live">Live prices on the Live Desk</a></li>
     <li><a href="#trouble">Troubleshooting</a></li>
     <li><a href="#safety">Safety — and how to switch it off</a></li>
+    <li><a href="#documented">Fyers, Kotak Neo and Nuvama — documented, not yet verified</a></li>
   </ol>
 </div>
 
@@ -147,10 +150,12 @@
     works for years of history, and it is the only way to bring in the past.</p></div>
   <div class="card"><div class="ico">🔌</div><h3>Your broker's own API</h3>
     <p>A one-time setup that lets Vyuha fetch <b>the current trading day</b> from Angel One, Dhan,
-    Upstox or Zerodha with one click after the close. This guide.</p></div>
+    Upstox or Zerodha with one click after the close — and from Fyers, Kotak Neo or Nuvama, whose
+    connections are documented, not yet verified. This guide.</p></div>
   <div class="card"><div class="ico">🌉</div><h3>The OpenAlgo bridge</h3>
-    <p>For brokers with no direct connection of their own — Groww, Paytm Money, Kotak Neo and others —
-    a free program you run yourself. Its own guide: <b>OPENALGO_SETUP_GUIDE.html</b>.</p></div>
+    <p>For brokers with no direct connection of their own — Groww, Paytm Money and others (Kotak Neo
+    works through either) — a free program you run yourself. Its own guide:
+    <b>OPENALGO_SETUP_GUIDE.html</b>.</p></div>
 </div>
 
 <p><b>The file door.</b> Every broker publishes exports. You download one, drag it onto the Import
@@ -159,15 +164,16 @@ before anything is written. This path needs no keys, no forms and no permissions
 only one that reaches back into last year. If you are here because you want your old trades in,
 this is your door — and you can stop reading.</p>
 
-<p><b>The direct-API door.</b> Four brokers let Vyuha ask them, over the internet, for what you
-traded <i>today</i>. You fill in one form on your broker's developer site, paste a few values into
+<p><b>The direct-API door.</b> Seven brokers let Vyuha ask them, over the internet, for what you
+traded <i>today</i> — four checked against real accounts (Angel One, Dhan, Upstox, Zerodha) and
+three documented, not yet verified with a real account (Fyers, Kotak Neo, Nuvama — section 9). You fill in one form on your broker's developer site, paste a few values into
 Vyuha once, and after that a pull is one click. It replaces the download-and-drag ritual for each
 new day; it does not replace the file import for history, because these endpoints only state the
 current trading day (Dhan additionally lets Vyuha fill in the days you missed). This is what the
 rest of this guide covers.</p>
 
-<p><b>The OpenAlgo door.</b> If your broker is not one of the four — Groww, Paytm Money, Kotak Neo,
-and thirty more — a free open-source program called OpenAlgo can sit between your broker and
+<p><b>The OpenAlgo door.</b> If your broker has no direct connection — Groww, Paytm Money and
+thirty more (Kotak Neo works through either) — a free open-source program called OpenAlgo can sit between your broker and
 Vyuha, on your own computer. It is more to set up and it holds your broker credentials itself, so
 it earns its place only when your broker has no direct connection. The full walkthrough ships in
 this same package as <b>OPENALGO_SETUP_GUIDE.html</b> (and <b>OPENALGO_SETUP_GUIDE.docx</b>).</p>
@@ -192,7 +198,7 @@ Vyuha do with it</i>.</p>
   <li><b>Asks your broker what you traded, and nothing else.</b> Angel One: today's trade book.
     Zerodha: today's executions. Upstox: today's fills. Dhan: today's positions — the one source
     that states <b>MTF</b> outright — plus its dated trade history, so a pull you skipped for four
-    days is not lost.</li>
+    days is not lost. Fyers, Kotak Neo and Nuvama: today's trade book.</li>
   <li><b>Imports it exactly like a file.</b> Preview first, charges computed from your rate card,
     duplicates detected and skipped. A pull that adds nothing says so.</li>
   <li><b>Keeps the credentials on this computer</b>, encrypted at rest with a key bound to this
@@ -216,6 +222,9 @@ credentials, your trades or your journal to us or to anyone else.</div>
     <tr><td>Dhan</td><td><code>api.dhan.co</code>, and <code>auth.dhan.co</code> for the PIN + TOTP sign-in</td></tr>
     <tr><td>Upstox</td><td><code>api.upstox.com</code></td></tr>
     <tr><td>Zerodha</td><td><code>api.kite.trade</code></td></tr>
+    <tr><td>Fyers</td><td><code>api-t1.fyers.in</code></td></tr>
+    <tr><td>Kotak Neo</td><td><code>mis.kotaksecurities.com</code>, then the <code>kotaksecurities.com</code> address Kotak's login names for that session (any other address is refused)</td></tr>
+    <tr><td>Nuvama</td><td><code>nc.nuvamawealth.com</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -572,12 +581,52 @@ per day is what reaches your journal.</p>
     then create a new one. That is the fastest way to be certain.</li>
 </ul>
 
+<h2 id="documented">9 · Fyers, Kotak Neo and Nuvama — documented, not yet verified</h2>
+
+<div class="strip">These three direct connections were built from each broker's own published
+documentation and software kit. None has yet been checked against a real account, so every trade
+they pull carries the label <b>documented, not yet verified with a real account</b> — check the first
+pulls against your contract note. Each one shows what it stores and calls, and asks you to accept
+it, before anything is saved. They live on the same <b>Import → Connect broker</b> card as the four
+above, read only today's trade book, and never place, modify or cancel an order.</div>
+
+<h3>Fyers</h3>
+<p>Asks for your Fyers <b>App ID</b> and <b>App Secret</b>, from your app on Fyers' API dashboard.
+On each day you pull, Vyuha shows the Fyers login link; you log in on Fyers' own page and paste back
+the address your browser lands on. Your Fyers password and PIN are never stored. From your first
+pull, your Fyers client ID is kept, so a pull made with a different Fyers login is refused. Vyuha
+calls <code>api-t1.fyers.in</code> only when you pull.</p>
+
+<h3>Kotak Neo</h3>
+<p>Asks for the <b>Trade API access token</b> from the Neo app, your registered <b>mobile
+number</b>, your <b>UCC</b>, your <b>MPIN</b> and your <b>TOTP secret</b> — the base32 secret from
+TOTP setup, not the 6-digit code. Storing the MPIN and TOTP secret is what lets a pull sign in
+without you, so pulls run unattended. Each pull signs in afresh at
+<code>mis.kotaksecurities.com</code> and reads the trade book from the
+<code>kotaksecurities.com</code> address Kotak names for that session; any other address is
+refused. Kotak charges ₹0 brokerage through its Trade API, but a fill does not say which route it
+took, so your plan's brokerage is shown. Kotak Neo also works through the OpenAlgo bridge; the
+direct pull names each contract the way the bridge does, so the same trade arriving both ways is
+recognised by the duplicate check.</p>
+
+<h3>Nuvama</h3>
+<p>Asks for your Nuvama <b>API key</b> and <b>API secret</b>, from Nuvama's API Connect page. When
+your Nuvama session has ended, Vyuha shows the Nuvama login link; you log in on Nuvama's own page and
+paste back the address your browser lands on. The API secret travels to Nuvama as a password field
+over HTTPS at each login, exactly as Nuvama's own software kit sends it. Your Nuvama password and PIN
+are never stored; from your first login your Nuvama user ID is kept, so a pull made with a different
+Nuvama login is refused. Nuvama's documentation marks a static IP as mandatory, so a pull from a
+home connection may be refused. Vyuha calls <code>nc.nuvamawealth.com</code> only when you pull.</p>
+
+<p>Revoking works as it does for the four above: delete or regenerate the app on the broker's own
+site, and remove the saved connection on <b>Import → Connect broker</b>. Your imported trades stay.</p>
+
 <div class="strip">Vyuha is a record-keeping and analytics product. Nothing in it, and nothing in
 this guide, is investment advice.</div>
 
 <footer>
   <span>Vyuha — trade journal &amp; analytics · record-keeping, not investment advice</span>
-  <span>Broker API setup guide · As of Sep 2026</span>
+  <span>Broker API setup guide · As of Oct 2026</span>
 </footer>
 
 </div>

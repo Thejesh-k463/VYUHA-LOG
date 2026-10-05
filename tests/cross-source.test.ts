@@ -690,6 +690,30 @@ describe("C6 — the contract key: one contract, two names", () => {
     expect(r.risky).toBe(true);
   });
 
+  /**
+   * v4.7.0 audit MU-5: the contract key must carry the STRIKE (and the option
+   * type). Two strikes of one series — same underlying, same month, same day,
+   * same quantity and value — are two contracts; a key that dropped either
+   * would merge a 1400 CE into a 1420 CE and ask the user about a duplicate
+   * that is not one.
+   */
+  it("MU-5 — two strikes (or CE vs PE) of one series never collide, even with equal quantity, value and date", () => {
+    for (const other of ["OPT CDSL 29 Sep 2026 1420 CE", "OPT CDSL 29 Sep 2026 1400 PE"]) {
+      const r = detectCrossSourceDuplicates([nativeIn()], [oaRow({ tradingsymbol: other })], "fyers-api-2026-08-25");
+      expect(r.collisions, other).toEqual([]);
+      expect(r.risky, other).toBe(false);
+    }
+    // both strikes compact on both sides, too
+    const r2 = detectCrossSourceDuplicates(
+      [nativeIn()],
+      [ex({ ...fy, symbol: "CDSL26SEP1420CE", tradingsymbol: "CDSL26SEP1420CE", buyQty: 950, buyValue: 44_175, buyDate: "2026-08-25", sourceFile: "FYERS_tradebook.csv" })],
+      "fyers-api-2026-08-25",
+    );
+    expect(r2.collisions).toEqual([]);
+    // positive control: the SAME strike under the other name does collide
+    expect(detectCrossSourceDuplicates([nativeIn()], [oaRow()], "fyers-api-2026-08-25").collisions).toHaveLength(1);
+  });
+
   it("the contract key never crosses brokers", () => {
     const r = detectCrossSourceDuplicates([nativeIn()], [oaRow({ broker: "zerodha" })], "fyers-api-2026-08-25");
     expect(r.collisions).toEqual([]);

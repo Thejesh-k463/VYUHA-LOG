@@ -736,3 +736,40 @@ describe("S1/S2 — Edit levels pre-fills from the wire and an UNTOUCHED save po
     expect(storedLevels(303)).toEqual(before);
   });
 });
+
+/**
+ * Release-audit U-B1 — the inline calculator re-seeds when the stop the card shows moves.
+ *
+ * `PositionCalculator` seeds its stop from the row ONCE (`useState` initialisers, never an
+ * effect). After Edit levels saves and `router.refresh()` lands, the card stays mounted for the
+ * same `row.id` — so a key of `row.id` alone kept the OLD stop in the calculator beside the new
+ * one in the card. The key now carries `effectiveStopP`, so a changed stop is a fresh calculator.
+ * Read from the element the card builds (the harness pattern of `editPropsFromCard`).
+ */
+describe("U-B1 — the calculator is keyed on the row AND its effective stop", () => {
+  function calculatorKey(row: DeskRow): string | null {
+    let key: string | null | undefined;
+    function Harness() {
+      const tree = cardMod.PositionCard(cardProps(row, proAll, true, null));
+      key = (findEl(tree, (e) => e.type === calcMod.PositionCalculator) as { key?: string | null } | undefined)?.key;
+      return null;
+    }
+    server.renderToStaticMarkup(h(Harness));
+    if (key === undefined) throw new Error(`the card for row ${row.id} built no PositionCalculator`);
+    return key;
+  }
+  let calcMod: typeof import("@/components/live/position-calculator");
+  beforeAll(async () => {
+    calcMod = await import("@/components/live/position-calculator");
+  });
+
+  it("a moved stop is a NEW calculator; the same stop is the same one; another row is another one", () => {
+    const tcs = rowOf(proAll, 301);
+    expect(tcs.effectiveStopP).toBe(290_000);
+    const same = calculatorKey(tcs);
+    expect(calculatorKey({ ...tcs })).toBe(same);
+    expect(calculatorKey({ ...tcs, effectiveStopP: 295_000 }), "the calculator kept the old stop after Edit levels").not.toBe(same);
+    expect(calculatorKey({ ...tcs, effectiveStopP: null })).not.toBe(same);
+    expect(calculatorKey(rowOf(proAll, 303))).not.toBe(same);
+  });
+});

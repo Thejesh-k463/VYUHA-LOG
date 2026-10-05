@@ -231,10 +231,19 @@ function productHintOf(product: string): ProductHint {
   return null; // NRML (F&O / commodity) — the classifier decides from the symbol
 }
 
+/** v4.7.0 Q4 (the Kite rule, builder FE): OpenAlgo's currency-derivative
+ *  venues. A fill on either is REFUSED, counted and named — CDS / BCD used to
+ *  be folded into NSE / BSE and priced as equity futures (no charge_config row
+ *  covers currency, invariant 3). Refused by its own branch, not trap 5's. */
+const CURRENCY_EXCHANGES = new Set(["CDS", "BCD"]);
+function isCurrencyExchange(exchange: unknown): boolean {
+  return CURRENCY_EXCHANGES.has(String(exchange ?? "").trim().toUpperCase());
+}
+
 function exchangeOf(exchange: string): Exchange | null {
   const e = String(exchange ?? "").toUpperCase();
-  if (e === "NSE" || e === "NFO" || e === "CDS" || e === "NSE_INDEX") return "NSE";
-  if (e === "BSE" || e === "BFO" || e === "BCD" || e === "BSE_INDEX") return "BSE";
+  if (e === "NSE" || e === "NFO" || e === "NSE_INDEX") return "NSE";
+  if (e === "BSE" || e === "BFO" || e === "BSE_INDEX") return "BSE";
   if (e === "MCX") return "MCX";
   return null;
 }
@@ -257,7 +266,7 @@ const UNPRICEABLE_EXCHANGE: Record<string, string> = {
 /** The refusal reason for a stated exchange Vyuha cannot price, or null. */
 export function unpriceableExchange(exchange: unknown): string | null {
   const e = String(exchange ?? "").trim().toUpperCase();
-  if (!e || exchangeOf(e) !== null) return null;
+  if (!e || exchangeOf(e) !== null || isCurrencyExchange(e)) return null;
   return UNPRICEABLE_EXCHANGE[e] ?? `the exchange code ${e}, which Vyuha has no charge rows for`;
 }
 
@@ -397,6 +406,11 @@ export interface OpenAlgoNormalizeResult {
   refusedByExchange: Record<string, number>;
   /** W8 trap 6: MCX rows that arrived with no quantity (never repaired). */
   refusedMcxNoQuantity: number;
+  /** v4.7.0 Q4: one entry per refused CDS / BCD fill, its symbol as it would
+   *  have been stored — the route counts and names them and looks for one
+   *  still open (review R5). Always set by `normalizeOpenAlgoTrades`; optional
+   *  so a result built before v4.7.0 still type-checks. */
+  refusedCurrency?: string[];
 }
 
 /**
@@ -417,12 +431,17 @@ export function normalizeOpenAlgoTrades(
   let refused = 0;
   const refusedByExchange: Record<string, number> = {};
   let refusedMcxNoQuantity = 0;
+  const refusedCurrency: string[] = [];
   /** Symbols whose stated MCX trade value disagrees with qty × price. */
   const mcxValueNoted = new Set<string>();
 
   for (const row of rows ?? []) {
     if (!row || !row.symbol) {
       refused += 1;
+      continue;
+    }
+    if (isCurrencyExchange(row.exchange)) {
+      refusedCurrency.push(row.symbol);
       continue;
     }
     if (unpriceableExchange(row.exchange)) {
@@ -539,7 +558,7 @@ export function normalizeOpenAlgoTrades(
   });
 
   const notes = [...groups.values()].flatMap((g) => g.notes);
-  return { trades, repaired, refused, notes, refusedByExchange, refusedMcxNoQuantity };
+  return { trades, repaired, refused, notes, refusedByExchange, refusedMcxNoQuantity, refusedCurrency };
 }
 
 /** Normalise a user-typed host into a base URL, or throw with a usable message. */
@@ -564,6 +583,21 @@ export function normalizeHost(host: string): string {
  */
 export const OPENALGO_WS_PORT = 8765;
 
+/**
+ * Is a URL's `hostname` this machine's loopback? THE SAME RULE as
+ * `isLocalOpenAlgoHost` in lib/domain/openalgo-disclosure.ts (localhost,
+ * 127.0.0.0/8, ::1) — restated, not imported, because that module imports
+ * `OPENALGO_WS_PORT` from THIS one at its top level (`OPENALGO_FEED_ITEMS`), and
+ * the import back would be an ESM cycle whose outcome depends on which module
+ * the bundle loads first. tests/openalgo-gate.test.ts pins the two equal over
+ * a host table, so they cannot drift apart unseen.
+ */
+function isLoopbackHostname(hostname: string): boolean {
+  const h = String(hostname ?? "").toLowerCase();
+  if (h === "localhost" || h === "::1" || h === "[::1]") return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
 /** The plain reason a streaming address on another machine is refused with. */
 const STREAM_SAME_MACHINE = "The streaming address must be on the same machine as the bridge address";
 
@@ -579,7 +613,11 @@ const STREAM_SAME_MACHINE = "The streaming address must be on the same machine a
  * authenticate message, and the disclosure promises it goes only to the host
  * they saved. Hence: scheme `ws:` or `wss:` (a missing scheme reads as `ws://`),
  * no user name or password, and a hostname EQUAL to the bridge host's
- * (case-folded by `URL`; an IPv6 literal keeps its brackets on both sides).
+ * (case-folded by `URL`; an IPv6 literal keeps its brackets on both sides) OR
+ * both hostnames loopback (v4.7.0 audit UJ-6, review R9): `localhost`,
+ * `127.0.0.0/8` and `::1` are one machine, so a bridge saved as
+ * `http://localhost:5000` accepts `ws://127.0.0.1:8765`. A LAN IP against a
+ * loopback bridge is still refused — that IS another address on the wire.
  * The path is kept (a reverse proxy exposes the stream at `/ws`, R11 C6); a
  * query string or fragment is dropped.
  */
@@ -600,7 +638,8 @@ export function normalizeOpenAlgoStreamUrl(wsUrl: string, host: string): string 
   }
   if (url.username || url.password) throw new Error("The streaming address must not carry a user name or password.");
   const bridge = new URL(normalizeHost(host));
-  if (url.hostname.toLowerCase() !== bridge.hostname.toLowerCase()) {
+  const sameName = url.hostname.toLowerCase() === bridge.hostname.toLowerCase();
+  if (!sameName && !(isLoopbackHostname(url.hostname) && isLoopbackHostname(bridge.hostname))) {
     throw new Error(`${STREAM_SAME_MACHINE} (${bridge.hostname}), not ${url.hostname}.`);
   }
   const path = url.pathname === "/" ? "" : url.pathname;
@@ -849,15 +888,18 @@ export function openAlgoImportSource(creds: OpenAlgoCredentials): ApiImportSourc
 }
 
 /** Wrap an OpenAlgo pull in the ParsedFile shape preview/commit expects. */
-export function toParsedFile(broker: Broker, result: OpenAlgoNormalizeResult): ParsedFile {
+export function toParsedFile(broker: Broker, result: OpenAlgoNormalizeResult, notes: string[] = []): ParsedFile {
   const warnings: string[] = [];
   // v4.6.0 audit DA-8: "no executions" is said only when NOTHING was refused.
   // When every row was refused, the day had executions — the lines below say
   // why each was dropped, and this line must not contradict them.
+  // v4.7.0 Q4: refused currency fills count here; their sentence (and any
+  // stranded-open note) is composed by the route and arrives in `notes`.
   const refusedRows =
     result.refused +
     Object.values(result.refusedByExchange ?? {}).reduce((a, n) => a + n, 0) +
-    (result.refusedMcxNoQuantity ?? 0);
+    (result.refusedMcxNoQuantity ?? 0) +
+    (result.refusedCurrency?.length ?? 0);
   if (result.trades.length === 0 && refusedRows === 0) {
     warnings.push(
       "OpenAlgo returned no executions for today — /tradebook only covers the current trading day. Use the file import for older trades.",
@@ -888,7 +930,7 @@ export function toParsedFile(broker: Broker, result: OpenAlgoNormalizeResult): P
       `REFUSED — ${n} MCX row${n === 1 ? "" : "s"} arrived with quantity 0. On MCX the trade value is not quantity × price, so the size cannot be recovered from it; nothing was guessed. Import ${n === 1 ? "this trade" : "these trades"} from the broker's own file.`,
     );
   }
-  warnings.push(...result.notes);
+  warnings.push(...result.notes, ...notes);
   return {
     sourceId: "openalgo-api",
     broker,

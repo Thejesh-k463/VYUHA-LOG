@@ -227,13 +227,15 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // background" became false and is gone.
       // Interval: `clampRefreshSeconds()` lib/quotes/openalgo.ts:59-71
       // (REFRESH_SECONDS_MIN/MAX/DEFAULT + `clampRefreshSeconds()`; 1–5 s,
-      // default 3); the poll is a `setInterval` started by `subscribe()`
-      // (lib/quotes/openalgo.ts:419, `const timer = setInterval(() => void
-      // poll(), periodMs)`) and cleared when the desk's stream closes
-      // (:420-427, `const stop: Unsubscribe` → `clearInterval(timer)` on the
-      // `signal` abort). Ceiling: RATE_LIMIT_PER_SECOND = 10 (:64), enforced
-      // by `createRateGuard()` (:290-300, whose `take(now)` returns false past
-      // the limit), which REFUSES rather than queues.
+      // default 3); since C7 the fallback asking is `pump()` on `pumpTimer`,
+      // a `setInterval` started by the first `subscribe()` in
+      // lib/quotes/openalgo.ts (`pumpTimer = setInterval(() => void pump(true),
+      // periodMs)`) and cleared when the last subscription stops (`const stop:
+      // Unsubscribe` → `clearInterval(pumpTimer)` once `subs` is empty, run on
+      // the desk's `signal` abort). Ceiling: `RATE_LIMIT_PER_SECOND` = 10 in
+      // that file, enforced by `createRateGuard()` in lib/quotes/rate-guard.ts
+      // (re-exported by the adapter; its `take(now)` returns false past the
+      // limit), which REFUSES rather than queues.
       "During market hours, while the Live Desk is open, the desk holds one streaming connection to your bridge and receives prices as they change. A symbol with no streamed price for 30 seconds — and every symbol while the stream is unavailable — is asked for the old way, at the interval you set on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code, and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says. The stream and the asking start when the Live Desk opens and stop when it closes or when its tab goes to the background, and at the end of the live window (about 15:45 IST on a normal day); the streaming connection itself closes within 30 seconds of the desk closing. Outside the live window nothing streams and nothing repeats: the desk asks for the last prices once each time it connects. Only if you turn on Telegram stop/target alerts (Pro), Vyuha also asks the bridge for the prices of your open positions about once a minute during market hours while Vyuha is open on any screen, minimised included (more often while the Live Desk is open). With more than one account, every account's checked symbols go through one bridge connection: the one already open, which is the one the Live Desk last used, or else the selected account's.",
   },
   {
@@ -256,8 +258,10 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // at :325 (`post()` body: `JSON.stringify({ apikey: creds.apiKey,
       // ...extra })`). The key list is the OPEN positions of the selected
       // account and nothing else — `openPositionKeys()` in
-      // app/api/live/stream/route.ts, whose `if (!t.isOpen) continue` is the
-      // `is_open` predicate, capped at `MAX_KEYS` (500) in that same file.
+      // app/api/live/stream/route.ts calls `positionKeys()` in
+      // lib/live/position-keys.ts (the ONE key builder since C5), whose
+      // `if (!t.isOpen) continue` is the `is_open` predicate, capped at
+      // `MAX_POSITION_KEYS` (500) in that same file.
       // Identifiers, not line numbers: both moved in this wave. No quantity,
       // no average price, no stop, no P&L, no account id is in the body —
       // those columns are never read on this path.
@@ -289,9 +293,12 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // (`provider.health()` in components/live/load-desk.ts). The earlier wording said "once when
       // the feed is checked", which read as once per install.
       //
-      // OPENALGO_DISCLOSURE_VERSION stays "2": same host, same key, nothing new
-      // sent and nothing new kept — a wider statement of WHEN an already-
-      // disclosed request is made is not a new risk (see the rule above :25-28).
+      // This item never bumped the version on its own: when it was widened
+      // (under v "2") it was the same host, same key, nothing new sent and
+      // nothing new kept — a wider statement of WHEN an already-disclosed
+      // request is made is not a new risk (the bump rule in the version history
+      // at the top of this file). OPENALGO_DISCLOSURE_VERSION is "5" today, for
+      // the reasons that history lists — none of them this item.
       "Checking the connection calls OpenAlgo's /funds endpoint once, and the desk does the same each time it opens and each time its price stream reconnects. It is the cheapest call that proves both the address and the API key are right. Right after it, Vyuha reads OpenAlgo's version from /auth/app-info — a request that carries nothing, not even the key — so it can warn you when the bridge is too old to pull trades from. It is the same bridge the prices come from, and nothing further is sent. Vyuha keeps nothing from either answer — no balance is stored or shown — only that the bridge replied, how many milliseconds it took, and whether its version is new enough.",
   },
   {
@@ -312,8 +319,11 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // (pinned as the socket constructor's ONLY url source by
       // tests/egress-guard.test.ts): the saved host's own HOSTNAME on
       // `OPENALGO_WS_PORT`, or the streaming address saved on the connection,
-      // which `normalizeOpenAlgoStreamUrl()` refuses unless its hostname EQUALS
-      // the bridge's (scheme ws: / wss: only, no user name or password) — the
+      // which `normalizeOpenAlgoStreamUrl()` refuses unless its hostname equals
+      // the bridge's or both hosts are loopback (scheme ws: / wss: only, no user
+      // name or password). Loopback is `isLocalOpenAlgoHost()` (this file):
+      // localhost, 127.0.0.0/8 and ::1 are one machine, while a LAN IP against
+      // 127.0.0.1 stays refused (v4.7.0 release audit UJ-6, review R9). The
       // save route answers 400 with that reason. So "the same machine" is
       // enforced at save time and re-checked at connect time. An `https://`
       // bridge with no saved streaming address gets no stream (polling only).

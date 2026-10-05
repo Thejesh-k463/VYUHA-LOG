@@ -57,8 +57,11 @@ import { SETUP_GRADES, type SetupGrade } from "@/lib/analytics/edge-clinic-contr
  *   c2.2 v4.7.0 wave C2 seam D1 — a playbook-journaled row with NULL ruleViolations is rule data ("kept every rule")
  *   c3.0 v4.7.0 wave C3 — sizing over `kellySample()` (no cap-unit R, no basis-less sale), floor 50 → 30,
  *        `sizingSample` on every cell, `n` on the sizing card, the sizing provenance line names the sample
+ *   c3.1 v4.7.0 audit fix wave (owner Q3, review R4, CG-1) — the sizing ceiling is PER 1R
+ *        (½ Kelly at the lower bounds / L̄ at its upper bound, capped at ½ empirical Kelly), `lossHi`
+ *        on the sizing card, an off-grid empirical Kelly / fc is null, the refusal names its reason
  */
-export const ENGINE_VERSION = "c3.0";
+export const ENGINE_VERSION = "c3.1";
 
 /** Finance (No. 2) Act 2024 STT step for F&O — must equal `STT_EPOCH_2024` in lib/db/seed-data.ts (a test pins it). */
 export const FNO_STT_EPOCH = "2024-10-01";
@@ -241,13 +244,16 @@ export interface EdgeDecay {
 
 /**
  * The numeric core of every Kelly figure in the app (C3 D1) — `kellyCeiling()`
- * over a `kellySample()`. Fractions are of capital AT RISK per trade (an R is
- * one unit of risk), the unit `sizeKelly`'s fUsed is in.
+ * over a `kellySample()`. The CEILING (`halfKellyLowerBound`) is a fraction of
+ * capital risked PER 1R (owner Q3, v4.7.0 audit) — the unit `sizeKelly`'s fUsed
+ * is in, since the Lab's risk budget is 1R. `kellyPoint` / `kellyAtLowerBounds`
+ * stay Thorp's classic f = p − (1 − p)/b: the fraction LOST on an average loss of
+ * L̄ R, which is f/L̄ per 1R. `empiricalKelly` is per 1R already (ln(1 + f·R)).
  */
 export interface KellyCeiling {
   /** R values in the sample. */
   n: number;
-  /** Win rate (R > 0). */
+  /** Win rate (R > 0 — a scratch at exactly 0 is not a win). */
   p: number;
   /** Wilson lower 95 % bound of p. */
   pLo: number;
@@ -255,11 +261,25 @@ export interface KellyCeiling {
   b: number;
   /** Percentile-bootstrap lower 95 % bound of b; null when not finite. */
   bLo: number | null;
+  /**
+   * L̄ = the mean non-winning R as a positive magnitude, at its percentile-bootstrap
+   * UPPER 95 % bound (same seed and resamples as `bLo`), so dividing by it stays
+   * conservative; null when not a positive finite number (no loss, or every loss a scratch).
+   */
+  lossHi: number | null;
+  /** Classic f at the point estimates — a fraction lost on an average loss, NOT per 1R. */
   kellyPoint: number | null;
+  /** Classic f at the lower 95 % bounds of p and b — NOT per 1R. */
   kellyAtLowerBounds: number | null;
-  /** ½ × Kelly at the lower 95 % bounds, as a fraction of capital at risk per trade; null = not supported. */
+  /**
+   * THE ceiling, a fraction of capital risked PER 1R: ½ × `kellyAtLowerBounds` / `lossHi`,
+   * capped at ½ × `empiricalKelly`. Null = not supported: Kelly at the lower bounds not
+   * positive, no `lossHi`, no `empiricalKelly` (off grid — CG-1), or a result that is not
+   * finite or exceeds 1.
+   */
   halfKellyLowerBound: number | null;
   supportsSizingUp: boolean;
+  /** Argmax of mean ln(1 + f·R) on the 0.001 grid below 0.99 — per 1R; null off grid. */
   empiricalKelly: number | null;
   zeroGrowthFraction: number | null;
 }
@@ -841,20 +861,43 @@ export function kellyCeiling(rs: readonly number[], opts: { seed?: number } = {}
   const b = ratio(sample);
   const bCi = S.bootstrapInterval(sample, ratio, { seed });
   const bLo = fin(bCi.lo) ? bCi.lo : null;
+  // L̄ (Q3 / R4): the mean non-winning R as a magnitude, at its UPPER bound — the same
+  // seed, so the same resamples as bLo. A resample with no loss has no L̄ (NaN, dropped).
+  const meanLoss = (xs: number[]) => {
+    let ls = 0;
+    let ln = 0;
+    for (const r of xs) {
+      if (!(r > 0)) {
+        ls -= r;
+        ln++;
+      }
+    }
+    return ln ? ls / ln : Number.NaN;
+  };
+  const lCi = S.bootstrapInterval(sample, meanLoss, { seed });
+  const lossHi = fin(lCi.hi) && lCi.hi > 0 ? lCi.hi : null;
   const kellyPoint = fin(b) ? S.kellyApprox(p, b) : null;
   const kellyAtLowerBounds = bLo != null ? S.kellyApprox(pLo, bLo) : null;
-  const halfKellyLowerBound = kellyAtLowerBounds != null && kellyAtLowerBounds > 0 ? kellyAtLowerBounds / 2 : null;
+  const empiricalKelly = S.kellyEmpirical(sample);
+  // Per 1R: classic f is the fraction lost on an AVERAGE loss of L̄ R, so f/L̄ is the
+  // fraction per 1R. A scratch-heavy book has a tiny L̄ and f/L̄ explodes ("600 %"), so
+  // the result is capped at ½ × the empirical Kelly, which is per 1R and ruin-bounded.
+  const perR = kellyAtLowerBounds != null && kellyAtLowerBounds > 0 && lossHi != null && empiricalKelly != null
+    ? Math.min(kellyAtLowerBounds / 2 / lossHi, empiricalKelly / 2)
+    : null;
+  const halfKellyLowerBound = perR != null && fin(perR) && perR > 0 && perR <= 1 ? perR : null;
   return {
     n: sample.length,
     p,
     pLo,
     b,
     bLo,
+    lossHi,
     kellyPoint,
     kellyAtLowerBounds,
     halfKellyLowerBound,
     supportsSizingUp: halfKellyLowerBound != null,
-    empiricalKelly: S.kellyEmpirical(sample),
+    empiricalKelly,
     zeroGrowthFraction: S.zeroGrowthFractionEmpirical(sample),
   };
 }
@@ -888,10 +931,15 @@ function sizingCeiling(rs: number[], of: number, grade: EvidenceGrade, meanR: nu
     verb = "test";
     headline = `${label}: ceiling ${fmtPct(halfKellyLowerBound!)} of capital at risk per trade, edge not yet established`;
   }
-  const detail = [
-    supportsSizingUp ? "Half-Kelly at the lower 95 % bounds of the win rate and the payoff." : "Kelly at the lower 95 % bounds of the win rate and the payoff is not positive.",
-    streak,
-  ].filter(Boolean).join(" ");
+  // Q3 / R4: the ceiling is per 1R; the refusal names the reason that actually held.
+  const method = supportsSizingUp
+    ? `Half-Kelly at the lower 95 % bounds of the win rate and the payoff, per 1R: divided by the average loss at its upper 95 % bound (${k.lossHi!.toFixed(2)} R) and no higher than half the empirical Kelly.`
+    : !(k.kellyAtLowerBounds != null && k.kellyAtLowerBounds > 0)
+      ? "Kelly at the lower 95 % bounds of the win rate and the payoff is not positive."
+      : k.empiricalKelly == null
+        ? "The empirical Kelly has no maximum below 99 % of capital per 1R — the losses measured are too small to size against — so no ceiling is stated."
+        : "Kelly at the lower 95 % bounds is positive, but the losses measured give no per-1R ceiling.";
+  const detail = [method, streak].filter(Boolean).join(" ");
   // D8: the card names its own sample — cap-unit R is P&L over a cap, not a risk.
   const sampleLine = `Sizing reads ${k.n} of ${of} trades with an R: the trades with a stop or a typed risk — cap-unit rows are not a risk.`;
   return {

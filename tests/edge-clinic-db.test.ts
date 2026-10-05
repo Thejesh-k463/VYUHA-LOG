@@ -476,6 +476,7 @@ describe("ENGINE_VERSION is pinned to the engine's output (golden report)", () =
     const report = edgeClinic(goldenBook(), { today: "2026-10-03", riskCapRupees: 1500, currentRiskPct: 1 });
     const hash = createHash("sha256").update(stable(report)).digest("hex");
     // c3.0 (v4.7.0 C3): sizing over kellySample() — no cap-unit R, no basis-less sale — at the floor 30, plus `sizingSample`.
-    expect({ ENGINE_VERSION, hash }).toEqual({ ENGINE_VERSION: "c3.0", hash: "6b0acc4b8745f83951eb8aad1cf6b7575cb1022a4c73c2192539114c3c42c240" });
+    // c3.1 (v4.7.0 audit, owner Q3 / review R4 / CG-1): the ceiling per 1R, `lossHi`, off-grid empirical Kelly null.
+    expect({ ENGINE_VERSION, hash }).toEqual({ ENGINE_VERSION: "c3.1", hash: "0d7a02bb60faaff29057d04f02eaecdeaeb337ce3d7f39236e8e9c90cf4ae164" });
   });
 });

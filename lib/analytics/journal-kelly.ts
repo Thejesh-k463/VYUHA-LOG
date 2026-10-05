@@ -21,10 +21,15 @@
  *    stated. No winning trade → b = 0: filled as p 0 and marked (K7).
  *  - The slice list is in a FIXED order — book, segments in SEGMENTS order, then
  *    segment × setup by segment then setup — never sorted by f or by n (D7).
- *  - "12m" = exit day (`sellDate`, read through the engine's `dayOf`) within the
- *    365 days ending `today`, inclusive (D6).
+ *  - "12m" = exit day within the 365 days ending `today`, inclusive (D6). The
+ *    exit day comes through `exitDateOf` (`sideOf`): a short closes on its
+ *    buy-back, so its exit is `buyDate` (v4.7.0 audit CG-3 / review R11 — the
+ *    Clinic's experiment windows, edge-clinic-note.ts `exitDay`, read the same
+ *    rule), read through the engine's `dayOf`.
+ *  - The ceiling (`halfKellyLowerBound`) is kellyCeiling's, PER 1R (owner Q3).
  */
 import { SEGMENT_LABELS, SEGMENTS, type Segment } from "@/lib/domain/constants";
+import { exitDateOf } from "@/lib/domain/side";
 import { wilsonInterval } from "@/lib/analytics/inference";
 import {
   CLINIC_SEED,
@@ -69,8 +74,16 @@ export interface JournalKellyOk {
   pHi: number;
   b: number;
   bLo: number | null;
+  /** The average loss in R at its bootstrap upper 95 % bound — the ceiling's divisor (kellyCeiling's own). */
+  lossHi: number | null;
+  /** Classic f at the point estimates — a fraction lost on an average loss, NOT per 1R. */
   kellyPoint: number | null;
-  /** ½ Kelly at the lower 95 % bounds, a fraction of capital at risk per trade; null = not supported. */
+  /** Classic f at the lower 95 % bounds — NOT per 1R; says why a null ceiling is null. */
+  kellyAtLowerBounds: number | null;
+  /**
+   * THE Clinic ceiling, a fraction of capital at risk per trade where the risk is 1R (owner Q3):
+   * ½ Kelly at the lower 95 % bounds over `lossHi`, capped at ½ the empirical Kelly; null = not supported.
+   */
   halfKellyLowerBound: number | null;
   supportsSizingUp: boolean;
 }
@@ -130,7 +143,7 @@ function windowed(closed: readonly ClinicTrade[], window: JournalKellyWindow, to
   if (end == null) return [];
   const start = end - 364; // the 365 days ending today, inclusive
   return closed.filter((t) => {
-    const d = dayNumber(dayOf(t.sellDate));
+    const d = dayNumber(dayOf(exitDateOf(t)));
     return d != null && d >= start && d <= end;
   });
 }
@@ -214,7 +227,9 @@ export function journalKelly(trades: readonly ClinicTrade[], q: JournalKellyQuer
     pHi: wilsonInterval(rs.filter((r) => r > 0).length, n).hi,
     b: k.b,
     bLo: k.bLo,
+    lossHi: k.lossHi,
     kellyPoint: k.kellyPoint,
+    kellyAtLowerBounds: k.kellyAtLowerBounds,
     halfKellyLowerBound: k.halfKellyLowerBound,
     supportsSizingUp: k.supportsSizingUp,
   };

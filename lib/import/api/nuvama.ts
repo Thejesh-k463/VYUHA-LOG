@@ -118,6 +118,22 @@ function nuvamaError(what: string, status: number, json: unknown): Error {
   return new Error(`Nuvama ${what}: ${msg}${hint}`);
 }
 
+/**
+ * v4.7.0 audit G-A1 (review R8). Every Nuvama fetch is sent with
+ * `redirect: "manual"`, so a 3xx is never FOLLOWED (a followed redirect would
+ * carry the API secret, the request id, `Authorization` or `SourceToken` to a
+ * host nobody pinned) — and it is refused HERE in a plain sentence, ahead of
+ * the explicit status reads below. Nuvama documents no redirect on any of the
+ * three calls (R10 §3).
+ */
+function refuseRedirect(what: string, res: Response): void {
+  if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
+    throw new Error(
+      `Nuvama ${what} answered with a redirect (HTTP ${res.status}) — refused; Vyuha does not follow a broker's redirect, so nothing was sent to the address it named.`,
+    );
+  }
+}
+
 /** The two-step login (N-A4…A12). Status codes read explicitly. */
 export async function nuvamaLogin(args: { apiKey: string; apiSecret: string; reqId: string }): Promise<NuvamaSession> {
   const vendor = await fetch(`${NUVAMA_LOGIN_BASE}accounts/loginvendor/${encodeURIComponent(args.apiKey)}/`, {
@@ -125,7 +141,9 @@ export async function nuvamaLogin(args: { apiKey: string; apiSecret: string; req
     headers: { Source: args.apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({ pwd: args.apiSecret }),
     cache: "no-store",
+    redirect: "manual",
   });
+  refuseRedirect("login (API key / secret)", vendor);
   const v = await readBody(vendor);
   const msg = (v.json as { msg?: unknown } | null)?.msg;
   if (vendor.status !== 200 || typeof msg !== "string" || !msg.trim()) {
@@ -138,7 +156,9 @@ export async function nuvamaLogin(args: { apiKey: string; apiSecret: string; req
     headers: { SourceToken: msg, "Content-Type": "application/json", ...(appIdKey ? { AppIdKey: appIdKey } : {}) },
     body: JSON.stringify({ reqId: args.reqId }),
     cache: "no-store",
+    redirect: "manual",
   });
+  refuseRedirect("login (session)", login);
   const l = await readBody(login);
   if (login.status === 222 || sessionExpired(login.status, l.text)) {
     throw new BrokerAuthExpired(
@@ -196,7 +216,9 @@ export async function fetchNuvamaTrades(session: NuvamaSession, apiKey: string):
       ...(session.appIdKey ? { AppIdKey: session.appIdKey } : {}),
     },
     cache: "no-store",
+    redirect: "manual",
   });
+  refuseRedirect("trade book", res);
   const b = await readBody(res);
   if (sessionExpired(res.status, b.text)) {
     throw new BrokerAuthExpired(

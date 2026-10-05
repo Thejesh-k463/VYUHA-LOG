@@ -159,8 +159,11 @@ export function shouldRaiseDigestNotification(d: NotifyDecision): boolean {
 // v4.7.0 C5: "the digest" → "a Telegram message" — the strip now also records a
 // failed stop/target alert, whose levels are on the dashboard's open positions
 // and the Live Desk, not in a digest.
+// v4.7.0 release audit DC-B2: "already on your dashboard" → the Live Desk and
+// the journal — the dashboard shows no stop/target check, so a reader sent there
+// for a missed alert's level found nothing.
 export const TELEGRAM_FAILURE_REASSURANCE =
-  "Your journal is unaffected — every number and level a Telegram message carries is already on your dashboard.";
+  "Your journal is unaffected — every number and level a Telegram message carries is already in Vyuha, on the Live Desk and in your journal.";
 
 export const TELEGRAM_FAILURE_DISMISS_LABEL = "Dismiss";
 

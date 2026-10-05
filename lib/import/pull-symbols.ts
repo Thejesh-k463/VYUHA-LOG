@@ -142,8 +142,9 @@ function agrees(
 
 /**
  * A currency derivative (NSE CDS, BSE BCD) or an NCDEX contract is REFUSED by
- * every native pull and counted: no charge profile covers either (a CDS trade
- * pays no STT, yet `USDINR26OCTFUT` classifies as an equity `future` and would
+ * the C6 pulls (Fyers, Kotak Neo, Nuvama) and counted; the Kite pull and the
+ * Zerodha files refuse currency too since the v4.7.0 audit (their own code, not
+ * this rule). No charge profile covers either (a CDS trade pays no STT, yet `USDINR26OCTFUT` classifies as an equity `future` and would
  * be charged equity-F&O STT and stamp), and Vyuha has no currency segment
  * vocabulary to name one with. Kotak's `cde_fo` was refused from the start
  * (`KOTAK_DERIVATIVE` below); Nuvama and Fyers now answer the same way, and the
@@ -285,6 +286,8 @@ export function kotakTradingsymbol(row: KotakTradeFields): string | null {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ISIN_SHAPE = /^IN[EF][A-Z0-9]{8}\d$/;
+/** An equity ticker or instrument name: no `_` (so a `7053_NSE` token is not a name). */
+const EQUITY_NAME = /^[A-Z0-9&][A-Z0-9&. -]*$/;
 /** CDS / BCD / NCDEX are NOT here: `nuvamaUnpricedRow` refuses them first. */
 const NUVAMA_DERIVATIVE_EXCHANGES = new Set(["NFO", "BFO", "MCX"]);
 
@@ -316,8 +319,10 @@ export interface NuvamaTradeFields {
  *
  * EQUITY: an ISIN-shaped `trdSym` (`INE…`/`INF…`, 12 characters — N-S1)
  * resolves through the bundled chain (`bundledSymbolByIsin`, as Paytm's codes
- * and the report's equity lines do) and KEEPS the ISIN when nothing knows it
- * (a visible code is a question; a wrong ticker merges two companies); any
+ * and the report's equity lines do); when nothing knows it, a NAME the row
+ * states in `sym` is used exactly as the report uses its instrument name
+ * (v4.7.0 audit M-A2), else the ISIN is KEPT (a visible code is a question; a
+ * wrong ticker merges two companies); any
  * other value is the ticker with its series suffix stripped. UNVERIFIED like the
  * report's equity rows (`FYERS_NUVAMA_EQUITY_UNVERIFIED`).
  */
@@ -342,9 +347,24 @@ export function nuvamaTradingsymbol(row: NuvamaTradeFields): string | null {
     ot === "CE" || ot === "PE" || ((ot === "FUT" || ot === "XX") && expRaw !== "") || NUVAMA_DERIVATIVE_EXCHANGES.has(exc) || facts !== null;
 
   if (!derivative) {
-    if (ISIN_SHAPE.test(upper)) return bundledSymbolByIsin(upper) ?? upper;
+    if (ISIN_SHAPE.test(upper)) {
+      // v4.7.0 audit M-A2: the FILE parser names an equity line
+      // `bundledSymbolByIsin(isin) ?? <instrument name>`; the pull used to fall
+      // back to the ISIN, so an ISIN the snapshot does not know keyed
+      // `equity|INE…` here and `equity|<NAME>` from the file — one holding, two
+      // keys. When the row states a NAME in `sym` (not a `7053_NSE` token), it
+      // is named through `nuvamaInstrument` itself, byte-equal to the file by
+      // construction. With no stated name the ISIN is kept (a visible code is a
+      // question; a guessed ticker merges two companies).
+      const name = String(row.sym ?? "").trim();
+      if (EQUITY_NAME.test(name.toUpperCase()) && /[A-Z]/i.test(name)) {
+        const inst = nuvamaInstrument(name, upper);
+        if (inst && inst.kind === "equity") return inst.tradingsymbol;
+      }
+      return bundledSymbolByIsin(upper) ?? upper;
+    }
     const bare = stripSeriesSuffix(upper);
-    return bare && /^[A-Z0-9&][A-Z0-9&. -]*$/.test(bare) ? bare : null;
+    return bare && EQUITY_NAME.test(bare) ? bare : null;
   }
 
   // 2. Rebuilt from the stated fields, then named by the report's own grammar.

@@ -18,6 +18,7 @@ import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
+import { isCurrencyContract, withCurrencyRefusals } from "./zerodha";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -119,8 +120,24 @@ function exchangeFrom(raw: string): Exchange | null {
   if (s === "fob") return "BSE";
   if (s.startsWith("mcx")) return "MCX";
   if (s.startsWith("bse") || s.startsWith("bfo")) return "BSE";
-  if (s.startsWith("nse") || s.startsWith("nfo") || s.startsWith("cds")) return "NSE";
+  if (s.startsWith("nse") || s.startsWith("nfo")) return "NSE";
   return null;
+}
+
+/**
+ * v4.7.0 Q4 (the Kite / Zerodha rule, builder FE): a currency-derivative row is
+ * REFUSED, counted and named — `cds` used to be folded into NSE above, so a
+ * USDINR future was priced as an equity future (no charge_config row covers
+ * currency, invariant 3). A row is currency when its venue or segment cell
+ * states it (CDS / BCD / CD / Currency), or — because Angel One's
+ * Trades_History states the venue apart from the segment, and Upstox's
+ * currency venue code has never been seen on a real report — when its
+ * classified underlying is a currency pair (review R6: the stored symbol,
+ * exact, never a tradingsymbol prefix; no equity or F&O contract matches).
+ */
+function statesCurrencyVenue(raw: string | undefined): boolean {
+  const s = norm(raw ?? "");
+  return s.startsWith("cds") || s.startsWith("bcd") || s === "cd" || s.startsWith("currenc");
 }
 
 /** Product codes: Angel One uses DELIVERY/INTRADAY/MARGIN/CARRYFORWARD,
@@ -334,6 +351,10 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     const cOther = tradesHistory ? find("other charges") : -1;
     let sourceRows = 0;
     let chargeOnlyRows = 0;
+    // v4.7.0 Q4: the segment cell, when the file states it apart from the venue.
+    const cSeg = headerCells.indexOf("segment") !== cExch ? headerCells.indexOf("segment") : -1;
+    /** One entry per refused currency fill — the name it would have been stored under. */
+    const refusedCurrency: string[] = [];
     /** Date cells no calendar could hold (month above 12) — dropped, not guessed. */
     const undatedRows: string[] = [];
     // A month-first (m/d/yy) file never refuses a numeric date; a DAY-first one
@@ -381,7 +402,6 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
       // The trailing "NOTE: Data Accurate Till …" line has a symbol cell and a
       // date where the side should be — a row without a Buy/Sell is not a row.
       if (tradesHistory && !/^(b|s)/.test(norm(r[cSide]))) continue;
-      sourceRows++;
       let symbol = tradesHistory ? canonicalAngelContract(rawSymbol) : rawSymbol;
       // An Upstox F&O row in the VERIFIED option grammar becomes its contract
       // name BEFORE grouping, so a PE and a CE on the same underlying are two
@@ -407,6 +427,17 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
             `unverified for this row; check the classification`;
         }
       }
+      // v4.7.0 Q4: never coerced — counted (a per-order charge line is not a
+      // fill) and named below; its charges go with it.
+      if (
+        statesCurrencyVenue(cExch >= 0 ? r[cExch] : "") ||
+        statesCurrencyVenue(cSeg >= 0 ? r[cSeg] : "") ||
+        isCurrencyContract(symbol)
+      ) {
+        if (toNum(r[cQty]) > 0) refusedCurrency.push(symbol);
+        continue;
+      }
+      sourceRows++;
       const product = cProduct >= 0 ? r[cProduct] : "";
       const key = `${symbol}|${product}`;
       const acc = groups.get(key) ?? {
@@ -511,7 +542,9 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
       });
     }
     warnings.push(`${label} tradebook aggregated per tradingsymbol+product; verify F&O classification and re-tag MTF rows once (overrides persist).`);
-    if (!tradesHistory) return { sourceId: broker, broker, format: "tradebook", trades, warnings };
+    // The note AND the stranded-open side channel (`currencyRefusalsOf`, read by
+    // app/api/import/route.ts) come from one helper, as for Zerodha files.
+    if (!tradesHistory) return withCurrencyRefusals({ sourceId: broker, broker, format: "tradebook", trades, warnings }, refusedCurrency, "fill");
 
     // ── Trades_History extras: the file's own charges summary ──────────────
     const reported = readChargesSummary(rows.slice(0, h));
@@ -581,7 +614,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         `The file's Total Charges ₹${reported.statedTotalCharges} includes ₹${reported.nonTradeCharges} of non-trade charges (DP, AMC, interest, pledge) that belong to the ledger, not to these trades.`,
       );
     }
-    return { sourceId: broker, broker, format: "tradebook", trades, warnings, sourceRows, reported };
+    return withCurrencyRefusals({ sourceId: broker, broker, format: "tradebook", trades, warnings, sourceRows, reported }, refusedCurrency, "fill");
   }
 
   // ---- Aggregated P&L / holdings report ----
@@ -605,6 +638,8 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
   const hasTaxBuckets = cSpeculation >= 0 || cShortTerm >= 0 || cLongTerm >= 0;
 
   const trades: NormalizedTrade[] = [];
+  /** v4.7.0 Q4: one entry per refused currency row. */
+  const refusedCurrencyRows: string[] = [];
   for (const r of dataRows) {
     const symbol = cSymbol >= 0 ? (r[cSymbol] ?? "").trim() : "";
     if (!symbol) continue;
@@ -616,6 +651,10 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     const buyVal = cBuyVal >= 0 ? toNum(r[cBuyVal]) : buyQty * buyAvg;
     const sellVal = cSellVal >= 0 ? toNum(r[cSellVal]) : sellQty * sellAvg;
     if (buyQty <= 0 && sellQty <= 0) continue;
+    if (statesCurrencyVenue(cExch >= 0 ? r[cExch] : "") || isCurrencyContract(symbol)) {
+      refusedCurrencyRows.push(symbol);
+      continue;
+    }
 
     let derivedProduct: ProductHint = null;
     let productDerived = false;
@@ -657,7 +696,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     });
   }
   warnings.push(`${label} P&L report is aggregated per scrip; segment/MTF may need re-tagging (overrides persist across re-imports).`);
-  return { sourceId: broker, broker, format: "pnl-report", trades, warnings };
+  return withCurrencyRefusals({ sourceId: broker, broker, format: "pnl-report", trades, warnings }, refusedCurrencyRows, "row");
 }
 
 /**

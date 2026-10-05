@@ -72,7 +72,9 @@ Exactly four kinds, and only one of them is automatic:
    stored; Vyuha calls `api-t1.fyers.in` only when you pull — to exchange the
    code you paste back after logging in on Fyers' own page, to read your Fyers
    client id and to read today's trade book — and keeps that day's token until
-   the day ends. Kotak Neo: your Trade API access token, registered mobile
+   the day ends. It also keeps your Fyers client id from your first pull, so a
+   pull made with a different Fyers login is refused rather than imported into
+   that account. Kotak Neo: your Trade API access token, registered mobile
    number, UCC, MPIN and TOTP secret are stored; each pull — and, if you switch
    on the once-a-day auto-pull, one pull at launch — signs in afresh at
    `mis.kotaksecurities.com` and reads the trade book from a
@@ -81,9 +83,12 @@ Exactly four kinds, and only one of them is automatic:
    secret are stored; Vyuha calls `nc.nuvamawealth.com` only when you pull — to
    sign in with the id you paste back after logging in on Nuvama's own page,
    and to read today's trade book — and keeps that session until it ends (at
-   most eight hours, never past 12:30 AM). The API secret travels to Nuvama as
+   most eight hours, never past 12:30 AM). It also keeps your Nuvama user id
+   from your first login, so a pull made with a different Nuvama login is
+   refused. The API secret travels to Nuvama as
    a password field over HTTPS, and Vyuha never looks up or sends your public
-   IP address. From all three, Vyuha stores the trades it reads, never the raw
+   IP address. Your Fyers and Nuvama password and PIN are never stored — you
+   type them into the broker's own page, never into Vyuha. From all three, Vyuha stores the trades it reads, never the raw
    response, and none of them can place, modify or cancel an order.
    That same bridge can also price your open positions: while the Live Desk is
    open and in the foreground during market hours, Vyuha holds one streaming

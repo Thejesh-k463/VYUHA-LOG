@@ -9,7 +9,7 @@ import { computeStop, gateStop } from "@/lib/live/stop";
 import { computeTrackerRow, DEFAULT_ATR_LENGTH } from "@/lib/live/tracker-row";
 import type { Bar, LivePosition, Mark, Paise } from "@/lib/live/types";
 import { catchUpDailyMark, MAX_POSITION_KEYS } from "@/lib/quotes/persist-mark";
-import { getLiveFeedProvider } from "@/lib/quotes/registry";
+import { getLiveFeedProvider, resolveLiveFeed } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type ProviderHealth, type Quote, type QuoteKey } from "@/lib/quotes/types";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
@@ -73,6 +73,18 @@ export const SPARK_SESSIONS = 30;
 
 /** NSE cash equity ticks in 5 paise; a non-cash row disables tick rounding. */
 const CASH_TICK_PAISE = 5;
+
+/**
+ * `FeedInfo` plus WHY the feed chosen in Settings is not the one running
+ * (release-audit UJ-3, review R12) — `resolveLiveFeed().blockedReason`, null
+ * when the stored and effective feeds agree. The sentence is built from
+ * literals in `lib/quotes/registry.ts`, so it is safe to render as text.
+ *
+ * Declared HERE rather than on `FeedInfo` in `desk-types.ts` only because that
+ * file sat outside this fix's owned set; folding the field into `FeedInfo` is
+ * a type-only move with no runtime change.
+ */
+export type DeskFeedInfo = FeedInfo & { blockedReason: string | null };
 
 const toPaise = (rupees: number): Paise => Math.round(rupees * 100);
 const toPaiseOrNull = (v: number | null | undefined): Paise | null =>
@@ -163,7 +175,7 @@ function toDeskBars(bars: readonly Bar[]): DeskBar[] {
  * ships in v4.0 does no network I/O at all, and the same call site serves a
  * streaming provider in v4.1 without changing shape.
  */
-export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveDeskData> {
+export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveDeskData & { feed: DeskFeedInfo }> {
   const today = todayIstIso();
   const trades = getTrades();
   const mtm = getMtmMap();
@@ -314,7 +326,17 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     const isShort = t ? sideOf(t) === "short" : false;
     const sector = sectors.get(p.symbol.toUpperCase()) ?? null;
     const cls = classes.get(p.symbol.toUpperCase()) ?? null;
-    const bars = barsBySymbol.get(p.symbol.toUpperCase()) ?? [];
+    // A CONTRACT HAS NO BARS OF ITS OWN (release-audit M-B1, review R1).
+    // `price_history` is keyed on `symbol`, and a derivative's `symbol` is its
+    // UNDERLYING — so a stock option or future over a scrip with stored history
+    // read the cash scrip's bars as its own, in six places at once: the previous
+    // close (P7 "since the close", both give-back sums), the day change (and
+    // `applyTicks`' fallback to it), the ATR (stop distance in ATR, the near-stop
+    // tint, the ATR branch of the stop tree below), RVOL, the 52w distance and
+    // the spark. An index option escaped only because nobody stores NIFTY bars.
+    // Empty is the honest answer: every one of those readers prints its dash.
+    const isContract = t?.instrumentType === "option" || t?.instrumentType === "future";
+    const bars = isContract ? [] : (barsBySymbol.get(p.symbol.toUpperCase()) ?? []);
 
     const position: LivePosition = {
       id: p.id,
@@ -510,7 +532,11 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
   }
   const barsCap: BarsCap = { sessions: DESK_CHART_BARS, symbols: DESK_CHART_SYMBOLS, trimmed };
 
-  const feed: FeedInfo = {
+  // UJ-3 (R12): the Settings choice as RESOLVED — the same call
+  // `app/api/live/feed/route.ts` answers the Settings card from, so /live and
+  // Settings give one reason. FREE: why a feed is not running is not a Pro fact.
+  const feedState = await resolveLiveFeed();
+  const feed: DeskFeedInfo = {
     providerId: provider.capabilities.id,
     label: provider.capabilities.label,
     streaming: provider.capabilities.streaming,
@@ -529,6 +555,7 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     // The DEDUPED subscription size, not `rows.length` — the client states the
     // Angel One cadence from it before the stream ever connects.
     symbolCount,
+    blockedReason: feedState.stored !== feedState.effective ? (feedState.blockedReason ?? null) : null,
   };
 
   return {

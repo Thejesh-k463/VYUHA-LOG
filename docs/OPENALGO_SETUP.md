@@ -65,8 +65,12 @@ multiple instances side by side.
    FLASK_PORT=5051
    HOST_SERVER=http://127.0.0.1:5051
    WEBSOCKET_PORT=8766
+   WEBSOCKET_URL=ws://127.0.0.1:8766
    ZMQ_PORT=5556
    ```
+   Its price stream is then NOT on OpenAlgo's default 8765, so copy that
+   `WEBSOCKET_URL` into the instance's **Streaming address** box in Vyuha
+   (Part 2) — left empty, the Live Desk would look for it on 8765.
 4. **Start it and log in.** Open `http://127.0.0.1:<port>`, complete the
    broker login (client id / PIN / TOTP as your broker requires). The
    dashboard should show your broker's name and **Live Mode**.
@@ -85,14 +89,20 @@ multiple instances side by side.
 2. **Import → OpenAlgo (self-hosted)**:
    - **OpenAlgo API key** — from step 6 above
    - **Host** — `http://127.0.0.1:5000` (or your instance's port)
+   - **Streaming address (optional)** — leave it empty for OpenAlgo's
+     default (`ws://<host>:8765`); for any other instance paste its
+     `WEBSOCKET_URL` from that instance's `.env`. It must be on the same
+     machine as the host (`localhost`, `127.0.0.1` and `::1` count as one);
+     changing the host clears it.
    - **Broker behind OpenAlgo** — the broker this instance is logged into.
      This matters: it stamps the trades and selects the charge profile.
    - **Add instance.** Saving checks the host's FORMAT and the broker, and
      makes no network call — so it works while OpenAlgo is stopped. The live
      check is **Preview pull**: press it once after saving, and a wrong key,
      port or an OpenAlgo older than 2.0.2.6 fails there with a message.
-3. Repeat for a second instance — each appears as its own row with its own
-   Preview / Pull & commit buttons.
+3. Repeat for a second instance — with its own host AND its own Streaming
+   address (its `WEBSOCKET_URL`) — and each appears as its own row with its
+   own Preview / Pull & commit buttons.
 
 ## Part 3 — pulling trades
 

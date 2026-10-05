@@ -5,7 +5,9 @@ import {
   fetchKiteTrades,
   kiteChecksum,
   kiteLoginUrl,
+  normalizeKitePull,
   normalizeKiteTrades,
+  toParsedFile,
   type KiteTradeRow,
 } from "../lib/import/api/kite";
 
@@ -69,6 +71,41 @@ describe("normalizeKiteTrades", () => {
 
   it("skips zero-qty rows", () => {
     expect(normalizeKiteTrades([row({ quantity: 0 })])).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v4.7.0 release audit, owner Q4 / review R5: a CDS or BCD fill is REFUSED,
+// counted and named — it used to be folded into NSE and priced as an equity
+// future (no charge_config row covers currency, invariant 3).
+// ---------------------------------------------------------------------------
+
+describe("normalizeKitePull — currency fills refused, counted and named", () => {
+  const fut = row({ tradingsymbol: "NIFTY26OCTFUT", exchange: "NFO", product: "NRML", quantity: 75, average_price: 25000 });
+  const cds = row({ tradingsymbol: "USDINR26OCTFUT", exchange: "CDS", product: "NRML", transaction_type: "SELL", quantity: 1, average_price: 84.1 });
+  const bcd = row({ tradingsymbol: "EURINR26OCTFUT", exchange: "BCD", product: "NRML", quantity: 2, average_price: 90.2 });
+
+  it("a CDS and a BCD fill are refused; the NFO future beside them is the trade it always was", () => {
+    const out = normalizeKitePull([fut, cds, bcd, { ...cds, quantity: 3 }]);
+    expect(out.trades).toEqual(normalizeKiteTrades([fut]));
+    expect(out.trades[0]!.exchangeHint).toBe("NSE");
+    expect(out.refused).toBe(3);
+    expect(out.refusedContracts).toEqual(["USDINR26OCTFUT", "EURINR26OCTFUT"]);
+    expect(out.notes).toEqual([
+      "3 currency derivative fills were refused — currency derivatives are not priced by Vyuha (no charge profile covers them), so nothing was imported for: USDINR26OCTFUT, EURINR26OCTFUT.",
+    ]);
+  });
+
+  it("normalizeKiteTrades never coerces a currency fill into an NSE trade", () => {
+    expect(normalizeKiteTrades([cds, bcd])).toEqual([]);
+  });
+
+  it("the note reaches the ParsedFile, and an all-currency pull is not 'no executions'", () => {
+    const out = normalizeKitePull([cds]);
+    const pf = toParsedFile(out.trades, out.refused, out.notes);
+    expect(pf.trades).toEqual([]);
+    expect(pf.warnings).toEqual(out.notes);
+    expect(toParsedFile([]).warnings[0]).toMatch(/no executions/);
   });
 });
 
@@ -174,9 +211,12 @@ describe("read-only by surface", () => {
     expect(Object.keys(kite).sort()).toEqual([
       "exchangeKiteRequestToken",
       "fetchKiteTrades",
+      // v4.7.0 Q4: the currency refusal — read-only helpers, no new capability.
+      "isKiteCurrencyFill",
       "kiteChecksum",
       "kiteImportSource",
       "kiteLoginUrl",
+      "normalizeKitePull",
       "normalizeKiteTrades",
       "toParsedFile",
     ]);

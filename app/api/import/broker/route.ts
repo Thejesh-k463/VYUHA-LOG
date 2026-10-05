@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { brokerConnections, settings } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { exchangeKiteRequestToken, kiteImportSource, kiteLoginUrl, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
+import { exchangeKiteRequestToken, fetchKiteTrades, kiteLoginUrl, normalizeKitePull, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
+import { currencyRefusalNote, currencyUnderlyings, strandedCurrencyNotes } from "@/lib/import/parsers/zerodha";
 import {
   DHAN_TOTP_ACK_VERSION,
   catchUpAfter,
@@ -1235,7 +1236,25 @@ export async function POST(req: Request) {
         // fetchOpenAlgoTradebook. Both reach the user as the 502's message.
         await assertOpenAlgoVersion(creds);
         const result = normalizeOpenAlgoTrades(await fetchOpenAlgoTradebook(creds), openAlgoBroker, today);
-        parsed = openAlgoToParsedFile(openAlgoBroker, result);
+        // v4.7.0 Q4 / review R5 (the Kite rule): a CDS / BCD fill is refused,
+        // counted and named; a refused contract still OPEN in this connection's
+        // account is named too — a note, never a write.
+        const refusedCcy = result.refusedCurrency ?? [];
+        const ccyNotes =
+          refusedCcy.length > 0
+            ? [
+                currencyRefusalNote(refusedCcy.length, refusedCcy, "fill"),
+                ...strandedCurrencyNotes(
+                  refusedCcy,
+                  await db.query.trades.findMany({
+                    columns: { tradingsymbol: true },
+                    where: (t, { and: all, eq: is, inArray }) =>
+                      all(is(t.accountId, accountId), is(t.isOpen, true), inArray(t.symbol, currencyUnderlyings(refusedCcy))),
+                  }),
+                ),
+              ]
+            : [];
+        parsed = openAlgoToParsedFile(openAlgoBroker, result, ccyNotes);
       } else if (broker === "angelone") {
         // The extras live in auth_json as one encrypted JSON blob.
         if (authBlob.state !== "ok") {
@@ -1252,8 +1271,23 @@ export async function POST(req: Request) {
         const creds = { apiKey: keyRead.value, clientCode: auth.clientCode, pin: auth.pin, totpSecret: auth.totpSecret };
         const { jwtToken } = await angelOneLogin(creds);
         const today = todayIstIso();
-        const { trades, refused } = normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today);
-        parsed = angelToParsedFile(trades, refused);
+        // v4.7.0 Q4 / review R5 (the Kite rule): a CDS / BCD fill is refused,
+        // counted and named; a refused contract still OPEN in this connection's
+        // account is named too — a note, never a write. A refused fill is not an
+        // incoming row, so today's snapshot supersede never sees it.
+        const pull = normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today);
+        const stranded =
+          pull.refusedContracts.length > 0
+            ? strandedCurrencyNotes(
+                pull.refusedContracts,
+                await db.query.trades.findMany({
+                  columns: { tradingsymbol: true },
+                  where: (t, { and: all, eq: is, inArray }) =>
+                    all(is(t.accountId, accountId), is(t.isOpen, true), inArray(t.symbol, currencyUnderlyings(pull.refusedContracts))),
+                }),
+              )
+            : [];
+        parsed = angelToParsedFile(pull.trades, pull.refused, [...pull.notes, ...stranded]);
       } else if (broker === "dhan") {
         // apiKey holds the Dhan CLIENT ID; the column is named for Kite, which
         // came first. Renaming it would need a migration for no behavioural gain.
@@ -1364,7 +1398,21 @@ export async function POST(req: Request) {
         // apiKey holds the year-long read-only Analytics token. normalize is
         // called directly so the unparseable-symbol notes reach the screen.
         const today = todayIstIso();
-        parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
+        // v4.7.0 Q4 / review R5: the refusal note rides in `notes`; a refused
+        // contract still OPEN in this connection's account is named too.
+        const pull = normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today);
+        const stranded =
+          pull.refusedContracts.length > 0
+            ? strandedCurrencyNotes(
+                pull.refusedContracts,
+                await db.query.trades.findMany({
+                  columns: { tradingsymbol: true },
+                  where: (t, { and: all, eq: is, inArray }) =>
+                    all(is(t.accountId, accountId), is(t.isOpen, true), inArray(t.symbol, currencyUnderlyings(pull.refusedContracts))),
+                }),
+              )
+            : [];
+        parsed = upstoxToParsedFile({ ...pull, notes: [...pull.notes, ...stranded] });
       } else if (isPullBroker(broker)) {
         // v4.7.0 wave C6. The blob carries the secrets AND the consent, so an
         // unreadable one refuses (never a silent downgrade), and a stale or
@@ -1505,9 +1553,24 @@ export async function POST(req: Request) {
             { status: 400 },
           );
         }
-        const source = kiteImportSource({ apiKey: keyRead.value, accessToken: kiteToken });
         try {
-          parsed = kiteToParsedFile(await source.fetchTrades({}));
+          // v4.7.0 Q4 / review R5: the pull the Nuvama way — a CDS / BCD fill is
+          // refused, counted and named in the summary, never priced as NSE. A
+          // refused contract still OPEN in this connection's account (a currency
+          // BUY imported before v4.7.0) is named too — a note, never a write.
+          const pull = normalizeKitePull(await fetchKiteTrades({ apiKey: keyRead.value, accessToken: kiteToken }));
+          const stranded =
+            pull.refusedContracts.length > 0
+              ? strandedCurrencyNotes(
+                  pull.refusedContracts,
+                  await db.query.trades.findMany({
+                    columns: { tradingsymbol: true },
+                    where: (t, { and: all, eq: is, inArray }) =>
+                      all(is(t.accountId, accountId), is(t.isOpen, true), inArray(t.symbol, currencyUnderlyings(pull.refusedContracts))),
+                  }),
+                )
+              : [];
+          parsed = kiteToParsedFile(pull.trades, pull.refused, [...pull.notes, ...stranded]);
         } catch (e) {
           // A dead session with an api_secret on file is not an error — it is
           // the daily prompt.

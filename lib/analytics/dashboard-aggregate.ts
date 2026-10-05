@@ -181,15 +181,17 @@ export function dashboardAggregate(book: readonly DashRow[], f: DashboardFilters
 
   const spark = curve.slice(-30).map((p) => p.cum);
 
+  // v4.7.0 release audit M-B2: the cut-offs are IST CALENDAR DATES, worked in
+  // UTC so no machine time zone can move them. The client body this moved from
+  // built a LOCAL midnight and read it back through toISOString(), which in IST
+  // (UTC+5:30) is the previous UTC day — "this week" ran eight days and took the
+  // day exactly seven back from the prior week. The P&L days are already IST
+  // dates (sale dates), so date-string arithmetic is the whole job.
   const weekDelta = (() => {
     const dates = Object.keys(daily).sort();
     if (dates.length === 0) return null;
-    const latest = new Date(dates[dates.length - 1] + "T00:00:00");
-    const cutoff = (d: number) => {
-      const x = new Date(latest);
-      x.setDate(x.getDate() - d);
-      return x.toISOString().slice(0, 10);
-    };
+    const [y, m, dd] = dates[dates.length - 1].split("-").map(Number);
+    const cutoff = (d: number) => new Date(Date.UTC(y, m - 1, dd - d)).toISOString().slice(0, 10);
     const wk1 = cutoff(7);
     const wk2 = cutoff(14);
     let thisWeek = 0;

@@ -294,6 +294,21 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
       }
       if ((tables.accounts ?? []).length === 0) tx.insert(schema.accounts).values({ id: 1, name: "Primary", isDefault: true }).run();
 
+      // v4.7.0 release audit S-B1 (review R7): a PRE-4.7 envelope carries no
+      // `clinic_experiments`, so the table is left as it was (the per-key rule
+      // above) — while `accounts` WAS replaced. An OPEN experiment on an account
+      // the backup does not carry would stay open on a book that no longer
+      // exists: in no account's view, never checkable, holding the (account,
+      // cell) open slot. Set it aside by the C2 rule — `abandoned`, never deleted
+      // (the hypothesis is the user's own text), account_id kept — after the
+      // Primary re-creation above, inside this transaction (invariant 10).
+      if (tables.clinic_experiments === undefined) {
+        tx.update(schema.clinicExperiments)
+          .set({ status: "abandoned" })
+          .where(sql`${schema.clinicExperiments.status} = 'open' AND ${schema.clinicExperiments.accountId} NOT IN (SELECT id FROM accounts)`)
+          .run();
+      }
+
       // The rate card the envelope carried is the DONOR release's card, which
       // may predate this build's corrections — a pre-4.3 backup brought back
       // F&O STT and exchange charges that 4.3.0 corrected, and the desktop

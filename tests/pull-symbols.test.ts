@@ -6,6 +6,7 @@ import type { ParsedFile } from "@/lib/import/types";
 import { classify } from "@/lib/engine/classify";
 import { canonicalOpenAlgoSymbol } from "@/lib/import/api/openalgo";
 import { bundledSymbolByIsin } from "@/lib/import/isin-symbol";
+import { nuvamaInstrument } from "@/lib/import/parsers/nuvama-pnl-report";
 import {
   contractKeyOf,
   fyersTradingsymbol,
@@ -214,6 +215,22 @@ describe("nuvamaTradingsymbol", () => {
     expect(nuvamaTradingsymbol({ trdSym: "IDEA-EQ", exc: "NSE" })).toBe("IDEA");
     expect(nuvamaTradingsymbol({ trdSym: "", exc: "NSE" })).toBeNull();
     expect(nuvamaTradingsymbol({ trdSym: "7053_NSE", exc: "NSE" })).toBeNull();
+  });
+
+  it("M-A2 — an ISIN the snapshot does not know falls back to the stated NAME exactly as the file parser does, so both key equity|<NAME>", () => {
+    const unknown = "INE000Z99999";
+    expect(bundledSymbolByIsin(unknown), "precondition: the snapshot must not know this ISIN").toBeNull();
+    const file = nuvamaInstrument("Acme Widgets Ltd", unknown);
+    expect(file).toMatchObject({ kind: "equity", tradingsymbol: "ACME WIDGETS LTD" });
+    const pulled = nuvamaTradingsymbol({ trdSym: unknown, sym: "Acme Widgets Ltd", exc: "NSE" });
+    expect(pulled).toBe(file!.tradingsymbol);
+    expect(contractKeyOf(pulled!)?.key).toBe("equity|ACME WIDGETS LTD");
+    expect(contractKeyOf(pulled!)?.key).toBe(contractKeyOf(file!.tradingsymbol)?.key);
+    // a token is not a name — the ISIN is kept rather than a guess
+    expect(nuvamaTradingsymbol({ trdSym: unknown, sym: "7053_NSE", exc: "NSE" })).toBe(unknown);
+    // a KNOWN ISIN still resolves through the bundled chain, whatever the row names
+    const sbin = "INE062A01020";
+    expect(nuvamaTradingsymbol({ trdSym: sbin, sym: "Some Other Name", exc: "NSE" })).toBe(nuvamaInstrument("Some Other Name", sbin)!.tradingsymbol);
   });
 });
 

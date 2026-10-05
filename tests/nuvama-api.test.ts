@@ -221,6 +221,36 @@ describe("fetchNuvamaTrades — status read explicitly, never res.ok", () => {
   });
 });
 
+describe("G-A1 (v4.7.0 audit, review R8) — no redirect is followed; a 3xx is refused in words", () => {
+  const r307 = () => new Response(null, { status: 307, headers: { Location: "https://evil.example/steal" } });
+  const REFUSED = /answered with a redirect \(HTTP 307\) — refused; Vyuha does not follow a broker's redirect/;
+
+  it("all three Nuvama fetches (loginvendor, logindata, trade book) are sent with redirect: 'manual'", async () => {
+    stub(VENDOR(), LOGINDATA(), res(200, { data: { trade: [] } }));
+    const s = await nuvamaLogin({ apiKey: KEY, apiSecret: "x", reqId: "r" });
+    await fetchNuvamaTrades(s, KEY);
+    expect(calls).toHaveLength(3);
+    for (const c of calls) expect(c.init.redirect, c.url).toBe("manual");
+  });
+
+  it("a stubbed 307 at each step is refused with the redirect sentence, and nothing further is sent", async () => {
+    stub(r307());
+    await expect(nuvamaLogin({ apiKey: KEY, apiSecret: "x", reqId: "r" })).rejects.toThrow(REFUSED);
+    expect(calls).toHaveLength(1);
+
+    stub(VENDOR(), r307());
+    const e2 = await nuvamaLogin({ apiKey: KEY, apiSecret: "x", reqId: "r" }).catch((x) => x);
+    expect(e2.message).toMatch(REFUSED);
+    expect(isBrokerAuthExpired(e2)).toBe(false);
+    expect(calls).toHaveLength(2);
+
+    stub(r307());
+    const e3 = await fetchNuvamaTrades(SESSION(), KEY).catch((x) => x);
+    expect(e3.message).toMatch(REFUSED);
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("normalizeNuvamaTrades", () => {
   it("aggregates per symbol + product from STRING fields; equity carries both labels", () => {
     const { trades, refused, notes } = normalizeNuvamaTrades(
@@ -284,6 +314,28 @@ describe("normalizeNuvamaTrades", () => {
     expect(trades).toHaveLength(1);
     expect(trades[0]).toMatchObject({ buyQty: 3, avgBuyPrice: 1000.25 });
     expect(notes.join(" ")).toContain("1 fill named no instrument");
+  });
+
+  it("T-B1/MU-2 — a sell-only symbol (bought before today) is basisUnknown, sold TODAY, with no invented P&L", () => {
+    const { trades } = normalizeNuvamaTrades([row({ trsTyp: "S", fldQty: "4", flPrc: "810" })], TODAY);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({ buyQty: 0, sellQty: 4, buyDate: null, sellDate: TODAY, basisUnknown: true, grossPnl: 0 });
+    expect(normalizeNuvamaTrades([row(), row({ trsTyp: "S" })], TODAY).trades[0].basisUnknown).toBeUndefined();
+  });
+
+  it("T-B2/MU-1 — a same-day PARTIAL exit (buy 10, sell 5) is open: grossPnl 0 and sellDate null", () => {
+    const { trades } = normalizeNuvamaTrades([row({ fldQty: "10", flPrc: "800" }), row({ trsTyp: "S", fldQty: "5", flPrc: "810" })], TODAY);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({ buyQty: 10, sellQty: 5, grossPnl: 0, buyDate: TODAY, sellDate: null });
+    expect(trades[0].basisUnknown).toBeUndefined();
+  });
+
+  it("MU-3 — a fractional fldQty (\"2.5\") is refused, never rounded or imported as 2.5 shares", () => {
+    const { trades, refused } = normalizeNuvamaTrades([row({ fldQty: "2.5" }), row({ fldQty: "3" })], TODAY);
+    expect(refused).toBe(1);
+    expect(trades).toHaveLength(1);
+    expect(trades[0].buyQty).toBe(3);
+    expect(trades[0].executions?.map((e) => e.qty)).toEqual([3]);
   });
 
   it("maps CNC/MTF/MIS/INTRADAY; flTim outside a 24-hour HH:MM:SS is null", () => {

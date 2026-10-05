@@ -596,7 +596,10 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
     const s = cell(r, "eq_intraday|setup:A").sizing!;
     expect(s.supportsSizingUp).toBe(true);
     expect(s.halfKellyLowerBound!).toBeGreaterThan(0);
-    expect(s.halfKellyLowerBound!).toBeLessThan(s.kellyPoint! / 2);
+    // Q3: the ceiling is per 1R now, so compare it in its own unit: ½ Kelly at the lower bounds over
+    // L̄'s upper bound, capped at ½ the empirical Kelly (it used to be checked against ½ the classic point f).
+    expect(s.halfKellyLowerBound!).toBe(Math.min(s.kellyAtLowerBounds! / 2 / s.lossHi!, s.empiricalKelly! / 2));
+    expect(s.copy.detail).toMatch(/^Half-Kelly at the lower 95 % bounds of the win rate and the payoff, per 1R: divided by the average loss at its upper 95 % bound \(\d+\.\d\d R\) and no higher than half the empirical Kelly\./);
     expect(s.verb).toBe("imperative");
     expect(s.growthAtCurrent!).toBeGreaterThan(0);
     expect(s.copy.detail).toMatch(/^Half-Kelly at the lower 95 % bounds.*at 1 % risk and a [\d.]+ % loss rate, a run of \d+ straight losses in the next 200 trades is normal/);
@@ -657,6 +660,79 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
     expect(s.halfKellyLowerBound).toBeNull();
     expect(s.copy.headline).toMatch(/the data does not support sizing up$/);
     expect(s.verb).toBe("none");
+  });
+
+  // v4.7.0 audit, owner Q3 + design review R4: the ceiling is PER 1R — f*/L̄, L̄ = the mean
+  // non-winning R at its seeded bootstrap UPPER 95 % bound — and never above ½ × the empirical
+  // Kelly (per R already, bounded by ruin). Empirical Kelly null, or a result non-finite / > 1,
+  // → no ceiling. Before Q3 it was ½ Kelly at the lower bounds with NO division: the fraction
+  // lost on an AVERAGE loss, read on screen as the fraction risked per 1R.
+  it("Q3: per 1R — doubling every R halves the ceiling; p, b and Kelly at the lower bounds do not move, L̄'s upper bound doubles", () => {
+    const rs = exact(60, 0.4, 61);
+    const one = kellyCeiling(rs);
+    const two = kellyCeiling(rs.map((r) => r * 2));
+    expect([two.p, two.pLo, two.b, two.bLo, two.kellyAtLowerBounds]).toEqual([one.p, one.pLo, one.b, one.bLo, one.kellyAtLowerBounds]);
+    expect(two.lossHi!).toBeCloseTo(2 * one.lossHi!, 12);
+    expect(two.halfKellyLowerBound!).toBeCloseTo(one.halfKellyLowerBound! / 2, 12);
+    // The worked example (DECISIONS): ½ × 0.03399 / L̄hi 0.92148 R = 1.844 % per 1R (it read 1.699 % before Q3).
+    expect(one.halfKellyLowerBound!).toBeCloseTo(one.kellyAtLowerBounds! / 2 / one.lossHi!, 12);
+    expect(one.halfKellyLowerBound!).toBeCloseTo(0.018443, 6);
+  });
+
+  it("Q3: every loss exactly −1 R → ½ Kelly at the lower bounds unchanged; every loss −0.5 R → twice it", () => {
+    const disp = (n: number, lo: number, hi: number, l: number) => Array.from({ length: n }, (_, i) => (i % 4 === 0 ? lo : i % 4 === 2 ? hi : l));
+    const unit = kellyCeiling(disp(60, 0.1, 11.9, -1));
+    expect(unit.lossHi).toBe(1);
+    expect(unit.halfKellyLowerBound!).toBeCloseTo(unit.kellyAtLowerBounds! / 2, 12);
+    const half = kellyCeiling(disp(60, 0.1, 11.9, -0.5));
+    expect(half.lossHi).toBe(0.5);
+    expect(half.halfKellyLowerBound!).toBeCloseTo(half.kellyAtLowerBounds!, 12);
+    expect(half.halfKellyLowerBound!).toBeLessThanOrEqual(half.empiricalKelly! / 2);
+  });
+
+  it("R4 cap: never above ½ × the empirical Kelly — dispersed winners (0.2 / 9.8 R) bind it", () => {
+    const rs = Array.from({ length: 200 }, (_, i) => (i % 4 === 0 ? 0.2 : i % 4 === 2 ? 9.8 : -1));
+    const k = kellyCeiling(rs);
+    expect(k.empiricalKelly).toBeCloseTo(0.283, 9);
+    expect(k.kellyAtLowerBounds! / 2 / k.lossHi!).toBeGreaterThan(k.empiricalKelly! / 2); // uncapped ≈ 0.1453
+    expect(k.halfKellyLowerBound).toBe(k.empiricalKelly! / 2); // 0.1415
+  });
+
+  it("R4 + CG-1: empirical Kelly off the grid → no ceiling, although Kelly at the lower bounds is positive — and the card says so truthfully", () => {
+    const rs = Array.from({ length: 50 }, (_, i) => (i % 2 ? 2 : -0.3));
+    const s = edgeClinic(fromR(rs, {}, 0), { today: TODAY }).cells[0].sizing!;
+    expect(s.kellyAtLowerBounds!).toBeGreaterThan(0);
+    expect(s.empiricalKelly).toBeNull();
+    expect(s.halfKellyLowerBound).toBeNull();
+    expect(s.supportsSizingUp).toBe(false);
+    expect(s.verb).toBe("none");
+    expect(s.copy.headline).toMatch(/the data does not support sizing up$/);
+    expect(s.copy.detail).not.toMatch(/is not positive/);
+    expect(s.copy.detail).toMatch(/^The empirical Kelly has no maximum below 99 % of capital per 1R/);
+  });
+
+  it("R4 tiny-L̄ guard: scratch losses (L̄ ≈ 0.035 R) never yield a ceiling above 1 — null here; wherever stated, ≤ ½ empirical Kelly", () => {
+    const scratch = Array.from({ length: 60 }, (_, i) => (i % 2 ? 1 : -0.03 - (i % 3) * 0.005));
+    const k = kellyCeiling(scratch);
+    expect(k.lossHi!).toBeLessThan(0.04);
+    expect(k.kellyAtLowerBounds! / 2 / k.lossHi!).toBeGreaterThan(1); // f*/L̄ alone would read ≈ 486 %
+    expect(k.halfKellyLowerBound).toBeNull();
+    for (const rs of [scratch, exact(60, 0.4, 61), exact(80, 0.2, 7), Array.from({ length: 120 }, (_, i) => (i % 4 === 0 ? 0.05 : i % 4 === 2 ? 6 : -0.3))]) {
+      const c = kellyCeiling(rs);
+      if (c.halfKellyLowerBound == null) continue;
+      expect(c.halfKellyLowerBound).toBeLessThanOrEqual(c.empiricalKelly! / 2);
+      expect(c.halfKellyLowerBound).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("MU-4: an R of exactly 0 is a scratch, not a win — p counts R > 0 only, and the scratch is a non-winning R in L̄", () => {
+    const rs = [...Array(20).fill(1), ...Array(20).fill(0), ...Array(20).fill(-1)];
+    const k = kellyCeiling(rs);
+    expect(k.p).toBe(20 / 60);
+    expect(k.b).toBe(2); // W̄ 1 over L̄ 0.5: the 20 scratches sit in the loss mean
+    const c = edgeClinic(fromR(rs, {}, 0), { today: TODAY }).cells[0];
+    expect(c.payoff!.p.point).toBe(20 / 60);
+    expect(c.payoff!.meanLoss).toBe(0.5);
   });
 
   it("deflation: the best cell is A, DSR < its PSR, N = m", () => {

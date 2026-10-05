@@ -223,8 +223,10 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       }
       const creds = { apiKey: keyRead.value, clientCode: auth.clientCode, pin: auth.pin, totpSecret: auth.totpSecret };
       const { jwtToken } = await angelOneLogin(creds);
-      const { trades, refused } = normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today);
-      parsed = angelToParsedFile(trades, refused);
+      // `notes` carries the currency refusal (v4.7.0 audit, FE) — the unattended
+      // pull names refused fills exactly as the manual pull does.
+      const { trades, refused, notes } = normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today);
+      parsed = angelToParsedFile(trades, refused, notes);
     } else if (conn.broker === "dhan") {
       // Eligibility already guaranteed pin+totp, but the pull must still go
       // through the SAME reuse-first token path as the manual route: Dhan mints

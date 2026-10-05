@@ -310,6 +310,13 @@ describe("normalizeFyersTrades", () => {
     expect(trades[0]).toMatchObject({ sellDate: TODAY, buyDate: null, basisUnknown: true, grossPnl: 0 });
   });
 
+  it("T-B2/MU-1 — a same-day PARTIAL exit (buy 10, sell 5) is open: grossPnl 0 and sellDate null", () => {
+    const { trades } = normalizeFyersTrades([row({ tradedQty: 10, tradePrice: 800 }), row({ side: -1, tradedQty: 5, tradePrice: 810 })], TODAY);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({ buyQty: 10, sellQty: 5, grossPnl: 0, buyDate: TODAY, sellDate: null });
+    expect(trades[0].basisUnknown).toBeUndefined();
+  });
+
   it("seam D-C6-2 — segment 12 (CD) and a CDS/BCD/NCDEX prefix are refused, counted and named; segment 20 (COM, MCX) is kept", () => {
     const { trades, refused, notes } = normalizeFyersTrades(
       [

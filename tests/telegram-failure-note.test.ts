@@ -196,9 +196,14 @@ describe("the note is durable and route-independent", () => {
     expect(NOTE).toMatch(/dismissed: true/);
   });
 
-  it("keeps the reassurance the v3.6 note carried", () => {
+  it("keeps the reassurance the v3.6 note carried, pointing where the levels really are", () => {
     expect(TELEGRAM_FAILURE_REASSURANCE).toMatch(/Your journal is unaffected/);
-    expect(TELEGRAM_FAILURE_REASSURANCE).toMatch(/already on your dashboard/);
+    // v4.7.0 release audit DC-B2: an alert's levels are on the Live Desk and in
+    // the journal — "already on your dashboard" sent the reader to a screen that
+    // does not show a stop/target check.
+    expect(TELEGRAM_FAILURE_REASSURANCE).toMatch(/Live Desk/);
+    expect(TELEGRAM_FAILURE_REASSURANCE).toMatch(/in your journal/);
+    expect(TELEGRAM_FAILURE_REASSURANCE).not.toMatch(/dashboard/i);
     expect(NOTE).toMatch(/TELEGRAM_FAILURE_REASSURANCE/);
   });
 });

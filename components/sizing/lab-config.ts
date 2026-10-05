@@ -215,9 +215,13 @@ export function inputsFromJournal(inputs: LabInputs, result: JournalKellyResult 
 
 /**
  * D10 — the flag beside the ceiling. Both sides are a fraction of capital AT
- * RISK per trade: the Lab's `kellyFUsedPpm` (Kelly × your fraction, the budget
- * `sizeKelly` risks) over 1e6, and the Clinic's ½ Kelly at the lower 95 %
- * bounds. Marked, never clipped. No ceiling (not supported) → no comparison.
+ * RISK per trade where the risk is 1R: the Lab's `kellyFUsedPpm` (Kelly × your
+ * fraction — the budget `sizeKelly` risks between entry and stop, i.e. 1R) over
+ * 1e6, and the Clinic's ceiling, which is per 1R since owner Q3 (½ Kelly at the
+ * lower 95 % bounds over L̄ at its upper bound, capped at ½ the empirical Kelly).
+ * The Lab's own f from p and b stays Thorp's classic formula (the inputs are the
+ * user's); the CEILING it is compared with is the per-1R figure. Marked, never
+ * clipped. No ceiling (not supported) → no comparison.
  */
 export function kellyExceedsCeiling(kellyFUsedPpm: number | null, halfKellyLowerBound: number | null): boolean {
   if (kellyFUsedPpm == null || halfKellyLowerBound == null) return false;
@@ -233,10 +237,18 @@ export function journalSampleLine(r: JournalKellyOk, window: JournalKellyWindow)
   return `From your journal: ${count(r.n)} of ${count(r.of)} closed trades in ${r.label}, ${span}. Win rate ${pct1(r.p)} % (95 % CI ${pct1(r.pLo)}–${pct1(r.pHi)}). Payoff ${num(r.b, 2)} R.`;
 }
 
-/** D10 — the Clinic's ceiling for the slice, or K7's mark when the lower bounds give no positive Kelly. */
+/**
+ * D10 — the Clinic's ceiling for the slice (per 1R, owner Q3), or why there is none:
+ * R4 / CG-1's off-grid empirical Kelly when Kelly at the lower bounds is positive,
+ * else K7's mark when the lower bounds give no positive Kelly.
+ */
 export function journalCeilingLine(r: JournalKellyOk): string {
   if (r.halfKellyLowerBound != null) {
-    return `Clinic ceiling for this slice: ½ Kelly at the lower 95 % bounds = ${num(r.halfKellyLowerBound * 100, 2)} % of capital at risk per trade.`;
+    const loss = r.lossHi != null ? ` over the average loss at its upper 95 % bound (${num(r.lossHi, 2)} R)` : "";
+    return `Clinic ceiling for this slice, per 1R: ½ Kelly at the lower 95 % bounds${loss}, no higher than ½ the empirical Kelly = ${num(r.halfKellyLowerBound * 100, 2)} % of capital at risk per trade.`;
+  }
+  if (r.kellyAtLowerBounds != null && r.kellyAtLowerBounds > 0) {
+    return `${r.label}: no Clinic ceiling — Kelly at the lower 95 % bounds is positive, but the empirical Kelly has no maximum below 99 % of capital per 1R (the losses measured are too small to size against).`;
   }
   const bLo = r.bLo != null ? `${num(r.bLo, 2)} R` : "not stated";
   return `${r.label}: the data does not support sizing up — Kelly at the lower 95 % bounds (win rate ${pct1(r.pLo)} %, payoff ${bLo}) is not positive.`;

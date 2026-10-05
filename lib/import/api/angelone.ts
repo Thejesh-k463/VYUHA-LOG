@@ -36,6 +36,7 @@ import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
 import { totp } from "@/lib/totp";
+import { currencyRefusalNote } from "@/lib/import/parsers/zerodha";
 
 export interface AngelOneCredentials {
   /** SmartAPI app key (X-PrivateKey). */
@@ -168,9 +169,18 @@ export function productHintOf(productType: string | undefined): ProductHint {
   }
 }
 
+/** v4.7.0 Q4 (the Kite rule, builder FE): SmartAPI's currency-derivative
+ *  venues. A fill on either is REFUSED, counted and named — it used to be
+ *  folded into NSE (CDS) and priced as an equity future, and no charge_config
+ *  row covers currency (invariant 3). */
+function isAngelCurrencyFill(r: Pick<AngelTradeRow, "exchange">): boolean {
+  const s = String(r.exchange ?? "").trim().toUpperCase();
+  return s.startsWith("CDS") || s.startsWith("BCD");
+}
+
 export function exchangeOf(exchange: string | undefined): Exchange | null {
   const s = String(exchange ?? "").toUpperCase();
-  if (s.startsWith("NSE") || s.startsWith("NFO") || s.startsWith("CDS")) return "NSE";
+  if (s.startsWith("NSE") || s.startsWith("NFO")) return "NSE";
   if (s.startsWith("BSE") || s.startsWith("BFO")) return "BSE";
   if (s.startsWith("MCX")) return "MCX";
   return null;
@@ -249,8 +259,16 @@ export function stripSeriesSuffix(symbol: string): string {
  * tradebook paths produce, so staged ladders and dedup behave identically.
  * A row without a readable side, quantity or price is REFUSED and counted,
  * never coerced (a zero-share trade is worse than no trade).
+ *
+ * v4.7.0 Q4: a CDS / BCD fill is refused too, but NOT into `refused` (that
+ * count says "no readable side, quantity or price"): `refusedContracts` lists
+ * the name it would have been stored under (for the route's stranded-open
+ * note, review R5) and `notes` carries the sentence that counts and names them.
  */
-export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { trades: NormalizedTrade[]; refused: number } {
+export function normalizeAngelTrades(
+  rows: AngelTradeRow[],
+  today: string,
+): { trades: NormalizedTrade[]; refused: number; refusedContracts: string[]; notes: string[] } {
   type Acc = {
     symbol: string; canonical: string | null; notes: string[];
     product: string; exch: string | undefined;
@@ -259,9 +277,14 @@ export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { tr
   };
   const groups = new Map<string, Acc>();
   let refused = 0;
+  const refusedCurrency: string[] = [];
 
   for (const r of rows) {
     const symbol = String(r.tradingsymbol ?? r.tradingSymbol ?? "").trim();
+    if (symbol && isAngelCurrencyFill(r)) {
+      refusedCurrency.push(canonicalAngelName(r) ?? stripSeriesSuffix(symbol));
+      continue;
+    }
     const qty = num(r.fillsize ?? r.fillSize ?? r.tradedqty);
     const price = num(r.fillprice ?? r.fillPrice ?? r.tradedprice);
     const rawSide = String(r.transactiontype ?? r.transactionType ?? "").toUpperCase();
@@ -334,7 +357,12 @@ export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { tr
       importNotes: a.notes.length ? a.notes : null,
     });
   }
-  return { trades, refused };
+  return {
+    trades,
+    refused,
+    refusedContracts: [...new Set(refusedCurrency)],
+    notes: refusedCurrency.length > 0 ? [currencyRefusalNote(refusedCurrency.length, refusedCurrency, "fill")] : [],
+  };
 }
 
 export function angelOneImportSource(creds: AngelOneCredentials): ApiImportSource {
@@ -351,13 +379,18 @@ export function angelOneImportSource(creds: AngelOneCredentials): ApiImportSourc
   };
 }
 
-/** Wrap a pull in the ParsedFile shape the preview/commit pipeline expects. */
-export function toParsedFile(trades: NormalizedTrade[], refused = 0): ParsedFile {
+/** Wrap a pull in the ParsedFile shape the preview/commit pipeline expects.
+ *  `notes` (v4.7.0 Q4: the currency refusal and any stranded-open note) close
+ *  the summary; a book whose only fills were refused currency did trade today,
+ *  so it never says "no fills". */
+export function toParsedFile(trades: NormalizedTrade[], refused = 0, notes: string[] = []): ParsedFile {
   const warnings: string[] = [];
   if (trades.length === 0) {
-    warnings.push(
-      "Angel One returned no fills — the trade book covers only the CURRENT trading day, so it is empty on a day you did not trade. Pull after market close on trading days; re-pulls are de-duplicated.",
-    );
+    if (notes.length === 0) {
+      warnings.push(
+        "Angel One returned no fills — the trade book covers only the CURRENT trading day, so it is empty on a day you did not trade. Pull after market close on trading days; re-pulls are de-duplicated.",
+      );
+    }
   } else {
     warnings.push(
       "Trades are today's fills from the SmartAPI trade book, aggregated per symbol + product; F&O contracts are named from the fields Angel One states (the field mapping was verified against a live trade book on 2026-08-27). Charges are computed from your rate card — the API states none.",
@@ -366,5 +399,6 @@ export function toParsedFile(trades: NormalizedTrade[], refused = 0): ParsedFile
   if (refused > 0) {
     warnings.push(`${refused} fill${refused === 1 ? "" : "s"} had no readable side, quantity or price and ${refused === 1 ? "was" : "were"} refused rather than guessed.`);
   }
+  warnings.push(...notes);
   return { sourceId: "angelone-api", broker: "angelone", format: "api", trades, warnings };
 }

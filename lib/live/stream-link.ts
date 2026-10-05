@@ -162,6 +162,22 @@ export interface StreamLinkEnv<T> {
   random: () => number;
   onState: (state: LinkState) => void;
   onQuotes: (quotes: TickQuote[]) => void;
+  /**
+   * The account this link was OPENED FOR — the desk's `selectedAccountId` as it
+   * stood when the effect created the link (release-audit UJ-4, review R2),
+   * never the latest render's. Omitted = no comparison at all.
+   */
+  openedForAccountId?: number;
+  /**
+   * Called when the `snapshot` frame names an account (`accountId`, which
+   * `app/api/live/stream/route.ts` resolves per request) other than
+   * `openedForAccountId` — e.g. the account was switched in ANOTHER tab, so the
+   * stream reads the new cookie while this desk still shows the old book. AT
+   * MOST ONCE PER LINK, on the snapshot only. Real: `router.refresh()` — a
+   * callback, so the desk re-renders through the server and never through a
+   * set-state in an effect.
+   */
+  onAccountMismatch?: (servedAccountId: number) => void;
 }
 
 export interface StreamLink {
@@ -231,6 +247,20 @@ export function parseSymbolCount(raw: unknown): number | null {
 }
 
 /**
+ * The snapshot frame's `accountId` — the account the route served — or null.
+ *
+ * PURE and STRICT, like `parseSymbolCount`: only a finite, non-negative whole
+ * number is an account (0 is the aggregate VIEW, invariant 9 — still a value the
+ * desk can have been opened for). Anything else is not a claim, never a guess.
+ */
+export function parseAccountId(raw: unknown): number | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const value = (raw as { accountId?: unknown }).accountId;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return null;
+  return value;
+}
+
+/**
  * The frame's `transport` — `"stream"` or `"poll"` — or null.
  *
  * PURE and STRICT, like `parseSymbolCount`: only the two strings the route
@@ -292,6 +322,19 @@ export function streamKeyOf(
   const keys = new Set<string>();
   for (const r of rows) keys.add(`${r.accountId}:${r.exchange}:${r.tradingsymbol.toUpperCase()}`);
   return `${selectedAccountId}|${[...keys].sort().join(",")}`;
+}
+
+/**
+ * PURE. The selected account a `streamKeyOf()` key was built for, or null for
+ * a string no `streamKeyOf()` produced (the desk's idle `""`).
+ *
+ * UJ-4 (review R2): the desk's stream effect reads the account the link was
+ * OPENED FOR out of its own closure's key — the one value the effect already
+ * depends on — so the comparison can never use a later render's account.
+ */
+export function accountOfStreamKey(streamKey: string): number | null {
+  const m = /^(\d+)\|/.exec(streamKey);
+  return m ? Number(m[1]) : null;
 }
 
 /**
@@ -364,6 +407,8 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
   let closeReopenTimer: T | undefined;
   let paint = 0;
   let destroyed = false;
+  /** UJ-4: the account-mismatch callback has fired for this link (at most once). */
+  let mismatchReported = false;
   let state: LinkState = LINK_IDLE;
   /** Quotes waiting for the next paint. The route already coalesces to 250 ms. */
   const pending: TickQuote[] = [];
@@ -407,13 +452,25 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
     source = null;
   };
 
-  const onFrame = (ev: Event) => {
+  const onFrame = (ev: Event, isSnapshot = false) => {
     const data = (ev as MessageEvent<string>).data;
     let raw: unknown;
     try {
       raw = JSON.parse(data);
     } catch {
       return; // one unreadable frame costs one frame, never the stream
+    }
+    // UJ-4 (review R2): the snapshot states which account the route served.
+    // Compared with the account the link was OPENED for, once per link; the
+    // frame is still read below — its quotes are keyed per symbol, so a
+    // mismatched snapshot's prices land only on rows that hold that symbol and
+    // are harmless until the refresh brings the right book.
+    if (isSnapshot && !mismatchReported && env.onAccountMismatch && env.openedForAccountId !== undefined) {
+      const served = parseAccountId(raw);
+      if (served !== null && served !== env.openedForAccountId) {
+        mismatchReported = true;
+        env.onAccountMismatch(served);
+      }
     }
     const quotes = parseTickFrame(raw);
     if (quotes.length > 0) {
@@ -514,9 +571,9 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
     if (state.phase === "stopped" || state.phase === "paused") setState(LINK_IDLE);
     const next = env.createSource();
     source = next;
-    next.addEventListener("snapshot", onFrame);
-    next.addEventListener("tick", onFrame);
-    next.addEventListener("heartbeat", onFrame);
+    next.addEventListener("snapshot", (ev) => onFrame(ev, true));
+    next.addEventListener("tick", (ev) => onFrame(ev));
+    next.addEventListener("heartbeat", (ev) => onFrame(ev));
     next.addEventListener("error", onError);
     armCloseReopen();
   }

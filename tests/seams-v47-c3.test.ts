@@ -6,7 +6,7 @@
 // value crossing the seam     | writer                                   | reader                               | unit
 // result.p / result.b         | journalKelly (route JSON)                | applyJournalKelly → winPpm/payoffPpm | fraction / R → ppm
 // kellyFractionPpm            | the user (quarter by default)            | sizeKelly                            | ppm — MUST NOT MOVE
-// kellyFUsedPpm vs ceiling    | sizeKelly row / result.halfKellyLowerBound | kellyExceedsCeiling (panel flag)   | both: fraction of capital at risk
+// kellyFUsedPpm vs ceiling    | sizeKelly row / result.halfKellyLowerBound | kellyExceedsCeiling (panel flag)   | both: fraction of capital at risk per 1R (owner Q3: the ceiling is ½ Kelly at the lower bounds / L̄hi, ≤ ½ empirical Kelly)
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import type { JournalKellyResponse, JournalKellyOk } from "@/lib/analytics/journal-kelly";
@@ -81,6 +81,10 @@ describe("route → applyJournalKelly → buildSetup → sizeKelly", () => {
   it("the panel's flag compares like with like: kellyFUsedPpm / 1e6 against ½ Kelly at the lower bounds", async () => {
     const r = await okResult();
     expect(r.halfKellyLowerBound).not.toBeNull();
+    // Q3: the ceiling crossed the route per 1R — this book's losses are all −1 R, so L̄hi is exactly 1
+    // and the per-1R ceiling is ½ Kelly at the lower bounds itself (the cap does not bind here).
+    expect(r.lossHi).toBe(1);
+    expect(r.halfKellyLowerBound!).toBeCloseTo(r.kellyAtLowerBounds! / 2, 12);
     const at = (fractionPpm: number) => {
       const s = buildSetup(applyJournalKelly(sampleInputs({ kellyFractionPpm: fractionPpm }), r));
       return sizeKelly({ capitalP: s.capitalP, winPpm: s.winPpm!, payoffPpm: s.payoffPpm!, kellyFractionPpm: s.kellyFractionPpm, entryP: s.entryP, stopP: s.stopP });

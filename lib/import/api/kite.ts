@@ -9,11 +9,12 @@ import { createHash } from "node:crypto";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
+import { currencyRefusalNote } from "@/lib/import/parsers/zerodha";
 
 /** One execution row from Kite GET /trades (fields we consume). */
 export interface KiteTradeRow {
   tradingsymbol: string;
-  exchange: string; // NSE | BSE | NFO | BFO | CDS | MCX
+  exchange: string; // NSE | BSE | NFO | BFO | CDS | BCD | MCX (CDS / BCD are refused)
   product: string; // CNC | MIS | NRML | MTF
   transaction_type: string; // BUY | SELL
   quantity: number;
@@ -32,10 +33,41 @@ function productHintOf(product: string): ProductHint {
 
 function exchangeOf(exchange: string): Exchange | null {
   const e = exchange.toUpperCase();
-  if (e === "NSE" || e === "NFO" || e === "CDS") return "NSE";
+  if (e === "NSE" || e === "NFO") return "NSE";
   if (e === "BSE" || e === "BFO") return "BSE";
   if (e === "MCX") return "MCX";
   return null;
+}
+
+/** v4.7.0 Q4: Kite's currency-derivative venues. A fill on either is REFUSED,
+ *  counted and named — it used to be folded into NSE (CDS) and priced as an
+ *  equity future (no charge_config row covers currency, invariant 3). */
+const KITE_CURRENCY_EXCHANGES = new Set(["CDS", "BCD"]);
+export function isKiteCurrencyFill(row: Pick<KiteTradeRow, "exchange">): boolean {
+  return KITE_CURRENCY_EXCHANGES.has(String(row.exchange ?? "").trim().toUpperCase());
+}
+
+/**
+ * The pull, the Nuvama way (seam D-C6-2): trades plus what was refused. A
+ * CDS / BCD fill is counted in `refused`, its tradingsymbol listed in
+ * `refusedContracts` (for the route's stranded-open note, review R5), and
+ * `notes` carries the sentence that names them.
+ */
+export function normalizeKitePull(rows: KiteTradeRow[]): {
+  trades: NormalizedTrade[];
+  refused: number;
+  refusedContracts: string[];
+  notes: string[];
+} {
+  const refusedNames = rows
+    .filter((row) => row.tradingsymbol && row.quantity > 0 && isKiteCurrencyFill(row))
+    .map((row) => row.tradingsymbol);
+  return {
+    trades: normalizeKiteTrades(rows),
+    refused: refusedNames.length,
+    refusedContracts: [...new Set(refusedNames)],
+    notes: refusedNames.length > 0 ? [currencyRefusalNote(refusedNames.length, refusedNames, "fill")] : [],
+  };
 }
 
 function dateOf(row: KiteTradeRow): string | null {
@@ -67,6 +99,8 @@ export function normalizeKiteTrades(rows: KiteTradeRow[]): NormalizedTrade[] {
   const groups = new Map<string, Agg>();
   for (const row of rows) {
     if (!row.tradingsymbol || !(row.quantity > 0)) continue;
+    // v4.7.0 Q4: never coerced — `normalizeKitePull` counts and names these.
+    if (isKiteCurrencyFill(row)) continue;
     const key = `${row.tradingsymbol}|${row.product}`;
     const g =
       groups.get(key) ??
@@ -228,16 +262,19 @@ export function kiteImportSource(creds: KiteCredentials): ApiImportSource {
   };
 }
 
-/** Wrap an API pull in the ParsedFile shape the preview/commit pipeline expects. */
-export function toParsedFile(trades: NormalizedTrade[]): ParsedFile {
+/** Wrap an API pull in the ParsedFile shape the preview/commit pipeline expects.
+ *  `refused` + `notes` reach the import summary the Nuvama way (v4.7.0 R5). */
+export function toParsedFile(trades: NormalizedTrade[], refused = 0, notes: string[] = []): ParsedFile {
   return {
     sourceId: "kite-api",
     broker: "zerodha",
     format: "api",
     trades,
-    warnings:
-      trades.length === 0
+    warnings: [
+      ...(trades.length === 0 && refused === 0
         ? ["Kite returned no executions for today — the /trades endpoint only covers the current trading day."]
-        : [],
+        : []),
+      ...notes,
+    ],
   };
 }

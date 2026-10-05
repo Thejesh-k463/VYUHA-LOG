@@ -21,7 +21,9 @@
 //   8. no-checkable-position — no open position has a recorded stop / trailing
 //                              stop / target in a market the calendar models
 //                              (NSE/BSE cash and F&O; MCX is never verified,
-//                              CDS has no session — R8)
+//                              CDS has no session — R8), or every such
+//                              position's symbol is a currency pair
+//                              (lib/domain/currency-pairs.ts — owner Q2, R6)
 //   9. calendar-unverified   — the day is a weekday past the bundled calendar's
 //                              `coversThrough`: unverified, so nothing alerts
 //  10. market-closed         — no checkable position's OWN market is taking
@@ -35,6 +37,7 @@
 // lib/domain/market-calendar.ts (tests/market-calendar.test.ts bans the rest).
 
 import { classOf, isOpen, istClock, marketOf, tradingDayStatus, type Market, type SessionClass } from "@/lib/domain/market-calendar";
+import { isCurrencyPair } from "@/lib/domain/currency-pairs";
 import { isTelegramAckCurrent } from "@/lib/domain/telegram-disclosure";
 import { parseSendTime } from "@/lib/telegram/digest-gate";
 
@@ -191,7 +194,10 @@ export function alertsGate(input: AlertGateInput): AlertGateResult {
   const pairs: { market: Market; symbol: string | null | undefined }[] = [];
   const seenPair = new Set<string>();
   for (const p of input.positions) {
-    const market = p.hasLevel ? alertMarketOf(p.exchange, p.segment) : null;
+    // A currency pair is never checked (owner Q2, review R6): it is stored as an
+    // NSE/BSE derivative whose symbol IS the pair, so the market alone would
+    // call it NSE_FO. Not alertable → never a key, never sent to the feed.
+    const market = p.hasLevel && !isCurrencyPair(p.symbol) ? alertMarketOf(p.exchange, p.segment) : null;
     if (!market) {
       alertable.push(false);
       continue;

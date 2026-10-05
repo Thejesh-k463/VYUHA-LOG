@@ -102,6 +102,7 @@ export function JournalKellyPanel({ kellyFUsedPpm, onUse, serverRender }: Journa
   const ok = result != null && result.ok ? result : null;
   const refusal = result != null && !result.ok ? result : null;
   const allView = refusal?.reason === "all-view";
+  // Both sides per 1R (owner Q3): the Lab's risk budget and the Clinic's per-1R ceiling.
   const flagged = ok != null && kellyExceedsCeiling(kellyFUsedPpm, ok.halfKellyLowerBound);
 
   return (

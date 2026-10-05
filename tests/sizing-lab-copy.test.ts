@@ -244,9 +244,11 @@ describe("the % volatility tab states the true relation to the Turtle unit", () 
 describe("the Kelly tab's journal copy (C3)", () => {
   const ok: JournalKellyOk = {
     ok: true, label: "Whole account", n: 42, of: 1292, winPpm: 452_381, payoffPpm: 1_840_000,
-    p: 0.452381, pLo: 0.31, pHi: 0.6, b: 1.84, bLo: 1.2, kellyPoint: 0.1546, halfKellyLowerBound: 0.0213, supportsSizingUp: true,
+    p: 0.452381, pLo: 0.31, pHi: 0.6, b: 1.84, bLo: 1.2, lossHi: 0.92, kellyPoint: 0.1546, kellyAtLowerBounds: 0.0392, halfKellyLowerBound: 0.0213, supportsSizingUp: true,
   };
-  const weak: JournalKellyOk = { ...ok, halfKellyLowerBound: null, supportsSizingUp: false };
+  const weak: JournalKellyOk = { ...ok, halfKellyLowerBound: null, kellyAtLowerBounds: -0.265, supportsSizingUp: false };
+  // Q3 / R4 + CG-1: Kelly at the lower bounds positive, but the empirical Kelly is off the grid.
+  const offGrid: JournalKellyOk = { ...ok, halfKellyLowerBound: null, kellyAtLowerBounds: 0.27, supportsSizingUp: false };
   const lines = [
     KELLY_JOURNAL_DESCRIPTION,
     journalSampleLine(ok, "all"),
@@ -257,6 +259,7 @@ describe("the Kelly tab's journal copy (C3)", () => {
     journalRefusalLine({ ok: false, reason: "all-view", n: 0, of: 0, need: 30 }),
     journalRefusalLine({ ok: false, reason: "below-floor", n: 0, of: 1292, need: 30 }),
     journalRefusalLine({ ok: false, reason: "no-losing-trades", n: 31, of: 31, need: 30 }),
+    journalCeilingLine(offGrid),
   ];
 
   it("the journal branch says the record measured the inputs and is not a forecast; the manual branch keeps 'you supplied' (R4)", () => {
@@ -275,7 +278,14 @@ describe("the Kelly tab's journal copy (C3)", () => {
   });
 
   it("D10 / K7: the ceiling line, the flag, and the weak-edge mark in C1's words", () => {
-    expect(journalCeilingLine(ok)).toBe("Clinic ceiling for this slice: ½ Kelly at the lower 95 % bounds = 2.13 % of capital at risk per trade.");
+    // Q3 (v4.7.0 audit): the ceiling is per 1R and the line says how — the divisor and the cap.
+    expect(journalCeilingLine(ok)).toBe(
+      "Clinic ceiling for this slice, per 1R: ½ Kelly at the lower 95 % bounds over the average loss at its upper 95 % bound (0.92 R), no higher than ½ the empirical Kelly = 2.13 % of capital at risk per trade.",
+    );
+    // R4 + CG-1: a positive Kelly at the lower bounds with no ceiling must not claim "is not positive".
+    expect(journalCeilingLine(offGrid)).toBe(
+      "Whole account: no Clinic ceiling — Kelly at the lower 95 % bounds is positive, but the empirical Kelly has no maximum below 99 % of capital per 1R (the losses measured are too small to size against).",
+    );
     expect(JOURNAL_CEILING_FLAG).toBe("Your Kelly fraction puts more at risk than this ceiling.");
     expect(journalCeilingLine(weak)).toMatch(/^Whole account: the data does not support sizing up — Kelly at the lower 95 % bounds \(win rate 31\.0 %, payoff 1\.20 R\) is not positive\.$/);
   });

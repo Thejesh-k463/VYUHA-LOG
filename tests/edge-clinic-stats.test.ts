@@ -268,6 +268,27 @@ describe("Kelly — Thorp 2006", () => {
     expect(kellyEmpirical([])).toBeNull();
   });
 
+  // v4.7.0 audit CG-1: an argmax ON the grid's edge is not a maximum — growth was still
+  // rising at 0.99, so the true f* lies off the grid (here ≈ 1.417 per 1R: the losses are
+  // too small to size against). It used to return 0.99, and fc then "bisected" a bracket
+  // whose upper end still grew, returning ≈ 1.
+  it("CG-1: an argmax at the grid edge (0.99) is null — off grid — and so is its fc (R alternating −0.3 / +2, n = 50)", () => {
+    const rs = Array.from({ length: 50 }, (_, i) => (i % 2 ? 2 : -0.3));
+    expect(empiricalGrowth(0.99, rs)).toBeGreaterThan(empiricalGrowth(0.989, rs)); // still rising at the edge
+    expect(kellyEmpirical(rs)).toBeNull();
+    expect(zeroGrowthFractionEmpirical(rs)).toBeNull();
+  });
+
+  it("CG-1: fc is null when growth at the ruin bound is still ≥ 0 — bisection's invariant g(hi) < 0 does not hold (−0.3 / +0.5)", () => {
+    const rs = Array.from({ length: 50 }, (_, i) => (i % 2 ? 0.5 : -0.3));
+    expect(kellyEmpirical(rs)).toBeCloseTo(0.667, 9); // an interior maximum: f* stands
+    expect(empiricalGrowth(1, rs)).toBeGreaterThan(0); // ruin bound min(1, 1/0.3) = 1, and g(1) > 0
+    expect(zeroGrowthFractionEmpirical(rs)).toBeNull();
+    // A bracket that does cross zero still bisects (the ±1 coin above): unchanged.
+    const coin = [...Array(60).fill(1), ...Array(40).fill(-1)];
+    expect(zeroGrowthFractionEmpirical(coin)!).toBeGreaterThan(0.2);
+  });
+
   it("empirical growth is −∞ at or past the ruin fraction", () => {
     expect(empiricalGrowth(0.5, [1, -2])).toBe(Number.NEGATIVE_INFINITY);
     expect(kellyGrowth(1, 0.6, 1)).toBe(Number.NEGATIVE_INFINITY);

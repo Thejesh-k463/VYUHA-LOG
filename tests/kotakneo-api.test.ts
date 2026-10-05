@@ -215,6 +215,35 @@ describe("fetchKotakTrades", () => {
   });
 });
 
+describe("G-A1 (v4.7.0 audit, review R8) — no redirect is followed; a 3xx is refused in words", () => {
+  const SESSION = { token: "trade-token", sid: "trade-sid", baseUrl: "https://cis.kotaksecurities.com" };
+  const r307 = () => new Response(null, { status: 307, headers: { Location: "https://evil.example/steal" } });
+  const REFUSED = /answered with a redirect \(HTTP 307\) — refused; Vyuha does not follow a broker's redirect/;
+
+  it("all three Kotak fetches (tradeApiLogin, tradeApiValidate, trade book) are sent with redirect: 'manual'", async () => {
+    stub(VIEW, TRADE("https://cis.kotaksecurities.com"), json(200, { stat: "Ok", data: [] }));
+    await kotakImportSource(CREDS).fetchTrades({});
+    expect(calls).toHaveLength(3);
+    for (const c of calls) expect(c.init.redirect, c.url).toBe("manual");
+  });
+
+  it("a stubbed 307 at each step is refused with the redirect sentence, and nothing further is sent", async () => {
+    stub(r307());
+    await expect(kotakLogin(CREDS)).rejects.toThrow(REFUSED);
+    expect(calls).toHaveLength(1);
+
+    stub(VIEW, r307());
+    await expect(kotakLogin(CREDS)).rejects.toThrow(REFUSED);
+    expect(calls).toHaveLength(2);
+
+    stub(r307());
+    const e = await fetchKotakTrades(SESSION).catch((x) => x);
+    expect(e.message).toMatch(REFUSED);
+    expect(isBrokerAuthExpired(e)).toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("normalizeKotakTrades", () => {
   it("aggregates per symbol + product; equity bare; avgPrc STRING read; every trade carries Q5 + the unverified label", () => {
     const { trades, refused, notes } = normalizeKotakTrades(
@@ -278,6 +307,21 @@ describe("normalizeKotakTrades", () => {
     // D-C6-2: the currency fill is refused under its OWN note, not as unnamed.
     expect(notes.join(" ")).toContain("1 fill named no instrument");
     expect(notes.join(" ")).toContain("1 currency / NCDEX fill was refused");
+  });
+
+  it("T-B1/MU-2 — a sell-only symbol (bought before today) is basisUnknown, sold TODAY, with no invented P&L", () => {
+    const { trades } = normalizeKotakTrades([row({ trnsTp: "S", fldQty: 4, avgPrc: "9.60" })], TODAY);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({ buyQty: 0, sellQty: 4, buyDate: null, sellDate: TODAY, basisUnknown: true, grossPnl: 0 });
+    // and a bought-and-sold symbol is NOT basisUnknown
+    expect(normalizeKotakTrades([row(), row({ trnsTp: "S" })], TODAY).trades[0].basisUnknown).toBeUndefined();
+  });
+
+  it("T-B2/MU-1 — a same-day PARTIAL exit (buy 10, sell 5) is open: grossPnl 0 and sellDate null", () => {
+    const { trades } = normalizeKotakTrades([row({ fldQty: 10, avgPrc: "9.00" }), row({ trnsTp: "S", fldQty: 5, avgPrc: "10.00" })], TODAY);
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toMatchObject({ buyQty: 10, sellQty: 5, grossPnl: 0, buyDate: TODAY, sellDate: null });
+    expect(trades[0].basisUnknown).toBeUndefined();
   });
 
   it("maps CNC/MTF/MIS and leaves NRML to the classifier; flTm outside HH:MM:SS is null", () => {

@@ -16,8 +16,12 @@
 // about it is rendered — no greyed tab, no teaser — because it asks the user to
 // run a second program and hand IT their broker credentials, and that offer is
 // not made until they have read the disclosure in Settings → Integrations.
+// The one exception (v4.7.0 audit UJ-2): a user who ALREADY saved OpenAlgo
+// instances is shown the gate's reason, a Settings link and those instances,
+// rather than watching them vanish (`openAlgoBlockedNotice`).
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -480,6 +484,31 @@ export function openAlgoSaveFields(f: { host: string; underlyingBroker: string; 
     underlyingBroker: f.underlyingBroker,
     ...(f.wsUrl !== null ? { wsUrl: f.wsUrl.trim() } : {}),
   };
+}
+
+/**
+ * UJ-2 (v4.7.0 audit) — a CLOSED OpenAlgo gate. The route's GET carries
+ * `openalgo: {available: false, reason}` (its CONTRACT: "shows `openalgo.reason`
+ * when it is false"), but the card dropped the reason, so after an upgrade that
+ * bumped the disclosure a user's saved OpenAlgo instances simply VANISHED with
+ * no word of why. Now the reason (the gate's own sentence — integration off, or
+ * the disclosure changed) is shown with a link to Settings → Integrations, and
+ * the saved instances stay listed. Only for a user who HAS saved instances:
+ * someone who never connected one still sees no OpenAlgo teaser (the header
+ * comment's rule — the offer waits for the disclosure).
+ */
+export const SETTINGS_INTEGRATIONS_HREF = "/settings#settings-integrations";
+
+/** The closed gate's reason from GET's `openalgo` object, or null. */
+export function openAlgoClosedReason(gate: unknown): string | null {
+  const g = gate as { available?: unknown; reason?: unknown } | null | undefined;
+  if (!g || g.available === true) return null;
+  return typeof g.reason === "string" && g.reason.trim() ? g.reason.trim() : null;
+}
+
+/** The notice to render: the reason, when the gate is closed AND instances are saved. */
+export function openAlgoBlockedNotice(available: boolean, reason: string | null, savedInstances: number): string | null {
+  return !available && reason && savedInstances > 0 ? reason : null;
 }
 
 /** All-accounts: the picker's empty state, and the button that waits on it. */
@@ -952,6 +981,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   // is true; it is re-read after every request so a gate closed mid-session
   // takes the tab away rather than leaving a button that 403s.
   const [openalgoAvailable, setOpenalgoAvailable] = useState(false);
+  // UJ-2 (v4.7.0 audit): the server's sentence for a CLOSED gate (integration
+  // off / disclosure changed) — set from the same fetch callbacks, never an effect.
+  const [openalgoReason, setOpenalgoReason] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   /**
@@ -1041,6 +1073,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   const visibleBrokers = (Object.keys(BROKERS) as BrokerId[]).filter(
     (b) => b !== "openalgo" || openalgoAvailable,
   );
+  /** UJ-2 — derived at render time: the closed gate's sentence, shown only to a
+   *  user who HAS saved OpenAlgo instances (their section must not vanish). */
+  const openalgoBlocked = openAlgoBlockedNotice(openalgoAvailable, openalgoReason, openAlgoConns.length);
   const hostIsRemote = host.trim() !== "" && !isLocalOpenAlgoHost(host);
   const underlyingNote = OPENALGO_OPTIONS.find((o) => o.broker === underlyingBroker)?.note;
 
@@ -1080,6 +1115,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         setConns(data.connections ?? []);
         setAggregate(Boolean(data.aggregate));
         setOpenalgoAvailable(Boolean(data.openalgo?.available));
+        setOpenalgoReason(openAlgoClosedReason(data.openalgo));
         adoptSavedOpenAlgo(data.connections ?? []);
         const dead = unseenExpired(data.connections ?? []);
         if (dead.length > 0) setExpiryPrompt(dead);
@@ -1099,6 +1135,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         setConns(d.connections ?? []);
         setAggregate(Boolean(d.aggregate));
         setOpenalgoAvailable(Boolean(d.openalgo?.available));
+        setOpenalgoReason(openAlgoClosedReason(d.openalgo));
         adoptSavedOpenAlgo(d.connections ?? []);
         const dead = unseenExpired(d.connections ?? []);
         if (dead.length > 0) setExpiryPrompt(dead);
@@ -1402,6 +1439,37 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           })}
         </div>
 
+        {/* UJ-2 (v4.7.0 audit): a closed gate no longer makes saved OpenAlgo
+            instances vanish — the server's reason, the Settings path, and the
+            instances themselves (read-only: the server refuses their pulls
+            until the gate reopens, and nothing saved was removed). */}
+        {openalgoBlocked && (
+          <div className="space-y-1.5 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs" data-testid="openalgo-blocked">
+            <p>
+              <span className="font-medium text-foreground">OpenAlgo pulls are paused.</span>{" "}
+              <span className="text-muted-foreground">{openalgoBlocked}</span>{" "}
+              <Link href={SETTINGS_INTEGRATIONS_HREF} className="text-foreground underline underline-offset-2">
+                Open Settings → Integrations
+              </Link>
+            </p>
+            <p className="text-muted-foreground">
+              Saved OpenAlgo connection{openAlgoConns.length === 1 ? "" : "s"} — kept, and pulled again once the integration is back on:
+            </p>
+            <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground" data-testid="openalgo-blocked-conns">
+              {openAlgoConns.map((c) => {
+                const underlying = c.openalgoUnderlyingBroker ?? openAlgoUnderlyingOf(c.broker) ?? "?";
+                const label = OPENALGO_OPTIONS.find((o) => o.broker === underlying)?.label ?? underlying;
+                return (
+                  <li key={`${c.accountId}:${c.broker}`}>
+                    <span className="text-foreground">{label}</span>
+                    {aggregate && ` (${c.accountName ?? `account ${c.accountId}`})`} — {c.openalgoHost ?? "host unknown"} · key {c.apiKeyMasked}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {/* v4.7.0 C6 (ruling B2 / owner Q4): the three native pulls carry the
             unverified label on their card until a live pull is recorded. */}
         {pullUnverified && (
@@ -1551,8 +1619,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
 
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label>{spec.keyLabel}</Label>
+            <Label htmlFor="broker-api-key">{spec.keyLabel}</Label>
             <Input
+              id="broker-api-key"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               // A sentence, never a value shape: the masked key here looked
@@ -1660,10 +1729,17 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           {active === "openalgo" && (
             <>
               <div className="space-y-1">
-                <Label>OpenAlgo host</Label>
+                <Label htmlFor="openalgo-host">OpenAlgo host</Label>
                 <Input
+                  id="openalgo-host"
                   value={host}
-                  onChange={(e) => setHost(e.target.value)}
+                  // UJ-7 (review R10): a streaming address belongs to the host it
+                  // was saved with — a HOST change clears the box to "", which
+                  // the save sends and the route reads as "clear the stored one".
+                  onChange={(e) => {
+                    setHost(e.target.value);
+                    setWsUrl("");
+                  }}
                   placeholder={OPENALGO_DEFAULT_HOST}
                   autoComplete="off"
                   spellCheck={false}
@@ -1697,8 +1773,18 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 </p>
               </div>
               <div className="space-y-1">
-                <Label>Broker behind OpenAlgo</Label>
-                <Select value={underlyingBroker} onChange={(e) => setUnderlyingBroker(e.target.value)}>
+                <Label htmlFor="openalgo-underlying-broker">Broker behind OpenAlgo</Label>
+                <Select
+                  id="openalgo-underlying-broker"
+                  value={underlyingBroker}
+                  // UJ-7 (review R10): a BROKER change targets that broker's own
+                  // instance — clear to null so the save OMITS wsUrl and the
+                  // route keeps whatever that instance has saved.
+                  onChange={(e) => {
+                    setUnderlyingBroker(e.target.value);
+                    setWsUrl(null);
+                  }}
+                >
                   <option value="">Which broker is it connected to?</option>
                   {OPENALGO_OPTIONS.map((o) => (
                     <option key={o.broker} value={o.broker}>
@@ -1734,8 +1820,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           )}
           {(active === "fyers" || active === "nuvama") && (
             <div className="space-y-1">
-              <Label>{active === "fyers" ? "App Secret" : "API secret"}</Label>
+              <Label htmlFor="broker-api-secret">{active === "fyers" ? "App Secret" : "API secret"}</Label>
               <Input
+                id="broker-api-secret"
                 type="password"
                 value={apiSecret}
                 onChange={(e) => setApiSecret(e.target.value)}
@@ -1747,8 +1834,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           {active === "kotakneo" && (
             <>
               <div className="space-y-1">
-                <Label>Registered mobile number</Label>
+                <Label htmlFor="kotak-mobile">Registered mobile number</Label>
                 <Input
+                  id="kotak-mobile"
                   value={mobileNumber}
                   onChange={(e) => setMobileNumber(e.target.value)}
                   placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : "10 digits, or with +91"}
@@ -1756,8 +1844,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 />
               </div>
               <div className="space-y-1">
-                <Label>UCC (client code)</Label>
+                <Label htmlFor="kotak-ucc">UCC (client code)</Label>
                 <Input
+                  id="kotak-ucc"
                   value={ucc}
                   onChange={(e) => setUcc(e.target.value)}
                   placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : "as the Neo app shows it"}
@@ -1765,8 +1854,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 />
               </div>
               <div className="space-y-1">
-                <Label>MPIN</Label>
+                <Label htmlFor="kotak-mpin">MPIN</Label>
                 <Input
+                  id="kotak-mpin"
                   type="password"
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
@@ -1775,8 +1865,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 />
               </div>
               <div className="space-y-1">
-                <Label>TOTP secret</Label>
+                <Label htmlFor="kotak-totp-secret">TOTP secret</Label>
                 <Input
+                  id="kotak-totp-secret"
                   type="password"
                   value={totpSecret}
                   onChange={(e) => setTotpSecret(e.target.value)}
@@ -2107,12 +2198,13 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
               </p>
             )}
             <div className="space-y-1">
-              <Label>
+              <Label htmlFor="broker-login-paste">
                 {loginPasteField(requestTokenPrompt?.brokerId ?? "") === "requestToken"
                   ? "request_token (from the redirect URL after login)"
                   : "The address your browser landed on after the login (or the code from it)"}
               </Label>
               <Input
+                id="broker-login-paste"
                 value={requestToken}
                 onChange={(e) => setRequestToken(e.target.value)}
                 placeholder={

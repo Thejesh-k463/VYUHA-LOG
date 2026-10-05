@@ -39,9 +39,35 @@ describe("BROKER_PULL_DISCLOSURES", () => {
     expect(text("nuvama")).toContain("nc.nuvamawealth.com");
   });
 
-  it("Fyers: a browser login on each day you pull; nothing else is stored", () => {
-    expect(text("fyers")).toContain("A browser login on each day you pull; nothing else is stored.");
+  it("Fyers: a browser login on each day you pull; the password and PIN are never stored", () => {
+    expect(text("fyers")).toContain("A browser login on each day you pull. Your Fyers password and PIN are never stored");
     expect(text("fyers")).toContain("App ID and App Secret");
+  });
+
+  /**
+   * v4.7.0 audit DC-A1 — the route STORES one more thing than the v1 sheets
+   * said: the login identity stamped on a first pull (`fyId` / `nuvamaUserId`,
+   * read by `refuseForeignLogin`). "Nothing else is stored" was untrue. v1 is
+   * AMENDED, not bumped (v4.7.0 is unreleased — the header's rule 3).
+   */
+  it("DC-A1 — Fyers and Nuvama name the stored login identity and why it is kept; the route really stamps it", () => {
+    expect(text("fyers")).not.toContain("nothing else is stored");
+    expect(text("fyers")).toContain(
+      "From your first pull, your Fyers client ID is kept the same way, so a pull made with a different Fyers login is refused rather than imported into this account.",
+    );
+    expect(text("nuvama")).toContain(
+      "From your first login, your Nuvama user ID is kept the same way, so a pull made with a different Nuvama login is refused rather than imported into this account.",
+    );
+    expect(text("nuvama")).toContain("Your Nuvama password and PIN are never stored");
+    // The sentences are true only while the route stamps and checks these ids.
+    const route = readFileSync(path.join(process.cwd(), "app/api/import/broker/route.ts"), "utf8");
+    expect(route).toMatch(/fyId: n\.clientId/);
+    expect(route).toMatch(/nuvamaUserId: fresh\.userId/);
+    expect(route).toMatch(/refuseForeignLogin\(c, "fyers"/);
+    expect(route).toMatch(/refuseForeignLogin\(c, "nuvama"/);
+    // Amended, never bumped while unreleased.
+    expect(BROKER_PULL_DISCLOSURES.fyers.version).toBe(1);
+    expect(BROKER_PULL_DISCLOSURES.nuvama.version).toBe(1);
   });
 
   it("Kotak: TOTP secret + MPIN stored so pulls run unattended, launch-time auto-pull, and the Q5 ₹0 note", () => {
@@ -59,6 +85,24 @@ describe("BROKER_PULL_DISCLOSURES", () => {
       "Nuvama's documentation marks a static IP as mandatory and does not exempt read-only calls — a pull from a home connection may be refused.",
     );
     expect(t).toContain("Vyuha does not look up or send your public IP address");
+  });
+
+  /**
+   * v4.7.0 audit RN-3 — the client broker-API guide (and its Word twin's single
+   * source) named only the four verified brokers and listed Kotak Neo among
+   * brokers "with no direct connection". It now names the three C6 pulls with
+   * the SAME unverified label the app shows, and their hosts.
+   */
+  it("RN-3 — the broker API guide (HTML + docx source) names Fyers, Kotak Neo and Nuvama as documented, not yet verified", () => {
+    const html = readFileSync(path.join(process.cwd(), "docs/client/BROKER_API_SETUP_GUIDE.html"), "utf8").replace(/\s+/g, " ");
+    const docx = readFileSync(path.join(process.cwd(), "scripts/build-broker-api-docx.mjs"), "utf8").replace(/\s+/g, " ");
+    for (const [name, src] of [["html", html], ["docx", docx]] as const) {
+      expect(src, name).toContain("9 · Fyers, Kotak Neo and Nuvama — documented, not yet verified");
+      expect(src, name).toContain(PULL_UNVERIFIED_LABEL);
+      for (const host of ["api-t1.fyers.in", "mis.kotaksecurities.com", "nc.nuvamawealth.com"]) expect(src, `${name}: ${host}`).toContain(host);
+      expect(src, name).not.toMatch(/Paytm Money, Kotak Neo,? and/);
+      expect(src, name).toContain("Kotak Neo works through either");
+    }
   });
 
   it("no counterfactual copy anywhere", () => {

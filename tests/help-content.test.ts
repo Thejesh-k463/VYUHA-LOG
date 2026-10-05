@@ -1256,3 +1256,29 @@ describe("help topics — the task-first layer (v4.6.0 W4, H4)", () => {
     expect(topicForPath("/trades/123", null, HELP_TOPIC_LINKS)).toBeNull();
   });
 });
+
+/**
+ * v4.7.0 release audit DC-A2: the WHAT-LEAVES inventory listed only "the
+ * symbol, the price it was checked at and the level you recorded" for a
+ * Telegram stop/target message, while `formatAlert` (lib/telegram/format.ts)
+ * also sends the IST time of the check, the feed's name and — with more than
+ * one account — the account's name. The disclosure lists all of them; the
+ * inventory a reader treats as complete must too.
+ */
+describe("the WHAT-LEAVES inventory lists every field a stop/target message carries (DC-A2)", () => {
+  const whatLeaves = () =>
+    HELP_ENTRIES.find((e) => e.href === "/settings")!.body.find((b) => b.startsWith("WHAT LEAVES THE MACHINE"))!;
+
+  it("names the symbol, checked price, level, check time, feed, and the account when there is more than one", () => {
+    const s = whatLeaves();
+    const msg = s.slice(s.indexOf("stop/target messages"));
+    expect(msg.length, "the paragraph no longer describes the stop/target messages").toBeGreaterThan(20);
+    expect(msg).toMatch(/the symbol/);
+    expect(msg).toMatch(/the price it was checked at/);
+    expect(msg).toMatch(/the level you recorded/);
+    expect(msg).toMatch(/the time of the check in IST/);
+    expect(msg).toMatch(/the source's name/);
+    expect(msg).toMatch(/the account's name when you have more than one/);
+    expect(msg).toMatch(/never a quantity or a rupee figure/);
+  });
+});

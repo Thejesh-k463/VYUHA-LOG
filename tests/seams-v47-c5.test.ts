@@ -983,6 +983,31 @@ describe("S8 one key rule: the stream's snapshot, persist-mark and the alert job
       { symbol: "RELIANCE", exchange: "NSE", tradingsymbol: "RELIANCE" },
     ]);
   });
+
+  it("a currency pair in the book is never in the alert key list — while the Live Desk's stream still asks for it (DC-B1, owner Q2, R6)", async () => {
+    // As a real book stores them: NSE derivatives whose symbol IS the pair.
+    insertTrade({ symbol: "USDINR", tradingsymbol: "USDINR26OCTFUT", exchange: "NSE", segment: "future", instrumentType: "future", slPlanned: 1 });
+    insertTrade({ symbol: "EURINR", tradingsymbol: "EURINR26OCT90CE", exchange: "NSE", segment: "stock_option", instrumentType: "option", slPlanned: 1 });
+    insertTrade({ symbol: "RELIANCE", tradingsymbol: "RELIANCE", exchange: "NSE", slPlanned: 1 });
+    const asked: QuoteKey[][] = [];
+    const real = createMockProvider();
+    const spy: QuoteProvider = { ...real, snapshot: (keys, signal) => (asked.push([...keys]), real.snapshot(keys, signal)) };
+    const out = await job.runTelegramAlerts(NOW, { getProvider: async () => spy, send: async () => ({ ok: true }) });
+    expect(out.refused).toBeNull();
+    expect(asked).toHaveLength(1);
+    expect(asked[0].map(quoteKeyId)).toEqual(["NSE:RELIANCE"]);
+    // Scope (R6): the copy claims "never checked" for ALERTS only — the desk's own stream still subscribes the pairs.
+    const stream = (await streamSnapshotKeys()).map(quoteKeyId);
+    expect(stream).toContain("NSE:RELIANCE");
+    expect(stream.some((id) => id.includes("USDINR"))).toBe(true);
+    expect(stream.some((id) => id.includes("EURINR"))).toBe(true);
+    // A book of ONLY pairs is "no checkable position", and the feed is never asked.
+    t.sqlite.prepare("DELETE FROM trades WHERE symbol = 'RELIANCE'").run();
+    asked.length = 0;
+    const only = await job.runTelegramAlerts(NOW, { getProvider: async () => spy, send: async () => ({ ok: true }) });
+    expect(only.refused).toBe("no-checkable-position");
+    expect(asked).toHaveLength(0);
+  });
 });
 
 /* A sanity pin that the gate's inputs in S2 are the gate's, not a copy. */

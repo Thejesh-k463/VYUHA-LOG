@@ -37,6 +37,7 @@ import { request as httpsRequest } from "node:https";
 import type { NormalizedTrade, ProductHint, Execution } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
+import { currencyRefusalNote } from "@/lib/import/parsers/zerodha";
 
 /** One execution from GET /v2/order/trades/get-trades-for-day (VERIFIED
  *  against a live response, 2026-08-28 — 11 fills across NSE/NFO/BFO). */
@@ -73,9 +74,18 @@ export function productHintOf(product: string | undefined, isDerivative: boolean
   }
 }
 
+/** v4.7.0 Q4 (the Kite rule, builder FE): Upstox's currency-derivative venues.
+ *  A fill on either is REFUSED, counted and named — CDS used to be folded into
+ *  NSE and priced as an equity future (no charge_config row covers currency,
+ *  invariant 3). */
+function isUpstoxCurrencyFill(r: Pick<UpstoxTradeRow, "exchange">): boolean {
+  const e = String(r.exchange ?? "").trim().toUpperCase();
+  return e === "CDS" || e === "BCD";
+}
+
 export function exchangeOf(exchange: string | undefined): Exchange | null {
   const e = String(exchange ?? "").toUpperCase();
-  if (e === "NSE" || e === "NFO" || e === "CDS") return "NSE";
+  if (e === "NSE" || e === "NFO") return "NSE";
   if (e === "BSE" || e === "BFO") return "BSE";
   if (e.startsWith("MCX")) return "MCX";
   return null;
@@ -144,11 +154,17 @@ const hhmm = (v: string | undefined): string | null => {
  * Today's fills → normalized trades, aggregated per symbol + product with
  * executions preserved — the same shape as the Kite/Angel tradebook paths.
  * A row without a readable side, quantity or price is REFUSED and counted.
+ *
+ * v4.7.0 Q4: a CDS / BCD fill is refused too, outside `refused` (whose
+ * sentence says "no readable side, quantity or price"). `notes` carries the
+ * sentence that counts and names them — so every caller of `toParsedFile`,
+ * the unattended auto-pull included, shows it — and `refusedContracts` the
+ * names they would have been stored under (the route's stranded-open note, R5).
  */
 export function normalizeUpstoxTrades(
   rows: UpstoxTradeRow[],
   today: string,
-): { trades: NormalizedTrade[]; refused: number; notes: string[] } {
+): { trades: NormalizedTrade[]; refused: number; notes: string[]; refusedContracts: string[] } {
   type Acc = {
     symbol: string; canonical: string | null; notes: string[]; isin: string | null;
     product: string; exch: string | undefined;
@@ -157,9 +173,14 @@ export function normalizeUpstoxTrades(
   };
   const groups = new Map<string, Acc>();
   let refused = 0;
+  const refusedCurrency: string[] = [];
 
   for (const r of Array.isArray(rows) ? rows : []) {
     const symbol = String(r.tradingsymbol ?? r.trading_symbol ?? "").trim();
+    if (symbol && isUpstoxCurrencyFill(r)) {
+      refusedCurrency.push(canonicalUpstoxSymbol(symbol, r.exchange) ?? stripSeriesSuffix(symbol));
+      continue;
+    }
     const qty = num(r.quantity);
     const price = num(r.average_price);
     const rawSide = String(r.transaction_type ?? "").toUpperCase();
@@ -225,7 +246,15 @@ export function normalizeUpstoxTrades(
       importNotes: a.notes.length ? a.notes : null,
     });
   }
-  return { trades, refused, notes: [...groups.values()].flatMap((g) => g.notes) };
+  return {
+    trades,
+    refused,
+    notes: [
+      ...[...groups.values()].flatMap((g) => g.notes),
+      ...(refusedCurrency.length > 0 ? [currencyRefusalNote(refusedCurrency.length, refusedCurrency, "fill")] : []),
+    ],
+    refusedContracts: [...new Set(refusedCurrency)],
+  };
 }
 
 /**
@@ -297,9 +326,13 @@ export function upstoxImportSource(creds: UpstoxCredentials): ApiImportSource {
 export function toParsedFile(result: { trades: NormalizedTrade[]; refused: number; notes: string[] }): ParsedFile {
   const warnings: string[] = [];
   if (result.trades.length === 0) {
-    warnings.push(
-      "Upstox returned no fills — the trade book covers only the CURRENT trading day, so it is empty on a day you did not trade.",
-    );
+    // v4.7.0 Q4: a book whose only fills were refused currency did trade today —
+    // the notes below say so; "no fills" would contradict them.
+    if (result.notes.length === 0) {
+      warnings.push(
+        "Upstox returned no fills — the trade book covers only the CURRENT trading day, so it is empty on a day you did not trade.",
+      );
+    }
   } else {
     warnings.push(
       "Trades are today's fills from the Upstox trade book, aggregated per symbol + product (field mapping verified against a live trade book on 2026-08-28). Charges are computed from your rate card — the API states none.",

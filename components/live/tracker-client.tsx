@@ -30,6 +30,7 @@ import { daysToResults } from "@/lib/live/results-date";
 // of grepping this file for the lines that would have done it.
 import {
   LINK_IDLE,
+  accountOfStreamKey,
   createStreamLink,
   linkStateFor,
   streamKeyOf,
@@ -39,6 +40,7 @@ import {
   CONNECT_PROMPT_COPY,
   DESK_COPY,
   EM_DASH,
+  FEED_BLOCKED_COPY,
   LIVE_STREAM_COPY,
   NOT_PRICED_BY_FEED,
   POSITIONS_COPY,
@@ -363,6 +365,56 @@ function StalenessChip({
   );
 }
 
+/**
+ * Release-audit UJ-3 (review R12): the feed chosen in Settings is not the one
+ * running — `feed.blockedReason` from `load-desk.ts` (`resolveLiveFeed()`), with
+ * the way back to Settings → Live feed. Renders NOTHING when there is no reason,
+ * so the stored-equals-effective desk is unchanged. Exported for the node suite.
+ */
+export function FeedBlockedNotice({ reason }: { reason: string | null | undefined }) {
+  if (!reason) return null;
+  return (
+    <div
+      role="status"
+      data-testid="live-feed-blocked"
+      className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-warning/40 bg-warning/[0.07] px-3 py-2 text-xs"
+    >
+      <span>
+        {FEED_BLOCKED_COPY.lead} {reason}
+      </span>
+      <Link href={FEED_BLOCKED_COPY.href} className="font-medium text-primary underline underline-offset-2">
+        {FEED_BLOCKED_COPY.cta}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * The candles the detail pane may draw for `row` (release-audit M-B1, R1's rule
+ * applied to its seventh reader). `barsBySymbol` is keyed on `symbol`, which for
+ * a derivative is the UNDERLYING — so an expanded stock option charted the cash
+ * scrip's candles under the contract's own entry and stop. A contract has no
+ * bars of its own; the pane gets none, as an index option always did.
+ */
+const NO_BARS: LiveDeskData["barsBySymbol"][string] = [];
+export function chartBarsFor(
+  row: Pick<DeskRow, "symbol" | "instrumentType">,
+  barsBySymbol: LiveDeskData["barsBySymbol"],
+): LiveDeskData["barsBySymbol"][string] {
+  if (row.instrumentType === "option" || row.instrumentType === "future") return NO_BARS;
+  return barsBySymbol[row.symbol.toUpperCase()] ?? NO_BARS;
+}
+
+/**
+ * `feed.blockedReason` as `load-desk.ts` ships it (`DeskFeedInfo`), read with a
+ * runtime check because `FeedInfo` in `desk-types.ts` does not declare it yet —
+ * a payload built without it (a test fixture, an older render) shows no notice.
+ */
+export function blockedReasonOf(feed: LiveDeskData["feed"] & { blockedReason?: unknown }): string | null {
+  const reason = feed.blockedReason;
+  return typeof reason === "string" && reason.length > 0 ? reason : null;
+}
+
 export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean }) {
   const router = useRouter();
   const { rows: wireRows, heat, concentration, feed, barsBySymbol, barsCap, atrLength } = data;
@@ -496,6 +548,14 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   const link = linkStateFor(storedLink, streamKey);
 
   /**
+   * UJ-4 (review R2) — the stream served another account: re-render the desk
+   * from the server. An EFFECT EVENT, so the stream effect below neither lists
+   * `router` as a dependency (it must re-open on `streamKey` alone) nor holds a
+   * stale one. Called only from inside the link's snapshot callback.
+   */
+  const refreshForAccount = React.useEffectEvent(() => router.refresh());
+
+  /**
    * ONE `EventSource`, and only for a provider that really streams.
    *
    * `GET /api/live/stream` has existed since v4.0 with no consumer at all, so
@@ -545,6 +605,15 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
       // only, exactly one persisted mark per position per day"). Nothing on
       // this path writes to the journal.
       onQuotes: (batch) => setTicks((prev) => mergeTicks(prev, batch)),
+      // UJ-4 (review R2): the account this link was OPENED for — read out of the
+      // closure's own `streamKey`, never a later render's account. The route
+      // resolves the account per request, so a switch made in ANOTHER tab hands
+      // this desk a stream for a book it is not showing; the snapshot says which,
+      // and one server refresh re-renders the desk for it (which changes
+      // `streamKey` and opens the right link). At most once per link, inside the
+      // link's own callback — never a set-state in this effect's body.
+      openedForAccountId: accountOfStreamKey(streamKey) ?? undefined,
+      onAccountMismatch: refreshForAccount,
     });
     const close = () => link.close();
 
@@ -965,6 +1034,9 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
         </div>
       )}
 
+      {/* ── The chosen feed is not the running one → Settings (UJ-3) ─────── */}
+      <FeedBlockedNotice reason={blockedReasonOf(feed)} />
+
       {/* ── "Risk not set" → the Sizing Lab (Q33) ──────────────────────────── */}
       {data.riskNotSet && (
         <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-gold/40 bg-gold/[0.07] px-3 py-2 text-xs">
@@ -1101,7 +1173,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           row={expanded}
           pro={pro}
           atrLength={atrLength}
-          bars={barsBySymbol[expanded.symbol.toUpperCase()] ?? []}
+          bars={chartBarsFor(expanded, barsBySymbol)}
           barsCapped={barsCap.trimmed}
           today={data.today}
           onClose={() => setExpandedId(null)}

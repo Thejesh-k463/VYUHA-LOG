@@ -296,3 +296,46 @@ describe("the live price feed disclosure (v2)", () => {
     );
   });
 });
+
+/**
+ * v4.7.0 release audit DC-B3 / DC-B4 / R9: the disclosure's source comments are
+ * its EVIDENCE — each sentence cites the code that makes it true. Three citations
+ * had gone stale: `MAX_KEYS` in the stream route (the cap is `MAX_POSITION_KEYS`
+ * in lib/live/position-keys.ts since C5), `poll()` / `timer` (the adapter's loop
+ * is `pump()` on `pumpTimer` since C7, and `createRateGuard` lives in
+ * lib/quotes/rate-guard.ts), and "refuses unless its hostname EQUALS the
+ * bridge's" (the rule is equal hostnames OR both loopback). A comment that cites
+ * a name the code no longer has sends the next auditor to nothing.
+ */
+describe("the disclosure's evidence comments cite names the code still has", () => {
+  const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
+  const src = read("lib/domain/openalgo-disclosure.ts");
+
+  it("the key cap is MAX_POSITION_KEYS in lib/live/position-keys.ts", () => {
+    expect(src).not.toMatch(/`MAX_KEYS`/);
+    expect(src).toMatch(/lib\/live\/position-keys\.ts[\s\S]{0,300}`MAX_POSITION_KEYS`/);
+    expect(read("lib/live/position-keys.ts")).toMatch(/export const MAX_POSITION_KEYS = 500;/);
+  });
+
+  it("the fallback asking is pump() on pumpTimer, and the rate guard is cited where it lives", () => {
+    expect(src).not.toMatch(/void\s+poll\(\)|`poll\(\)`|const timer = setInterval/);
+    const adapter = read("lib/quotes/openalgo.ts");
+    expect(src).toMatch(/`pump\(\)`/);
+    expect(src).toMatch(/`pumpTimer`/);
+    expect(adapter).toMatch(/pumpTimer = setInterval\(\(\) => void pump\(true\), periodMs\)/);
+    expect(adapter).toMatch(/clearInterval\(pumpTimer\)/);
+    expect(src).toMatch(/`createRateGuard\(\)`[^\n]*lib\/quotes\/rate-guard\.ts|lib\/quotes\/rate-guard\.ts[^\n]*`createRateGuard\(\)`/);
+    expect(read("lib/quotes/rate-guard.ts")).toMatch(/export function createRateGuard\(/);
+  });
+
+  it("the streaming-address rule is equal hostnames OR both loopback (isLocalOpenAlgoHost), never a bare EQUALS", () => {
+    expect(src).not.toMatch(/hostname EQUALS the\s+\/\/\s+bridge's|hostname EQUALS the bridge's/);
+    expect(src).toMatch(/both hosts are loopback/);
+    expect(src).toMatch(/`isLocalOpenAlgoHost\(\)`/);
+  });
+
+  it("no evidence comment claims the version still 'stays \"2\"' — it is \"5\"", () => {
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("5");
+    expect(src).not.toMatch(/OPENALGO_DISCLOSURE_VERSION stays "2"/);
+  });
+});

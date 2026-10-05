@@ -348,8 +348,11 @@ export function PositionCard({
         </div>
       </div>
 
-      {/* ── the inline calculator (D10, Pro) ─────────────────────────────── */}
-      <PositionCalculator key={row.id} row={row} pro={pro} onOpenLab={onLab} />
+      {/* ── the inline calculator (D10, Pro) ─────────────────────────────────
+          Keyed on the stop too (release-audit U-B1): the calculator seeds its
+          stop ONCE from the row, so after Edit levels + router.refresh() a key
+          of `row.id` alone kept the old stop beside the card's new one. */}
+      <PositionCalculator key={`${row.id}:${row.effectiveStopP}`} row={row} pro={pro} onOpenLab={onLab} />
 
       {/* Edit levels — the extracted /risk editor, Pro only (D11). Route
           handler + fetch inside it; router.refresh() here on success. */}

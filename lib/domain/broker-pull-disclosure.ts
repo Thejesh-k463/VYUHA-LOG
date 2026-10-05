@@ -14,6 +14,10 @@
 //   3. Bump a `version` ONLY when that broker's statement materially changes,
 //      or a sentence already accepted stops being true. v4.7.0 is unreleased,
 //      so until it ships these v1 sheets may be amended without a bump.
+//      v1 AMENDED (v4.7.0 audit DC-A1, unreleased): the Fyers and Nuvama sheets
+//      name the login identity the route stamps on a first pull (`fyId` /
+//      `nuvamaUserId` in the encrypted auth blob, `refuseForeignLogin`) and say
+//      the password and PIN are never stored.
 //
 // Voice rule: state what happens, plainly. Nothing here describes what a trade
 // "would have" made — a pull reads what happened, nothing else.
@@ -48,7 +52,8 @@ export const BROKER_PULL_DISCLOSURES = {
     title: "Before you connect Fyers",
     items: [
       "Stored on this machine: your Fyers App ID and App Secret, encrypted with a key bound to this computer. On a day you pull, the day's access token is kept the same way until Fyers ends it at the close of that day.",
-      "A browser login on each day you pull; nothing else is stored. Your Fyers password and PIN are typed into Fyers' own page, never into Vyuha.",
+      "From your first pull, your Fyers client ID is kept the same way, so a pull made with a different Fyers login is refused rather than imported into this account.",
+      "A browser login on each day you pull. Your Fyers password and PIN are never stored: you type them into Fyers' own page, never into Vyuha.",
       "Vyuha calls api-t1.fyers.in only when you pull — never in the background, and never at launch.",
       "What comes back is today's fills only. Vyuha stores the trades it reads from them, never the raw response.",
       "The pull only reads. Vyuha's Fyers code contains no order, modify or funds call.",
@@ -73,6 +78,7 @@ export const BROKER_PULL_DISCLOSURES = {
     title: "Before you connect Nuvama",
     items: [
       "Stored on this machine: your Nuvama API key and API secret, encrypted with a key bound to this computer. After a login, the session Nuvama returns is kept the same way until it ends.",
+      "From your first login, your Nuvama user ID is kept the same way, so a pull made with a different Nuvama login is refused rather than imported into this account. Your Nuvama password and PIN are never stored: you type them into Nuvama's own page, never into Vyuha.",
       "The API secret is sent to Nuvama as a password field over HTTPS at each login, as Nuvama's own SDK does.",
       "A browser login when your Nuvama session has ended; you paste back the address Nuvama sends you to.",
       "Vyuha calls nc.nuvamawealth.com only when you pull — never in the background, and never at launch.",

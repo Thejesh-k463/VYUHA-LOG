@@ -30,7 +30,15 @@ const CASH: AlertGatePosition = { exchange: "NSE", segment: "eq_delivery", symbo
 const CAS_STOCK: AlertGatePosition = { exchange: "NSE", segment: "eq_delivery", symbol: "ABB", hasLevel: true };
 const FNO: AlertGatePosition = { exchange: "NFO", segment: "index_option", symbol: "NIFTY", hasLevel: true };
 const MCX: AlertGatePosition = { exchange: "MCX", segment: "commodity_future", symbol: "GOLD", hasLevel: true };
-const CDS: AlertGatePosition = { exchange: "CDS", segment: "future", symbol: "USDINR", hasLevel: true };
+// v4.7.0 release audit DC-B1 (owner Q2, review R6): a currency pair is stored
+// as an NSE/BSE derivative whose `symbol` IS the pair — no stored trade carries
+// "CDS" (the importers fold it into NSE), so the old `{ exchange: "CDS" }` pin
+// was vacuous: it refused on the exchange and never reached the pair. These are
+// the shapes a real book holds, and without the gate's currency-pair skip both
+// are NSE_FO derivatives that alert at 10:42 on a verified Wednesday.
+const CUR_FUT: AlertGatePosition = { exchange: "NSE", segment: "future", symbol: "USDINR", hasLevel: true };
+const CUR_OPT: AlertGatePosition = { exchange: "NSE", segment: "stock_option", symbol: "eurinr", hasLevel: true };
+const CUR_BSE: AlertGatePosition = { exchange: "BSE", segment: "future", symbol: " USDJPY ", hasLevel: true };
 
 function input(over: Partial<AlertGateInput> = {}): AlertGateInput {
   return {
@@ -167,9 +175,16 @@ describe("the per-position calendar window (TG4, D4, R8)", () => {
     if (!r.ok) expect(r.reason).toBe("calendar-unverified");
   });
 
-  it("MCX and CDS are never checkable, nor is a position with no recorded level", () => {
+  it("MCX and currency pairs are never checkable, nor is a position with no recorded level", () => {
     expect(reasonOf(input({ positions: [MCX] }))).toBe("no-checkable-position");
-    expect(reasonOf(input({ positions: [CDS] }))).toBe("no-checkable-position");
+    expect(reasonOf(input({ positions: [CUR_FUT] }))).toBe("no-checkable-position");
+    expect(reasonOf(input({ positions: [CUR_OPT] }))).toBe("no-checkable-position");
+    expect(reasonOf(input({ positions: [CUR_BSE] }))).toBe("no-checkable-position");
+    // Beside a checkable row the pair is never alertable — so it never gets a key.
+    const mixed = alertsGate(input({ positions: [CUR_FUT, FNO, CUR_OPT, CASH] }));
+    expect(mixed.ok && mixed.alertable).toEqual([false, true, false, true]);
+    // The skip is the PAIR, not the derivative: the same shape over a stock still alerts.
+    expect(reasonOf(input({ positions: [{ ...CUR_FUT, symbol: "RELIANCE" }] }))).toBe("ok");
     expect(reasonOf(input({ positions: [{ ...CASH, hasLevel: false }] }))).toBe("no-checkable-position");
     expect(reasonOf(input({ positions: [] }))).toBe("no-checkable-position");
     const r = alertsGate(input({ positions: [MCX, CASH] }));

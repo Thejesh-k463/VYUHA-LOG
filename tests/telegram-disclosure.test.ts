@@ -206,3 +206,26 @@ describe("shouldSendDigest — each precondition blocks on its own", () => {
     expect(shouldSendDigest({ ...OPEN, sendTime: "banana" }, new Date("2026-09-02T09:30:00Z")).send).toBe(false);
   });
 });
+
+/**
+ * v4.7.0 release audit DC-A3 / RN-4: the client README's "What each request
+ * carries" row still closed on "The polling starts when the desk opens and stops
+ * when it closes; nothing runs in the background" — false once Telegram
+ * stop/target alerts (C5) are on, which ask the same bridge about once a minute
+ * on any screen. The row gains the exception, dated like its neighbour's
+ * "Since v4.7.0" note, and keeps the true part: nothing about the book is sent.
+ */
+describe("client README: the OpenAlgo request row names the alert exception (DC-A3)", () => {
+  it("the 'What each request carries' row states the C5 background check and what it carries", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const readme = fs.readFileSync(path.join(process.cwd(), "docs/client/README.md"), "utf8");
+    const row = readme.split(/\r?\n/).find((l) => l.startsWith("| **What each request carries"));
+    expect(row, "the row is gone").toBeDefined();
+    expect(row).toMatch(/\*Since v4\.7\.0:\*/);
+    expect(row).toMatch(/Telegram stop\/target alerts/);
+    expect(row).toMatch(/about once a minute during market hours/);
+    expect(row).toMatch(/minimised included/);
+    expect(row).toMatch(/the same API key and the same symbols and exchanges/);
+  });
+});

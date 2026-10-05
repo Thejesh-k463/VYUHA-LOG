@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
-import { useStoredValue } from "@/components/layout/use-stored-value";
+import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
 import { TELEGRAM_DISCLOSURE } from "@/lib/domain/telegram-disclosure";
 import { TELEGRAM_ALERT_STATUS_KEY, parseTelegramAlertStatus } from "@/lib/domain/telegram-failure";
 import { telegramAlertsCardView, telegramCardView } from "@/lib/telegram/card-state";
@@ -124,6 +124,46 @@ async function post(body: Record<string, unknown>): Promise<{ ok: boolean; messa
   return res.json();
 }
 
+/**
+ * The actions whose success changes an input of the alert gate (the Telegram
+ * switch + its ack, the credentials, the alerts switch, the window). The stored
+ * status line is the runner's answer to the OLD settings, so it is cleared.
+ * The digest-only actions (send time, test message, chat-id discovery) leave
+ * the gate's inputs alone and keep the runner's still-true answer.
+ *
+ * NOT `save` (seam pass D-FIX-1): re-saving the bot credentials does not
+ * re-key the runner — the layout's `alertsKey` records only whether
+ * credentials are PRESENT (app/layout.tsx) — so nothing would re-ask the gate
+ * for up to 15 min and the card would sit blank while the gate still refuses.
+ */
+export const ALERT_STATUS_STALE_ACTIONS: ReadonlySet<string> = new Set([
+  "toggle",
+  "disconnect",
+  "alerts-toggle",
+  "alerts-window",
+]);
+
+/**
+ * One card write: POST, then on success clear a now-stale alert status and
+ * refresh the route. v4.7.0 release audit UJ-1 (review R3): a stored refusal
+ * ("off", "Paused — …") outlived the toggle that answered it, because only the
+ * runner writes that envelope. The runner already wakes on its own — the root
+ * layout keys it on the alert settings and it asks at mount — so this adds NO
+ * second wake; it clears the old answer BEFORE `refresh()` so the card never
+ * renders it against the new settings. An event-handler write, not an effect.
+ */
+export async function postTelegramAction(
+  body: Record<string, unknown>,
+  refresh: () => void,
+): Promise<{ ok: boolean; message?: string; chatId?: string }> {
+  const r = await post(body);
+  if (r.ok) {
+    if (ALERT_STATUS_STALE_ACTIONS.has(String(body.action))) writeStored(TELEGRAM_ALERT_STATUS_KEY, null);
+    refresh();
+  }
+  return r;
+}
+
 export function TelegramCard(props: TelegramCardProps) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = React.useState(false);
@@ -168,9 +208,8 @@ export function TelegramCard(props: TelegramCardProps) {
   async function run(body: Record<string, unknown>, after?: (r: { ok: boolean; message?: string; chatId?: string }) => void) {
     setPending(true);
     try {
-      const r = await post(body);
+      const r = await postTelegramAction(body, () => router.refresh());
       if (r.message) (r.ok ? toast.success : toast.error)(r.message);
-      if (r.ok) router.refresh();
       after?.(r);
     } catch (e) {
       toast.error((e as Error).message);

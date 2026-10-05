@@ -408,6 +408,23 @@ export const CONNECT_PROMPT_COPY = {
 } as const;
 
 /**
+ * Release-audit UJ-3 (review R12) — the feed chosen in Settings is NOT the one
+ * running on this desk (`resolveLiveFeed()`: stored ≠ effective, e.g. consent
+ * withdrawn by a restore, or the OpenAlgo integration switched off). The desk
+ * used to price silently from the fallback feed while Settings showed the
+ * choice as saved. `lead` sits before the registry's own reason (a sentence
+ * built from literals, `lib/quotes/registry.ts`), and the link lands on the
+ * Live feed section (`app/settings/page.tsx` `<Section id="settings-live-feed">`)
+ * — the one place the choice can be put right. Descriptive only: it says what
+ * is running and where the setting lives, never what to do with a position.
+ */
+export const FEED_BLOCKED_COPY = {
+  lead: "The live feed chosen in Settings is not the one running on this desk.",
+  cta: "Settings → Live feed",
+  href: "/settings#settings-live-feed",
+} as const;
+
+/**
  * Ruling 4.2-8 — the DERIVATIVE mark label, printed beside the row's last
  * stored mark in the same cell as the staleness pill.
  *

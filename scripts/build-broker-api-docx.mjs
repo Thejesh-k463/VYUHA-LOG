@@ -25,19 +25,19 @@ const outPath = path.join(root, "docs", "client", "BROKER_API_SETUP_GUIDE.docx")
 
 const CONTENT = [
   { t: "title", x: "Connecting your broker's own API" },
-  { t: "sub", x: "Vyuha · broker connections · As of Sep 2026 · Windows · read-only pull · credentials encrypted on this computer" },
-  { t: "p", x: ["Plain-language setup for the four brokers Vyuha talks to directly — ", { b: "Angel One" }, ", ", { b: "Dhan" }, ", ", { b: "Upstox" }, " and ", { b: "Zerodha" }, ". What each form asks for, what to paste where in Vyuha, and what to do when something is refused. No programming knowledge assumed."] },
+  { t: "sub", x: "Vyuha · broker connections · As of Oct 2026 · Windows · read-only pull · credentials encrypted on this computer" },
+  { t: "p", x: ["Plain-language setup for the four brokers Vyuha talks to directly and has checked against real accounts — ", { b: "Angel One" }, ", ", { b: "Dhan" }, ", ", { b: "Upstox" }, " and ", { b: "Zerodha" }, ". Three more connect directly too — ", { b: "Fyers" }, ", ", { b: "Kotak Neo" }, " and ", { b: "Nuvama" }, " — documented, not yet verified with a real account (section 9). What each form asks for, what to paste where in Vyuha, and what to do when something is refused. No programming knowledge assumed."] },
 
   { t: "h1", x: "0 · Which door do I use?" },
   { t: "p", x: [{ b: "A file from your broker." }, " Every broker publishes exports. You download one, drag it onto Journal → Import, Vyuha reads it, recomputes the charges from your own rate card and shows you a preview before anything is written. This path needs no keys, no forms and no permissions, and it is the only one that reaches back into last year. If you are here because you want your old trades in, this is your door."] },
-  { t: "p", x: [{ b: "Your broker's own API." }, " Four brokers let Vyuha ask them, over the internet, for what you traded today. You fill in one form on your broker's developer site, paste a few values into Vyuha once, and after that a pull is one click. It replaces the download-and-drag ritual for each new day; it does not replace the file import for history, because these endpoints only state the current trading day (Dhan additionally lets Vyuha fill in the days you missed). This is what the rest of this guide covers."] },
-  { t: "p", x: [{ b: "The OpenAlgo bridge." }, " If your broker is not one of the four — Groww, Paytm Money, Kotak Neo, and thirty more — a free open-source program called OpenAlgo can sit between your broker and Vyuha, on your own computer. It is more to set up and it holds your broker credentials itself, so it earns its place only when your broker has no direct connection. The full walkthrough ships in this same package as OPENALGO_SETUP_GUIDE.html (and OPENALGO_SETUP_GUIDE.docx)."] },
+  { t: "p", x: [{ b: "Your broker's own API." }, " Seven brokers let Vyuha ask them, over the internet, for what you traded today — four checked against real accounts (Angel One, Dhan, Upstox, Zerodha) and three documented, not yet verified with a real account (Fyers, Kotak Neo, Nuvama — section 9). You fill in one form on your broker's developer site, paste a few values into Vyuha once, and after that a pull is one click. It replaces the download-and-drag ritual for each new day; it does not replace the file import for history, because these endpoints only state the current trading day (Dhan additionally lets Vyuha fill in the days you missed). This is what the rest of this guide covers."] },
+  { t: "p", x: [{ b: "The OpenAlgo bridge." }, " If your broker has no direct connection — Groww, Paytm Money and thirty more (Kotak Neo works through either) — a free open-source program called OpenAlgo can sit between your broker and Vyuha, on your own computer. It is more to set up and it holds your broker credentials itself, so it earns its place only when your broker has no direct connection. The full walkthrough ships in this same package as OPENALGO_SETUP_GUIDE.html (and OPENALGO_SETUP_GUIDE.docx)."] },
   { t: "note", x: ["You can use all three at once. A file import, an API pull and an OpenAlgo pull all land through the same preview, the same charge computation and the same duplicate check — the same trade arriving twice is recognised and skipped."] },
 
   { t: "h1", x: "1 · What an API key is, in one minute" },
   { t: "p", x: ["An ", { b: "API key" }, " is a long password that you give to a program instead of to a person. Your broker's website is for you; the API is the same account with the screens taken away, so another program can ask questions in a form a program understands. Creating one does not change your account, your holdings or your fees — it only creates a second way in, which you can close again at any time."] },
   { t: "h2", x: "What Vyuha does" },
-  { t: "li", x: [{ b: "Asks your broker what you traded, and nothing else." }, " Angel One: today's trade book. Zerodha: today's executions. Upstox: today's fills. Dhan: today's positions — the one source that states MTF outright — plus its dated trade history, so a pull you skipped for four days is not lost."] },
+  { t: "li", x: [{ b: "Asks your broker what you traded, and nothing else." }, " Angel One: today's trade book. Zerodha: today's executions. Upstox: today's fills. Dhan: today's positions — the one source that states MTF outright — plus its dated trade history, so a pull you skipped for four days is not lost. Fyers, Kotak Neo and Nuvama: today's trade book."] },
   { t: "li", x: [{ b: "Imports it exactly like a file." }, " Preview first, charges computed from your rate card, duplicates detected and skipped. A pull that adds nothing says so."] },
   { t: "li", x: [{ b: "Keeps the credentials on this computer" }, ", encrypted at rest with a key bound to this machine. They are sent nowhere except to that broker itself."] },
   { t: "h2", x: "What Vyuha never does" },
@@ -48,6 +48,9 @@ const CONTENT = [
     ["Dhan", "api.dhan.co, and auth.dhan.co for the PIN + TOTP sign-in"],
     ["Upstox", "api.upstox.com"],
     ["Zerodha", "api.kite.trade"],
+    ["Fyers", "api-t1.fyers.in"],
+    ["Kotak Neo", "mis.kotaksecurities.com, then the kotaksecurities.com address Kotak's login names for that session (any other address is refused)"],
+    ["Nuvama", "nc.nuvamawealth.com"],
   ] },
   { t: "p", x: "Each is the broker's own address. PRIVACY.md in this package states the full list of moments Vyuha ever uses the network, and what each request carries." },
 
@@ -157,7 +160,17 @@ const CONTENT = [
   { t: "li", x: [{ b: "And from Vyuha's side" }, ", remove the saved connection on Import → Connect broker. Your imported trades stay; only the ability to fetch new ones goes."] },
   { t: "li", x: ["If you ever suspect a credential has been seen by someone else, revoke it at the broker first, then create a new one. That is the fastest way to be certain."] },
 
-  { t: "p", x: "Vyuha — trade journal & analytics · record-keeping, not investment advice · Broker API setup guide · As of Sep 2026" },
+  { t: "h1", x: "9 · Fyers, Kotak Neo and Nuvama — documented, not yet verified" },
+  { t: "note", x: ["These three direct connections were built from each broker's own published documentation and software kit. None has yet been checked against a real account, so every trade they pull carries the label ", { b: "documented, not yet verified with a real account" }, " — check the first pulls against your contract note. Each one shows what it stores and calls, and asks you to accept it, before anything is saved. They live on the same Import → Connect broker card as the four above, read only today's trade book, and never place, modify or cancel an order."] },
+  { t: "h2", x: "Fyers" },
+  { t: "p", x: ["Asks for your Fyers ", { b: "App ID" }, " and ", { b: "App Secret" }, ", from your app on Fyers' API dashboard. On each day you pull, Vyuha shows the Fyers login link; you log in on Fyers' own page and paste back the address your browser lands on. Your Fyers password and PIN are never stored. From your first pull, your Fyers client ID is kept, so a pull made with a different Fyers login is refused. Vyuha calls api-t1.fyers.in only when you pull."] },
+  { t: "h2", x: "Kotak Neo" },
+  { t: "p", x: ["Asks for the ", { b: "Trade API access token" }, " from the Neo app, your registered ", { b: "mobile number" }, ", your ", { b: "UCC" }, ", your ", { b: "MPIN" }, " and your ", { b: "TOTP secret" }, " — the base32 secret from TOTP setup, not the 6-digit code. Storing the MPIN and TOTP secret is what lets a pull sign in without you, so pulls run unattended. Each pull signs in afresh at mis.kotaksecurities.com and reads the trade book from the kotaksecurities.com address Kotak names for that session; any other address is refused. Kotak charges ₹0 brokerage through its Trade API, but a fill does not say which route it took, so your plan's brokerage is shown. Kotak Neo also works through the OpenAlgo bridge; the direct pull names each contract the way the bridge does, so the same trade arriving both ways is recognised by the duplicate check."] },
+  { t: "h2", x: "Nuvama" },
+  { t: "p", x: ["Asks for your Nuvama ", { b: "API key" }, " and ", { b: "API secret" }, ", from Nuvama's API Connect page. When your Nuvama session has ended, Vyuha shows the Nuvama login link; you log in on Nuvama's own page and paste back the address your browser lands on. The API secret travels to Nuvama as a password field over HTTPS at each login, exactly as Nuvama's own software kit sends it. Your Nuvama password and PIN are never stored; from your first login your Nuvama user ID is kept, so a pull made with a different Nuvama login is refused. Nuvama's documentation marks a static IP as mandatory, so a pull from a home connection may be refused. Vyuha calls nc.nuvamawealth.com only when you pull."] },
+  { t: "p", x: ["Revoking works as it does for the four above: delete or regenerate the app on the broker's own site, and remove the saved connection on ", { b: "Import → Connect broker" }, ". Your imported trades stay."] },
+
+  { t: "p", x: "Vyuha — trade journal & analytics · record-keeping, not investment advice · Broker API setup guide · As of Oct 2026" },
 ];
 
 const bytes = writeDocx(outPath, CONTENT);

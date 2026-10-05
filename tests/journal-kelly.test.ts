@@ -117,6 +117,11 @@ describe("refusals are typed and carry NO win-rate or payoff key (D5)", () => {
     const r = journalKelly(book(30, {}, 0, (i) => -0.5 - (i % 3) / 10), ALL);
     expect(r).toMatchObject({ ok: true, n: 30, p: 0, b: 0, winPpm: 0, payoffPpm: 0, supportsSizingUp: false, halfKellyLowerBound: null });
   });
+
+  it("MU-4: an R of exactly 0 is a scratch, not a win — the win rate filled counts R > 0 only", () => {
+    const r = journalKelly(book(30, {}, 0, (i) => [1, 0, -1][i % 3]), ALL);
+    expect(r).toMatchObject({ ok: true, n: 30, p: 10 / 30, winPpm: 333_333, b: 2, payoffPpm: 2_000_000 });
+  });
 });
 
 describe("the 12-month window (D6): exit day within the 365 days ending today, inclusive", () => {
@@ -136,6 +141,21 @@ describe("the 12-month window (D6): exit day within the 365 days ending today, i
     expect([twelve.n, twelve.of]).toEqual([3, 3]);
     const all = journalKellySlices(ts, ALL)[0];
     expect([all.n, all.of]).toEqual([6, 6]);
+    expect(journalKelly(ts, { window: "12m", today: TODAY })).toMatchObject({ ok: false, n: 3, of: 3 });
+  });
+
+  // v4.7.0 audit CG-3 / review R11: the exit day comes through `sideOf` (exitDateOf) — a
+  // short CLOSES on its buy-back, so its exit is `buyDate`; `sellDate` is when it opened.
+  it("CG-3: a short's exit day is its buy-back — the window keys on it, not on the opening sale", () => {
+    const short = (sellDate: string, buyDate: string) => trade({ rMultiple: 1, side: "short", sellDate, buyDate });
+    const ts = [
+      short("2025-09-01", "2025-10-10"), // opened before the window, covered inside it — IN
+      short("2025-08-15", "2026-03-02"), // opened before the window, covered inside it — IN
+      short("2026-10-01", "2026-10-06"), // opened inside, covered after today — OUT
+      at("2026-01-10"), // a long control — IN
+    ];
+    const twelve = journalKellySlices(ts, { window: "12m", today: TODAY })[0];
+    expect([twelve.n, twelve.of]).toEqual([3, 3]);
     expect(journalKelly(ts, { window: "12m", today: TODAY })).toMatchObject({ ok: false, n: 3, of: 3 });
   });
 
@@ -199,9 +219,11 @@ describe("one Kelly: the Lab's book slice IS the Clinic's book cell (D1, D4)", (
     expect(lab.ok).toBe(true);
     if (!lab.ok) return;
     const s = cell.sizing!;
-    expect([lab.n, lab.p, lab.pLo, lab.b, lab.bLo, lab.kellyPoint, lab.halfKellyLowerBound]).toEqual([
-      s.n, s.p, s.pLo, s.b, s.bLo, s.kellyPoint, s.halfKellyLowerBound,
+    // Q3: lossHi and kellyAtLowerBounds cross too — the per-1R ceiling and its refusal reason read them.
+    expect([lab.n, lab.p, lab.pLo, lab.b, lab.bLo, lab.lossHi, lab.kellyPoint, lab.kellyAtLowerBounds, lab.halfKellyLowerBound]).toEqual([
+      s.n, s.p, s.pLo, s.b, s.bLo, s.lossHi, s.kellyPoint, s.kellyAtLowerBounds, s.halfKellyLowerBound,
     ]);
+    expect(lab.halfKellyLowerBound).not.toBeNull();
     expect(lab.n).toBe(cell.sizingSample.withRisk);
   });
 

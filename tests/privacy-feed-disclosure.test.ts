@@ -552,3 +552,20 @@ describe("the corrected /funds sentence is pinned per surface, not merely un-cau
     expect(flatten(reverted)).not.toContain(FUNDS_PIN["docs/client/README.md"]);
   });
 });
+
+/**
+ * v4.7.0 audit DC-A1 — the privacy sheet says what the Fyers and Nuvama pulls
+ * KEEP beyond the credentials: the login identity stamped on a first pull, so a
+ * pull from a different login is refused; and that the password and PIN are
+ * never stored. Same facts as the consent sheets (lib/domain/broker-pull-disclosure.ts).
+ */
+describe("DC-A1 — PRIVACY names the stored Fyers / Nuvama login identity", () => {
+  const privacy = read("docs/client/PRIVACY.md").replace(/\s+/g, " ");
+  it("names the kept client id / user id and why, and that the password and PIN are never stored", () => {
+    expect(privacy).toContain(
+      "It also keeps your Fyers client id from your first pull, so a pull made with a different Fyers login is refused rather than imported into that account.",
+    );
+    expect(privacy).toContain("It also keeps your Nuvama user id from your first login, so a pull made with a different Nuvama login is refused.");
+    expect(privacy).toContain("Your Fyers and Nuvama password and PIN are never stored");
+  });
+});

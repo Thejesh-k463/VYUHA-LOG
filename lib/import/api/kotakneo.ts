@@ -104,7 +104,24 @@ interface KotakLoginBody {
   errorCode?: string | number;
 }
 
+/**
+ * v4.7.0 audit G-A1 (review R8). Every Kotak fetch is sent with
+ * `redirect: "manual"`, so a 3xx is never FOLLOWED (a followed redirect would
+ * carry the Authorization / Auth / Sid headers, the MPIN or the TOTP body to a
+ * host `assertKotakBaseUrl` never saw) — and it is refused HERE in a plain
+ * sentence rather than read as a login or trade-book answer. Kotak documents
+ * no redirect on any of the three calls (R10 §2).
+ */
+function refuseRedirect(what: string, res: Response): void {
+  if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
+    throw new Error(
+      `Kotak Neo ${what} answered with a redirect (HTTP ${res.status}) — refused; Vyuha does not follow a broker's redirect, so nothing was sent to the address it named.`,
+    );
+  }
+}
+
 async function kotakLoginStep(step: string, res: Response): Promise<{ token: string; sid: string; baseUrl?: string }> {
+  refuseRedirect(step, res);
   const json = (await res.json().catch(() => null)) as KotakLoginBody | null;
   const token = json?.data?.token;
   const sid = json?.data?.sid;
@@ -140,6 +157,7 @@ export async function kotakLogin(creds: KotakCredentials): Promise<KotakSession>
       headers: common,
       body: JSON.stringify({ mobileNumber: mobileWithIsd(creds.mobileNumber), ucc: creds.ucc, totp: totp(creds.totpSecret) }),
       cache: "no-store",
+      redirect: "manual",
     }),
   );
   const trade = await kotakLoginStep(
@@ -149,6 +167,7 @@ export async function kotakLogin(creds: KotakCredentials): Promise<KotakSession>
       headers: { ...common, sid: view.sid, Auth: view.token },
       body: JSON.stringify({ mpin: creds.mpin }),
       cache: "no-store",
+      redirect: "manual",
     }),
   );
   const raw = typeof trade.baseUrl === "string" && trade.baseUrl.trim() ? trade.baseUrl : KOTAK_DEFAULT_BASE;
@@ -190,7 +209,9 @@ export async function fetchKotakTrades(session: KotakSession): Promise<KotakTrad
     method: "GET",
     headers: { Auth: session.token, Sid: session.sid, "neo-fin-key": NEO_FIN_KEY, accept: "application/json" },
     cache: "no-store",
+    redirect: "manual",
   });
+  refuseRedirect("trade book", res);
   const json = (await res.json().catch(() => null)) as
     | { stat?: string; stCode?: number | string; emsg?: string; errMsg?: string; data?: unknown }
     | null;

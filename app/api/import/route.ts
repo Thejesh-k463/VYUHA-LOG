@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { buildContext, detectParser, rankParsers } from "@/lib/import/detect";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
-import { AccountRequiredError } from "@/lib/queries/accounts";
+import { AccountRequiredError, getWriteAccountId } from "@/lib/queries/accounts";
+import { db } from "@/lib/db";
+import { currencyRefusalsOf, currencyUnderlyings, strandedCurrencyNotes } from "@/lib/import/parsers/zerodha";
 import { guardReadable, unreadableError } from "@/lib/import/parse-guard";
 import { classifyFileKind, capabilityOf } from "@/lib/import/file-kind";
 import type { ProductHint } from "@/lib/engine/types";
@@ -139,6 +141,31 @@ export async function POST(req: Request) {
       { error: "Map the columns before importing this file." },
       { status: 422 },
     );
+  }
+
+  // v4.7.0 Q4 / review R5 — a currency contract this file REFUSED that is still
+  // OPEN in the target account (a currency BUY imported before v4.7.0, whose
+  // sell is now refused) would sit open forever unnoticed. Name it. A NOTE,
+  // never a write: the stored row is left exactly as it is. The account is the
+  // one the preview/commit writes to (getWriteAccountId — invariants 8/9); when
+  // none resolves, the preview/commit below says so and no note is owed.
+  const refusedCurrency = currencyRefusalsOf(parsed);
+  if (refusedCurrency.length > 0) {
+    let target: number | null = null;
+    try {
+      target = getWriteAccountId(accountId);
+    } catch (e) {
+      if (!(e instanceof AccountRequiredError)) throw e;
+    }
+    if (target != null) {
+      const acct = target;
+      const open = await db.query.trades.findMany({
+        columns: { tradingsymbol: true },
+        where: (t, { and, eq, inArray }) =>
+          and(eq(t.accountId, acct), eq(t.isOpen, true), inArray(t.symbol, currencyUnderlyings(refusedCurrency))),
+      });
+      parsed.warnings.push(...strandedCurrencyNotes(refusedCurrency, open));
+    }
   }
 
   // Neither has a file that parsed cleanly into NO trades — a Dhan ledger or

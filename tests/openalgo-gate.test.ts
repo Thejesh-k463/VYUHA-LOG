@@ -240,6 +240,60 @@ describe("the OpenAlgo save keeps, clears and validates the streaming address (C
     expect(connections()).toHaveLength(0);
   });
 
+  /**
+   * v4.7.0 audit UJ-6 (review R9): loopback aliases are ONE machine. A bridge
+   * saved as `localhost` refused `ws://127.0.0.1:…` (the address OpenAlgo's own
+   * .env prints) because the hostnames differed as strings. Equal hostnames OR
+   * both loopback pass; a LAN IP against a loopback bridge is still refused.
+   */
+  it("UJ-6 — a loopback alias of the bridge is the same machine; a LAN IP is not", async () => {
+    const res = await post({ ...GOOD_SAVE, host: "http://localhost:5000", wsUrl: "ws://127.0.0.1:4051" });
+    expect(res.status).toBe(200);
+    expect(storedAuth().wsUrl).toBe("ws://127.0.0.1:4051");
+
+    const { normalizeOpenAlgoStreamUrl } = await import("@/lib/import/api/openalgo");
+    expect(normalizeOpenAlgoStreamUrl("ws://localhost:4051", "http://127.0.0.1:5000")).toBe("ws://localhost:4051");
+    expect(normalizeOpenAlgoStreamUrl("ws://[::1]:4051", "http://127.0.0.1:5000")).toBe("ws://[::1]:4051");
+    expect(normalizeOpenAlgoStreamUrl("ws://127.0.0.2:4051", "http://localhost:5000")).toBe("ws://127.0.0.2:4051");
+    for (const [ws, bridge] of [
+      ["ws://192.168.1.9:4051", "http://127.0.0.1:5000"],
+      ["ws://127.0.0.1:4051", "http://192.168.1.9:5000"],
+      ["ws://localhost:4051", "http://10.0.0.5:5000"],
+    ] as const) {
+      expect(() => normalizeOpenAlgoStreamUrl(ws, bridge), `${ws} vs ${bridge}`).toThrow(/same machine as the bridge address/);
+    }
+  });
+
+  it("UJ-6 parity — the stream rule's 'loopback' is exactly isLocalOpenAlgoHost (restated in openalgo.ts to avoid an import cycle)", async () => {
+    const { normalizeOpenAlgoStreamUrl } = await import("@/lib/import/api/openalgo");
+    const { isLocalOpenAlgoHost } = await import("@/lib/domain/openalgo-disclosure");
+    const hosts = ["localhost", "LOCALHOST", "127.0.0.1", "127.1.2.3", "[::1]", "192.168.1.9", "10.0.0.5", "localhost.evil.io", "127.0.0.1.nip.io", "0.0.0.0", "my-pc"];
+    for (const h of hosts) {
+      // Against a bridge whose hostname is a DIFFERENT loopback spelling, only a loopback host passes.
+      const bridge = h.toLowerCase() === "localhost" ? "http://127.0.0.1:5000" : "http://localhost:5000";
+      let accepted = true;
+      try {
+        normalizeOpenAlgoStreamUrl(`ws://${h}:4051`, bridge);
+      } catch {
+        accepted = false;
+      }
+      expect(accepted, h).toBe(isLocalOpenAlgoHost(h));
+    }
+  });
+
+  it("RN-5 — the setup doc's second-instance step sends the user to the Streaming address box, at the right default port", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { OPENALGO_WS_PORT } = await import("@/lib/import/api/openalgo");
+    const doc = fs.readFileSync(path.join(process.cwd(), "docs", "OPENALGO_SETUP.md"), "utf8").replace(/\s+/g, " ");
+    const second = doc.slice(doc.indexOf("**Running a second instance?**"), doc.indexOf("**Start it and log in.**"));
+    expect(second).toContain("WEBSOCKET_URL=ws://127.0.0.1:8766");
+    expect(second).toContain("**Streaming address** box in Vyuha");
+    expect(second).toContain(`default ${OPENALGO_WS_PORT}`);
+    expect(doc).toContain(`**Streaming address (optional)** — leave it empty for OpenAlgo's default (\`ws://<host>:${OPENALGO_WS_PORT}\`)`);
+    expect(doc).toContain("Repeat for a second instance — with its own host AND its own Streaming address");
+  });
+
   it("a kept address is re-checked against the host this save ends with", async () => {
     expect((await post({ ...GOOD_SAVE, wsUrl: "ws://127.0.0.1:4051" })).status).toBe(200);
     const before = connections()[0].auth_json;

@@ -5,6 +5,8 @@ import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg } 
 import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
+import { classify } from "@/lib/engine/classify";
+import { isCurrencyPair } from "@/lib/domain/currency-pairs";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
 
@@ -15,6 +17,78 @@ const toNum = (v: unknown): number => {
 };
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s_.]/g, "");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Currency derivatives: REFUSED, counted and NAMED (v4.7.0 release audit, owner
+// answer Q4 + review R5/R6). Kite and every Zerodha file used to fold CDS into
+// NSE, so a USDINR future was stored as an NSE future and charged equity-F&O
+// STT and stamp — no `charge_config` row covers currency (invariant 3). The
+// rule is the C6 pulls' (D-C6-2): refuse, count, say so — never coerce.
+// Rows imported before v4.7.0 are left untouched; a re-import refuses them
+// rather than duplicating, and `strandedCurrencyNotes` names any of them still
+// open so the user can close or delete it by hand.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The refusal reason, verbatim in every Kite / Zerodha currency note. */
+export const CURRENCY_NOT_PRICED = "currency derivatives are not priced by Vyuha";
+
+/** The import note for `count` refused rows over the distinct contracts `names`. */
+export function currencyRefusalNote(count: number, names: readonly string[], noun = "row"): string {
+  const distinct = [...new Set(names)];
+  const shown = distinct.slice(0, 10).join(", ");
+  const more = distinct.length > 10 ? ` and ${distinct.length - 10} more` : "";
+  return `${count} currency derivative ${noun}${count === 1 ? " was" : "s were"} refused — ${CURRENCY_NOT_PRICED} (no charge profile covers them), so nothing was imported for: ${shown}${more}.`;
+}
+
+/** PURE. A contract whose classified underlying is a currency pair (R6: the stored
+ *  `symbol`, exact — never a tradingsymbol prefix). For a file that states no segment. */
+export function isCurrencyContract(tradingsymbol: string): boolean {
+  return isCurrencyPair(classify({ tradingsymbol }).symbol);
+}
+
+/** PURE. The classified underlyings of refused contracts — what a stored row's `symbol` holds. */
+export function currencyUnderlyings(refused: readonly string[]): string[] {
+  return [...new Set(refused.map((s) => classify({ tradingsymbol: s }).symbol))];
+}
+
+const contractKey = (s: string) => s.replace(/\s+/g, "").toUpperCase();
+
+/**
+ * PURE (R5). One note per OPEN stored row whose contract a refused row names.
+ * Matched on the exact tradingsymbol (spaces and case folded): `classify` leaves
+ * a monthly expiry null, so its key would tie an October future to a November
+ * one. A NOTE only — nothing is written, closed or deleted.
+ */
+export function strandedCurrencyNotes(
+  refused: readonly string[],
+  open: readonly { tradingsymbol: string }[],
+): string[] {
+  const wanted = new Set(refused.map(contractKey));
+  const named = [...new Set(open.map((r) => r.tradingsymbol).filter((s) => wanted.has(contractKey(s))))];
+  return named.map(
+    (s) => `${s} is still open from an earlier import — close or delete it by hand; Vyuha no longer prices currency.`,
+  );
+}
+
+/** The refused contracts of a parse, for the route's stranded-open note. Kept
+ *  beside the ParsedFile (keyed on its identity) rather than on it, so the
+ *  shared ParsedFile type is unchanged. */
+const REFUSED_CURRENCY = new WeakMap<ParsedFile, readonly string[]>();
+export function currencyRefusalsOf(parsed: ParsedFile): readonly string[] {
+  return REFUSED_CURRENCY.get(parsed) ?? [];
+}
+export function withCurrencyRefusals(parsed: ParsedFile, refused: readonly string[], noun: string): ParsedFile {
+  if (refused.length === 0) return parsed;
+  parsed.warnings.push(currencyRefusalNote(refused.length, refused, noun));
+  REFUSED_CURRENCY.set(parsed, [...new Set(refused)]);
+  return parsed;
+}
+
+/** A tradebook / Console cell that states the currency segment or venue. */
+function statesCurrency(raw: string): boolean {
+  const s = norm(raw);
+  return s.startsWith("cds") || s.startsWith("bcd") || s === "cd" || s.startsWith("currenc");
+}
 
 /** Convert a CSV/XLSX file into per-sheet matrices of rows.
  *
@@ -212,7 +286,9 @@ function exchangeFrom(raw: string): Exchange | null {
   if (!s) return null;
   if (s.startsWith("mcx")) return "MCX";
   if (s.startsWith("bse") || s.startsWith("bfo")) return "BSE";
-  if (s.startsWith("nse") || s.startsWith("nfo") || s.startsWith("cds")) return "NSE";
+  // CDS is NOT folded into NSE any more (v4.7.0 Q4): a currency row is refused
+  // before it reaches here, and an unrefused one must not be priced as NSE.
+  if (s.startsWith("nse") || s.startsWith("nfo")) return "NSE";
   return null;
 }
 
@@ -363,6 +439,8 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
   };
   const groups = new Map<string, Group>();
   const unreadable: string[] = [];
+  /** v4.7.0 Q4: one entry per refused exit row of the "Currency" section. */
+  const refusedCurrency: string[] = [];
   let cols: Cols | null = null;
   let section: string | null = null;
   let lastSingleton: string | null = null;
@@ -386,6 +464,12 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
 
     const symbol = cells[cols.symbol] ?? "";
     if (!symbol) continue;
+    // v4.7.0 Q4: the "Currency" section is refused by its label; a row under no
+    // label (the file states no segment) by its classified underlying (R6).
+    if (section ? /currenc/i.test(section) : isCurrencyContract(symbol)) {
+      refusedCurrency.push(symbol);
+      continue;
+    }
     const qty = toNum(raw[cols.qty]);
     const entryDate = extractDate(raw[cols.entry]);
     const exitDate = extractDate(raw[cols.exit]);
@@ -438,7 +522,7 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
     groups.set(key, g);
   }
 
-  if (rowCount === 0 && unreadable.length === 0) return null;
+  if (rowCount === 0 && unreadable.length === 0 && refusedCurrency.length === 0) return null;
 
   // The file's own charge figures, summed unrounded across every row, per
   // head and in total — what the groups' rounded heads must add back to.
@@ -484,7 +568,8 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
       entryTime: buys.map((f) => f.time).filter(Boolean).sort()[0] ?? null,
       exitTime: sells.map((f) => f.time).filter(Boolean).sort().at(-1) ?? null,
       // NRML derivatives state no product; the classifier reads the contract
-      // from the symbol itself. Commodity/currency sections hint the venue.
+      // from the symbol itself. A Commodity section hints the venue (a
+      // Currency section never gets here — refused above).
       productHint: null,
       exchangeHint: g.section && /commodit/i.test(g.section) ? "MCX" : null,
       sourceFile: ctx.filename,
@@ -533,14 +618,18 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
     );
   }
 
-  return {
-    sourceId: "zerodha",
-    broker: "zerodha",
-    format: "taxpnl",
-    trades,
-    sourceRows: rowCount,
-    warnings,
-  };
+  return withCurrencyRefusals(
+    {
+      sourceId: "zerodha",
+      broker: "zerodha",
+      format: "taxpnl",
+      trades,
+      sourceRows: rowCount,
+      warnings,
+    },
+    refusedCurrency,
+    "exit row",
+  );
 }
 
 export function parseZerodha(ctx: ParseContext): ParsedFile {
@@ -573,6 +662,9 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
   const cPrice = find("price", "trade price", "average price", "avg price");
   const cProduct = find("product", "product type");
   const cExch = find("exchange", "segment");
+  // v4.7.0 Q4: the Segment column on its own, so a currency row is refused when
+  // EITHER the venue or the segment says so (the real tradebook carries both).
+  const cSegment = find("segment");
   const cDate = find("trade date", "order execution time", "date", "trade_date");
   // The fill CLOCK lives in its own column on the real Console export
   // ("Order Execution Time", "2026-04-01 11:14:28"); "Trade Date" there is a
@@ -582,6 +674,16 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
   const cTime = find("order execution time", "trade time", "execution time", "order_execution_time");
 
   const warnings: string[] = [];
+  /** v4.7.0 Q4: one entry per refused currency row (tradebook fill or Console row). */
+  const refusedCurrency: string[] = [];
+  // Refused when the venue or segment cell states currency (CDS / BCD); when
+  // the row states no segment, by its classified underlying (review R6).
+  const isCurrencyRow = (r: string[], symbol: string): boolean => {
+    const exch = cExch >= 0 ? (r[cExch] ?? "").trim() : "";
+    const seg = cSegment >= 0 ? (r[cSegment] ?? "").trim() : "";
+    if (statesCurrency(exch) || statesCurrency(seg)) return true;
+    return seg === "" && isCurrencyContract(symbol);
+  };
 
   if (cTradeType >= 0) {
     // ---- Tradebook: FIFO-pair per tradingsymbol + product ----
@@ -613,6 +715,10 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     for (const r of dataRows) {
       const symbol = (r[cSymbol] ?? "").trim();
       if (!symbol) continue;
+      if (isCurrencyRow(r, symbol)) {
+        refusedCurrency.push(symbol);
+        continue;
+      }
 
       const productRaw = cProduct >= 0 ? (r[cProduct] ?? "").trim() : "";
       const key = `${symbol}|${norm(productRaw)}`;
@@ -770,14 +876,18 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       );
     }
 
-    return {
-      sourceId: "zerodha",
-      broker: "zerodha",
-      format: "tradebook",
-      trades,
-      sourceRows: fillCount,
-      warnings,
-    };
+    return withCurrencyRefusals(
+      {
+        sourceId: "zerodha",
+        broker: "zerodha",
+        format: "tradebook",
+        trades,
+        sourceRows: fillCount,
+        warnings,
+      },
+      refusedCurrency,
+      "fill",
+    );
   }
 
   // ---- Console P&L: already aggregated ----
@@ -802,6 +912,12 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     // not a trade. The real Console export carries three of them, whose
     // "Symbol" cell holds an ISIN — importing them creates empty positions.
     if (buyQty === 0 && sellQty === 0 && buyVal === 0 && sellVal === 0) continue;
+    // v4.7.0 Q4 / R5: the Console P&L states no segment, so a currency row is
+    // known by its classified underlying (or a venue cell, where one exists).
+    if (isCurrencyRow(r, symbol)) {
+      refusedCurrency.push(symbol);
+      continue;
+    }
     trades.push({
       broker: "zerodha",
       tradingsymbol: symbol,
@@ -844,7 +960,11 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       `${undated} row${undated === 1 ? "" : "s"} carry no dates because this report states none — they will show "—" for dates and sit outside FY, holding-period and time-of-day analytics rather than being guessed. The tradebook or tax P&L export carries real dates if you need them.`,
     );
   }
-  return { sourceId: "zerodha", broker: "zerodha", format: "console", trades, warnings, ...(Object.keys(reported).length ? { reported } : {}) };
+  return withCurrencyRefusals(
+    { sourceId: "zerodha", broker: "zerodha", format: "console", trades, warnings, ...(Object.keys(reported).length ? { reported } : {}) },
+    refusedCurrency,
+    "row",
+  );
 }
 
 /** Console P&L preamble: `Summary` label/value pairs and the `Account Head |

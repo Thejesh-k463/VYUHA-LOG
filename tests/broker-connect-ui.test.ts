@@ -6,7 +6,10 @@ import {
   KEY_KEPT_PLACEHOLDER,
   PICK_ACCOUNT_FIRST,
   PULL_FORCE_ROUTE_TAIL,
+  SETTINGS_INTEGRATIONS_HREF,
   TOKEN_EXPIRY_SEEN_KEY,
+  openAlgoBlockedNotice,
+  openAlgoClosedReason,
 } from "@/components/import/broker-connect";
 
 /**
@@ -262,5 +265,92 @@ describe("the collision dialog renders the pure copy (seam D1)", () => {
   it("the tail the card strips is the one the route appends", () => {
     const route = fs.readFileSync(path.join(process.cwd(), "app", "api", "import", "broker", "route.ts"), "utf8");
     expect(route).toContain(`\`\${pre.crossSource.message}${PULL_FORCE_ROUTE_TAIL}\``);
+  });
+});
+
+/**
+ * v4.7.0 audit UJ-2 — a CLOSED OpenAlgo gate no longer makes saved instances
+ * vanish: the route's `openalgo.reason` (its documented contract) is shown with
+ * the Settings path, and the instances stay listed. Someone with no saved
+ * instance still sees no OpenAlgo teaser.
+ */
+describe("UJ-2 — the closed OpenAlgo gate says why, and keeps the saved instances in view", () => {
+  const OFF = "The OpenAlgo integration is off. Turn it on in Settings → Integrations after reading what it does.";
+  const STALE = "The OpenAlgo disclosure has changed since you accepted it. Open Settings → Integrations and read it again to continue.";
+
+  it("openAlgoClosedReason reads GET's closed shape and nothing else", () => {
+    expect(openAlgoClosedReason({ available: false, reason: OFF })).toBe(OFF);
+    expect(openAlgoClosedReason({ available: false, reason: `  ${STALE} ` })).toBe(STALE);
+    expect(openAlgoClosedReason({ available: true })).toBeNull();
+    expect(openAlgoClosedReason({ available: true, reason: OFF })).toBeNull();
+    expect(openAlgoClosedReason({ available: false })).toBeNull();
+    expect(openAlgoClosedReason({ available: false, reason: "  " })).toBeNull();
+    expect(openAlgoClosedReason(undefined)).toBeNull();
+  });
+
+  it("openAlgoBlockedNotice: the reason only when closed AND at least one instance is saved", () => {
+    expect(openAlgoBlockedNotice(false, STALE, 1)).toBe(STALE);
+    expect(openAlgoBlockedNotice(false, OFF, 2)).toBe(OFF);
+    expect(openAlgoBlockedNotice(false, OFF, 0), "no saved instance → no teaser").toBeNull();
+    expect(openAlgoBlockedNotice(true, OFF, 1), "an open gate shows the tab instead").toBeNull();
+    expect(openAlgoBlockedNotice(false, null, 1)).toBeNull();
+  });
+
+  it("both GET callbacks store the reason beside `available`, and the notice is DERIVED at render", () => {
+    expect(SRC.match(/setOpenalgoAvailable\(Boolean\((data|d)\.openalgo\?\.available\)\);\n\s+setOpenalgoReason\(openAlgoClosedReason\(\1\.openalgo\)\);/g) ?? []).toHaveLength(2);
+    expect(SRC).toContain("const openalgoBlocked = openAlgoBlockedNotice(openalgoAvailable, openalgoReason, openAlgoConns.length);");
+  });
+
+  it("the notice renders the reason, links Settings → Integrations, and lists every saved instance", () => {
+    const block = between("{openalgoBlocked && (", "{/* v4.7.0 C6 (ruling B2 / owner Q4)");
+    expect(block).toContain('data-testid="openalgo-blocked"');
+    expect(block).toContain("{openalgoBlocked}");
+    expect(block).toContain("<Link href={SETTINGS_INTEGRATIONS_HREF}");
+    expect(block).toContain("{openAlgoConns.map((c) => {");
+    expect(block).toContain("{c.openalgoHost ?? \"host unknown\"} · key {c.apiKeyMasked}");
+    expect(SETTINGS_INTEGRATIONS_HREF).toBe("/settings#settings-integrations");
+    const settings = fs.readFileSync(path.join(process.cwd(), "app", "settings", "page.tsx"), "utf8");
+    expect(settings).toContain('<Section id="settings-integrations">');
+  });
+});
+
+/**
+ * v4.7.0 audit UJ-7 (review R10) — an adopted streaming address must not ride
+ * a save to a DIFFERENT instance. A host change clears the box to "" (the save
+ * sends it; the route clears the stored address); a broker change clears it to
+ * null (the save omits it; the route keeps that broker's instance's own).
+ */
+describe("UJ-7 — the streaming address is cleared in the host and broker onChange handlers", () => {
+  it("host onChange → setWsUrl(\"\")", () => {
+    const host = between('id="openalgo-host"', "placeholder={OPENALGO_DEFAULT_HOST}");
+    expect(host).toMatch(/onChange=\{\(e\) => \{\s*setHost\(e\.target\.value\);\s*setWsUrl\(""\);\s*\}\}/);
+  });
+
+  it("broker onChange → setWsUrl(null)", () => {
+    const sel = between('id="openalgo-underlying-broker"', "Which broker is it connected to?");
+    expect(sel).toMatch(/onChange=\{\(e\) => \{\s*setUnderlyingBroker\(e\.target\.value\);\s*setWsUrl\(null\);\s*\}\}/);
+  });
+
+  it("a cleared box reaches the save body the way R10 says: \"\" is sent, null is omitted", async () => {
+    const { openAlgoSaveFields } = await import("@/components/import/broker-connect");
+    expect(openAlgoSaveFields({ host: "http://127.0.0.1:5051", underlyingBroker: "dhan", wsUrl: "" })).toEqual({
+      host: "http://127.0.0.1:5051",
+      underlyingBroker: "dhan",
+      wsUrl: "",
+    });
+    expect(openAlgoSaveFields({ host: "http://127.0.0.1:5051", underlyingBroker: "dhan", wsUrl: null })).not.toHaveProperty("wsUrl");
+  });
+});
+
+/** v4.7.0 audit U-A1 — every C6 credential field (and the App Secret) is a labelled control. */
+describe("U-A1 — htmlFor/id pairs on the C6 credential fields", () => {
+  const IDS = ["broker-api-key", "broker-api-secret", "kotak-mobile", "kotak-ucc", "kotak-mpin", "kotak-totp-secret", "broker-login-paste", "openalgo-host", "openalgo-underlying-broker"];
+  it.each(IDS)("%s: one <Label htmlFor> and one control id", (id) => {
+    expect(SRC.match(new RegExp(`htmlFor="${id}"`, "g")) ?? []).toHaveLength(1);
+    expect(SRC.match(new RegExp(`\\bid="${id}"`, "g")) ?? []).toHaveLength(1);
+  });
+
+  it("the App Secret / API secret label is the one bound to the secret input", () => {
+    expect(SRC).toContain('<Label htmlFor="broker-api-secret">{active === "fyers" ? "App Secret" : "API secret"}</Label>');
   });
 });
