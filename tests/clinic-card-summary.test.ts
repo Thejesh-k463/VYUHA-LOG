@@ -175,7 +175,8 @@ describe("migration 0081 — clinic_cache.summary_json", () => {
     expect(entry!.when).toBeGreaterThan(journal.entries.find((x) => x.idx === 80)!.when);
     expect(Math.max(...journal.entries.map((x) => x.idx))).toBe(81);
     const sql = fs.readFileSync(path.join(process.cwd(), "drizzle", "0081_clinic-card-summary.sql"), "utf8");
-    const statements = sql.split("\n").filter((l) => l.trim() && !l.startsWith("--"));
+    // /\r?\n/: the Windows CI checkout is CRLF (FAIL-AI) — a bare "\n" split leaves the "\r" on the statement.
+    const statements = sql.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("--"));
     expect(statements).toEqual(["ALTER TABLE `clinic_cache` ADD COLUMN `summary_json` text;"]);
   });
 
