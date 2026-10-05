@@ -353,7 +353,10 @@ export function collisionDialogCopy(p: {
 }): CollisionDialogCopy {
   // ANY cross-file blocker brings the other-source words, whether it stands
   // alone or beside today's snapshot blocker for the same row (W2N).
-  const earlierOnly = p.collisions.length > 0 && p.collisions.every(metEarlierPull);
+  // v4.8.0 X1 (D6b ii): a `held-identity` blocker is not a paisa-level difference between two sources — the close
+  // would recreate a sale the journal already holds — so it takes the plain lead and the route's own sentence too.
+  const earlierOnly =
+    p.collisions.length > 0 && p.collisions.every((c) => metEarlierPull(c) || c.kind === "held-identity");
   const raw = p.message ?? "";
   const kept = (raw.endsWith(PULL_FORCE_ROUTE_TAIL) ? raw.slice(0, -PULL_FORCE_ROUTE_TAIL.length) : raw).trim();
   const serverMessage = kept === "" ? null : kept;

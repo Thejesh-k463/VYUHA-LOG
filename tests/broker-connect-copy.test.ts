@@ -595,6 +595,17 @@ describe("Seam D1 · the pull dialog's words for a collision with today's earlie
     );
   });
 
+  it("v4.8.0 X1 (seam pass): a 409 holding only held-identity blockers is not a paisa difference — plain lead, the route's sentence, no other-source footer", () => {
+    const held = { kind: "held-identity", symbol: "NIFTY2692225000CE", row: 0 };
+    const copy = collisionDialogCopy({ collisions: [held], message: "Closing this sale would record it a second time." });
+    expect(copy.description).toBe("Nothing has been committed.");
+    expect(copy.serverMessage).toBe("Closing this sale would record it a second time.");
+    expect(copy.otherSourceFooter).toBe(false);
+    // Beside a genuine cross-source blocker the other-source words still apply.
+    const mixed = collisionDialogCopy({ collisions: [held, { kind: "same-quantity", symbol: "SBIN", row: 1 }], message: null });
+    expect(mixed.otherSourceFooter).toBe(true);
+  });
+
   it("a mixed 409 (earlier snapshot AND another file) keeps the other-source words — only an earlier-snapshot-ONLY one drops them", () => {
     const report = detectCrossSourceDuplicates(
       [incoming(), incoming({ symbol: "RELIANCE", tradingsymbol: "RELIANCE-EQ", snapshotIds: undefined, buyQty: 10, buyValue: 29000, dedupHash: "r" })],
