@@ -13,7 +13,7 @@ import {
   type ShelfPostResult,
   type ShelfState,
 } from "@/lib/domain/strategy-shelf";
-import { STRATEGY_COPY, foldShelfPost, type PickerRow, type ScreenGroup } from "./strategy-copy";
+import { STRATEGY_COPY, foldShelfPost, type PickerRow, type WireGroup } from "./strategy-copy";
 import { BrowseDrawer } from "./browse-drawer";
 import { ShelfLockedStrip, ShelfStrip } from "./shelf-strip";
 import { StrategyCard } from "./strategy-card";
@@ -72,8 +72,10 @@ export function StrategiesClient({
   picker,
   pro,
 }: {
-  groups: ScreenGroup[];
-  /** Each group's payoff chart, rendered by the SERVER page and handed through
+  /** The groups WITHOUT their chart series (v4.8.0 P3, `withoutPayoff`): the
+   *  card reads none of it, and the chart computes its points from the legs. */
+  groups: WireGroup[];
+  /** Each group's payoff chart, built by the SERVER page and handed through
    *  as a node: the lazy mount stays where the perf guard put it. */
   charts: Record<string, React.ReactNode>;
   shelf: ShelfState;

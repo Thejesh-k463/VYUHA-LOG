@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { PageHeader } from "@/components/layout/page-header";
-import { PayoffChart } from "@/components/reports/payoff-chart";
+import { PayoffChartOfLegs } from "@/components/reports/payoff-chart";
 import { LazyMount } from "@/components/ui/lazy-mount";
 import { Badge } from "@/components/ui/badge";
 import { StrategiesClient } from "@/components/strategies/strategies-client";
@@ -8,7 +8,7 @@ import { StrategiesTabs } from "@/components/strategies/strategies-tabs";
 import { SignalBook } from "@/components/strategies/signal-book";
 import { getSignalTrades } from "@/lib/queries/signals";
 import { withholdSignalAnalytics } from "@/lib/analytics/signal-book";
-import { STRATEGY_COPY, withholdForFree, type PickerRow } from "@/components/strategies/strategy-copy";
+import { STRATEGY_COPY, withholdForFree, withoutPayoff, type PickerRow } from "@/components/strategies/strategy-copy";
 import { getOpenOptionPositions, getOpenUnderlyingPositions } from "@/lib/queries/trades";
 import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
 import { canonicalIsin } from "@/lib/domain/isin";
@@ -233,19 +233,28 @@ export default function StrategiesPage() {
     return keyedByAccount ? own.map((g) => ({ ...g, key: `${accountId}|${g.key}` })) : own;
   });
   built.sort((a, b) => (a.nearestExpiry ?? "").localeCompare(b.nearestExpiry ?? "") || a.symbol.localeCompare(b.symbol));
-  const groups = withholdForFree(built, pro);
+  // THE CHART SERIES DOES NOT CROSS THE WIRE (v4.8.0 P3). Each group's 61
+  // points were ~2.5 KB in this page's payload — 626 structures on the perf
+  // book, in a 6.0 MB document — for a chart that mounts only on approach and
+  // a card that never read them. `withoutPayoff` drops the field AFTER the
+  // withholding, for every build alike; the chart computes the same points in
+  // the browser from `legs` and `breakevens`, two fields `withholdForFree` has
+  // never touched, so a free build's payload loses one field and gains none
+  // (`tests/strategies-payload.test.ts` pins both halves).
+  const groups = withoutPayoff(withholdForFree(built, pro));
 
   // THE CHARTS ARE BUILT HERE, not inside the card, and stay MOUNTED ON
   // APPROACH. All 626 of them used to build their SVGs in one commit after
   // hydration, which was this page's entire cost (6026 → 1022 ms, v3.4.0;
   // `tests/render-windowing.test.ts` pins it to this file). 240 is
   // PayoffChart's own height, so nothing shifts when a chart arrives.
+  // `legs` is the SAME array the group carries, so the payload states it once.
   const spotMap = getSpotMap();
   const charts: Record<string, React.ReactNode> = {};
   for (const g of groups) {
     charts[g.key] = (
       <LazyMount key={g.key} minHeight={240}>
-        <PayoffChart data={g.payoff} breakevens={g.breakevens} spot={spotMap.get(g.symbol.toUpperCase()) ?? null} />
+        <PayoffChartOfLegs legs={g.legs} breakevens={g.breakevens} spot={spotMap.get(g.symbol.toUpperCase()) ?? null} />
       </LazyMount>
     );
   }

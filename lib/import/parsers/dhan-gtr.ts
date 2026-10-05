@@ -39,7 +39,7 @@ import { deriveBasisFromFooter } from "@/lib/analytics/acquisition";
 import { parseInstrumentName } from "@/lib/engine/classify";
 import { securityByCompanyName } from "../isin-symbol";
 import { DEDUP_LABEL_PREFIX } from "../trade-identity";
-import { statesCurrency, withCurrencyRefusals } from "./zerodha";
+import { isCurrencyContract, statesCurrency, withCurrencyRefusals } from "./zerodha";
 import { COMMODITY_UNDERLYINGS } from "@/lib/domain/constants";
 
 const COMMODITY_SET = new Set<string>(COMMODITY_UNDERLYINGS);
@@ -336,8 +336,14 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   // row's venue, and `findRates` THROWS on a venue no charge_config row covers
   // ("No charge_config for dhan / … / CDS"), which failed every other bill in
   // the report with it. Currency only — every other venue is left as stated.
-  const refusedRows = allRows.filter((r) => statesCurrency(r.exchange));
-  const rows = refusedRows.length > 0 ? allRows.filter((r) => !statesCurrency(r.exchange)) : allRows;
+  //
+  // v4.8.0 CU (R7) — and by NAME: a pair billed with Exchange = NSE used to be
+  // removed by the import guard AFTER pairing, so `sourceRows` ("N lines → M
+  // trades") still counted its bills and its charges stayed in the figure the
+  // book is conserved to. Refused here, it gets the same treatment as a CDS bill.
+  const isRefusedBill = (r: GtrRow) => statesCurrency(r.exchange) || isCurrencyContract(r.scrip);
+  const refusedRows = allRows.filter(isRefusedBill);
+  const rows = refusedRows.length > 0 ? allRows.filter((r) => !isRefusedBill(r)) : allRows;
   const refusedCurrency = refusedRows.map((r) => r.scrip);
   /** What the refused bills were charged — the footer's Total Charges still includes it. */
   const refusedCharges = r2(refusedRows.reduce((s, r) => s + rowCharges(r), 0));

@@ -54,7 +54,7 @@ import {
 } from "./helpers/book-ops";
 // Pure modules (no DB in their graph) — safe as static imports.
 import { cellTrades, edgeClinic } from "@/lib/analytics/edge-clinic";
-import { clinicStateFor, EXPERIMENT_TARGET_N, type ClinicState } from "@/lib/analytics/edge-clinic-contract";
+import { clinicCardFor, clinicStateFor, EXPERIMENT_TARGET_N, type ClinicState } from "@/lib/analytics/edge-clinic-contract";
 import { checkExperiment, teaser } from "@/lib/analytics/edge-clinic-note";
 import { maeInputsOf } from "@/lib/analytics/mae-input";
 import { computeMaeMfe } from "@/lib/analytics/mae-mfe";
@@ -720,7 +720,14 @@ describe("recorded seam defects", () => {
     const free = clinicStateFor(q.getClinicState(), false) as ClinicState;
     expect(free.status).toBe("fresh");
     expect(free.teaser).not.toBeNull();
-    expect(html(React.createElement(ui.ArjunClinicCard, { state: free }))).not.toContain("has not read this book");
+    // v4.8.0 P2: the card reads the stored summary (`getClinicCard`), cut by `clinicCardFor` — the SAME cut:
+    // no report flag, no finding, and the teaser the free state carries.
+    const card = clinicCardFor(q.getClinicCard(), false);
+    expect({ hasReport: card.hasReport, finding: card.finding }).toEqual({ hasReport: false, finding: null });
+    expect(card.teaser).toEqual(free.teaser);
+    const markup = html(React.createElement(ui.ArjunClinicCard, { card }));
+    expect(markup).not.toContain("has not read this book");
+    expect(markup).toContain(html(React.createElement("p", { className: "text-muted-foreground" }, free.teaser!.headline)));
   });
 });
 

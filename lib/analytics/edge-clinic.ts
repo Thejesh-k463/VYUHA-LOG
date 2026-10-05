@@ -60,8 +60,10 @@ import { SETUP_GRADES, type SetupGrade } from "@/lib/analytics/edge-clinic-contr
  *   c3.1 v4.7.0 audit fix wave (owner Q3, review R4, CG-1) — the sizing ceiling is PER 1R
  *        (½ Kelly at the lower bounds / L̄ at its upper bound, capped at ½ empirical Kelly), `lossHi`
  *        on the sizing card, an off-grid empirical Kelly / fc is null, the refusal names its reason
+ *   c4.0 v4.8.0 wave F1 — `decay.band` (one t-interval per trade, 71 % of the cached report) is gone;
+ *        `decay` carries `trace` (the rolling mean, at most 120 points), `usual` and `recent`
  */
-export const ENGINE_VERSION = "c3.1";
+export const ENGINE_VERSION = "c4.0";
 
 /** Finance (No. 2) Act 2024 STT step for F&O — must equal `STT_EPOCH_2024` in lib/db/seed-data.ts (a test pins it). */
 export const FNO_STT_EPOCH = "2024-10-01";
@@ -236,7 +238,20 @@ export interface RuleAdherence {
 
 export interface EdgeDecay {
   cusum: S.CusumResult;
-  band: S.RollingPoint[];
+  /**
+   * The rolling `window`-trade mean R as [tradeNumber, meanR] — tradeNumber is 1-based, the
+   * window's LAST trade — down-sampled to at most `S.TRACE_MAX_POINTS` points with the first
+   * and the last window always kept (`S.rollingMeanTrace`). No interval band is stored.
+   */
+  trace: S.TracePoint[];
+  /** The CUSUM baseline: `cusum.mu0` over the first `n` = `cusum.burnIn` trades. */
+  usual: { meanR: number; n: number };
+  /**
+   * The EXACT mean R of the cell's trades from trade `fromTrade` (1-based) to the end, `n` of
+   * them: from the alarm trade (`cusum.alarmIndex + 1`) when the CUSUM alarmed, else every
+   * trade after the burn-in (`cusum.burnIn + 1`).
+   */
+  recent: { meanR: number; n: number; fromTrade: number };
   window: number;
   verb: CopyVerb;
   copy: ClinicCopy;
@@ -977,9 +992,14 @@ function buildCell(spec: CellSpec, ctx: Ctx): ClinicCell {
     const cusum = S.cusumDown(rs, { minBurnIn: ctx.window });
     if (cusum) {
       const alarmed = cusum.alarmIndex != null;
+      // The trades "recent" reads start at the alarm trade, or right after the burn-in when nothing alarmed.
+      const from = cusum.alarmIndex ?? cusum.burnIn;
+      const tail = rs.slice(from);
       decay = {
         cusum,
-        band: S.rollingMeanBand(rs, ctx.window),
+        trace: S.rollingMeanTrace(rs, ctx.window),
+        usual: { meanR: cusum.mu0, n: cusum.burnIn },
+        recent: { meanR: S.mean(tail), n: tail.length, fromTrade: from + 1 },
         window: ctx.window,
         verb: alarmed ? "test" : "none",
         copy: {

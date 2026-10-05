@@ -585,8 +585,59 @@ describe("PSR / MinTRL / decay / sizing per cell", () => {
     const rs = [...exact(60, 0.6, 40), ...exact(60, -0.6, 41)];
     const c = edgeClinic(fromR(rs, {}, 0), { today: TODAY }).cells[0];
     expect(c.decay!.cusum.alarmIndex!).toBeGreaterThanOrEqual(60);
-    expect(c.decay!.band).toHaveLength(120 - 30 + 1);
+    // v4.8.0 F1 (engine c4.0): the per-trade band is gone; the trace is the rolling mean, one
+    // point per window while there are ≤ 120 of them — [the window's last trade (1-based), its mean].
+    expect(c.decay).not.toHaveProperty("band");
+    expect(c.decay!.trace).toHaveLength(120 - 30 + 1);
+    expect(c.decay!.trace[0]).toEqual([30, mean(rs.slice(0, 30))]);
+    expect(c.decay!.trace[90]).toEqual([120, mean(rs.slice(90))]);
     expect(c.decay!.verb).toBe("test");
+  });
+
+  // v4.8.0 F1 — the decay card's two figures. Hand-built sequences, so every expected number is arithmetic:
+  // the first 60 trades alternate +1.5 / −0.5 → μ0 = 0.5, σ0 (population) = 1, burn-in 60.
+  const usual60 = Array.from({ length: 60 }, (_, i) => (i % 2 === 0 ? 1.5 : -0.5));
+
+  it("ALARMED: `recent` is the exact mean from the alarm trade to the end; `usual` is the CUSUM baseline", () => {
+    // After the burn-in each −1 is x = −1.5, so S climbs 1 a trade: 1, 2, 3, 4 (not > 4), then 5 on the
+    // FIFTH trade → alarmIndex 64 (0-based) = trade 65. From trade 66 on every trade is −2.
+    const rs = [...usual60, ...Array(5).fill(-1), ...Array(55).fill(-2)];
+    const d = edgeClinic(fromR(rs, {}, 0), { today: TODAY }).cells[0].decay!;
+    expect(d.cusum.alarmIndex).toBe(64);
+    expect(d.usual.n).toBe(60);
+    expect(d.usual.meanR).toBeCloseTo(0.5, 12);
+    expect(d.usual).toEqual({ meanR: d.cusum.mu0, n: d.cusum.burnIn });
+    // (−1 + 55 × −2) / 56 — NOT the post-burn-in mean (−115/60) and NOT the mean after the alarm trade (−2).
+    expect(d.recent.fromTrade).toBe(65);
+    expect(d.recent.n).toBe(56);
+    expect(d.recent.meanR).toBeCloseTo(-111 / 56, 12);
+    expect(d.recent.meanR).toBe(mean(rs.slice(64)));
+    expect(d.copy.headline).toBe("Whole book: a possible drop in R from trade 65"); // the copy block names the same trade
+  });
+
+  it("QUIET: `recent` is the exact mean of every trade after the burn-in", () => {
+    // +1.3 / −0.5 after the burn-in: mean 0.4, and S never passes 0.5 — no alarm.
+    const rs = [...usual60, ...Array.from({ length: 60 }, (_, i) => (i % 2 === 0 ? 1.3 : -0.5))];
+    const d = edgeClinic(fromR(rs, {}, 0), { today: TODAY }).cells[0].decay!;
+    expect(d.cusum.alarmIndex).toBeNull();
+    expect(d.cusum.maxS).toBeCloseTo(0.5, 12);
+    expect(d.usual).toEqual({ meanR: d.cusum.mu0, n: 60 });
+    expect(d.usual.meanR).toBeCloseTo(0.5, 12);
+    expect(d.recent.fromTrade).toBe(61);
+    expect(d.recent.n).toBe(60);
+    expect(d.recent.meanR).toBeCloseTo(0.4, 12);
+    expect(d.recent.meanR).toBe(mean(rs.slice(60)));
+    expect(d.verb).toBe("none");
+  });
+
+  it("a long cell stores at most 120 trace points — the first window and the LAST trade kept — and no band", () => {
+    const rs = exact(2000, 0.3, 77);
+    const d = edgeClinic(fromR(rs, {}, 0), { today: TODAY }).cells[0].decay!;
+    expect(d.trace).toHaveLength(120);
+    expect(d.trace[0]).toEqual([30, mean(rs.slice(0, 30))]);
+    expect(d.trace[119]).toEqual([2000, mean(rs.slice(1970))]);
+    for (const [t, m] of d.trace) expect(m).toBe(mean(rs.slice(t - 30, t)));
+    expect(JSON.stringify(d)).not.toMatch(/"band"|"lo"|"hi"/);
   });
 
   it("sizing ceiling from n ≥ 30 (KELLY_MIN_N, owner Q-7 / C3 K2): half-Kelly at the lower bounds, streak copy, growth at the current risk", () => {

@@ -19,6 +19,8 @@ import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { CheckCircle2, Paperclip } from "lucide-react";
 import { buildManualPreviewBody } from "@/components/trades/manual-preview-body";
+// v4.8.0 CU (R4/R8) — PURE and browser-safe (classify + the pair list only).
+import { isCurrencyContract, isManualCurrencyTrade, MANUAL_CURRENCY_REFUSAL } from "@/lib/import/currency-venue";
 import { SignalSection } from "@/components/trades/signal-section";
 import { SETUP_GRADES } from "@/lib/analytics/edge-clinic-contract";
 
@@ -40,7 +42,28 @@ export function riskHint(p: Pick<PreviewResp, "classification" | "perTradeCap"> 
   return `from SL, else your ₹${p.perTradeCap.toLocaleString("en-IN")} ${SEGMENT_LABELS[p.classification.segment] ?? p.classification.segment} cap`;
 }
 
-const MONTHS_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/**
+ * v4.8.0 CU (R4) — PURE: would the save refuse this form as a currency
+ * derivative? The save's own predicate (`isManualCurrencyTrade`), asked of what
+ * the form will submit: the Equity tab's symbol and its Segment / Exchange
+ * overrides, or the F&O tab's constructed contract — and, before an expiry has
+ * been picked and the contract exists, the typed underlying itself.
+ */
+export function manualCurrencyRefused(f: {
+  kind: "equity" | "fno";
+  tradingsymbol: string;
+  underlying: string;
+  segment: string;
+  exchange: string;
+}): boolean {
+  if (f.kind === "fno") {
+    const u = f.underlying.trim();
+    return isManualCurrencyTrade({ tradingsymbol: f.tradingsymbol }) || (u !== "" && isCurrencyContract(u));
+  }
+  return isManualCurrencyTrade({ tradingsymbol: f.tradingsymbol, segment: f.segment, exchange: f.exchange });
+}
+
+const MONTHS_ABBR =["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "2026-07-28" -> "28 Jul 2026" (the OPT/FUT format classify() parses). */
 function toDDMonYYYY(iso: string): string {
@@ -119,6 +142,11 @@ export function ManualTradeForm({
   const [lots, setLots] = useState("");
   const [entryPremium, setEntryPremium] = useState("");
   const [exitPremium, setExitPremium] = useState("");
+
+  // v4.8.0 CU (R4) — DERIVED at render, never synced in an effect: the save
+  // refuses a currency derivative, so the form says so before the user submits,
+  // shows no priced preview for it and does not offer the Save button.
+  const currencyRefused = manualCurrencyRefused({ kind, tradingsymbol, underlying, segment, exchange });
 
   useEffect(() => {
     // With a tradeId the dialog stays open for the attach-charts step below —
@@ -211,6 +239,10 @@ export function ManualTradeForm({
     // before the debounced fetch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tradingsymbol || (bq <= 0 && sq <= 0)) { setPreview(null); return; }
+    // v4.8.0 CU (R4): nothing to price — the route would answer the refusal
+    // sentence the form already shows. No state is set here; the render below
+    // hides any earlier preview while `currencyRefused` holds.
+    if (currencyRefused) return;
     // The form's buy* state is the ENTRY and its sell* state the EXIT; the
     // builder puts them on the sides createManualTrade stores — for a written
     // (sell-direction) F&O trade the entry is the SELL side — so the preview
@@ -250,7 +282,7 @@ export function ManualTradeForm({
       } catch { /* aborted */ }
     }, 300);
     return () => { clearTimeout(id); ctrl.abort(); };
-  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, ownCapitalUsed, daysHeld, open, buyDate, sellDate, kind, direction, writeAccountId, writeAccounts.length]);
+  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, ownCapitalUsed, daysHeld, open, buyDate, sellDate, kind, direction, writeAccountId, writeAccounts.length, currencyRefused]);
 
   // Pre-trade limits check (open trades only) — block/warn before saving (P1.4).
   useEffect(() => {
@@ -596,8 +628,15 @@ export function ManualTradeForm({
           the column stays SQL NULL). */}
       {kind === "fno" && contractType === "option" && <SignalSection mode="add" entry={entryPremium} />}
 
+      {/* v4.8.0 CU (R4) — the save's own refusal, shown before the user submits. */}
+      {currencyRefused && (
+        <p role="alert" className="rounded-md border border-loss/40 bg-loss/10 px-3 py-2 text-xs text-loss">
+          {MANUAL_CURRENCY_REFUSAL}
+        </p>
+      )}
+
       {/* Live charge preview */}
-      {preview && (
+      {preview && !currencyRefused && (
         <div className="rounded-md border border-border bg-card-hover/30 p-3 text-xs">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">Auto-classified:</span>
@@ -663,7 +702,7 @@ export function ManualTradeForm({
       )}
 
       {/* Pre-trade limits verdict (open trades) */}
-      {open && limit && <LimitVerdict result={limit} />}
+      {open && limit && !currencyRefused && <LimitVerdict result={limit} />}
 
       {/* Chart screenshots need a trade id to attach to, so the picker itself
           can only appear after the save. Announce it HERE anyway: testers had
@@ -683,7 +722,7 @@ export function ManualTradeForm({
         {/* Limits are advisory — the trader always has final say. A breach flips
             the button to an explicit override (recorded in rule_violations and
             on the Discipline scorecard) but never disables saving. */}
-        <Button type="submit" disabled={pending} variant={blocked ? "destructive" : "default"}>
+        <Button type="submit" disabled={pending || currencyRefused} variant={blocked ? "destructive" : "default"}>
           {pending ? "Saving…" : blocked ? "Override & add anyway" : open ? "Add open trade" : "Add trade"}
         </Button>
       </DialogFooter>

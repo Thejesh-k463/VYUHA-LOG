@@ -16,6 +16,7 @@
 import {
   cellTrades,
   dayOf,
+  ENGINE_VERSION,
   type ClinicCell,
   type ClinicReport,
   type ClinicTrade,
@@ -26,6 +27,8 @@ import { provenanceRowOf, rProvenanceCounts, rProvenanceLine } from "@/lib/analy
 import { exitDateOf } from "@/lib/domain/side";
 import {
   EXPERIMENT_TARGET_N,
+  type ClinicCard,
+  type ClinicCardSummary,
   type ClinicExperiment,
   type ClinicTeaser,
   type ExperimentStatus,
@@ -170,6 +173,58 @@ export function teaser(report: ClinicReport): ClinicTeaser | null {
     closedTrades: report.closedTrades,
     provenanceLine: book.copy.provenanceLine,
   };
+}
+
+// ── Arjun's Eye's card summary (v4.8.0 P2) ──────────────────────────────────
+
+/**
+ * The stored card summary of ONE report: the weekly note's first finding (the five fields the card prints) and the
+ * teaser, from the SAME `weeklyNote` / `teaser` the page read derives them with — so a card read from the summary
+ * prints what a card derived from the report prints. The open experiments are deliberately not an input: they move
+ * only a finding's `experiment`, never which finding is first nor any field kept here.
+ */
+export function clinicCardSummary(report: ClinicReport, computedAt: string): ClinicCardSummary {
+  const first = weeklyNote(report, []).findings[0] ?? null;
+  return {
+    v: 1,
+    engineVersion: ENGINE_VERSION,
+    computedAt,
+    hasReport: true,
+    finding: first
+      ? { label: first.label, grade: first.grade, verb: first.verb, headline: first.headline, provenanceLine: first.provenanceLine }
+      : null,
+    teaser: teaser(report),
+  };
+}
+
+const isStr = (x: unknown): x is string => typeof x === "string";
+
+/**
+ * Read a stored summary. Null — and the caller falls back to the report — for a NULL column (a row cached before
+ * migration 0081), unreadable JSON, another envelope version, another engine version, or a shape that is not the
+ * card's: a summary is believed whole or not at all.
+ */
+export function parseClinicCardSummary(json: string | null | undefined): ClinicCardSummary | null {
+  if (!json) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== "object" || raw === null) return null;
+  const s = raw as Partial<ClinicCardSummary>;
+  if (s.v !== 1 || s.engineVersion !== ENGINE_VERSION || !isStr(s.computedAt) || s.hasReport !== true) return null;
+  const f = s.finding;
+  if (f !== null && !(typeof f === "object" && isStr(f.label) && isStr(f.grade) && isStr(f.verb) && isStr(f.headline) && isStr(f.provenanceLine))) return null;
+  const t = s.teaser;
+  if (t !== null && !(typeof t === "object" && isStr(t.grade) && isStr(t.headline) && isStr(t.provenanceLine) && typeof t.closedTrades === "number")) return null;
+  return { v: 1, engineVersion: s.engineVersion, computedAt: s.computedAt, hasReport: true, finding: f, teaser: t };
+}
+
+/** The card a summary states. */
+export function clinicCardOf(summary: ClinicCardSummary): ClinicCard {
+  return { hasReport: summary.hasReport, computedAt: summary.computedAt, finding: summary.finding, teaser: summary.teaser };
 }
 
 // ── Experiments ─────────────────────────────────────────────────────────────

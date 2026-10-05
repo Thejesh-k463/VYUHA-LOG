@@ -17,6 +17,7 @@ import * as XLSX from "xlsx";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
 import { applyMapping, suggestMapping } from "../generic-map";
+import { withCurrencyRefusals } from "./zerodha";
 
 /** Rows of the first sheet / the CSV, as strings. */
 function toMatrix(ctx: ParseContext): string[][] {
@@ -119,25 +120,35 @@ export function parseGenericTable(ctx: ParseContext): ParsedFile {
     defaultProduct,
   });
 
-  return {
-    sourceId: "generic-table",
-    broker,
-    // Execution-shaped input carries fills and times, so it earns the same
-    // format tag as a native tradebook; round-trip input does not.
-    format: mapping.side !== undefined ? "tradebook" : "pnl",
-    trades: applied.trades,
-    warnings: applied.warnings,
-    // Lines actually read, so a paired execution file shows "6,491 lines →
-    // 4,226 trades" in the imports table instead of a bare 4,226 that reads
-    // as rows going missing (the same field the Dhan GTR and Groww order
-    // parsers set; tests/load/c2-pathological-import.load.ts). Skipped rows
-    // are excluded here because the warning above already counts them.
-    sourceRows: rows.length - applied.skipped,
-    table: {
-      headers,
-      sampleRows: rows.slice(0, 5),
-      totalRows: rows.length,
-      suggested: mapping,
+  // v4.8.0 CU (R9): the mapper's refused currency rows are written onto THIS
+  // file through the one shared door (`withCurrencyRefusals` — the refusal note
+  // and the stranded-open side channel), exactly as every other parser does.
+  // They used to ride a WeakMap keyed on `applied.trades`' identity, which the
+  // import guard then read back.
+  return withCurrencyRefusals(
+    {
+      sourceId: "generic-table",
+      broker,
+      // Execution-shaped input carries fills and times, so it earns the same
+      // format tag as a native tradebook; round-trip input does not.
+      format: mapping.side !== undefined ? "tradebook" : "pnl",
+      trades: applied.trades,
+      warnings: applied.warnings,
+      // Lines actually read, so a paired execution file shows "6,491 lines →
+      // 4,226 trades" in the imports table instead of a bare 4,226 that reads
+      // as rows going missing (the same field the Dhan GTR and Groww order
+      // parsers set; tests/load/c2-pathological-import.load.ts). Skipped rows
+      // are excluded here because the warning above already counts them — and
+      // so are refused currency / NCDEX rows (`applied.skipped` includes them).
+      sourceRows: rows.length - applied.skipped,
+      table: {
+        headers,
+        sampleRows: rows.slice(0, 5),
+        totalRows: rows.length,
+        suggested: mapping,
+      },
     },
-  };
+    applied.refusedCurrency,
+    "row",
+  );
 }

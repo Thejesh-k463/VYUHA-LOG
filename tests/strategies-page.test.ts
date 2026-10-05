@@ -12,8 +12,9 @@ import {
   underlyingEntryLine,
   underlyingExpiryNote,
   withholdForFree,
+  withoutPayoff,
 } from "@/components/strategies/strategy-copy";
-import { buildStrategies, type PositionedLeg, type StrategyGroup } from "@/lib/analytics/strategies";
+import { buildStrategies, payoffSeries, type PositionedLeg, type StrategyGroup } from "@/lib/analytics/strategies";
 import type { StrategyId } from "@/lib/analytics/strategy-catalogue";
 import {
   canRedo,
@@ -97,6 +98,14 @@ describe("the Pro withholding happens BEFORE the payload", () => {
     expect(g.maxLoss).toBe(spread.maxLoss);
     expect(g.payoff).toEqual(spread.payoff);
     expect(g.breakevens).toEqual(spread.breakevens);
+    // v4.8.0 P3: the series itself no longer crosses the wire (`withoutPayoff`),
+    // so "the payoff stays free" is now a statement about its INPUTS — the legs
+    // and the breakevens a free payload still carries draw the same curve, point
+    // for point, in the browser. `tests/strategies-payload.test.ts` holds the
+    // field-by-field half on the real page.
+    const [wire] = JSON.parse(JSON.stringify(withoutPayoff(withholdForFree([spread], false)))) as StrategyGroup[];
+    expect("payoff" in wire).toBe(false);
+    expect(payoffSeries(wire.legs, wire.breakevens)).toEqual(spread.payoff);
   });
 
   it("a legacyFree shape keeps its name on a free build — a release never takes one away", () => {
@@ -976,9 +985,13 @@ describe("the page is wired the way the estate requires", () => {
     // `tests/render-windowing.test.ts` reads app/strategies/page.tsx for both
     // names and for their nesting — 626 charts built in one commit after
     // hydration was this screen's entire cost. The card takes the rendered node.
+    // v4.8.0 P3: the chart on the page is `PayoffChartOfLegs`, which computes
+    // its own points from the legs — the page hands it no series.
     expect(page).toContain("LazyMount");
-    expect(page).toContain("<PayoffChart");
-    expect(page.indexOf("<LazyMount")).toBeLessThan(page.indexOf("<PayoffChart"));
+    expect(page).toContain("<PayoffChartOfLegs legs={g.legs}");
+    expect(page.indexOf("<LazyMount")).toBeGreaterThan(-1);
+    expect(page.indexOf("<LazyMount")).toBeLessThan(page.indexOf("<PayoffChartOfLegs"));
+    expect(page, "the page hands the chart a series again").not.toContain("g.payoff");
     const card = read("components/strategies/strategy-card.tsx");
     expect(card).toContain("{chart}");
     expect(card).toContain("helpHref(g.strategyId)");

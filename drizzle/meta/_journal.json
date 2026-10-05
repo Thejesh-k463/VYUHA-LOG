@@ -568,6 +568,13 @@
       "when": 1788801400000,
       "tag": "0080_telegram-alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1788801500000,
+      "tag": "0081_clinic-card-summary",
+      "breakpoints": true
     }
   ]
 }

@@ -155,6 +155,71 @@ export function corpActionsFor(actions: readonly CorpActionInput[], symbol: stri
   return out.sort((x, y) => (x.exDate < y.exDate ? -1 : x.exDate > y.exDate ? 1 : 0));
 }
 
+/** `corpActionsFor`'s answer for EVERY symbol, keyed on the trimmed upper-cased symbol. */
+export type CorpActionIndex = ReadonlyMap<string, readonly CorpActionChip[]>;
+
+/**
+ * `corpActionsFor`, for a whole book in ONE pass (v4.8.0 P1).
+ *
+ * The desk loader asked `corpActionsFor(actions, symbol, today)` once per open
+ * position — a full scan with a `trim().toUpperCase()` per comparison, so
+ * 3,460 positions × the recorded actions. This builds the same answer for every
+ * symbol at once; `corpActionsOf` then reads one bucket.
+ *
+ * OUTPUT-NEUTRAL BY CONSTRUCTION, and pinned in `tests/positions-window.test.ts`
+ * against `corpActionsFor` itself: the same four refusals, in the same order,
+ * rows kept in INPUT order per symbol and then sorted by `exDate` with the same
+ * comparator — `Array.prototype.sort` is stable, so two actions on one ex-date
+ * come out in the order the scan gave them.
+ */
+export function indexCorpActions(actions: readonly CorpActionInput[], today: string): CorpActionIndex {
+  const from = isoMinusDays(today, CORP_ACTION_LOOKBACK_DAYS);
+  const out = new Map<string, CorpActionChip[]>();
+  for (const a of actions) {
+    if (a.type !== "bonus" && a.type !== "split") continue;
+    if (!ISO_DATE.test(a.exDate) || a.exDate < from) continue;
+    if (a.fromUnits == null || a.toUnits == null || !(a.fromUnits > 0) || !(a.toUnits > 0)) continue;
+    const sym = a.symbol.trim().toUpperCase();
+    const bucket = out.get(sym);
+    const chip: CorpActionChip = { type: a.type, exDate: a.exDate, fromUnits: a.fromUnits, toUnits: a.toUnits };
+    if (bucket) bucket.push(chip);
+    else out.set(sym, [chip]);
+  }
+  for (const bucket of out.values()) bucket.sort((x, y) => (x.exDate < y.exDate ? -1 : x.exDate > y.exDate ? 1 : 0));
+  return out;
+}
+
+/**
+ * One symbol's chips out of the index — a FRESH array of FRESH chips on every
+ * call, as `corpActionsFor` returned: two open trades in one scrip must not
+ * share one array (a reader that mutated one row's chips would edit the other's).
+ */
+export function corpActionsOf(index: CorpActionIndex, symbol: string): CorpActionChip[] {
+  return (index.get(symbol.trim().toUpperCase()) ?? []).map((c) => ({ ...c }));
+}
+
+// ─── The ledger's row window ("largest N + Show more", v4.8.0 P1) ─────────────
+
+/**
+ * How many rows the ledger renders: what the user has asked for so far
+ * (`shown`), widened to the smallest whole number of `step`s that contains the
+ * row at `needIndex` (the focused row, the row whose card is open), and never
+ * more than the book. `needIndex < 0` means nothing needs to be in view.
+ *
+ * The rows are deployed-₹ descending, so a window is always the LARGEST
+ * positions. Whole steps, not `needIndex + 1`: a window that grew one row per
+ * keystroke would re-render the table on every `j`.
+ */
+export function windowLimit(shown: number, total: number, needIndex: number, step: number): number {
+  const need = needIndex < 0 ? 0 : Math.ceil((needIndex + 1) / step) * step;
+  return Math.min(total, Math.max(shown, need));
+}
+
+/** How many `step`s take a window of `shown` rows to at least `target` rows (0 when it already holds them). */
+export function stepsToShow(shown: number, target: number, step: number): number {
+  return target <= shown ? 0 : Math.ceil((target - shown) / step);
+}
+
 /** P7 — the close of the last bar strictly BEFORE `today`; null when there is none. */
 export function prevCloseOf(bars: readonly Pick<Bar, "date" | "closeP">[], today: string): Paise | null {
   for (let i = bars.length - 1; i >= 0; i--) if (bars[i].date < today) return bars[i].closeP;

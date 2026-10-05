@@ -127,6 +127,103 @@ describe("nothing on the route maps over every position unbounded", () => {
   });
 });
 
+/**
+ * v4.8.0 P1 — the POSITIONS tab's ledger.
+ *
+ * Measured on the perf book (3,460 open positions, production build):
+ * `/live?tab=positions` was a 12.1 MB document with 3,462 `<tr>`, against 741
+ * nodes for the Charts tab above. The ledger was a plain `order.map(<PositionRow>)`.
+ * It is now the `/risk` pattern — `useRowWindow` + a stated `<ShowMore>` — and
+ * the behaviour is asserted in `tests/positions-window.test.ts`; these are the
+ * wiring guards a refactor would otherwise delete in silence.
+ */
+describe("the Positions ledger renders a stated window, not the book", () => {
+  const TAB = "components/live/positions-tab.tsx";
+  /** The `<PositionRow … />` call site, opening tag to self-close. */
+  const callSite = (src: string): string => {
+    const at = src.indexOf("<PositionRow");
+    return at < 0 ? "" : src.slice(at, src.indexOf("/>", at) + 2);
+  };
+
+  it("uses the repo's row window and its Show more control", () => {
+    const src = read(TAB);
+    expect(src).toContain("useRowWindow(order)");
+    expect(src).toMatch(/<ShowMore\s[^>]*hidden=\{hidden\}/);
+    expect(src, "the note must count the FILTERED book").toMatch(/<ShowMore\s[^>]*total=\{order\.length\}/);
+  });
+
+  it("maps the window into rows — `order` is never mapped into a <PositionRow>", () => {
+    const src = read(TAB);
+    expect(src).toMatch(/\bshown\.map\(\(r, i\) => \(\s*<PositionRow/);
+    expect(src).not.toMatch(/\border\.map\([^)]*\)\s*=>\s*\(?\s*<PositionRow/);
+    // The window is derived from the focused row and the open card's row.
+    expect(src).toMatch(/windowLimit\(asked\.length, order\.length, Math\.max\(focusIdx, cardIdx\), WINDOW_STEP\)/);
+  });
+
+  it("j / k past the window's edge defer the scroll — never scrollIntoView on a row that is not rendered", () => {
+    const src = read(TAB);
+    const move = src.slice(src.indexOf('action === "row-down"'), src.indexOf('action === "expand"'));
+    expect(move).toContain("nextFocusIndex(focusIdx, shown.length, order.length");
+    expect(move).toMatch(/if \(next < shown\.length\) \{\s*document\.querySelector\([^)]*\)\?\.scrollIntoView/);
+    expect(move).toContain("pendingScroll.current = next");
+    expect(move).toContain("askFor(next + 1)");
+  });
+
+  it("hands the memoised row nothing that defeats the memo", () => {
+    const src = read(TAB);
+    expect(src).toContain("export const PositionRow = React.memo(function PositionRow(");
+    const call = callSite(src);
+    expect(call).not.toBe("");
+    // An inline closure or an object built at the call site is a new identity per render.
+    expect(call, "an inline arrow reached <PositionRow>").not.toContain("=>");
+    expect(call, "the whole payload reached <PositionRow>").not.toMatch(/\bdata=\{data\}/);
+    expect(call).toContain("onOpen={openRow}");
+    expect(call).toContain("onLab={onLab}");
+    expect(src).toMatch(/const openRow = React\.useCallback\(/);
+  });
+
+  it("the guards can fire: the pre-window ledger fails every one of them", () => {
+    const reverted = `{order.map((r, i) => (
+      <PositionRow key={r.id} row={r} index={i} data={data} onOpen={() => { setFocusId(r.id); }} onLab={() => onLab(r)} />
+    ))}`;
+    expect(/\bshown\.map\(\(r, i\) => \(\s*<PositionRow/.test(reverted)).toBe(false);
+    expect(/\border\.map\([^)]*\)\s*=>\s*\(?\s*<PositionRow/.test(reverted)).toBe(true);
+    const call = callSite(reverted);
+    expect(call.includes("=>")).toBe(true);
+    expect(/\bdata=\{data\}/.test(call)).toBe(true);
+  });
+});
+
+describe("the desk loader does its Positions-only work once per load, not once per row", () => {
+  const LOADER = "components/live/load-desk.ts";
+
+  it("corporate actions are indexed by symbol once and read per row from the index", () => {
+    const src = read(LOADER);
+    const loop = src.indexOf("for (const [i, p] of positions.entries())");
+    expect(loop).toBeGreaterThan(-1);
+    const index = src.indexOf("indexCorpActions(getCorporateActions(), today)");
+    expect(index, "the index is no longer built").toBeGreaterThan(-1);
+    expect(index, "the index is built inside the row loop").toBeLessThan(loop);
+    expect(src.slice(loop)).toContain("corpActionsOf(corpActionIndex, p.symbol)");
+    // The per-row scan: positions × actions, with a trim().toUpperCase() per comparison.
+    expect(src).not.toMatch(/\bcorpActionsFor\(/);
+  });
+
+  it("the sector and classification chains share one `instruments` read", () => {
+    const src = read(LOADER);
+    expect(src).toContain("getSectorAndClassificationResolution()");
+    expect(src).not.toMatch(/\bgetSectorResolution\(\)/);
+    expect(src).not.toMatch(/\bgetClassificationResolution\(\)/);
+  });
+
+  it("the guards can fire: the v4.7.0 loader fails them", () => {
+    const reverted = "const sectors = getSectorResolution(); const classes = getClassificationResolution(); corpActions: corpActionsFor(corporateActions, p.symbol, today),";
+    expect(/\bcorpActionsFor\(/.test(reverted)).toBe(true);
+    expect(/\bgetSectorResolution\(\)/.test(reverted)).toBe(true);
+    expect(reverted.includes("getSectorAndClassificationResolution()")).toBe(false);
+  });
+});
+
 describe("the payload itself is capped, and the cap is stated", () => {
   it("bars ship per symbol under a declared ceiling", () => {
     expect(DESK_CHART_BARS).toBe(120);

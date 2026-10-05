@@ -42,7 +42,7 @@ import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg } 
 import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
-import { statesCurrency, withCurrencyRefusals } from "./zerodha";
+import { isCurrencyContract, statesCurrency, withCurrencyRefusals } from "./zerodha";
 
 export const FYERS_TRADEBOOK_SOURCE_ID = "fyers-tradebook";
 
@@ -135,6 +135,8 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
   const warnings: string[] = [];
   const unreadable: string[] = [];
   const refusedCurrency: string[] = [];
+  /** Fills whose Segment cell does NOT say currency but whose contract is a pair. */
+  const refusedByName: string[] = [];
   let mirrors = 0;
   let fills = 0;
   let equityRows = 0;
@@ -160,6 +162,14 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
     // `refuseCurrencyRows` (the import route's shared guard).
     if (statesCurrency(segment)) {
       refusedCurrency.push(symbol);
+      continue;
+    }
+    // v4.8.0 CU (R7) — …and by NAME, here rather than in the guard: the guard
+    // runs after pairing, so the fill it removed was still counted in
+    // "N fills → M positions" and in `sourceRows`. Named in its own note
+    // (noun "row", as the guard wrote it) so the file's refusal reads as it did.
+    if (isCurrencyContract(symbol)) {
+      refusedByName.push(symbol);
       continue;
     }
     if ((productRaw ?? "").trim() === "-") dashNotMirror++;
@@ -284,5 +294,5 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
     warnings.push(`Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta} against a ${check.valueTolerance} rounding tolerance) — please report this file.`);
   }
 
-  return withCurrencyRefusals({ ...base, trades, sourceRows: fills, warnings }, refusedCurrency, "fill");
+  return withCurrencyRefusals(withCurrencyRefusals({ ...base, trades, sourceRows: fills, warnings }, refusedCurrency, "fill"), refusedByName, "row");
 }

@@ -38,8 +38,17 @@ import * as XLSX from "xlsx";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
+import { statesCurrency, withCurrencyRefusals } from "./zerodha";
 
-const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.&+/()-]/g, "");
+/**
+ * The ONLY values the derivatives sheet's `Segment` column has shown on a real
+ * export (tests/fixtures/redacted/angelone-taxpnl-fy2026-27.xlsx, read
+ * 2026-10-05: `NSEFO` on two rows, `BSEFO` on one — a SENSEX option). v4.8.0
+ * CU (R2). Add a value here only when a real export has shown it.
+ */
+export const ANGEL_VERIFIED_DERIV_SEGMENTS: readonly string[] = ["NSEFO", "BSEFO"];
+
+const norm =(s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.&+/()-]/g, "");
 
 const toNum = (v: unknown): number => {
   const x = Number(String(v ?? "").replace(/,/g, "").trim());
@@ -342,11 +351,18 @@ export function parseAngelOneTaxPnl(ctx: ParseContext): ParsedFile {
   }
 
   // ── Derivatives: synthesize the classifier's own grammar ──────────────────
+  /** v4.8.0 CU (R2): rows refused by a Segment cell that states currency. */
+  const refusedCurrency: string[] = [];
+  /** v4.8.0 CU (R2): `contract (segment)` for every row whose Segment is not the verified one. */
+  const unverifiedSegments: string[] = [];
   for (const [key, isOption] of [["futures", false], ["options", true]] as const) {
     const s = deriv.get(key);
     if (!s) continue;
     const f = colFinder(s.header);
     const cSym = f("Symbol Name"), cExp = f("Expiry date"), cQty = f("Qty", "Quantity");
+    // v4.8.0 CU (R2) — exact header only: `colFinder`'s contains-fallback would
+    // let any header that merely contains "segment" stand in for it.
+    const cSeg = s.header.map(norm).indexOf("segment");
     const cStrike = f("Strike Price"), cOt = f("Option Type");
     const cBuyD = f("Buy Date"), cSellD = f("Sell date", "Sell Date");
     const cBuyP = f("Avg Buy Price"), cBuyV = f("Buy Value");
@@ -369,6 +385,21 @@ export function parseAngelOneTaxPnl(ctx: ParseContext): ParsedFile {
           : `FUT ${sym} ${toClassifierDate(expiry)}`;
       } else {
         notes.push("Expiry date could not be read — classified as equity until re-tagged.");
+      }
+      // v4.8.0 CU (R2) — the row's own Segment cell. A segment the SHARED venue
+      // rule reads as currency is refused and named (the rule is Vyuha's, not
+      // Angel One's: no charge profile covers currency, invariant 3). Any other
+      // value that is not one a real export has shown (`NSEFO`, `BSEFO`) is NOT
+      // refused — refusing on a value nobody has seen would be inventing a
+      // format — it is imported as before and named in a warning. A blank cell
+      // or no Segment column at all (older exports) says nothing and is silent.
+      const segCell = cSeg >= 0 ? (r[cSeg] ?? "").trim() : "";
+      if (statesCurrency(segCell)) {
+        if (toNum(r[cQty]) > 0) refusedCurrency.push(tradingsymbol);
+        continue;
+      }
+      if (segCell !== "" && !ANGEL_VERIFIED_DERIV_SEGMENTS.includes(segCell.toUpperCase()) && toNum(r[cQty]) > 0) {
+        unverifiedSegments.push(`${tradingsymbol} (${segCell})`);
       }
       push({
         broker: "angelone",
@@ -412,11 +443,23 @@ export function parseAngelOneTaxPnl(ctx: ParseContext): ParsedFile {
     );
   }
 
-  return {
-    sourceId: "angelone-taxpnl",
-    broker: "angelone",
-    format: "pnl",
-    trades,
-    warnings,
-  };
+  if (unverifiedSegments.length > 0) {
+    const n = unverifiedSegments.length;
+    const shown = [...new Set(unverifiedSegments)];
+    warnings.push(
+      `${n} derivative row${n === 1 ? " states" : "s state"} a Segment Vyuha has not seen on a real Angel One Tax P&L — the only ones verified are ${ANGEL_VERIFIED_DERIV_SEGMENTS.join(" and ")}: ${shown.slice(0, 10).join(", ")}${shown.length > 10 ? ` and ${shown.length - 10} more` : ""}. ${n === 1 ? "It was" : "They were"} imported as the file names ${n === 1 ? "it" : "them"}; check the segment and charges on ${n === 1 ? "that row" : "those rows"}.`,
+    );
+  }
+
+  return withCurrencyRefusals(
+    {
+      sourceId: "angelone-taxpnl",
+      broker: "angelone",
+      format: "pnl",
+      trades,
+      warnings,
+    },
+    refusedCurrency,
+    "row",
+  );
 }

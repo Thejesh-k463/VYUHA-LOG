@@ -38,7 +38,11 @@ describe("migration 0080 — telegram alerts", () => {
     const entry = journal.entries.find((e) => e.idx === 80);
     expect(entry?.tag).toBe("0080_telegram-alerts");
     expect(entry!.when).toBeGreaterThan(journal.entries.find((e) => e.idx === 79)!.when);
-    expect(Math.max(...journal.entries.map((e) => e.idx))).toBe(80);
+    // v4.8.0 P2: 0080 is no longer the newest (0081 adds clinic_cache.summary_json, and pins "newest" itself in
+    // tests/clinic-card-summary.test.ts) — what stays 0080's own is its place: directly before whatever follows it.
+    const next = journal.entries.find((e) => e.idx === 81);
+    if (next) expect(next.when).toBeGreaterThan(entry!.when);
+    expect(journal.entries.filter((e) => e.idx === 80)).toHaveLength(1);
     expect(fs.existsSync(MIGRATION)).toBe(true);
   });
 

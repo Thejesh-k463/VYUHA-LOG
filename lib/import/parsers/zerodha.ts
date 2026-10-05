@@ -6,10 +6,13 @@ import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "..
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import { classify } from "@/lib/engine/classify";
-import { isCurrencyPair } from "@/lib/domain/currency-pairs";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
-import { isCurrencyVenueCell, mappedCurrencyRefusalsOf } from "../generic-map";
+// v4.8.0 CU (R8): the venue rule, the contract rule and the refusal phrase live
+// in ONE pure, client-importable module; re-exported below so every existing
+// import of this file keeps working.
+import { CURRENCY_NOT_PRICED, isCurrencyContract, statesCurrency } from "../currency-venue";
+export { CURRENCY_NOT_PRICED, isCurrencyContract, statesCurrency } from "../currency-venue";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -30,21 +33,12 @@ const norm = (s: string) => s.toLowerCase().replace(/[\s_.]/g, "");
 // open so the user can close or delete it by hand.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The refusal reason, verbatim in every Kite / Zerodha currency note. */
-export const CURRENCY_NOT_PRICED = "currency derivatives are not priced by Vyuha";
-
 /** The import note for `count` refused rows over the distinct contracts `names`. */
 export function currencyRefusalNote(count: number, names: readonly string[], noun = "row"): string {
   const distinct = [...new Set(names)];
   const shown = distinct.slice(0, 10).join(", ");
   const more = distinct.length > 10 ? ` and ${distinct.length - 10} more` : "";
   return `${count} currency derivative ${noun}${count === 1 ? " was" : "s were"} refused — ${CURRENCY_NOT_PRICED} (no charge profile covers them), so nothing was imported for: ${shown}${more}.`;
-}
-
-/** PURE. A contract whose classified underlying is a currency pair (R6: the stored
- *  `symbol`, exact — never a tradingsymbol prefix). For a file that states no segment. */
-export function isCurrencyContract(tradingsymbol: string): boolean {
-  return isCurrencyPair(classify({ tradingsymbol }).symbol);
 }
 
 /** PURE. The classified underlyings of refused contracts — what a stored row's `symbol` holds. */
@@ -78,22 +72,33 @@ const REFUSED_CURRENCY = new WeakMap<ParsedFile, readonly string[]>();
 export function currencyRefusalsOf(parsed: ParsedFile): readonly string[] {
   return REFUSED_CURRENCY.get(parsed) ?? [];
 }
+/**
+ * v4.8.0 CU (R6) — RECONCILIATION HONESTY. A refused row leaves the BOOK, but
+ * the file's own stated figures (`reported`: a footer, a summary block;
+ * `reference`: the broker's per-scrip / per-segment numbers) were added up by
+ * the broker WITH it. Vyuha cannot correct a total that states no per-row
+ * breakdown (the Zerodha Console summary states one charges figure), so it says
+ * so, once per file, instead of leaving an unexplained gap on the
+ * reconciliation screen.
+ */
+export const CURRENCY_RECONCILIATION_NOTE =
+  "This file's own totals were added up by the broker with the refused currency rows in them, so they will differ from your book by exactly those rows — that gap is expected, not a missing trade.";
+
+const statesOwnFigures = (parsed: ParsedFile): boolean =>
+  (parsed.reported != null && Object.keys(parsed.reported).length > 0) || (parsed.reference?.length ?? 0) > 0;
+
 /** APPEND-safe: a second call on the same ParsedFile (a parser's own refusals,
  *  then `refuseCurrencyRows`) adds its note and UNIONS the names — it used to
- *  overwrite the first call's. */
+ *  overwrite the first call's. The reconciliation sentence (R6) is written at
+ *  most ONCE per file, however many calls refuse something. */
 export function withCurrencyRefusals(parsed: ParsedFile, refused: readonly string[], noun: string): ParsedFile {
   if (refused.length === 0) return parsed;
   parsed.warnings.push(currencyRefusalNote(refused.length, refused, noun));
+  if (statesOwnFigures(parsed) && !parsed.warnings.includes(CURRENCY_RECONCILIATION_NOTE)) {
+    parsed.warnings.push(CURRENCY_RECONCILIATION_NOTE);
+  }
   REFUSED_CURRENCY.set(parsed, [...new Set([...(REFUSED_CURRENCY.get(parsed) ?? []), ...refused])]);
   return parsed;
-}
-
-/** PURE. A venue / segment cell that states the currency segment — CDS, BCD, CD,
- *  Currency, and the compound forms (NSE-CDS, NSE_CURRENCY, BSE_CURRENCY). The
- *  rule itself is `isCurrencyVenueCell` (lib/import/generic-map.ts, which a
- *  client component imports and so cannot import this file). */
-export function statesCurrency(raw: string | null | undefined): boolean {
-  return isCurrencyVenueCell(raw);
 }
 
 /**
@@ -120,12 +125,21 @@ export function isCurrencyRow(t: Pick<NormalizedTrade, "tradingsymbol" | "exchan
  * rows ALREADY stored, never a new trade) are left as the file states them —
  * and records the names through `withCurrencyRefusals`: the one existing note,
  * and the side channel the stranded-open note reads. A parser that refused its
- * own currency rows (Zerodha, Angel One / Upstox) leaves none behind, so the
- * guard adds nothing and no second note. The generic mapper's venue refusals
- * (`mappedCurrencyRefusalsOf`) are named here too, in the same note.
+ * own currency rows leaves none behind, so the guard adds nothing and no second
+ * note.
+ *
+ * v4.8.0 CU (R7): every parser that PAIRS rows or states a row count now also
+ * refuses by NAME in its own row loop (Fyers tradebook, Dhan GTR, Nuvama P&L
+ * report, Paytm tradebook, the generic mapper, Zerodha), because this guard
+ * runs after pairing and cannot un-count a row: `sourceRows` and the parser's
+ * "N fills → M positions" line still included it. The guard stays the ONE
+ * backstop every file passes (LEDGER L-61 / L-62) — it is what catches the
+ * parsers with no count to keep (Dhan P&L, Angel One tax P&L) and any parser
+ * added later. The generic mapper's refusals reach the file through
+ * `parseGenericTable`'s own `withCurrencyRefusals` call (R9), not through here.
  */
 export function refuseCurrencyRows(parsed: ParsedFile): ParsedFile {
-  const refused: string[] = [...mappedCurrencyRefusalsOf(parsed.trades)];
+  const refused: string[] = [];
   const kept: NormalizedTrade[] = [];
   for (const t of parsed.trades) {
     if (isCurrencyRow(t)) refused.push(t.tradingsymbol);
@@ -512,7 +526,10 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
     if (!symbol) continue;
     // v4.7.0 Q4: the "Currency" section is refused by its label; a row under no
     // label (the file states no segment) by its classified underlying (R6).
-    if (section ? /currenc/i.test(section) : isCurrencyContract(symbol)) {
+    // v4.8.0 CU (R7): …and a pair filed under ANOTHER label too. The import
+    // guard refused that row by name anyway, but only after it had been counted
+    // in `rowCount` — "N exit rows → M positions" overstated what was imported.
+    if ((section != null && /currenc/i.test(section)) || isCurrencyContract(symbol)) {
       refusedCurrency.push(symbol);
       continue;
     }
@@ -722,13 +739,16 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
   const warnings: string[] = [];
   /** v4.7.0 Q4: one entry per refused currency row (tradebook fill or Console row). */
   const refusedCurrency: string[] = [];
-  // Refused when the venue or segment cell states currency (CDS / BCD); when
-  // the row states no segment, by its classified underlying (review R6).
+  // Refused when the venue or segment cell states currency (CDS / BCD), else by
+  // its classified underlying (review R6: exact, never a prefix). Until v4.8.0
+  // CU (R7) the name was asked only of a row that stated NO segment; a pair
+  // under a non-currency segment was then refused by the import guard after it
+  // had been counted in "N fills → M positions".
   const isCurrencyRow = (r: string[], symbol: string): boolean => {
     const exch = cExch >= 0 ? (r[cExch] ?? "").trim() : "";
     const seg = cSegment >= 0 ? (r[cSegment] ?? "").trim() : "";
     if (statesCurrency(exch) || statesCurrency(seg)) return true;
-    return seg === "" && isCurrencyContract(symbol);
+    return isCurrencyContract(symbol);
   };
 
   if (cTradeType >= 0) {

@@ -43,8 +43,8 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { statedSideOf } from "@/lib/domain/side";
 import { maeInputsOf } from "@/lib/analytics/mae-input";
-import { clinicStateFor } from "@/lib/analytics/edge-clinic-contract";
-import { getClinicState } from "@/lib/queries/edge-clinic";
+import { clinicCardFor } from "@/lib/analytics/edge-clinic-contract";
+import { getClinicCard } from "@/lib/queries/edge-clinic";
 import { getEntitlement } from "@/lib/queries/license";
 import { ArjunClinicCard } from "@/components/edge-clinic/arjun-clinic-card";
 
@@ -516,8 +516,9 @@ export default function ArjunsEyePage() {
               </CardContent>
             </Card>
           )}
-          {/* v4.7.0 C2: the Clinic's first finding, from the CACHED report — this page never computes it. */}
-          <ArjunClinicCard state={clinicStateFor(getClinicState(), getEntitlement().pro)} />
+          {/* v4.7.0 C2: the Clinic's first finding, from the CACHED report — this page never computes it.
+              v4.8.0 P2: from the summary stored next to that report — no book read, no report parse here. */}
+          <ArjunClinicCard card={clinicCardFor(getClinicCard(), getEntitlement().pro)} />
           {rep.closedTrades === 0 ? (
             <EmptyState
               variant="chart"

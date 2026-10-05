@@ -210,6 +210,38 @@ export function withholdForFree(groups: readonly StrategyGroup[], pro: boolean):
 }
 
 /**
+ * A group as it CROSSES THE WIRE to the client: everything the card reads, and
+ * not the 61-point chart series (v4.8.0 P3).
+ */
+export type WireGroup = Omit<ScreenGroup, "payoff">;
+
+/**
+ * DROP THE CHART SERIES BEFORE THE PAYLOAD. The card never read `payoff`; only
+ * the chart did, and it now computes its points in the browser, at mount, with
+ * `payoffSeries(legs, breakevens)` — the same pure function the engine calls. On
+ * the perf book (626 open structures) the series was ~2.5 KB a structure in a
+ * 6.0 MB document, for charts that mount only on approach.
+ *
+ * WHAT THIS DOES TO A FREE BUILD'S PAYLOAD: it removes one field and adds none.
+ * The chart's two inputs are `legs` and `breakevens`, which `withholdForFree`
+ * has never touched — it substitutes `name`, `displayName` and `strategyId` and
+ * nothing else — so both were already in every build's payload, free included,
+ * and the curve they draw is the one the proWithheldNote promises stays free.
+ * `tests/strategies-payload.test.ts` pins the free wire field by field.
+ *
+ * A SEPARATE STEP, not folded into `withholdForFree`: that function is the
+ * identity on every field but the flag for a Pro build
+ * (`tests/seams-v43-wave2.test.ts`), and what it decides is the entitlement
+ * boundary. This one is about weight and applies to every build alike.
+ */
+export function withoutPayoff(groups: readonly ScreenGroup[]): WireGroup[] {
+  return groups.map((g) => {
+    const { payoff, ...rest } = g;
+    return rest;
+  });
+}
+
+/**
  * FOLD THE ROUTE'S OWN ANSWER — INSTEAD OF a second fetch, and ALONGSIDE the
  * `router.refresh()` the caller fires, which is a different job.
  * `components/settings/live-feed-card.tsx:603` is the precedent and the scar:

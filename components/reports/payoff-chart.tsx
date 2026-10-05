@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { inr, inrCompact, num } from "@/lib/format";
+import { payoffSeries, type OptionLeg } from "@/lib/analytics/strategies";
 
 const axis = { fontSize: 10, fill: "var(--color-muted-foreground)" };
 
@@ -31,13 +32,40 @@ function Tip({ active, payload, label }: TipProps) {
   );
 }
 
+/**
+ * The payoff chart of a structure, FROM ITS LEGS (v4.8.0 P3).
+ *
+ * /strategies used to hand `PayoffChart` a `data` prop of 61 points for every
+ * open structure — ~2.5 KB each across the server→client boundary, 626 times on
+ * the perf book, for a chart that mounts only when scrolled to. The series is a
+ * pure function of the legs and the breakevens (`payoffSeries`, the same call
+ * the engine makes for `StrategyGroup.payoff`), and the card already holds
+ * both, so it is computed HERE, in the browser, when the chart mounts: no route,
+ * no fetch, and the same 61 points to the paisa
+ * (`tests/strategies-payload.test.ts`).
+ *
+ * Nothing is kept in state and nothing runs in an effect — the points are
+ * derived at render from the props.
+ */
+export function PayoffChartOfLegs({
+  legs,
+  breakevens,
+  spot,
+}: {
+  legs: readonly OptionLeg[];
+  breakevens: readonly number[];
+  spot?: number | null;
+}) {
+  return <PayoffChart data={payoffSeries(legs, breakevens)} breakevens={breakevens} spot={spot} />;
+}
+
 export function PayoffChart({
   data,
   breakevens = [],
   spot,
 }: {
   data: { price: number; pnl: number }[];
-  breakevens?: number[];
+  breakevens?: readonly number[];
   spot?: number | null;
 }) {
   const max = Math.max(...data.map((d) => d.pnl), 0);

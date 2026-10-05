@@ -3,6 +3,7 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { KELLY_MIN_N, type CellKind, type ClinicCell, type ClinicReport, type FnoCuts, type GapCheck, type SegmentBehaviour } from "@/lib/analytics/edge-clinic";
 import { ClinicCopyBlock, GradeBadge, fmtR } from "./clinic-copy";
+import { DecayCard } from "./decay-card";
 
 /**
  * v4.7.0 C2 (design D6) — the full report, Pro only: the cells grid (book /
@@ -23,7 +24,8 @@ const KIND_TITLE: Record<Exclude<CellKind, "fno">, string> = {
 
 /** The cells' own sub-cards that carry copy — each rendered under its own verb. */
 function CellDetail({ cell }: { cell: ClinicCell }) {
-  const extra = [cell.decay, cell.sizing, cell.ruleAdherence.check].filter(
+  const { decay } = cell;
+  const extra = [cell.sizing, cell.ruleAdherence.check].filter(
     (x): x is NonNullable<typeof x> => x != null,
   );
   return (
@@ -31,6 +33,13 @@ function CellDetail({ cell }: { cell: ClinicCell }) {
       <summary className="cursor-pointer text-muted-foreground">Detail</summary>
       <div className="mt-2 space-y-2">
         <ClinicCopyBlock verb="none" headline={cell.verdict} detail={cell.copy.detail} provenanceLine={cell.copy.provenanceLine} />
+        {decay ? (
+          <>
+            <ClinicCopyBlock verb={decay.verb} headline={decay.copy.headline} detail={decay.copy.detail} provenanceLine={decay.copy.provenanceLine} />
+            {/* v4.8.0 F1: the decay card — the engine's usual / recent figures and its trace, directly under its copy. */}
+            <DecayCard decay={decay} provenance={cell.provenance} rUnit={cell.rUnit} />
+          </>
+        ) : null}
         {extra.map((x, i) => (
           <ClinicCopyBlock key={i} verb={x.verb} headline={x.copy.headline} detail={x.copy.detail} provenanceLine={x.copy.provenanceLine} />
         ))}

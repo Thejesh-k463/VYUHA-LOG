@@ -20,6 +20,7 @@ import { getPerTradeCap } from "@/lib/queries/limits";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { ipoEditCharges } from "@/lib/analytics/ipo";
 import { sellChargerFor } from "@/lib/queries/ipos";
+import { isManualCurrencyTrade, MANUAL_CURRENCY_REFUSAL } from "@/lib/import/currency-venue";
 
 export const runtime = "nodejs";
 
@@ -78,6 +79,25 @@ const Body = z.object({
    */
   accountId: z.number().int().positive().nullish(),
 });
+
+/**
+ * v4.8.0 CU (R4) — IS THIS BODY PRICING A ROW THE BOOK ALREADY HOLDS?
+ *
+ * Both dialogs that price an EXISTING row say so in the body they already send:
+ * the trade editor carries `tradeId` (`editPreviewBody`), and the close dialog —
+ * whose body has no `tradeId` — always carries `mtfFundingUnstated`, true or
+ * false (`closePreviewBody`). The manual Add form sends neither (see the field's
+ * own note above), so a body with neither is a trade being CREATED.
+ *
+ * It matters for exactly one thing: `createManualTrade` refuses a currency
+ * derivative, so the preview of one must refuse too rather than show equity-F&O
+ * charges the save will never store — while "close the USDINR future I imported
+ * before v4.7.0" is still priced here, because `closePosition` still prices and
+ * saves it (the stranded-open note tells the user to close or delete it by
+ * hand). An unmarked body is treated as NEW: the refusal fails closed.
+ * `tests/currency-manual-entry.test.ts` pins both dialogs' marks.
+ */
+const pricesExistingRow = (v: z.infer<typeof Body>): boolean => v.tradeId != null || v.mtfFundingUnstated != null;
 
 /**
  * D20 (v4.3.0 wave 2O) — the two sentences a STAGED parent's preview states, and
@@ -216,6 +236,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message }, { status: 400 });
   }
   const v = parsed.data;
+  // v4.8.0 CU (R4) — no priced preview for a currency contract being CREATED:
+  // the save's own sentence, by the save's own predicate (preview === save,
+  // tests/preview-equals-save-matrix.test.ts). A row the book already holds is
+  // priced below exactly as before (`pricesExistingRow`).
+  if (!pricesExistingRow(v) && isManualCurrencyTrade(v)) {
+    return NextResponse.json({ error: MANUAL_CURRENCY_REFUSAL, code: "CURRENCY_NOT_PRICED" }, { status: 400 });
+  }
   // V4 — ONE default for a side's order count: settings.defaultBuyOrders /
   // defaultSellOrders, the count the saves bill for a side that gains its first
   // quantity (commitManualTrade, updateManualTrade, closePosition). No settings

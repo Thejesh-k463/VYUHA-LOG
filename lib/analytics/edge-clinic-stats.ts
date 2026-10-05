@@ -15,7 +15,7 @@
  *
  * The only imports are the existing inference machinery and the seeded PRNG.
  */
-import { meanInterval, type Interval } from "@/lib/analytics/inference";
+import type { Interval } from "@/lib/analytics/inference";
 import { mulberry32 } from "@/lib/analytics/monte-carlo";
 
 /** Euler–Mascheroni constant (the papers' `emc`). */
@@ -572,23 +572,36 @@ export function cusumDown(xs: readonly number[], opts: CusumOptions = {}): Cusum
   return { alarmIndex, burnIn, mu0, sigma0, k, h, maxS };
 }
 
-export interface RollingPoint {
-  /** 0-based index of the window's LAST trade. */
-  index: number;
-  mean: number;
-  lo: number;
-  hi: number;
+/** The most points a decay trace carries (v4.8.0 F1) — a 64 px chart cannot show more, and the cache stores every one. */
+export const TRACE_MAX_POINTS = 120;
+
+/**
+ * Which of `n` positions (0 … n − 1) a down-sampled series keeps: all of them when
+ * n ≤ max, else `max` positions evenly spaced by rounding — strictly increasing, the
+ * FIRST (0) and the LAST (n − 1) always kept. Pure and deterministic: the same n and
+ * max give the same positions on every machine (integer arithmetic after one round).
+ */
+export function downsampleIndices(n: number, max: number = TRACE_MAX_POINTS): number[] {
+  if (!(n > 0) || !(max > 0)) return [];
+  if (n <= max) return Array.from({ length: n }, (_, i) => i);
+  if (max === 1) return [n - 1];
+  const out: number[] = [];
+  for (let k = 0; k < max; k++) out.push(Math.round((k * (n - 1)) / (max - 1)));
+  return out;
 }
 
-/** The rolling W-trade mean with its t-interval band, at every index ≥ W − 1. */
-export function rollingMeanBand(xs: readonly number[], window: number): RollingPoint[] {
-  const out: RollingPoint[] = [];
-  if (window < 2) return out;
-  for (let i = window - 1; i < xs.length; i++) {
-    const ci = meanInterval(xs.slice(i - window + 1, i + 1));
-    out.push({ index: i, mean: ci.point, lo: ci.lo, hi: ci.hi });
-  }
-  return out;
+/** One point of a decay trace: [tradeNumber (1-based, the window's LAST trade), the window's mean]. */
+export type TracePoint = [tradeNumber: number, mean: number];
+
+/**
+ * The rolling W-trade mean — one point per window, at every trade number ≥ W —
+ * down-sampled by `downsampleIndices` to at most `maxPoints`. Each kept point is the
+ * EXACT mean of its own window (the windows are picked first, then averaged; nothing
+ * is interpolated or smoothed). Empty when W < 2 or fewer than W values.
+ */
+export function rollingMeanTrace(xs: readonly number[], window: number, maxPoints: number = TRACE_MAX_POINTS): TracePoint[] {
+  if (window < 2 || xs.length < window) return [];
+  return downsampleIndices(xs.length - window + 1, maxPoints).map((j) => [j + window, mean(xs.slice(j, j + window))]);
 }
 
 // ── Longest losing run ──────────────────────────────────────────────────────

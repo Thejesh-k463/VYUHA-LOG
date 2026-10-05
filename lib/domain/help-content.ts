@@ -472,6 +472,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "Every cell of your book — the whole book, each segment, each setup tag and setup grade, and the F&O cuts — is graded insufficient, unclear, likely or established, corrected for testing many cells at once. A weekly note lists at most three findings, each proposing one experiment over your next 20 trades.",
       "The whole-book grade and the trades it still needs are free; the full report, the weekly note and experiments are Pro. The report is computed once per change to your book, off the page, and reused until something it reads changes. Experiments start in one account at a time, never in the All-accounts view.",
       "The sizing ceiling counts only trades with a stop or a typed risk — cap-unit R is not a risk — and needs 30 of them in a cell.",
+      // v4.8.0 F1 — the decay card in a cell's Detail.
+      "A cell with at least 60 trades carrying an R shows a decay card in its Detail: the average R of the first half of its trades (usual) beside the average since the trade where a possible drop was flagged — or, when no drop is detected, the average of the trades after that first half — and a small line of the 30-trade rolling average. The line stating rupees for every ₹1,000 risked appears only when every trade in the cell has a stop or a typed risk.",
     ],
     keywords: ["clinic", "evidence", "grade", "weekly note", "experiment", "multiple comparisons", "edge decay", "kelly"],
     refusals: [

@@ -13,13 +13,13 @@ import { getLiveFeedProvider, resolveLiveFeed } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type ProviderHealth, type Quote, type QuoteKey } from "@/lib/quotes/types";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
-import { getClassificationResolution, getResultsDateMap, getSectorResolution } from "@/lib/queries/instruments";
+import { getResultsDateMap, getSectorAndClassificationResolution } from "@/lib/queries/instruments";
 import { getCorporateActions } from "@/lib/queries/corporate-actions";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getTrades } from "@/lib/queries/trades";
 import type { BarsCap, DeskBar, DeskRow, FeedInfo, LiveDeskData } from "./desk-types";
 import { sideOf } from "@/lib/domain/side";
-import { corpActionsFor, partialOf, prevCloseOf } from "@/lib/live/positions-view";
+import { corpActionsOf, indexCorpActions, partialOf, prevCloseOf } from "@/lib/live/positions-view";
 
 /**
  * The Live Desk server loader — journal rows in, `LiveDeskData` out.
@@ -184,19 +184,24 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
 
   const byId = new Map(trades.map((t) => [t.id, t]));
   const accountNames = new Map(getAccounts().map((a) => [a.id, a.name]));
-  const sectors = getSectorResolution();
+  // v4.8.0 P1 — the sector chain and the LEVELS-aware chain (C4, D4) from ONE
+  // `instruments` read and one pass over the bundled taxonomy. They were two
+  // calls, each reading the table and walking the taxonomy afresh; the maps
+  // are the same two maps (`tests/positions-window.test.ts`).
+  //
+  // `classes` is the Positions tab's industry cohort: a user tag or an
+  // index-map hit is sector-only (industry null), so that row falls UP to its
+  // sector in the Industry view.
+  const { sectors, classes } = getSectorAndClassificationResolution();
   // Q-9. One read for the whole desk, keyed on the upper-cased symbol — the
   // same shape as `sectors` above, and for the same reason: 40+ rows must not
   // each go back to `instruments`.
   const resultsDates = getResultsDateMap();
-  // C4 (D4) — the LEVELS-aware chain for the Positions tab's industry cohort.
-  // A user tag or an index-map hit is sector-only (industry null), so that row
-  // falls UP to its sector in the Industry view. One read for the whole desk.
-  const classes = getClassificationResolution();
   // C4 (P5) — recorded corporate actions. Reference data (no account_id): a
-  // split is a fact about the scrip, not about one book. One read, filtered
-  // per row by `corpActionsFor` (bonus + split, exDate ≥ today − 30 days).
-  const corporateActions = getCorporateActions();
+  // split is a fact about the scrip, not about one book. One read, indexed by
+  // symbol ONCE (bonus + split, exDate ≥ today − 30 days) — the per-row scan
+  // it replaces was positions × actions (v4.8.0 P1).
+  const corpActionIndex = indexCorpActions(getCorporateActions(), today);
   const capital = getBucketCapital();
   const equityCapitalP = capital.equityCapital > 0 ? toPaise(capital.equityCapital) : null;
   const activeCapitalP = capital.activeCapital > 0 ? toPaise(capital.activeCapital) : null;
@@ -489,7 +494,7 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
             avgSellPrice: t.avgSellPrice,
           })
         : null,
-      corpActions: corpActionsFor(corporateActions, p.symbol, today),
+      corpActions: corpActionsOf(corpActionIndex, p.symbol),
       prevCloseP: prevCloseOf(bars, today),
       // D10 — PRO ONLY, the same boundary as the four scalars above: the
       // calculator's defaults carry capital, which the free wire never does.

@@ -24,7 +24,9 @@ import {
   zeroGrowthFraction,
   zeroGrowthFractionEmpirical,
   cusumDown,
-  rollingMeanBand,
+  downsampleIndices,
+  rollingMeanTrace,
+  TRACE_MAX_POINTS,
   expectedLongestLoss,
 } from "@/lib/analytics/edge-clinic-stats";
 import { tQuantile95 } from "@/lib/analytics/inference";
@@ -319,16 +321,62 @@ describe("one-sided downward CUSUM (k = 0.5, h = 4, standardised)", () => {
     expect(cusumDown(Array(80).fill(1))).toBeNull();
   });
 
-  it("the rolling band has one point per index ≥ W − 1, each a t-interval round its mean", () => {
-    const xs = normals(70, 9);
-    const band = rollingMeanBand(xs, 30);
-    expect(band).toHaveLength(41);
-    expect(band[0].index).toBe(29);
-    expect(band[0].mean).toBeCloseTo(mean(xs.slice(0, 30)), 12);
-    for (const p of band) {
-      expect(p.lo).toBeLessThan(p.mean);
-      expect(p.hi).toBeGreaterThan(p.mean);
+});
+
+// v4.8.0 F1 — the decay trace replaced the per-trade t-interval band (71 % of the cached report).
+describe("the decay trace: the rolling mean, down-sampled to at most 120 points", () => {
+  it("TRACE_MAX_POINTS is 120", () => {
+    expect(TRACE_MAX_POINTS).toBe(120);
+  });
+
+  it("downsampleIndices is the identity at or below the cap", () => {
+    expect(downsampleIndices(1)).toEqual([0]);
+    expect(downsampleIndices(41)).toEqual(Array.from({ length: 41 }, (_, i) => i));
+    expect(downsampleIndices(120)).toEqual(Array.from({ length: 120 }, (_, i) => i));
+    expect(downsampleIndices(5, 5)).toEqual([0, 1, 2, 3, 4]);
+    expect(downsampleIndices(0)).toEqual([]);
+  });
+
+  it("above the cap: exactly `max` positions, strictly increasing, the first and the LAST kept", () => {
+    for (const n of [121, 122, 239, 240, 241, 1000, 12_876, 100_003]) {
+      const ix = downsampleIndices(n);
+      expect(ix, `n = ${n}`).toHaveLength(120);
+      expect(ix[0]).toBe(0);
+      expect(ix[ix.length - 1]).toBe(n - 1);
+      for (let k = 1; k < ix.length; k++) expect(ix[k], `n = ${n}, k = ${k}`).toBeGreaterThan(ix[k - 1]);
     }
+    // The rule itself, pinned on small numbers: evenly spaced by rounding.
+    expect(downsampleIndices(10, 4)).toEqual([0, 3, 6, 9]);
+    expect(downsampleIndices(11, 5)).toEqual([0, 3, 5, 8, 10]);
+    expect(downsampleIndices(7, 2)).toEqual([0, 6]);
+    expect(downsampleIndices(7, 1)).toEqual([6]); // one point = the last
+  });
+
+  it("deterministic: the same n and max give the same positions", () => {
+    expect(downsampleIndices(12_876)).toEqual(downsampleIndices(12_876));
+  });
+
+  it("a short sequence keeps one point per window: [trade number of the window's last trade, that window's exact mean]", () => {
+    const xs = normals(70, 9);
+    const trace = rollingMeanTrace(xs, 30);
+    expect(trace).toHaveLength(41);
+    expect(trace[0][0]).toBe(30);
+    expect(trace[40][0]).toBe(70);
+    trace.forEach(([t, m]) => expect(m).toBe(mean(xs.slice(t - 30, t))));
+    expect(rollingMeanTrace(xs, 1)).toEqual([]);
+    expect(rollingMeanTrace(xs.slice(0, 29), 30)).toEqual([]);
+  });
+
+  it("a long sequence is cut to 120 points — the first and the last window kept, every kept point an EXACT window mean", () => {
+    const xs = normals(5000, 77);
+    const trace = rollingMeanTrace(xs, 30);
+    expect(trace).toHaveLength(120);
+    expect(trace[0][0]).toBe(30);
+    expect(trace[119][0]).toBe(5000);
+    expect(trace.map(([t]) => t)).toEqual(downsampleIndices(5000 - 30 + 1).map((j) => j + 30));
+    trace.forEach(([t, m]) => expect(m).toBe(mean(xs.slice(t - 30, t))));
+    expect(rollingMeanTrace(xs, 30)).toEqual(trace);
+    expect(rollingMeanTrace(xs, 30, 10)).toHaveLength(10);
   });
 });
 

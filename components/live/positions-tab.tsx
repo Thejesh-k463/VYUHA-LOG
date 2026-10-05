@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
 import { ProLock } from "@/components/system/pro-lock";
+import { ShowMore, WINDOW_STEP, useRowWindow } from "@/components/ui/show-more";
 import { istParts } from "@/lib/live/market-hours";
 import { daysToResults } from "@/lib/live/results-date";
 import {
@@ -14,9 +15,11 @@ import {
   riskLensSummary,
   sinceClose,
   staleCount,
+  stepsToShow,
   stopChip,
   stopState,
   upcoming,
+  windowLimit,
   type CohortLevel,
   type RiskLensSummary,
 } from "@/lib/live/positions-view";
@@ -47,6 +50,25 @@ import { PositionCard, span, zonePoints } from "./position-card";
  *
  * NO setState IN AN EFFECT KEYED ON STATE: the order, the focused row, the
  * card's row, the cohort view and every total are derived at render.
+ *
+ * THE LEDGER IS A WINDOW (v4.8.0 P1): "largest N + Show more", the pattern
+ * `/risk` uses for the same book (`components/ui/show-more.tsx`). A 3,460-row
+ * book was 3,460 `<tr>` in the document and 3,460 row renders per tick. The
+ * order is deployed-₹ descending, so the first `WINDOW_STEP` rows ARE the
+ * largest positions; only that slice is mapped to rows and the note under the
+ * table says how many are held back. EVERYTHING ELSE reads the full filtered
+ * book (`order`): the three header bars, the stale count, the Risk lens, the
+ * cohort panel, the footer and the `<tfoot>` Book row.
+ *   - A book of `WINDOW_STEP` rows or fewer renders exactly as it did.
+ *   - j / k move over the BOOK, not the window: stepping past the last shown
+ *     row widens the window (never a dead key), and the scroll waits for the
+ *     row to exist.
+ *   - The focused row and the row whose card is open are always inside the
+ *     window — DERIVED (`windowLimit`), not synced: a filter cleared under a
+ *     focused row leaves it 900 places down, and the window follows it there.
+ *   - `PositionRow` is `React.memo` over primitives, the row and two stable
+ *     callbacks, so a tick re-renders the rows whose quote moved
+ *     (`applyTicks` returns an unticked row by identity) and no others.
  */
 
 /**
@@ -62,6 +84,13 @@ export { SCOPE_COPY };
 export const DENSITY_KEY = "vyuha-live-positions-density";
 export const LENS_KEY = "vyuha-live-risk-lens";
 export const COHORT_KEY = "vyuha-live-cohort-level";
+
+/**
+ * The noun `<ShowMore>` puts after "Showing N of M" — it also says WHICH N.
+ * Here, like `SCOPE_COPY` once was, only because `desk-copy.ts` is outside the
+ * P1 file set; it belongs in `POSITIONS_COPY`.
+ */
+export const WINDOW_NOUN = "positions, largest deployed first";
 
 function readEnvelope(raw: string | null): Record<string, unknown> | null {
   if (raw === null) return null;
@@ -90,6 +119,20 @@ export function positionsOrder(
         (q === "" || r.symbol.toUpperCase().includes(q) || r.tradingsymbol.toUpperCase().includes(q)),
     )
     .sort((a, b) => b.investedP - a.investedP || a.symbol.localeCompare(b.symbol) || a.id - b.id);
+}
+
+/**
+ * Where j (`down`) or k lands, as an index into the BOOK (`total` rows), given
+ * that only the first `shownCount` are rendered (v4.8.0 P1).
+ *
+ * It is `desk-keys.ts`'s `nextIndex` over the book, so `j` on the last shown
+ * row lands on the first hidden one and the window follows. The one exception
+ * is `k` with nothing focused, which `nextIndex` answers with the LAST row:
+ * here that is the last row SHOWN — one stray key must not mount 3,460 rows.
+ * In a book the window already holds, the two are the same row.
+ */
+export function nextFocusIndex(focusIdx: number, shownCount: number, total: number, down: boolean): number {
+  return nextIndex(focusIdx, focusIdx < 0 && !down ? shownCount : total, down ? 1 : -1);
 }
 
 /** ppm of `num` over `den`, or null. */
@@ -141,7 +184,37 @@ export function PositionsTab({
 
   const focusIdx = focusId === null ? -1 : order.findIndex((r) => r.id === focusId);
   const focused = focusIdx >= 0 ? order[focusIdx] : null;
-  const cardRow = cardId === null ? null : (order.find((r) => r.id === cardId) ?? null);
+  const cardIdx = cardId === null ? -1 : order.findIndex((r) => r.id === cardId);
+  const cardRow = cardIdx >= 0 ? order[cardIdx] : null;
+
+  // ── the row window (v4.8.0 P1) ───────────────────────────────────────────
+  // `asked` is what the user has asked for so far (the hook's own high-water
+  // mark, in whole steps). `shown` widens it — at render, never in an effect —
+  // to hold the focused row and the open card's row. `order` stays the book.
+  const { visible: asked, showMore } = useRowWindow(order);
+  const shownCount = windowLimit(asked.length, order.length, Math.max(focusIdx, cardIdx), WINDOW_STEP);
+  const shown = shownCount === asked.length ? asked : order.slice(0, shownCount);
+  const hidden = order.length - shown.length;
+  /** Raise the hook's mark to at least `target` rows, so the window does not shrink back when the focus leaves. */
+  const askFor = React.useCallback(
+    (target: number) => {
+      for (let i = stepsToShow(asked.length, target, WINDOW_STEP); i > 0; i--) showMore();
+    },
+    [asked.length, showMore],
+  );
+  /** A row j / k moved to before it was rendered — scrolled to once the window holds it. */
+  const pendingScroll = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    const index = pendingScroll.current;
+    if (index === null) return;
+    pendingScroll.current = null;
+    document.querySelector(`[data-pos-index="${index}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [shown.length]);
+
+  const openRow = React.useCallback((id: number) => {
+    setFocusId(id);
+    setCardId(id);
+  }, []);
 
   // ── stored chrome (useStoredValue: server snapshot null → defaults) ───────
   const compact = readEnvelope(useStoredValue(DENSITY_KEY))?.compact === true;
@@ -174,12 +247,23 @@ export function PositionsTab({
       }
       if (action === "row-down" || action === "row-up") {
         e.preventDefault();
-        const next = nextIndex(focusIdx, order.length, action === "row-down" ? 1 : -1);
+        // The move is over the BOOK (`order`), not the window.
+        const next = nextFocusIndex(focusIdx, shown.length, order.length, action === "row-down");
         const id = next >= 0 ? (order[next]?.id ?? null) : null;
         setFocusId(id);
         // j / k with the card open: the card follows the focus (D2).
         if (cardId !== null && id !== null) setCardId(id);
-        if (next >= 0) document.querySelector(`[data-pos-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
+        if (next < 0) return;
+        if (next < shown.length) {
+          document.querySelector(`[data-pos-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
+        } else {
+          // Past the window's edge: the new focus widens it at the next render
+          // (`windowLimit`), `askFor` makes that width the user's own so it
+          // stays when the focus moves back, and the scroll waits for the row
+          // to be in the document — never `scrollIntoView` on a missing node.
+          askFor(next + 1);
+          pendingScroll.current = next;
+        }
         return;
       }
       if (action === "expand") {
@@ -192,7 +276,7 @@ export function PositionsTab({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [order, focusIdx, focused, cardId, editOpen]);
+  }, [order, focusIdx, focused, cardId, editOpen, shown.length, askFor]);
 
   const capitalP = heat?.capitalP ?? null;
   const deployCapPpm = data.positions.deployCapPpm;
@@ -379,7 +463,8 @@ export function PositionsTab({
                 </td>
               </tr>
             )}
-            {order.map((r, i) => (
+            {/* The WINDOW, never `order` — every total around this table reads the full book. */}
+            {shown.map((r, i) => (
               <PositionRow
                 key={r.id}
                 row={r}
@@ -387,12 +472,11 @@ export function PositionsTab({
                 pro={pro}
                 compact={compact}
                 focused={focused?.id === r.id}
-                data={data}
-                onOpen={() => {
-                  setFocusId(r.id);
-                  setCardId(r.id);
-                }}
-                onLab={() => onLab(r)}
+                today={data.today}
+                atrLength={data.atrLength}
+                atrMultPermille={data.positions.atrMultPermille}
+                onOpen={openRow}
+                onLab={onLab}
               />
             ))}
           </tbody>
@@ -432,6 +516,8 @@ export function PositionsTab({
             </tfoot>
           )}
         </table>
+        {/* Renders nothing while the whole book is shown — a book inside one step is unchanged. */}
+        <ShowMore hidden={hidden} total={order.length} onClick={() => askFor(shownCount + 1)} noun={WINDOW_NOUN} />
       </div>
 
       {/* ── footer: exclusions, locked in, the standing lines (Ideas A #9) ── */}
@@ -554,13 +640,24 @@ function CohortList({ cohort }: { cohort: ReturnType<typeof cohortConcentration>
 
 /* ─────────────────────────────── one ledger row ──────────────────────────── */
 
-function PositionRow({
+/**
+ * MEMOISED (v4.8.0 P1), default shallow comparison. Every prop is therefore a
+ * primitive, the row itself, or a callback that is the SAME function for every
+ * row and every render: `onOpen` / `onLab` take the row instead of closing over
+ * it, and the three `data` fields the row reads arrive as primitives rather
+ * than as `data`. An inline `() => …` or an object built at the call site would
+ * make the memo a no-op with nothing going red but the tick cost —
+ * `tests/positions-window.test.ts` pins the call site for that reason.
+ */
+export const PositionRow = React.memo(function PositionRow({
   row: r,
   index,
   pro,
   compact,
   focused,
-  data,
+  today,
+  atrLength,
+  atrMultPermille,
   onOpen,
   onLab,
 }: {
@@ -569,14 +666,17 @@ function PositionRow({
   pro: boolean;
   compact: boolean;
   focused: boolean;
-  data: LiveDeskData;
-  onOpen: () => void;
-  onLab: () => void;
+  /** `data.today`, `data.atrLength` and `data.positions.atrMultPermille`. */
+  today: string;
+  atrLength: number;
+  atrMultPermille: number | null;
+  onOpen: (id: number) => void;
+  onLab: (row: DeskRow) => void;
 }) {
   const near = nearStop(r);
   const state = stopState(r);
-  const chip = stopChip(r, data.atrLength, data.positions.atrMultPermille);
-  const resultsIn = daysToResults(r.resultsDate, data.today);
+  const chip = stopChip(r, atrLength, atrMultPermille);
+  const resultsIn = daysToResults(r.resultsDate, today);
   const capitalP = r.pctOfCapital.denominator;
   const computedStopP = r.effectiveStopP === null && (r.stop.kind === "ok" || r.stop.kind === "zero") ? r.stop.stopP : null;
   const pad = compact ? "py-1" : "py-3";
@@ -589,7 +689,7 @@ function PositionRow({
       data-pos-index={index}
       data-trade-id={r.id}
       aria-selected={focused}
-      onClick={onOpen}
+      onClick={() => onOpen(r.id)}
       className={`cursor-pointer border-b border-rule align-middle ${compact ? "h-11" : "h-[78px]"} ${focused ? "bg-card-hover" : near ? "bg-warning/[0.06]" : ""} ${state === null && computedStopP === null ? "text-muted-foreground" : ""}`}
     >
       <td className={`${pad} pr-3`}>
@@ -661,7 +761,7 @@ function PositionRow({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onLab();
+              onLab(r);
             }}
             className="whitespace-nowrap rounded-[var(--radius-pill)] border border-dashed border-primary/50 px-2 py-0.5 text-[11px] text-primary"
           >
@@ -697,7 +797,7 @@ function PositionRow({
       </td>
     </tr>
   );
-}
+});
 
 function StateChip({ row, pro, state }: { row: DeskRow; pro: boolean; state: ReturnType<typeof stopState> }) {
   if (state === null) return null;

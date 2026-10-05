@@ -41,6 +41,10 @@ import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import { extractDate, extractTime } from "./time-parse";
 import { fillSidesOf, isShortableSymbol, pairLegs, type Leg } from "./pair-legs";
+// v4.8.0 CU (R8): the venue rule and the contract rule live in ONE pure,
+// client-importable module. Re-exported so every existing import keeps working.
+import { isCurrencyContract, isCurrencyVenueCell } from "./currency-venue";
+export { isCurrencyVenueCell } from "./currency-venue";
 
 // ── The two shapes a broker file can take ─────────────────────────────────
 //
@@ -218,45 +222,18 @@ export function readProduct(raw: string | undefined | null): ProductHint {
   return null;
 }
 
-/**
- * PURE. A venue / segment CELL that states the currency segment, in any broker's
- * vocabulary: `CDS`, `BCD`, `CD`, `Currency`, `Currency Derivatives`, and the
- * compound forms `NSE-CDS`, `NSE_CURRENCY`, `BSE_CURRENCY`, `NSE CD`.
- *
- * The ONE rule for a stated venue across the file importers: `statesCurrency`
- * in `parsers/zerodha.ts` is this function. It lives HERE because this module
- * is imported by a client component (`components/import/column-mapper.tsx`), so
- * it cannot import the parsers (papaparse, xlsx) — they import it instead.
- *
- * Two halves: the prefix rule the Zerodha parser has always applied to its own
- * cells (`CDS…`, `BCD…`, `CD`, `Currenc…`, spaces / `_` / `.` folded), and —
- * for the compound forms — a WHOLE token of the cell (`NSE-CDS` → `CDS`). It is
- * for venue and segment cells only, never for a symbol: `CDSL` starts with `CDS`.
- */
-export function isCurrencyVenueCell(raw: string | null | undefined): boolean {
-  const s = String(raw ?? "").trim().toUpperCase();
-  if (!s) return false;
-  const flat = s.replace(/[\s_.]/g, "");
-  if (flat.startsWith("CDS") || flat.startsWith("BCD") || flat === "CD" || flat.startsWith("CURRENC")) return true;
-  return s.split(/[^A-Z0-9]+/).some((t) => t === "CDS" || t === "BCD" || t === "CD" || t.startsWith("CURRENC"));
-}
+// The currency rows `applyMapping` refuses travel on `ApplyResult.refusedCurrency`
+// and nowhere else: `parseGenericTable` wraps its ParsedFile in
+// `withCurrencyRefusals` with that list (v4.8.0 CU, R9). The WeakMap that used
+// to carry them to the import guard, keyed on the `trades` array's identity, is
+// gone — a copied array silently dropped the names.
 
 /**
- * The currency rows `applyMapping` refused, for the import guard
- * (`refuseCurrencyRows` in `parsers/zerodha.ts`), which writes the ONE shared
- * refusal note and feeds the stranded-open note. Keyed on the returned `trades`
- * array — `parseGenericTable` hands that array to its ParsedFile unchanged, and
- * `tests/currency-refusal.test.ts` pins that it does.
+ * NCDEX stays in this list ON PURPOSE (v4.8.0 CU, R5). Dropping it would make
+ * an "NCDEX" cell read as "no exchange stated", and the row would fall to NSE
+ * and be PRICED there. Reading it lets `isNcdexCell` refuse the row instead —
+ * no `charge_config` row covers NCDEX (invariant 3).
  */
-const MAPPED_CURRENCY = new WeakMap<NormalizedTrade[], readonly string[]>();
-export function mappedCurrencyRefusalsOf(trades: NormalizedTrade[]): readonly string[] {
-  return MAPPED_CURRENCY.get(trades) ?? [];
-}
-function withMappedRefusals(result: ApplyResult): ApplyResult {
-  if (result.refusedCurrency.length > 0) MAPPED_CURRENCY.set(result.trades, result.refusedCurrency);
-  return result;
-}
-
 const EXCHANGES = ["NSE", "BSE", "MCX", "NCDEX"] as const;
 
 function readExchange(raw: string | undefined | null): Exchange | null {
@@ -265,22 +242,43 @@ function readExchange(raw: string | undefined | null): Exchange | null {
   return (hit as Exchange | undefined) ?? null;
 }
 
+/** A row the file itself places on NCDEX — refused and named, never priced. */
+const isNcdexCell = (raw: string | undefined | null): boolean => (readExchange(raw) as string | null) === "NCDEX";
+
+/**
+ * The mapper's NCDEX sentence. It mirrors the Nuvama report's (`ncdex` in
+ * `parsers/nuvama-pnl-report.ts`), for a mapped file: before v4.8.0 the cell
+ * reached `buildRow` as the row's venue and `findRates` threw `No charge_config
+ * for … / NCDEX`, failing the WHOLE file with a raw engine message.
+ */
+function ncdexRefusalNote(names: readonly string[]): string {
+  const n = names.length;
+  return `${n} NCDEX row${n === 1 ? " was" : "s were"} refused: NCDEX contracts are not imported from this file (no charge profile covers them), so nothing was imported for: ${[...new Set(names)].slice(0, 10).join(", ")}.`;
+}
+
 // ── Applying the mapping ──────────────────────────────────────────────────
 
 export interface ApplyResult {
   trades: NormalizedTrade[];
   warnings: string[];
   /** Rows that became no trade: a required cell could not be read, or the row
-   *  was refused as currency (`refusedCurrency`). */
+   *  was refused as currency (`refusedCurrency`) or as NCDEX (`refusedNcdex`). */
   skipped: number;
   /**
-   * v4.7.0 — rows whose EXCHANGE cell states the currency segment
-   * (`isCurrencyVenueCell`), one contract name per row. Refused, never mapped
-   * to NSE: no `charge_config` row covers currency (AGENTS.md invariant 3), so
-   * the row would be priced as an equity future or option. The mapper only
-   * drops and names them; the note is written once, by the import guard.
+   * Rows refused as currency derivatives, one contract name per row: the
+   * EXCHANGE cell states the currency segment (`isCurrencyVenueCell`, v4.7.0)
+   * or — v4.8.0 CU, R7 — the contract's classified underlying is a currency
+   * pair (`isCurrencyContract`). Refused, never mapped to NSE: no
+   * `charge_config` row covers currency (AGENTS.md invariant 3), so the row
+   * would be priced as an equity future or option. The mapper only drops and
+   * names them; `parseGenericTable` writes the one refusal note. Refusing by
+   * NAME here (the import guard used to, after pairing) is what keeps
+   * `skipped` — and so the file's "N lines" count — true.
    */
   refusedCurrency: string[];
+  /** v4.8.0 CU (R5) — rows whose EXCHANGE cell says NCDEX, one name per row.
+   *  Their own sentence is already in `warnings`. */
+  refusedNcdex: string[];
 }
 
 export interface ApplyOptions {
@@ -313,14 +311,15 @@ export function applyMapping(
       warnings: [`Mapping incomplete — still needed: ${check.missing.join(", ")}.`],
       skipped: rows.length,
       refusedCurrency: [],
+      refusedNcdex: [],
     };
   }
-  return withMappedRefusals(
-    check.shape === "executions"
-      ? applyExecutions(rows, mapping, opts)
-      : applyRoundTrips(rows, mapping, opts),
-  );
+  return check.shape === "executions" ? applyExecutions(rows, mapping, opts) : applyRoundTrips(rows, mapping, opts);
 }
+
+/** A row refused as currency: by its stated venue, else by its contract's name. */
+const isCurrencyMappedRow = (symbol: string, exchangeCell: string | undefined): boolean =>
+  isCurrencyVenueCell(exchangeCell) || isCurrencyContract(symbol);
 
 function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions): ApplyResult {
   const warnings: string[] = [];
@@ -340,6 +339,7 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
   let skipped = 0;
   let undated = 0;
   const refusedCurrency: string[] = [];
+  const refusedNcdex: string[] = [];
 
   for (const row of rows) {
     const symbol = String(cell(row, m.tradingsymbol) ?? "").trim().toUpperCase();
@@ -348,9 +348,11 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     const price = readNumber(cell(row, m.price));
     const date = extractDate(cell(row, m.date));
 
-    // A row the file itself places on a currency venue is refused BEFORE it can
-    // join a leg — never folded into NSE (see `ApplyResult.refusedCurrency`).
-    if (symbol && isCurrencyVenueCell(cell(row, m.exchange))) { refusedCurrency.push(symbol); continue; }
+    // A row the file itself places on a currency venue — or whose contract is a
+    // currency pair — is refused BEFORE it can join a leg, never folded into
+    // NSE (see `ApplyResult.refusedCurrency`). NCDEX likewise (R5).
+    if (symbol && isCurrencyMappedRow(symbol, cell(row, m.exchange))) { refusedCurrency.push(symbol); continue; }
+    if (symbol && isNcdexCell(cell(row, m.exchange))) { refusedNcdex.push(symbol); continue; }
     if (!symbol || !side || qty == null || price == null || qty <= 0) { skipped++; continue; }
     if (!date) { skipped++; undated++; continue; }
 
@@ -391,6 +393,7 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
   if (undated > 0) {
     warnings.push(`${undated} of those had an unreadable date. Supported: dd-mm-yyyy, yyyy-mm-dd, dd-MMM-yyyy.`);
   }
+  if (refusedNcdex.length > 0) warnings.push(ncdexRefusalNote(refusedNcdex));
 
   const product = productFromRows(rows, m) ?? opts.defaultProduct ?? null;
   // P9 (v4.3.0, the R71 class): a merged day-side used to keep its first NAMED
@@ -445,7 +448,7 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     };
   });
 
-  return { trades, warnings, skipped: skipped + refusedCurrency.length, refusedCurrency };
+  return { trades, warnings, skipped: skipped + refusedCurrency.length + refusedNcdex.length, refusedCurrency, refusedNcdex };
 }
 
 function applyRoundTrips(rows: string[][], m: ColumnMapping, opts: ApplyOptions): ApplyResult {
@@ -453,6 +456,7 @@ function applyRoundTrips(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
   const trades: NormalizedTrade[] = [];
   let skipped = 0;
   const refusedCurrency: string[] = [];
+  const refusedNcdex: string[] = [];
 
   for (const row of rows) {
     const symbol = String(cell(row, m.tradingsymbol) ?? "").trim().toUpperCase();
@@ -461,8 +465,10 @@ function applyRoundTrips(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     const avgBuy = readNumber(cell(row, m.avgBuyPrice));
     const avgSell = readNumber(cell(row, m.avgSellPrice));
 
-    // Refused as currency by its stated venue — see `ApplyResult.refusedCurrency`.
-    if (symbol && isCurrencyVenueCell(cell(row, m.exchange))) { refusedCurrency.push(symbol); continue; }
+    // Refused as currency by its stated venue or its contract's name — see
+    // `ApplyResult.refusedCurrency`. NCDEX likewise (R5).
+    if (symbol && isCurrencyMappedRow(symbol, cell(row, m.exchange))) { refusedCurrency.push(symbol); continue; }
+    if (symbol && isNcdexCell(cell(row, m.exchange))) { refusedNcdex.push(symbol); continue; }
     if (!symbol || buyQty == null || sellQty == null || avgBuy == null || avgSell == null) { skipped++; continue; }
     if (buyQty <= 0 && sellQty <= 0) { skipped++; continue; }
 
@@ -501,7 +507,8 @@ function applyRoundTrips(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
       `Blank subtotal and header rows are expected here; a large count means a column is mapped wrongly.`,
     );
   }
-  return { trades, warnings, skipped: skipped + refusedCurrency.length, refusedCurrency };
+  if (refusedNcdex.length > 0) warnings.push(ncdexRefusalNote(refusedNcdex));
+  return { trades, warnings, skipped: skipped + refusedCurrency.length + refusedNcdex.length, refusedCurrency, refusedNcdex };
 }
 
 /** The single product the file describes, when every row agrees on one. */

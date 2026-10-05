@@ -35,6 +35,7 @@ import { extractDate } from "../time-parse";
 import { fyOfDate } from "@/lib/analytics/ais";
 import type { ParseContext, ParsedFile, ReferenceRow } from "../types";
 import { fyersHeaderIndex, fyersTitleIs } from "./fyers-tradebook";
+import { isCurrencyContract, statesCurrency, withCurrencyRefusals } from "./zerodha";
 
 export const FYERS_REALISED_SOURCE_ID = "fyers-realised-pnl";
 
@@ -118,14 +119,28 @@ export function parseFyersRealisedPnl(ctx: ParseContext): ParsedFile {
   const segments = new Set<string>();
   let sourceRows = 0;
   let sumGross = 0;
+  /** v4.8.0 CU (R6): currency contracts, one per row — no reference figure is stored for them. */
+  const refusedCurrency: string[] = [];
   for (const r of rows.slice(h + 1)) {
     const label = (r[0] ?? "").trim();
     if (!label) continue;
     const { exchange, symbol } = splitPrefix(label);
-    sourceRows++;
     segments.add((r[2] ?? "").trim().toLowerCase());
     const grossPnl = r2(toNum(r[3]));
+    // Summed for EVERY row, refused or not: the file's own Gross P&L includes
+    // them all, and the check below asks only "did this parser read every row".
     sumGross += grossPnl;
+    // v4.8.0 CU (R6) — the tradebook refuses a currency fill, so the book holds
+    // no such contract; a reference row for it would be a broker figure with
+    // nothing to reconcile against. By the row's own Segment cell (the shared
+    // venue rule), else by the contract's name. The totals block cannot be
+    // corrected (it states no per-contract charges) and is kept as stated —
+    // `withCurrencyRefusals` says so.
+    if (statesCurrency(r[2]) || isCurrencyContract(symbol)) {
+      refusedCurrency.push(symbol);
+      continue;
+    }
+    sourceRows++;
     reference.push({
       scope: "scrip",
       key: symbol,
@@ -173,5 +188,5 @@ export function parseFyersRealisedPnl(ctx: ParseContext): ParsedFile {
     `${reference.filter((x) => x.scope === "scrip").length} contract figures were read as the BROKER'S OWN numbers. They are stored beside your journal for reconciliation and import no trades — the book stays the Fyers tradebook.`,
   );
 
-  return { ...base, reported, reference, sourceRows, warnings };
+  return withCurrencyRefusals({ ...base, reported, reference, sourceRows, warnings }, refusedCurrency, "row");
 }

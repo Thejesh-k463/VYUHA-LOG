@@ -19,6 +19,8 @@ import { signalFromForm, parseFormNumber } from "@/lib/domain/signal";
 // v4.7.0 C2: the clinic-field validator is a PURE module — an exported async function in this
 // "use server" file would be a callable endpoint.
 import { clinicFieldsFrom, typedNumber } from "@/lib/domain/clinic-fields";
+// v4.8.0 CU (R4): the PURE currency rule the importers and the Add form share.
+import { isManualCurrencyTrade, MANUAL_CURRENCY_REFUSAL } from "@/lib/import/currency-venue";
 import { recordAudit } from "@/lib/audit";
 import { AccountRequiredError, getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import {
@@ -154,6 +156,18 @@ export async function createManualTrade(
     exchange: str(formData.get("exchange")),
   });
   if (!base.success) return { ok: false, message: base.error.issues[0]?.message ?? "Invalid input" };
+
+  // v4.8.0 CU (R4) — a currency derivative is REFUSED ON CREATE, before anything
+  // is priced or written: no charge_config row covers currency (invariant 3), so
+  // `commitManualTrade` would store it as an NSE future / option and bill
+  // equity-F&O STT and stamp. Asked of the contract the form builds (the Equity
+  // tab's free-text symbol, the F&O tab's `FUT USDINR 28 Oct 2026` / option form)
+  // by its classified underlying — EXACT, so `USDINRBEES` saves — and of the RAW
+  // Exchange / Segment override, which is read here before the lines below drop
+  // any value outside NSE / BSE / MCX. CREATE only: editing, closing and deleting
+  // a currency row already in the book go through other actions and are untouched
+  // (the v4.7.0 stranded-open note tells the user to close or delete it by hand).
+  if (isManualCurrencyTrade(base.data)) return { ok: false, message: MANUAL_CURRENCY_REFUSAL };
 
   const isOpenTrade = String(formData.get("open") ?? "") === "true";
   // Direction: "buy" (long, the default — preserves prior behavior for equity) or

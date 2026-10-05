@@ -11,8 +11,26 @@ import {
   type ClinicReport,
   type ClinicTrade,
 } from "@/lib/analytics/edge-clinic";
-import { checkExperiment, findCell, proposalFor, teaser, weeklyNote, type StoredExperiment } from "@/lib/analytics/edge-clinic-note";
-import { EXPERIMENT_TARGET_N, type ClinicExperiment, type ClinicState, type TradeCellLine } from "@/lib/analytics/edge-clinic-contract";
+import {
+  checkExperiment,
+  clinicCardOf,
+  clinicCardSummary,
+  findCell,
+  parseClinicCardSummary,
+  proposalFor,
+  teaser,
+  weeklyNote,
+  type StoredExperiment,
+} from "@/lib/analytics/edge-clinic-note";
+import {
+  CLINIC_CARD_MISSING,
+  EXPERIMENT_TARGET_N,
+  type ClinicCard,
+  type ClinicCardSummary,
+  type ClinicExperiment,
+  type ClinicState,
+  type TradeCellLine,
+} from "@/lib/analytics/edge-clinic-contract";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { readCapRows } from "@/lib/queries/risk-cap";
 import { resolvePerTradeCap } from "@/lib/risk/limits";
@@ -109,6 +127,8 @@ interface CachedReport {
   digest: string;
   computedAt: string;
   report: ClinicReport;
+  /** `summary_json` as stored — NULL on a row cached before migration 0081. */
+  summaryJson: string | null;
 }
 
 /** The cached row for a scope, if it was written by THIS engine version (another version's shape is not read). */
@@ -116,10 +136,20 @@ function readCache(scopeKey: string): CachedReport | null {
   const row = db.select().from(clinicCache).where(eq(clinicCache.scopeKey, scopeKey)).get();
   if (!row || row.engineVersion !== ENGINE_VERSION) return null;
   try {
-    return { digest: row.digest, computedAt: row.computedAt, report: JSON.parse(row.reportJson) as ClinicReport };
+    return { digest: row.digest, computedAt: row.computedAt, report: JSON.parse(row.reportJson) as ClinicReport, summaryJson: row.summaryJson };
   } catch {
     return null;
   }
+}
+
+/**
+ * The stored card summary, believed only when it is THIS row's report's: it parses,
+ * it is this engine version's, and its `computedAt` is the row's (an older build's
+ * upsert rewrites the report and leaves the column behind).
+ */
+function storedSummary(summaryJson: string | null, computedAt: string): ClinicCardSummary | null {
+  const s = parseClinicCardSummary(summaryJson);
+  return s && s.computedAt === computedAt ? s : null;
 }
 
 // ── Experiments ─────────────────────────────────────────────────────────────
@@ -276,6 +306,37 @@ export function getClinicState(): ClinicState {
   };
 }
 
+/**
+ * What Arjun's Eye's card reads (v4.8.0 P2): ONE small row by scope key — the same
+ * scope rule as `getClinicState()` (`getSelectedAccountId()`, invariant 8; `acct:0`
+ * = the All view) and the same engine-version rule as `readCache`. It does NOT call
+ * `clinicInputs()` (no second whole-book projection, no digest — the card never
+ * showed fresh/stale) and does NOT select or parse `report_json`: on the 25,001-trade
+ * perf book that path cost the page a projection, a sha256 over every closed row and
+ * a 4.69 MB `JSON.parse` to print one finding.
+ *
+ * The stored summary is believed only when it is THIS report's (`storedSummary`).
+ * Otherwise — a row cached before migration 0081, or a summary that does not parse —
+ * it falls back to the report on THIS read (`readCache`, derive with the same function
+ * the compute stores with): never a blank card, and never a write on a read path; the
+ * next compute stores the summary, also when the report is still fresh. The object
+ * carries the Pro finding — a page hands a free copy `clinicCardFor(card, false)`,
+ * never this.
+ */
+export function getClinicCard(): ClinicCard {
+  const scopeKey = scopeKeyOf(getSelectedAccountId());
+  const row = db
+    .select({ engineVersion: clinicCache.engineVersion, computedAt: clinicCache.computedAt, summaryJson: clinicCache.summaryJson })
+    .from(clinicCache)
+    .where(eq(clinicCache.scopeKey, scopeKey))
+    .get();
+  if (!row || row.engineVersion !== ENGINE_VERSION) return CLINIC_CARD_MISSING;
+  const stored = storedSummary(row.summaryJson, row.computedAt);
+  if (stored) return clinicCardOf(stored);
+  const cached = readCache(scopeKey);
+  return cached ? clinicCardOf(clinicCardSummary(cached.report, cached.computedAt)) : CLINIC_CARD_MISSING;
+}
+
 // ── The compute (route handler only) ────────────────────────────────────────
 
 export interface ComputeResult {
@@ -311,16 +372,30 @@ export function computeClinic(): Promise<ComputeResult> {
     await Promise.resolve();
     const cached = readCache(inputs.scopeKey);
     if (cached && cached.digest === inputs.digest) {
+      // v4.8.0 P2: a FRESH row cached before migration 0081 has no card summary, and
+      // nothing would ever recompute it while its digest holds — store it here (the
+      // write path), from the report this row already carries. The report, its digest
+      // and `computedAt` are not touched.
+      if (!storedSummary(cached.summaryJson, cached.computedAt)) {
+        db.update(clinicCache)
+          .set({ summaryJson: JSON.stringify(clinicCardSummary(cached.report, cached.computedAt)) })
+          .where(eq(clinicCache.scopeKey, inputs.scopeKey))
+          .run();
+      }
       runExperimentChecks(inputs);
       return { status: "fresh", scopeKey: inputs.scopeKey, computedAt: cached.computedAt };
     }
     const report = edgeClinic(inputs.trades, inputs.opts);
     const computedAt = new Date().toISOString();
+    // v4.8.0 P2: the card's summary is written WITH the report it is derived from — one
+    // statement, so the pair can never be half-written (`getClinicCard` reads only this).
+    const reportJson = JSON.stringify(report);
+    const summaryJson = JSON.stringify(clinicCardSummary(report, computedAt));
     db.insert(clinicCache)
-      .values({ scopeKey: inputs.scopeKey, digest: inputs.digest, engineVersion: ENGINE_VERSION, reportJson: JSON.stringify(report), computedAt })
+      .values({ scopeKey: inputs.scopeKey, digest: inputs.digest, engineVersion: ENGINE_VERSION, reportJson, computedAt, summaryJson })
       .onConflictDoUpdate({
         target: clinicCache.scopeKey,
-        set: { digest: inputs.digest, engineVersion: ENGINE_VERSION, reportJson: JSON.stringify(report), computedAt },
+        set: { digest: inputs.digest, engineVersion: ENGINE_VERSION, reportJson, computedAt, summaryJson },
       })
       .run();
     runExperimentChecks(inputs);

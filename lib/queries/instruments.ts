@@ -150,6 +150,34 @@ export function getClassificationResolution(): Map<string, ClassificationResolut
   return buildClassificationResolution(getInstruments(), sources);
 }
 
+/**
+ * BOTH chains from ONE read (v4.8.0 P1) — for a loader that needs the sector
+ * AND the levels-aware resolution in the same request (the Live Desk).
+ *
+ * Calling the two functions above back to back reads `instruments` twice and
+ * walks the bundled taxonomy generator twice. Here the table is read once and
+ * the taxonomy is materialised once (`classificationEntries()` is a generator —
+ * single-use — so it is spread into an array both builders can iterate; neither
+ * builder mutates an entry).
+ *
+ * OUTPUT-NEUTRAL: `sectors` is `getSectorResolution()`'s map and `classes` is
+ * `getClassificationResolution()`'s — same keys, same values, same insertion
+ * order. `tests/positions-window.test.ts` compares all three against one
+ * database and counts the reads.
+ */
+export function getSectorAndClassificationResolution(): {
+  sectors: Map<string, SectorResolution>;
+  classes: Map<string, ClassificationResolution>;
+} {
+  const rows = getInstruments();
+  const taxonomy = [...classificationEntries()];
+  const sources: ClassificationSources = { ...sectorSources(), taxonomy };
+  return {
+    sectors: buildSectorResolution(rows, sources),
+    classes: buildClassificationResolution(rows, sources),
+  };
+}
+
 /** Coverage summary for the manager status line. */
 export function getInstrumentMeta(): { count: number; withSector: number } {
   const rows = getInstruments();

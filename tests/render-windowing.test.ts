@@ -87,11 +87,17 @@ describe("row windowing is still wired on the routes that needed it", () => {
   it("/strategies mounts its 626 payoff charts lazily", () => {
     const src = read("app/strategies/page.tsx");
     expect(src).toContain("LazyMount");
-    // A bare <PayoffChart> outside LazyMount is the regression.
-    const idx = src.indexOf("<PayoffChart");
+    // A bare payoff chart outside LazyMount is the regression. Since v4.8.0 P3
+    // the chart on this page is `PayoffChartOfLegs` (it computes its points in
+    // the browser from the legs), and it is the ONLY payoff chart here: the
+    // plain `<PayoffChart data=…>` it replaced must not come back beside it,
+    // lazily mounted or not, because its `data` is the series in the payload.
+    const charts = [...src.matchAll(/<PayoffChart\w*/g)];
+    expect(charts.map((m) => m[0]), "exactly one payoff chart, the legs-fed one").toEqual(["<PayoffChartOfLegs"]);
+    const idx = charts[0].index;
     expect(idx).toBeGreaterThan(0);
-    expect(src.slice(Math.max(0, idx - 200), idx), "PayoffChart is no longer inside a LazyMount")
-      .toContain("LazyMount");
+    expect(src.slice(Math.max(0, idx - 200), idx), "the payoff chart is no longer inside a LazyMount")
+      .toContain("<LazyMount");
   });
 });
 

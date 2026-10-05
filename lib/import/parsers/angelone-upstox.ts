@@ -18,7 +18,7 @@ import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
-import { isCurrencyContract, withCurrencyRefusals } from "./zerodha";
+import { isCurrencyContract, statesCurrency, withCurrencyRefusals } from "./zerodha";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -134,11 +134,14 @@ function exchangeFrom(raw: string): Exchange | null {
  * currency venue code has never been seen on a real report — when its
  * classified underlying is a currency pair (review R6: the stored symbol,
  * exact, never a tradingsymbol prefix; no equity or F&O contract matches).
+ *
+ * v4.8.0 CU (R3): the venue half is the SHARED rule (`statesCurrency`,
+ * lib/import/currency-venue.ts). This file's own copy knew only the prefix
+ * forms, so a compound cell (`NSE-CDS`, `NSE_CURRENCY`, `BSE_CURRENCY`) fell
+ * through to `exchangeFrom`, which reads anything starting `nse` as NSE — the
+ * row was stored there and priced as an equity contract.
  */
-function statesCurrencyVenue(raw: string | undefined): boolean {
-  const s = norm(raw ?? "");
-  return s.startsWith("cds") || s.startsWith("bcd") || s === "cd" || s.startsWith("currenc");
-}
+const statesCurrencyVenue = (raw: string | undefined): boolean => statesCurrency(raw);
 
 /** Product codes: Angel One uses DELIVERY/INTRADAY/MARGIN/CARRYFORWARD,
  *  Upstox uses D/I/CO/OCO plus the long names. */

@@ -105,7 +105,7 @@ export interface StrategyGroup {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Total P&L of the position if the underlying settles at price S at expiry. */
-export function payoffAt(legs: OptionLeg[], S: number): number {
+export function payoffAt(legs: readonly OptionLeg[], S: number): number {
   let pnl = 0;
   for (const l of legs) {
     const kind = legKind(l);
@@ -312,6 +312,57 @@ export function contractMonthOf(name: string | null | undefined): string | null 
   return `20${m[1]}-${String(CONTRACT_MONTHS.indexOf(m[2]) + 1).padStart(2, "0")}`;
 }
 
+/**
+ * The focused price range a group is drawn over: every option strike, plus any
+ * underlying entry price so S0 is on screen, padded. ONE function, read by
+ * `computeStrategy` (its vertices and the breakeven rescue hang off `cHi` and
+ * `maxK`) and by `payoffSeries` — so the figures and the picture cannot be
+ * computed over two different ranges.
+ */
+function chartRange(legs: readonly OptionLeg[]): { maxK: number; cLo: number; cHi: number } {
+  const levels = legs.map((l) => (legKind(l) === "UL" ? l.premium : l.strike));
+  const minK = levels.length ? Math.min(...levels) : 0;
+  const maxK = levels.length ? Math.max(...levels) : 0;
+  const pad = Math.max((maxK - minK) * 0.6, maxK * 0.15, 50);
+  return { maxK, cLo: Math.max(0, minK - pad), cHi: maxK + pad };
+}
+
+/** How many points the chart series samples. */
+export const PAYOFF_POINTS = 61;
+
+/**
+ * The chart series: `PAYOFF_POINTS` evenly sampled points across the focused
+ * range (exact, since the payoff is piecewise-linear).
+ *
+ * A FUNCTION OF THE LEGS AND THE BREAKEVENS ALONE (v4.8.0 P3), so the chart can
+ * compute it in the browser from two fields the card already holds — /strategies
+ * used to serialise all 61 points of every open structure, ~2.5 KB each, for a
+ * picture that mounts only on approach. `computeStrategy` calls this same
+ * function for `StrategyGroup.payoff`, and `tests/strategies-payload.test.ts`
+ * pins the result against a digest of the series as it was computed inline.
+ *
+ * `breakevens` is the group's own list, in any order and de-duplicated or not —
+ * only its maximum is read. When a breakeven landed beyond the right edge the
+ * chart stretches just past it, and ONLY then: a group whose breakevens already
+ * sat inside the range keeps its exact grid, and so do its goldens.
+ *
+ * On a multi-expiry group this is research-note §7 option A — the curve is drawn
+ * at the NEAREST expiry with the far legs at intrinsic, which understates a long
+ * far leg and overstates a short one.
+ */
+export function payoffSeries(
+  legs: readonly OptionLeg[],
+  breakevens: readonly number[],
+): { price: number; pnl: number }[] {
+  const { cLo, cHi } = chartRange(legs);
+  const maxBe = breakevens.length ? Math.max(...breakevens) : 0;
+  const chartHi = maxBe > cHi ? maxBe * 1.05 : cHi;
+  return Array.from({ length: PAYOFF_POINTS }, (_, i) => {
+    const price = cLo + ((chartHi - cLo) * i) / (PAYOFF_POINTS - 1);
+    return { price: r2(price), pnl: r2(payoffAt(legs, price)) };
+  });
+}
+
 export function computeStrategy(
   symbol: string,
   expiry: string | null,
@@ -327,12 +378,7 @@ export function computeStrategy(
   const nearestExpiry = expiries[0] ?? null;
 
   // Chart range: strikes, plus any underlying entry price so S0 is on screen.
-  const levels = [...strikes, ...ulLegs.map((l) => l.premium)];
-  const minK = levels.length ? Math.min(...levels) : 0;
-  const maxK = levels.length ? Math.max(...levels) : 0;
-  const pad = Math.max((maxK - minK) * 0.6, maxK * 0.15, 50);
-  const cLo = Math.max(0, minK - pad);
-  const cHi = maxK + pad;
+  const { maxK, cHi } = chartRange(legs);
 
   // Net slope as S→∞ decides upside boundedness: calls AND the underlying gain
   // linearly above every strike, puts are flat there. Downside is bounded at S=0.
@@ -411,23 +457,12 @@ export function computeStrategy(
     }
   }
 
-  // Chart series: evenly sampled across a focused range (exact since piecewise-linear).
-  // On a multi-expiry group this is research-note §7 option A — the curve is drawn
-  // at the NEAREST expiry with the far legs at intrinsic, which understates a long
-  // far leg and overstates a short one.
-  // Show that crossing: when a breakeven landed beyond the right edge, the chart
-  // stretches just past it. ONLY then -- a group whose breakevens already sat
-  // inside the range keeps its exact grid, and so do its goldens. The vertices
-  // above are deliberately NOT extended: max profit / max loss are read off them
-  // and must not move because the picture got wider.
-  const maxBe = breakevens.length ? Math.max(...breakevens) : 0;
-  const chartHi = maxBe > cHi ? maxBe * 1.05 : cHi;
-
-  const N = 61;
-  const payoff = Array.from({ length: N }, (_, i) => {
-    const price = cLo + ((chartHi - cLo) * i) / (N - 1);
-    return { price: r2(price), pnl: r2(payoffAt(legs, price)) };
-  });
+  // Chart series: `payoffSeries`, the one function the chart itself calls in the
+  // browser (v4.8.0 P3). It shows the crossing the rescue above found — the range
+  // stretches just past a breakeven beyond the right edge. The vertices above are
+  // deliberately NOT extended: max profit / max loss are read off them and must
+  // not move because the picture got wider.
+  const payoff = payoffSeries(legs, breakevens);
 
   // §7: which tiles are model-dependent. Max loss survives when every far leg is
   // long — intrinsic understates a long far leg, so the minimum on this curve is

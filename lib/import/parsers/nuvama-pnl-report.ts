@@ -46,7 +46,7 @@ import { bundledSymbolByIsin } from "../isin-symbol";
 import { fyOfDate } from "@/lib/analytics/ais";
 import { FYERS_NUVAMA_EQUITY_UNVERIFIED } from "./fyers-tradebook";
 import { nuvamaUnpricedRow } from "../pull-symbols";
-import { withCurrencyRefusals } from "./zerodha";
+import { isCurrencyContract, withCurrencyRefusals } from "./zerodha";
 
 export const NUVAMA_PNL_SOURCE_ID = "nuvama-pnl-report";
 
@@ -299,6 +299,14 @@ function readDetail(rows: unknown[][], seqStart: number): ReadResult {
       continue;
     }
     const inst = nuvamaInstrument(instrument, isinCell.toUpperCase());
+    // v4.8.0 CU (R7) — a currency pair the report places on NSE, by NAME. The
+    // import guard refused it anyway, but only after pairing, so it was still
+    // counted in "N statement lines → M positions" and in `sourceRows`, and its
+    // bill stayed in the charges the book is conserved to.
+    if (inst && isCurrencyContract(inst.tradingsymbol)) {
+      out.refusedCurrency.push(inst.tradingsymbol);
+      continue;
+    }
     const date = nuvamaDate(at(r, c.date));
     const action = String(at(r, c.action)).trim().toLowerCase();
     const side = action === "buy" ? "buy" : action === "sell" ? "sell" : null;

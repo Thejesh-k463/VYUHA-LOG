@@ -108,7 +108,8 @@ describe("migration 0079", () => {
 
   it("clinic_cache is keyed by scope and carries no account_id", () => {
     const cols = (t.sqlite.prepare("SELECT name FROM pragma_table_info('clinic_cache')").all() as { name: string }[]).map((c) => c.name);
-    expect(cols).toEqual(["scope_key", "digest", "engine_version", "report_json", "computed_at"]);
+    // v4.8.0 P2 (migration 0081): + `summary_json`, the card summary derived from the same report (tests/clinic-card-summary.test.ts).
+    expect(cols).toEqual(["scope_key", "digest", "engine_version", "report_json", "computed_at", "summary_json"]);
   });
 });
 
@@ -477,6 +478,7 @@ describe("ENGINE_VERSION is pinned to the engine's output (golden report)", () =
     const hash = createHash("sha256").update(stable(report)).digest("hex");
     // c3.0 (v4.7.0 C3): sizing over kellySample() — no cap-unit R, no basis-less sale — at the floor 30, plus `sizingSample`.
     // c3.1 (v4.7.0 audit, owner Q3 / review R4 / CG-1): the ceiling per 1R, `lossHi`, off-grid empirical Kelly null.
-    expect({ ENGINE_VERSION, hash }).toEqual({ ENGINE_VERSION: "c3.1", hash: "0d7a02bb60faaff29057d04f02eaecdeaeb337ce3d7f39236e8e9c90cf4ae164" });
+    // c4.0 (v4.8.0 F1): `decay.band` out; `decay.trace` (≤ 120 points) / `usual` / `recent` in.
+    expect({ ENGINE_VERSION, hash }).toEqual({ ENGINE_VERSION: "c4.0", hash: "7993ee25daf0902acb186bfefc6580707ea4bbf46e3b10f02b332d0312cf63e4" });
   });
 });

@@ -20,7 +20,7 @@ import {
   optionNetPremium,
   underlyingEntryLine,
   underlyingExpiryNote,
-  type ScreenGroup,
+  type WireGroup,
 } from "./strategy-copy";
 
 /**
@@ -28,8 +28,10 @@ import {
  *
  * A client component because the shelf above it re-renders the list as the
  * selection changes. It holds no state of its own: everything on it is the
- * group the server computed, and the payoff chart arrives already rendered by
+ * group the server computed, and the payoff chart arrives as a node built by
  * the server page, which is where the v3.4.0 perf guard mounts it on approach.
+ * The group carries NO chart series (v4.8.0 P3, `withoutPayoff`): this card
+ * never read one, and the chart computes its own points from the legs.
  *
  * THE FOUR FIGURES CARRY THEIR SUB-LABEL, NEVER A BARE NUMBER (§6). "Unlimited"
  * is an uncapped leg; "Computed at underlying = 0" is a price floor;
@@ -37,7 +39,7 @@ import {
  * "Unlimited" — printing one for the other is a wrong fact, which is why
  * `capLabel` and `notComputed` are separate seams in B1's group.
  */
-export function StrategyCard({ group, chart }: { group: ScreenGroup; chart: React.ReactNode }) {
+export function StrategyCard({ group, chart }: { group: WireGroup; chart: React.ReactNode }) {
   const g = group;
   const optionLegs = g.legs.filter((l) => legKind(l) !== "UL");
   const optNet = optionNetPremium(g);

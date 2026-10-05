@@ -1,0 +1,22 @@
+-- v4.8.0 wave P2 — the Arjun's Eye Clinic card reads a stored summary.
+--
+-- `clinic_cache.summary_json` — DERIVED, like the row it sits in (migration 0079):
+-- the few hundred bytes the /arjuns-eye card prints (the weekly note's first
+-- finding, the free teaser, has-report, computed_at, the engine version), written
+-- by the compute NEXT TO `report_json` and derived from that same report with the
+-- same `weeklyNote` / `teaser` functions (lib/analytics/edge-clinic-note.ts
+-- `clinicCardSummary`). Measured on the 25,001-trade perf book: the card's read
+-- re-projected the whole book, hashed it and parsed a 4.69 MB report to print one
+-- finding. With this column it reads one small row by scope key.
+--
+-- NULLABLE with no default, deliberately: a row cached before this migration has
+-- no summary, and the card then derives one from `report_json` on that read (never
+-- a blank card, never a write on a read path) until the next compute stores it.
+-- The report itself is unchanged — ENGINE_VERSION does not move.
+--
+-- Nothing else changes for the table: still no account_id (keyed by scope), still
+-- outside the backup envelope, still dropped whole by a restore and an account
+-- delete.
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `clinic_cache` ADD COLUMN `summary_json` text;

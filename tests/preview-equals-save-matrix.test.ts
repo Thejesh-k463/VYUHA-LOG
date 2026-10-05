@@ -1259,3 +1259,79 @@ describe("wave U — preview and save resolve the SAME account, and so the same 
     expect(Math.round((pvPlus.rows[0].chargesTotal - pvBasic.rows[0].chargesTotal) * 100) / 100).toBe(PREMIUM);
   });
 });
+
+/**
+ * v4.8.0 wave CU (R4) — THE ONE CELL WHERE THE ANSWER IS "NO FIGURE AT ALL".
+ *
+ * `createManualTrade` refuses a currency derivative (no `charge_config` row
+ * covers one, invariant 3). The matrix's question is unchanged — does the
+ * dialog show what the save does? — so the Add form's preview must refuse too,
+ * with the save's own sentence, rather than show equity-F&O charges beside a
+ * Save that stores nothing. Both real halves: the body the form's builder
+ * assembles, POSTed to the real route; the FormData the form submits, handed to
+ * the real action. Synthetic trades.
+ */
+describe("v4.8.0 CU — a hand-typed currency derivative: the preview and the save agree, and both refuse", () => {
+  let buildManualPreviewBody: typeof import("@/components/trades/manual-preview-body").buildManualPreviewBody;
+  let createManualTrade: typeof import("@/app/trades/actions").createManualTrade;
+
+  beforeAll(async () => {
+    ({ buildManualPreviewBody } = await import("@/components/trades/manual-preview-body"));
+    ({ createManualTrade } = await import("@/app/trades/actions"));
+    // A real write target (invariant 9), so a refusal here is the currency one and not ACCOUNT_REQUIRED.
+    t.db.update(t.schema.settings).set({ selectedAccountId: 1 }).run();
+  });
+  afterAll(() => {
+    t.db.update(t.schema.settings).set({ selectedAccountId: 0 }).run();
+  });
+
+  const halves = async (tradingsymbol: string, kind: "equity" | "fno", open: boolean) => {
+    const res = await POST(
+      new Request("http://localhost:3011/api/charges/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          buildManualPreviewBody({
+            broker: "zerodha", tradingsymbol, kind, productHint: null, segment: null, exchange: null, direction: "buy", open,
+            entryQty: 1000, entryPrice: 84, entryDate: BUY_ISO, exitQty: open ? 0 : 1000, exitPrice: open ? 0 : 84.5, exitDate: open ? null : "2026-08-14",
+            ownCapitalUsed: null, daysHeld: 0,
+          }),
+        ),
+      }),
+    );
+    const fd = new FormData();
+    const fields: Record<string, string> = { broker: "zerodha", tradingsymbol, direction: "buy", buyQty: "1000", avgBuyPrice: "84", buyDate: BUY_ISO };
+    if (open) fields.open = "true";
+    else Object.assign(fields, { sellQty: "1000", avgSellPrice: "84.5", sellDate: "2026-08-14" });
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    const count = () => (t.sqlite.prepare("SELECT COUNT(*) AS n FROM trades").get() as { n: number }).n;
+    const before = count();
+    const save = await createManualTrade({ ok: false, message: "" }, fd);
+    return { status: res.status, shown: (await res.json()) as { error?: string; breakdown?: { total: number }; netPnl?: number }, save, written: count() - before };
+  };
+
+  it.each([
+    ["the Equity tab's symbol", "USDINR26OCTFUT", "equity", false],
+    ["the F&O tab's future, closed", "FUT USDINR 28 Oct 2026", "fno", false],
+    ["the F&O tab's future, open", "FUT GBPINR 28 Oct 2026", "fno", true],
+    ["the F&O tab's option", "OPT EURINR 28 Oct 2026 90.5 PE", "fno", false],
+  ] as const)("%s (%s): no priced preview, no row, ONE sentence on both halves", async (_label, tradingsymbol, kind, open) => {
+    const r = await halves(tradingsymbol, kind, open);
+    expect(r.status).toBe(400);
+    expect(r.shown.breakdown).toBeUndefined();
+    expect(r.save.ok).toBe(false);
+    expect(r.written).toBe(0);
+    // THE matrix assertion: what the dialog says is what the save says.
+    expect(r.shown.error).toBe(r.save.message);
+    expect(r.save.message).toMatch(/^Currency derivatives are not priced by Vyuha/);
+  });
+
+  it("USDINRBEES (an ETF whose name STARTS with a pair) is priced by both halves, to the paisa", async () => {
+    const r = await halves("USDINRBEES", "equity", false);
+    expect(r.status).toBe(200);
+    expect(r.save, r.save.message).toMatchObject({ ok: true });
+    expect(r.written).toBe(1);
+    const kept = row(r.save.tradeId!);
+    expect([r.shown.breakdown!.total, r.shown.netPnl]).toEqual([kept.chargesTotal, kept.netPnl]);
+  });
+});

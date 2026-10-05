@@ -1,4 +1,4 @@
-// The C2 seam (PURE: types, two constants and one reducer, no DB/React): what the server half
+// The C2 seam (PURE: types, three constants and two reducers, no DB/React): what the server half
 // (lib/queries/edge-clinic.ts, app/api/edge-clinic/*) hands the UI half
 // (app/reports/edge-clinic/_tabs/clinic.tsx, components/edge-clinic/*, Arjun's
 // Eye, the journal dialog). Both halves import from here; neither redefines a
@@ -100,6 +100,54 @@ export interface ClinicState {
 export function clinicStateFor(state: ClinicState, pro: boolean): ClinicState {
   if (pro) return state;
   return { ...state, report: null, note: null, experiments: [], canStartExperiment: false };
+}
+
+// ── Arjun's Eye's card (v4.8.0 P2) ──────────────────────────────────────────
+
+/** The five fields of the weekly note's FIRST finding that the Arjun's Eye card prints — the engine's words, unchanged. */
+export interface ClinicCardFinding {
+  label: string;
+  grade: EvidenceGrade;
+  verb: CopyVerb;
+  headline: string;
+  provenanceLine: string;
+}
+
+/**
+ * `clinic_cache.summary_json` (migration 0081): what the Arjun's Eye card needs of a cached report, written by the
+ * compute NEXT TO that report and derived from it with the same `weeklyNote` / `teaser` the page read uses
+ * (`clinicCardSummary` in edge-clinic-note.ts). A few hundred bytes, so the card never parses the report. It carries
+ * its sibling's `computedAt` and the engine version, so a summary that is not this report's is never believed.
+ * Nothing about experiments is in it: a finding's `experiment` depends on rows that change without a compute.
+ */
+export interface ClinicCardSummary {
+  v: 1;
+  engineVersion: string;
+  computedAt: string;
+  hasReport: true;
+  finding: ClinicCardFinding | null;
+  teaser: ClinicTeaser | null;
+}
+
+/** What the Arjun's Eye card reads. `hasReport` false + `teaser` null = the Clinic has not read this scope. */
+export interface ClinicCard {
+  hasReport: boolean;
+  computedAt: string | null;
+  finding: ClinicCardFinding | null;
+  teaser: ClinicTeaser | null;
+}
+
+/** No cached report from this engine version for the scope. */
+export const CLINIC_CARD_MISSING: ClinicCard = { hasReport: false, computedAt: null, finding: null, teaser: null };
+
+/**
+ * What a FREE copy's card may receive — the SAME cut `clinicStateFor` makes: the note's finding and the report's
+ * presence are withheld (`note: null`, `report: null` there), the teaser and `computedAt` survive. Pure; the page
+ * calls it with `getEntitlement().pro` before handing the card to the component.
+ */
+export function clinicCardFor(card: ClinicCard, pro: boolean): ClinicCard {
+  if (pro) return card;
+  return { ...card, hasReport: false, finding: null };
 }
 
 /** GET /api/edge-clinic/cell?tradeId= — the journal dialog's one line (Pro only, trade inside the selected scope; null otherwise). */

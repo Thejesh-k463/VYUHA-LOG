@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { clinicStateFor, type ClinicState } from "@/lib/analytics/edge-clinic-contract";
+import { CLINIC_CARD_MISSING, clinicCardFor, clinicStateFor, type ClinicCard, type ClinicState } from "@/lib/analytics/edge-clinic-contract";
 import type { ClinicReport } from "@/lib/analytics/edge-clinic";
+import { ArjunClinicCard } from "@/components/edge-clinic/arjun-clinic-card";
 import { ClinicCopyBlock, ageLabel, fmtR } from "@/components/edge-clinic/clinic-copy";
 import { ClinicTeaserCard } from "@/components/edge-clinic/teaser-card";
 
@@ -76,14 +77,78 @@ describe("clinicStateFor — what a free copy may receive", () => {
     expect(clinicStateFor(s, true)).toBe(s);
   });
 
-  it("the hub page and Arjun's Eye hand state to components ONLY through clinicStateFor(…, getEntitlement().pro)", () => {
-    for (const rel of ["app/reports/edge-clinic/page.tsx", "app/arjuns-eye/page.tsx"]) {
+  it("the hub page hands state to components ONLY through clinicStateFor(…, getEntitlement().pro)", () => {
+    for (const rel of ["app/reports/edge-clinic/page.tsx"]) {
       const src = read(rel);
       const reads = src.match(/getClinicState\(\)/g) ?? [];
       const cut = src.match(/clinicStateFor\(getClinicState\(\), getEntitlement\(\)\.pro\)/g) ?? [];
       expect(reads.length, `${rel} reads the clinic state`).toBeGreaterThan(0);
       expect(cut.length, `${rel}: every getClinicState() read is cut by the entitlement`).toBe(reads.length);
     }
+  });
+
+  // v4.8.0 P2: Arjun's Eye no longer reads the whole state (a second book projection, a digest and a parse of the
+  // full cached report, to print one finding) — it reads the stored card summary, cut by the SAME entitlement.
+  it("Arjun's Eye reads ONLY the card summary, and hands it to the card ONLY through clinicCardFor(…, getEntitlement().pro)", () => {
+    const src = read("app/arjuns-eye/page.tsx");
+    const reads = src.match(/getClinicCard\(\)/g) ?? [];
+    const cut = src.match(/<ArjunClinicCard card=\{clinicCardFor\(getClinicCard\(\), getEntitlement\(\)\.pro\)\} \/>/g) ?? [];
+    expect(reads.length, "the page reads the clinic card").toBeGreaterThan(0);
+    expect(cut.length, "every getClinicCard() read is cut by the entitlement").toBe(reads.length);
+    expect(src, "the whole-state read is back on the page").not.toMatch(/getClinicState|clinicInputs|clinicStateFor/);
+  });
+});
+
+describe("clinicCardFor — what a free copy's Arjun's Eye card may receive (v4.8.0 P2)", () => {
+  const TEASER = fullState().teaser!;
+  /** The Pro card of `fullState()`: its note's first finding, as the summary stores it. */
+  function fullCard(): ClinicCard {
+    const f = fullState().note!.findings[0];
+    return {
+      hasReport: true,
+      computedAt: "2026-10-03T10:00:00.000Z",
+      finding: { label: f.label, grade: f.grade, verb: f.verb, headline: f.headline, provenanceLine: f.provenanceLine },
+      teaser: TEASER,
+    };
+  }
+  const render = (card: ClinicCard) => renderToStaticMarkup(React.createElement(ArjunClinicCard, { card }));
+
+  it("free: the finding and the report flag are cut — exactly what clinicStateFor withholds; the teaser and computedAt survive", () => {
+    const free = clinicCardFor(fullCard(), false);
+    expect(free).toEqual({ hasReport: false, computedAt: "2026-10-03T10:00:00.000Z", finding: null, teaser: TEASER });
+    // The same cut, read off the v4.7.0 state: note → no finding, report → no flag.
+    const freeState = clinicStateFor(fullState(), false);
+    expect({ hasReport: freeState.report != null, finding: freeState.note?.findings[0] ?? null, teaser: freeState.teaser }).toEqual({
+      hasReport: free.hasReport,
+      finding: free.finding,
+      teaser: free.teaser,
+    });
+    const wire = JSON.stringify(free);
+    expect(wire).not.toContain(MARK.note);
+    expect(wire).toContain(MARK.teaser);
+    const out = render(free);
+    expect(out).not.toContain(MARK.note);
+    expect(out).not.toContain("data-grade=");
+    expect(out).not.toContain("No finding in your book"); // that sentence states a report exists — Pro only
+    expect(out).not.toContain("has not read this book"); // seam D3: the book HAS been read
+    expect(out).toContain(MARK.teaser);
+  });
+
+  it("Pro: the card passes through unchanged and prints the finding, not the teaser", () => {
+    const c = fullCard();
+    expect(clinicCardFor(c, true)).toBe(c);
+    const out = render(c);
+    expect(out).toContain(MARK.note);
+    expect(out).toContain('data-grade="likely"');
+    expect(out).toContain('data-verb="test"');
+    expect(out).not.toContain(MARK.teaser);
+  });
+
+  it("no finding: Pro reads 'no finding this week', a free copy reads the teaser; nothing cached reads 'has not read this book yet'", () => {
+    const none: ClinicCard = { ...fullCard(), finding: null };
+    expect(render(none)).toContain("No finding in your book is past the evidence bar this week.");
+    expect(render(clinicCardFor(none, false))).toContain(MARK.teaser);
+    for (const pro of [true, false]) expect(render(clinicCardFor(CLINIC_CARD_MISSING, pro))).toContain("The Clinic has not read this book yet.");
   });
 });
 
