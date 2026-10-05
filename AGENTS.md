@@ -384,7 +384,9 @@ MAL, GSTL, SEL, ZEAL, RAJPUTANA and FOCUS are shared across boards). `/instrumen
 coverage, the DQ counts and the sha256 of the whole canonical JSON as loaded (`getMapDigests()`, the Atlas's
 figure); the file's own `digest` field covers only `taxonomy` / `byIsin` / `aliases`, so the two differ by design.
 An absent or empty snapshot is NO universe (`readUniverse` returns null) and never throws.
-Current file (as of 2026-10-05; crawl 11,921 calls, neither host stopped): 5,912 ISINs = 4,524 equity + 1,125 SME + 263 ETF;
+Current file (as of 2026-10-05; the crawl's first run made 11,921 calls with neither host stopped — read from
+`.universe-cache/run.json` before a 0-to-fetch resume overwrote it, so the shipped `provenance` records the resume's
+`calls: 0`): 5,912 ISINs = 4,524 equity + 1,125 SME + 263 ETF;
 5,617 of 5,649 equities classified (99.4%: nse+bse 2,415 / bse 2,469 / nse 733); NSE and BSE agree on 98.4% of 2,454
 dual-classified (39 disagreements, NSE used; 9 legacy labels); AMFI 30 Jun 2026: large 100 / mid 147 / small 4,654,
 no band 578 Emerge / 71 post-period listings / 99 not in AMFI; 28 aliases; 11 history rows; sector-map.json fallback-only
