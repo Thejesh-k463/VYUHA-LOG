@@ -12,6 +12,15 @@ import { normalizeAngelTrades, toParsedFile as angelToParsedFile, type AngelTrad
 import { normalizeUpstoxTrades, toParsedFile as upstoxToParsedFile, type UpstoxTradeRow } from "@/lib/import/api/upstox";
 import { normalizeOpenAlgoTrades, toParsedFile as openAlgoToParsedFile, type OpenAlgoTradeRow } from "@/lib/import/api/openalgo";
 import { parseAngelOne, parseUpstox } from "@/lib/import/parsers/angelone-upstox";
+import {
+  dhanImportSource,
+  normalizeDhanPositions,
+  normalizeDhanTrades,
+  toParsedFile as dhanToParsedFile,
+  type DhanCurrencyRefusal,
+  type DhanPositionRow,
+  type DhanTradeRow,
+} from "@/lib/import/api/dhan";
 import { todayIstIso } from "@/lib/domain/trading-day";
 
 /**
@@ -711,5 +720,262 @@ describe("F — the Angel One, Upstox and OpenAlgo pull summaries", () => {
     expect(refusalOf(json.warnings)).toBe(noteFor(2, "fill", "USDINR26OCTFUT, EURINR26OCTFUT"));
     expect(strandedOf(json.warnings)).toEqual([STRANDED("USDINR26OCTFUT")]);
     expect(json.preview.rows.map((r) => r.tradingsymbol)).toEqual(["FUT NIFTY 28 Oct 2026"]);
+  });
+});
+
+// ===========================================================================
+// G — the Dhan API pull (builder FG, the importer the prose pass found left):
+// `exchangeOf` mapped NSE_CURRENCY / BSE_CURRENCY to NSE / BSE and the segment
+// test kept currency rows "on the equity fallback", so a USDINR future pulled
+// from Dhan was stored as an NSE EQUITY delivery row (`classify` of
+// "USDINR-Oct2026-FUT" → eq_delivery, symbol "USDINR-Oct2026-FUT") and charged
+// equity STT and stamp. Both Dhan endpoints the pull reads — today's
+// /v2/positions and the catch-up /v2/trades history — now refuse, count and
+// name a currency-segment row; the NSE_FNO future beside them is unchanged.
+// The names are the RAW tradingSymbol: a currency segment never got a
+// canonical OPT/FUT name, so that is what a pre-4.7.0 pull stored.
+// ===========================================================================
+
+const D_HAS = 70; // holds an OPEN USDINR-Oct2026-FUT from today's earlier Dhan snapshot + a CLOSED EURINR one
+const D_NONE = 71; // holds nothing currency at all
+
+const dhanPos = (over: Partial<DhanPositionRow>): DhanPositionRow => ({
+  tradingSymbol: "NIFTY-Oct2026-FUT",
+  positionType: "CLOSED",
+  exchangeSegment: "NSE_FNO",
+  productType: "MARGIN",
+  buyAvg: 25000,
+  buyQty: 75,
+  sellAvg: 25100,
+  sellQty: 75,
+  netQty: 0,
+  drvExpiryDate: "2026-10-27 14:30:00",
+  drvOptionType: null,
+  drvStrikePrice: 0,
+  ...over,
+});
+const DHAN_POS_NIFTY = [dhanPos({})];
+const DHAN_POS_CCY = [
+  dhanPos({
+    tradingSymbol: "USDINR-Oct2026-FUT", exchangeSegment: "NSE_CURRENCY", positionType: "SHORT",
+    buyQty: 0, buyAvg: 0, sellQty: 1, sellAvg: 84.1, netQty: -1, drvExpiryDate: "2026-10-28 12:00:00",
+  }),
+  dhanPos({
+    tradingSymbol: "EURINR-Oct2026-FUT", exchangeSegment: "BSE_CURRENCY", positionType: "LONG",
+    buyQty: 2, buyAvg: 90.2, sellQty: 0, sellAvg: 0, netQty: 2, drvExpiryDate: "2026-10-28 12:00:00",
+  }),
+];
+
+const dhanFill = (over: Partial<DhanTradeRow>): DhanTradeRow => ({
+  exchangeTradeId: "N1",
+  transactionType: "BUY",
+  exchangeSegment: "NSE_FNO",
+  productType: "MARGIN",
+  tradingSymbol: "NIFTY-Oct2026-FUT",
+  tradedQuantity: 75,
+  tradedPrice: 25000,
+  exchangeTime: "2026-10-01 09:20:00",
+  drvExpiryDate: "2026-10-27 14:30:00",
+  drvOptionType: null,
+  drvStrikePrice: 0,
+  ...over,
+});
+const DHAN_FILL_NIFTY = [
+  dhanFill({}),
+  dhanFill({ exchangeTradeId: "N2", transactionType: "SELL", tradedPrice: 25100, exchangeTime: "2026-10-01 14:20:00" }),
+];
+const DHAN_FILL_CCY = [
+  dhanFill({
+    exchangeTradeId: "C1", exchangeSegment: "NSE_CURRENCY", tradingSymbol: "USDINR-Oct2026-FUT", transactionType: "SELL",
+    tradedQuantity: 1, tradedPrice: 84.1, exchangeTime: "2026-10-01 10:00:00", drvExpiryDate: "2026-10-28 12:00:00",
+  }),
+  dhanFill({
+    exchangeTradeId: "C2", exchangeSegment: "BSE_CURRENCY", tradingSymbol: "EURINR-Oct2026-FUT", transactionType: "BUY",
+    tradedQuantity: 2, tradedPrice: 90.2, exchangeTime: "2026-10-01 11:00:00", drvExpiryDate: "2026-10-28 12:00:00",
+  }),
+];
+const DHAN_CCY_NAMES = "USDINR-Oct2026-FUT, EURINR-Oct2026-FUT";
+const DHAN_NIFTY = "FUT NIFTY 27 Oct 2026";
+
+describe("G1 — the Dhan pull refuses an NSE_CURRENCY / BSE_CURRENCY row, counts it and names it", () => {
+  it("history fills: both refused + named; the NSE_FNO future is the same trade it was without them", () => {
+    const withCcy = normalizeDhanTrades([...DHAN_FILL_NIFTY, ...DHAN_FILL_CCY]);
+    const without = normalizeDhanTrades(DHAN_FILL_NIFTY);
+    expect(withCcy.trades).toEqual(without.trades);
+    expect(withCcy.trades.map((x) => [x.tradingsymbol, x.exchangeHint])).toEqual([[DHAN_NIFTY, "NSE"]]);
+    expect(withCcy.refused).toBe(0); // the "no readable side, quantity, price or date" count is not the currency count
+    expect(withCcy.refusedContracts).toEqual(["USDINR-Oct2026-FUT", "EURINR-Oct2026-FUT"]);
+    expect(withCcy.notes).toEqual([noteFor(2, "fill", DHAN_CCY_NAMES)]);
+    expect(without.refusedContracts).toEqual([]);
+    expect(without.notes).toEqual([]);
+  });
+
+  // The positions normalizer is module-private (the read-only export surface is
+  // pinned in tests/dhan-api.test.ts), so today's book is read the way the pull
+  // reads it: dhanImportSource().fetchTrades over a stubbed /v2/positions.
+  const dhanJwt = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
+  async function positionsPull(positions: DhanPositionRow[]) {
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      if (u.host !== "api.dhan.co" || u.pathname !== "/v2/positions") throw new Error(`TEST GUARD: unexpected ${url}`);
+      return new Response(JSON.stringify(positions), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const seen: DhanCurrencyRefusal[] = [];
+    const trades = await dhanImportSource({ clientId: "1000000070", accessToken: dhanJwt() }).fetchTrades({
+      onCurrencyRefused: (r) => seen.push(r),
+    });
+    expect(seen).toHaveLength(1); // told exactly once per pull
+    return { trades, ...seen[0]! };
+  }
+
+  it("today's positions: both refused + named; normalizeDhanPositions never emits a currency row", async () => {
+    const withCcy = await positionsPull([...DHAN_POS_NIFTY, ...DHAN_POS_CCY]);
+    const without = await positionsPull(DHAN_POS_NIFTY);
+    expect(withCcy.trades).toEqual(without.trades);
+    expect(withCcy.trades.map((x) => [x.tradingsymbol, x.exchangeHint])).toEqual([[DHAN_NIFTY, "NSE"]]);
+    expect(withCcy.contracts).toEqual(["USDINR-Oct2026-FUT", "EURINR-Oct2026-FUT"]);
+    expect(withCcy.notes).toEqual([noteFor(2, "position", DHAN_CCY_NAMES)]);
+    expect(without).toMatchObject({ contracts: [], notes: [] });
+    expect(normalizeDhanPositions([...DHAN_POS_NIFTY, ...DHAN_POS_CCY], TODAY)).toEqual(normalizeDhanPositions(DHAN_POS_NIFTY, TODAY));
+    // A currency row on which nothing traded is not a refusal — it is not a row at all.
+    expect((await positionsPull([dhanPos({ ...DHAN_POS_CCY[0], sellQty: 0, netQty: 0 })])).notes).toEqual([]);
+  });
+
+  it("toParsedFile closes the summary with the notes; a book of ONLY currency never says 'returned no positions'", async () => {
+    const pull = await positionsPull([...DHAN_POS_NIFTY, ...DHAN_POS_CCY]);
+    expect(refusalOf(dhanToParsedFile(pull.trades, null, null, null, pull.notes).warnings)).toBe(pull.notes[0]);
+    expect(refusalOf(dhanToParsedFile(pull.trades).warnings)).toBeUndefined();
+    const only = await positionsPull(DHAN_POS_CCY);
+    const parsed = dhanToParsedFile(only.trades, null, null, null, only.notes);
+    expect(parsed.trades).toEqual([]);
+    expect(parsed.warnings.some((w) => /returned no positions/.test(w))).toBe(false);
+    expect(refusalOf(parsed.warnings)).toBe(noteFor(2, "position", DHAN_CCY_NAMES));
+  });
+
+  it("fetchTrades hands back BOTH endpoints' refusals (catch-up history + today's positions), names de-duplicated", async () => {
+    const jwt = dhanJwt();
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      if (u.host !== "api.dhan.co") throw new Error(`TEST GUARD: unexpected ${url}`);
+      const body =
+        u.pathname === "/v2/positions"
+          ? [...DHAN_POS_NIFTY, ...DHAN_POS_CCY]
+          : /\/0$/.test(u.pathname)
+            ? [...DHAN_FILL_NIFTY, ...DHAN_FILL_CCY]
+            : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const seen: DhanCurrencyRefusal[] = [];
+    const trades = await dhanImportSource({ clientId: "1000000070", accessToken: jwt }).fetchTrades({
+      from: "2026-10-01",
+      onCurrencyRefused: (r) => seen.push(r),
+    });
+    expect(trades.map((x) => x.tradingsymbol)).toEqual([DHAN_NIFTY, DHAN_NIFTY]);
+    expect(seen).toEqual([
+      {
+        contracts: ["USDINR-Oct2026-FUT", "EURINR-Oct2026-FUT"],
+        notes: [noteFor(2, "fill", DHAN_CCY_NAMES), noteFor(2, "position", DHAN_CCY_NAMES)],
+      },
+    ]);
+  });
+});
+
+describe("G2 — the Dhan pull through the REAL broker route", () => {
+  let today = "";
+  const fullRows = (accountId: number) =>
+    t.sqlite.prepare("SELECT * FROM trades WHERE account_id = ? ORDER BY id").all(accountId) as Record<string, unknown>[];
+  const jwt = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
+
+  beforeAll(() => {
+    today = todayIstIso();
+    t.db
+      .insert(t.schema.accounts)
+      .values([D_HAS, D_NONE].map((id) => ({ id, name: `FG ${id}`, isDefault: false })))
+      .run();
+    // Exactly what a pre-4.7.0 Dhan pull stored for a currency future: the raw
+    // symbol, classified as an NSE equity delivery row.
+    const asStored = (tradingsymbol: string, sourceFile: string, day: string, open: boolean) =>
+      tradeRow({
+        accountId: D_HAS,
+        broker: "dhan",
+        bucket: "equity",
+        segment: "eq_delivery",
+        instrumentType: "equity",
+        exchange: "NSE",
+        symbol: tradingsymbol,
+        tradingsymbol,
+        buyQty: 1,
+        avgBuyPrice: 84,
+        buyValue: 84,
+        buyDate: day,
+        sourceFile,
+        ...(open ? { isOpen: true } : { sellQty: 1, avgSellPrice: 84.5, sellValue: 84.5, sellDate: day }),
+      });
+    t.db
+      .insert(t.schema.trades)
+      .values([
+        // TODAY's earlier snapshot of the same pull — the row the supersede plan reads.
+        asStored("USDINR-Oct2026-FUT", `dhan-api-${today}`, today, true),
+        // Closed — must never be named.
+        asStored("EURINR-Oct2026-FUT", "dhan-api-2026-10-01", "2026-10-01", false),
+      ])
+      .run();
+    // Plaintext columns read fine through readSecret (the compatibility path);
+    // never pulled, so the pull reads today's /v2/positions only.
+    for (const [accountId, clientId] of [[D_HAS, "1000000070"], [D_NONE, "1000000071"]] as const) {
+      t.sqlite
+        .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json) VALUES (?, 'dhan', ?, ?, NULL)")
+        .run(accountId, clientId, jwt());
+    }
+  });
+
+  const stubDhan = (positions: DhanPositionRow[]) =>
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      if (u.host !== "api.dhan.co" || u.pathname !== "/v2/positions") throw new Error(`TEST GUARD: unexpected ${url}`);
+      return new Response(JSON.stringify(positions), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+  const dhanPreview = async (accountId: number, positions: DhanPositionRow[]) => {
+    stubDhan(positions);
+    const res = await postBroker({ action: "pull", broker: "dhan", accountId, mode: "preview" });
+    expect(res.status).toBe(200);
+    return (await res.json()) as { warnings: string[]; preview: { rows: PreviewRow[] } };
+  };
+  const niftyRow = (rows: PreviewRow[]) => {
+    const r = rows.find((x) => x.tradingsymbol === DHAN_NIFTY)!;
+    return { segment: r.segment, exchange: r.exchange, chargesTotal: r.chargesTotal, netPnl: r.netPnl };
+  };
+
+  it("refusal + the stranded note for the OPEN row in the connection's account; the closed EURINR row is not named", async () => {
+    const json = await dhanPreview(D_HAS, [...DHAN_POS_NIFTY, ...DHAN_POS_CCY]);
+    expect(refusalOf(json.warnings)).toBe(noteFor(2, "position", DHAN_CCY_NAMES));
+    expect(strandedOf(json.warnings)).toEqual([STRANDED("USDINR-Oct2026-FUT")]);
+    expect(json.preview.rows.map((r) => r.tradingsymbol)).toEqual([DHAN_NIFTY]);
+  });
+
+  it("the NSE_FNO future beside them is priced exactly as a pull without them prices it", async () => {
+    const json = await dhanPreview(D_NONE, [...DHAN_POS_NIFTY, ...DHAN_POS_CCY]);
+    const plain = await dhanPreview(D_NONE, DHAN_POS_NIFTY);
+    expect(niftyRow(json.preview.rows)).toEqual(niftyRow(plain.preview.rows));
+    expect(niftyRow(json.preview.rows).segment).toBe("future");
+    expect(refusalOf(plain.warnings)).toBeUndefined();
+  });
+
+  it("another account: the refusal reaches the summary, but no stranded note (the open row lives in D_HAS)", async () => {
+    const json = await dhanPreview(D_NONE, [...DHAN_POS_NIFTY, ...DHAN_POS_CCY]);
+    expect(refusalOf(json.warnings)).toBe(noteFor(2, "position", DHAN_CCY_NAMES));
+    expect(strandedOf(json.warnings)).toEqual([]);
+  });
+
+  it("a commit (snapshot supersede on) leaves the stored open row exactly as it was and stores no currency row", async () => {
+    const before = fullRows(D_HAS);
+    stubDhan([...DHAN_POS_NIFTY, ...DHAN_POS_CCY]);
+    const commit = await postBroker({ action: "pull", broker: "dhan", accountId: D_HAS, mode: "commit" });
+    expect(commit.status).toBe(200);
+    const after = fullRows(D_HAS);
+    // The supersede plan maps INCOMING rows onto stored ones; a refused row is
+    // not incoming, so the stored open row never looks vanished or replaced.
+    expect(after.slice(0, 2)).toEqual(before);
+    expect(after.map((r) => r.tradingsymbol)).toEqual(["USDINR-Oct2026-FUT", "EURINR-Oct2026-FUT", DHAN_NIFTY]);
   });
 });

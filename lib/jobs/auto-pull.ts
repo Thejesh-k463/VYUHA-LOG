@@ -265,6 +265,9 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       // R42: `after` drops the fills the last pull's snapshot already stored.
       const range = catchUpRange(conn.lastPullAt, today);
       let read: DhanHistoryRead | null = null;
+      // v4.7.0 Q4: the currency refusal note (as the Angel One block carries
+      // it) — the unattended pull names refused rows exactly as the manual pull does.
+      let ccyNotes: string[] = [];
       const trades = await source.fetchTrades({
         ...(range
           ? {
@@ -279,8 +282,11 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
         onCutoff: (iso) => {
           cutoff = iso;
         },
+        onCurrencyRefused: (r) => {
+          ccyNotes = r.notes;
+        },
       });
-      const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt);
+      const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt, ccyNotes);
       unfetched = pulled.unfetched;
       const walked = read as DhanHistoryRead | null;
       readWindow = range && walked && !walked.truncated ? { from: range.from, to: range.to } : null;

@@ -32,6 +32,7 @@ import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
 // catch-up window spans days, and a Monday buy closed on Wednesday is one
 // position. Forking that arithmetic here is how two sources start disagreeing.
 import { fillSidesOf, isShortableSymbol, pairSymbolLegs, type Leg, type PairedPosition } from "@/lib/import/pair-legs";
+import { currencyRefusalNote } from "@/lib/import/parsers/zerodha";
 import { totp } from "@/lib/totp";
 
 /** One row from GET /v2/positions (the fields we consume). */
@@ -131,7 +132,9 @@ export function productHintOf(productType: string): ProductHint {
 }
 
 /** `NSE_EQ` → `NSE`. Null when the segment is unrecognised, so the classifier
- *  falls back to its own default rather than trusting a bad guess. */
+ *  falls back to its own default rather than trusting a bad guess. A currency
+ *  segment (NSE_CURRENCY / BSE_CURRENCY) never reaches it: both normalizers
+ *  refuse those rows first (`isDhanCurrencySegment`, v4.7.0 Q4). */
 export function exchangeOf(segment: string): Exchange | null {
   const s = String(segment).toUpperCase();
   if (s.startsWith("NSE")) return "NSE";
@@ -158,13 +161,38 @@ export type DhanDerivativeFacts = Pick<
   "tradingSymbol" | "exchangeSegment" | "drvExpiryDate" | "drvOptionType" | "drvStrikePrice"
 >;
 
-/** A derivative segment as Dhan names it. Currency segments are deliberately
- *  NOT included: Vyuha has no currency segment vocabulary, so those rows keep
- *  their raw symbol and the equity fallback until that vocabulary exists. */
+/** A derivative segment as Dhan names it. Currency segments are not included
+ *  because a currency row never gets this far: Vyuha prices no currency
+ *  derivative, so both normalizers REFUSE it (`isDhanCurrencySegment`). */
 function isDerivativeSegment(segment: string): boolean {
   const s = String(segment).toUpperCase();
   return s.endsWith("_FNO") || s === "MCX_COMM";
 }
+
+/**
+ * v4.7.0 Q4 (the Kite rule, D-C6-2): a currency segment as Dhan names it —
+ * NSE_CURRENCY, BSE_CURRENCY. No `charge_config` row covers a currency
+ * derivative (invariant 3), and these rows used to keep their raw symbol and
+ * classify as NSE / BSE EQUITY, charged equity STT and stamp. Every Dhan row in
+ * such a segment is now refused, counted and named — never coerced. Module-
+ * private: the export surface is pinned read-only (tests/dhan-api.test.ts).
+ */
+function isDhanCurrencySegment(segment: string | null | undefined): boolean {
+  return /CURRENCY/i.test(String(segment ?? ""));
+}
+
+/** What a pull refused as currency: the contract names (the raw tradingSymbol —
+ *  what a pre-4.7.0 pull stored, for the route's stranded-open note, review R5)
+ *  and the sentences that count and name them. */
+export interface DhanCurrencyRefusal {
+  contracts: string[];
+  notes: string[];
+}
+
+const currencyRefusalOf = (names: readonly string[], noun: string): DhanCurrencyRefusal => ({
+  contracts: [...new Set(names)],
+  notes: names.length > 0 ? [currencyRefusalNote(names.length, names, noun)] : [],
+});
 
 /**
  * Canonicalise a derivative name from Dhan's STATED drv* fields.
@@ -233,14 +261,36 @@ const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
  * completed round trip; anything else is still open and is imported as such.
  * Gross P&L is taken from Dhan's own `realizedProfit` when it is present —
  * the broker's arithmetic beats ours — and derived from the legs otherwise.
+ *
+ * A currency-segment row is never emitted (`normalizeDhanPositionsPull` says
+ * which were refused; `fetchTrades` reports it through `onCurrencyRefused`).
  */
 export function normalizeDhanPositions(rows: DhanPositionRow[], today: string): NormalizedTrade[] {
+  return normalizeDhanPositionsPull(rows, today).trades;
+}
+
+/**
+ * `normalizeDhanPositions` with its refusals: v4.7.0 Q4 — a row in a currency
+ * segment on which something traded is REFUSED, and `refusedContracts` /
+ * `notes` name it (a "position", not a fill: /v2/positions states aggregates).
+ * Module-private (the pinned export surface); `fetchTrades` hands the refusals
+ * to its caller through `onCurrencyRefused`.
+ */
+function normalizeDhanPositionsPull(
+  rows: DhanPositionRow[],
+  today: string,
+): { trades: NormalizedTrade[]; refusedContracts: string[]; notes: string[] } {
   const out: NormalizedTrade[] = [];
+  const refusedCurrency: string[] = [];
 
   for (const r of rows) {
     const buyQty = Number(r.buyQty) || 0;
     const sellQty = Number(r.sellQty) || 0;
     if (buyQty === 0 && sellQty === 0) continue; // nothing happened
+    if (isDhanCurrencySegment(r.exchangeSegment)) {
+      refusedCurrency.push(String(r.tradingSymbol ?? "").trim());
+      continue;
+    }
 
     const buyValue = r2(buyQty * (Number(r.buyAvg) || 0));
     const sellValue = r2(sellQty * (Number(r.sellAvg) || 0));
@@ -314,7 +364,8 @@ export function normalizeDhanPositions(rows: DhanPositionRow[], today: string): 
     });
   }
 
-  return out;
+  const ccy = currencyRefusalOf(refusedCurrency, "position");
+  return { trades: out, refusedContracts: ccy.contracts, notes: ccy.notes };
 }
 
 /**
@@ -637,8 +688,15 @@ function allocateFills(fills: DhanFill[], legs: LegFills[], positions: PairedPos
  *
  * A row with no readable side, quantity, price or date is REFUSED and counted,
  * never coerced (AGENTS.md — a zero-share trade is worse than no trade).
+ *
+ * v4.7.0 Q4: a fill in a currency segment (NSE_CURRENCY / BSE_CURRENCY) is
+ * refused too, but NOT into `refused` (that count says "no readable side,
+ * quantity, price or date"): `refusedContracts` lists its raw tradingSymbol and
+ * `notes` carries the sentence that counts and names them.
  */
-export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedTrade[]; refused: number } {
+export function normalizeDhanTrades(
+  rows: DhanTradeRow[],
+): { trades: NormalizedTrade[]; refused: number; refusedContracts: string[]; notes: string[] } {
   type Group = {
     symbol: string;
     productRaw: string;
@@ -652,9 +710,14 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
   };
   const groups = new Map<string, Group>();
   let refused = 0;
+  const refusedCurrency: string[] = [];
 
   for (const r of rows) {
     const rawSymbol = String(r.tradingSymbol ?? "").trim();
+    if (rawSymbol && isDhanCurrencySegment(r.exchangeSegment)) {
+      refusedCurrency.push(rawSymbol);
+      continue;
+    }
     const qty = num(r.tradedQuantity);
     const price = num(r.tradedPrice);
     const rawSide = String(r.transactionType ?? "").toUpperCase();
@@ -852,7 +915,8 @@ export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedT
     }
   }
 
-  return { trades, refused };
+  const ccy = currencyRefusalOf(refusedCurrency, "fill");
+  return { trades, refused, refusedContracts: ccy.contracts, notes: ccy.notes };
 }
 
 export interface DhanCredentials {
@@ -1230,6 +1294,11 @@ export interface DhanFetchOptions {
   /** R42: the instant taken immediately BEFORE the /v2/positions request, as
    *  ISO — the only honest lastPullAt for this pull. */
   onCutoff?: (iso: string) => void;
+  /** v4.7.0 Q4: told ONCE, after /v2/positions, what this pull refused as
+   *  currency across both endpoints — the history fills it kept a window for
+   *  and today's positions — so the caller can say it (and name a refused
+   *  contract still open). `fetchTrades` returns only the trades. */
+  onCurrencyRefused?: (refused: DhanCurrencyRefusal) => void;
 }
 
 /** The Dhan source: the shared ApiImportSource, with the widened options. */
@@ -1264,6 +1333,7 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
     async fetchTrades(opts: DhanFetchOptions = {}) {
       const today = todayIstIso();
       const history: NormalizedTrade[] = [];
+      const ccy: DhanCurrencyRefusal = { contracts: [], notes: [] };
       if (opts.from) {
         const walk: { read: DhanHistoryRead | null } = { read: null };
         const rows = await fetchDhanTrades(creds, { from: opts.from, to: opts.to ?? today }, onMinted, (r) => {
@@ -1280,14 +1350,22 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
           const normalized = normalizeDhanTrades(rows.filter((r) => tradeDateOf(r) !== today && notCovered(r)));
           history.push(...normalized.trades);
           refused = normalized.refused;
+          ccy.contracts.push(...normalized.refusedContracts);
+          ccy.notes.push(...normalized.notes);
         }
         // R82: the refused count rides on the read, so toParsedFile can say it.
         // A truncated walk kept nothing, so it refused nothing either.
         if (walk.read) opts.onHistory?.({ ...walk.read, refused });
       }
       opts.onCutoff?.(new Date().toISOString());
-      const positions = normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
-      return [...history, ...positions];
+      const positions = normalizeDhanPositionsPull(await fetchDhanPositions(creds, onMinted), today);
+      // v4.7.0 Q4: a refused currency row is not a trade, so it is never an
+      // incoming row either — today's snapshot supersede cannot see it.
+      opts.onCurrencyRefused?.({
+        contracts: [...new Set([...ccy.contracts, ...positions.refusedContracts])],
+        notes: [...ccy.notes, ...positions.notes],
+      });
+      return [...history, ...positions.trades];
     },
   };
 }
@@ -1326,12 +1404,16 @@ export interface DhanUnfetchedSpan {
  *  `read` is what the history walk reported (C-6); `unfetched` hands back every
  *  span the pull did not read, each with the warning that named it.
  *  `lastPullAt` is the stamp the window was computed from — it dates the last
- *  pull's own day, the one day a tradebook would partly repeat (F-L1-3a). */
+ *  pull's own day, the one day a tradebook would partly repeat (F-L1-3a).
+ *  `notes` (v4.7.0 Q4: the currency refusal and any stranded-open note) close
+ *  the summary; a book whose only rows were refused currency did trade, so it
+ *  never says "no positions". */
 export function toParsedFile(
   trades: NormalizedTrade[],
   range?: DhanCatchUpRange | null,
   read?: DhanHistoryRead | null,
   lastPullAt?: string | null,
+  notes: readonly string[] = [],
 ): ParsedFile & { unfetched: DhanUnfetchedSpan[] } {
   const mtf = trades.filter((t) => t.productHint === "mtf").length;
   const warnings: string[] = [];
@@ -1409,9 +1491,11 @@ export function toParsedFile(
     );
   }
   if (trades.length === 0) {
-    warnings.push(
-      "Dhan returned no positions — /v2/positions covers the current trading day's book, so it is empty outside market hours with nothing carried forward.",
-    );
+    if (notes.length === 0) {
+      warnings.push(
+        "Dhan returned no positions — /v2/positions covers the current trading day's book, so it is empty outside market hours with nothing carried forward.",
+      );
+    }
   } else if (mtf > 0) {
     warnings.push(
       `${mtf} position${mtf === 1 ? " is" : "s are"} MTF according to Dhan itself. This is the one product no Dhan file can identify, so these need no confirmation.`,
@@ -1421,6 +1505,7 @@ export function toParsedFile(
       "No MTF positions in today's book. Product types here are stated by the broker, not inferred from charges.",
     );
   }
+  warnings.push(...notes);
 
   return { sourceId: "dhan-api", broker: "dhan", format: "api", trades, warnings, unfetched };
 }

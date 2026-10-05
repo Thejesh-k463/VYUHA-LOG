@@ -1371,9 +1371,15 @@ export async function POST(req: Request) {
         // R42 (v4.3.0 fix wave 1): `after` drops the history fills the last
         // pull's /positions snapshot already stored, and this pull's stamp is
         // the instant fetchTrades took before reading /positions.
+        // v4.7.0 Q4 / review R5 (the Kite rule): an NSE_CURRENCY / BSE_CURRENCY
+        // row — from today's positions or the catch-up history — is refused,
+        // counted and named; a refused contract still OPEN in this connection's
+        // account is named too — a note, never a write. A refused row is not an
+        // incoming row, so today's snapshot supersede never sees it.
         const today = todayIstIso();
         const range = catchUpRange(conn.lastPullAt, today);
         let read: DhanHistoryRead | null = null;
+        const ccy = { contracts: [] as string[], notes: [] as string[] };
         const trades = await source.fetchTrades({
           ...(range
             ? {
@@ -1388,8 +1394,23 @@ export async function POST(req: Request) {
           onCutoff: (iso) => {
             cutoff = iso;
           },
+          onCurrencyRefused: (r) => {
+            ccy.contracts = r.contracts;
+            ccy.notes = r.notes;
+          },
         });
-        const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt);
+        const stranded =
+          ccy.contracts.length > 0
+            ? strandedCurrencyNotes(
+                ccy.contracts,
+                await db.query.trades.findMany({
+                  columns: { tradingsymbol: true },
+                  where: (t, { and: all, eq: is, inArray }) =>
+                    all(is(t.accountId, accountId), is(t.isOpen, true), inArray(t.symbol, currencyUnderlyings(ccy.contracts))),
+                }),
+              )
+            : [];
+        const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt, [...ccy.notes, ...stranded]);
         unfetched = pulled.unfetched;
         const walked = read as DhanHistoryRead | null;
         readWindow = range && walked && !walked.truncated ? { from: range.from, to: range.to } : null;

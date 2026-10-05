@@ -213,7 +213,6 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // per run never reads the stream — design D9).
       //
       // v "5" (C5): the desk's poll is unchanged — it still starts and stops
-      // v "5" (C5): the desk's poll is unchanged — it still starts and stops
       // with the desk and pauses on a hidden tab (S5a in
       // tests/seams-v41-fix.test.ts holds the client to that). What is NEW is
       // the alert check (`runTelegramAlerts()` in lib/jobs/telegram-alerts.ts,
@@ -354,7 +353,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // THE TYPED-MARK RULE (fix wave 3). The typed writers — the risk dialog
       // and the equity page — now REPLACE the day's row for that symbol, so a
       // price the user types is always that day's mark: typed before the close
-      // the automatic 15:31 write leaves it alone, typed after it replaces the
+      // the automatic close-of-session write leaves it alone, typed after it replaces the
       // automatic one, and one row per symbol per IST day stays the contract.
       // Until this wave no user surface said what happens when the two meet,
       // and the sentence added here is the SAME sentence on all seven surfaces

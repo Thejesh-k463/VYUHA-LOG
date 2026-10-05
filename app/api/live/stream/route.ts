@@ -227,7 +227,8 @@ export async function GET(req: Request): Promise<Response> {
         quotes,
       });
 
-      // Streaming providers only, and only inside 09:00–15:40 IST. A polled
+      // Streaming providers only, and only inside the live window (`liveWindowOn`,
+      // ~15:45 IST at its latest; the window-end timer below ends it). A polled
       // or end-of-day provider reports streaming:false and is never started,
       // so the desk can never call a stale print "live".
       if (provider.capabilities.streaming && marketOpen && keys.length > 0) {

@@ -13,6 +13,14 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 process.env.VYUHA_VAULT_PROVIDER = "machine";
 
+// v4.7.0 Q4 (builder FG): the Dhan block's ParsedFile is observed through a
+// pass-through spy on toParsedFile — the sweep's outcome carries no warnings.
+// Every other export (and toParsedFile's behaviour) is the real module.
+vi.mock("@/lib/import/api/dhan", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/import/api/dhan")>();
+  return { ...actual, toParsedFile: vi.fn(actual.toParsedFile) };
+});
+
 let t: TempDb;
 let job: typeof import("@/lib/jobs/auto-pull");
 let vault: typeof import("@/lib/vault");
@@ -406,5 +414,55 @@ describe("C6 — kotakneo / fyers / nuvama auto-pull", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * v4.7.0 Q4 (builder FG) — the unattended Dhan pull refuses an NSE_CURRENCY /
+ * BSE_CURRENCY position exactly as the manual pull does: no currency row is
+ * stored, the NSE_FNO future beside it is, and the refusal sentence rides in
+ * the ParsedFile the sweep previews and commits (as the Angel One block's does).
+ */
+describe("the real Dhan pull refuses a currency position and carries the note (v4.7.0 Q4)", () => {
+  const ENROLLED = { pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP", totpAckVersion: 1 };
+  const alive = () => ["e30", Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url"), "sig"].join(".");
+  const pos = (over: Record<string, unknown>) => ({
+    tradingSymbol: "NIFTY-Oct2026-FUT", positionType: "CLOSED", exchangeSegment: "NSE_FNO", productType: "MARGIN",
+    buyAvg: 25000, buyQty: 75, sellAvg: 25100, sellQty: 75, netQty: 0,
+    drvExpiryDate: "2026-10-27 14:30:00", drvOptionType: null, drvStrikePrice: 0,
+    ...over,
+  });
+  const BOOK = [
+    pos({}),
+    pos({ tradingSymbol: "USDINR-Oct2026-FUT", exchangeSegment: "NSE_CURRENCY", buyQty: 0, buyAvg: 0, sellQty: 1, sellAvg: 84.1, netQty: -1 }),
+    pos({ tradingSymbol: "EURINR-Oct2026-FUT", exchangeSegment: "BSE_CURRENCY", buyQty: 2, buyAvg: 90.2, sellQty: 0, sellAvg: 0, netQty: 2 }),
+  ];
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("imports the NIFTY future only; the ParsedFile names both refused contracts", async () => {
+    t.sqlite
+      .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json) VALUES (1, 'dhan', '1000000009', ?, ?)")
+      .run(alive(), JSON.stringify(ENROLLED));
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      if (u.host !== "api.dhan.co" || u.pathname !== "/v2/positions") throw new Error(`TEST GUARD: unexpected ${url}`);
+      return new Response(JSON.stringify(BOOK), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const dhanMod = await import("@/lib/import/api/dhan");
+    const spy = vi.mocked(dhanMod.toParsedFile);
+    spy.mockClear();
+
+    const out = await job.runAutoPull(WED_0720_IST); // the REAL pullOne
+
+    expect(out.summary.map((e) => [e.broker, e.status])).toEqual([["dhan", "imported"]]);
+    const parsed = spy.mock.results[0]!.value as { trades: { tradingsymbol: string }[]; warnings: string[] };
+    expect(parsed.trades.map((x) => x.tradingsymbol)).toEqual(["FUT NIFTY 27 Oct 2026"]);
+    expect(parsed.warnings.filter((w) => w.includes("currency derivatives are not priced by Vyuha"))).toEqual([
+      "2 currency derivative positions were refused — currency derivatives are not priced by Vyuha (no charge profile covers them), so nothing was imported for: USDINR-Oct2026-FUT, EURINR-Oct2026-FUT.",
+    ]);
+    const stored = t.sqlite
+      .prepare("SELECT tradingsymbol FROM trades WHERE broker = 'dhan' AND source_file LIKE 'dhan-api-%' ORDER BY id")
+      .all() as { tradingsymbol: string }[];
+    expect(stored.map((r) => r.tradingsymbol)).toEqual(["FUT NIFTY 27 Oct 2026"]);
   });
 });
