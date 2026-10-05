@@ -749,7 +749,7 @@ function closedLotExit(r: BookRow, side: "long" | "short"): string | null {
  * close the join made and nobody changed since. An alias of any other
  * provenance, or the sentence with no alias, is not.
  */
-function closedByStaleJoin(r: BookRow): boolean {
+export function closedByStaleJoin(r: { importNotes?: string | null }): boolean {
   const parts = (r.importNotes ?? "").split("|").map((s) => s.trim());
   return parts.includes(STALE_CLOSE_NOTE) && parts.some((s) => s.startsWith(DEDUP_ALIAS_PREFIX));
 }

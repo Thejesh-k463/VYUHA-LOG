@@ -150,6 +150,23 @@ describe("clinicCardFor — what a free copy's Arjun's Eye card may receive (v4.
     expect(render(clinicCardFor(none, false))).toContain(MARK.teaser);
     for (const pro of [true, false]) expect(render(clinicCardFor(CLINIC_CARD_MISSING, pro))).toContain("The Clinic has not read this book yet.");
   });
+
+  it("J-4 (v4.8.0 FIX-B): a row from another engine version says the engine changed — Pro and free — and carries nothing read", () => {
+    const changed: ClinicCard = { ...CLINIC_CARD_MISSING, engineChanged: true };
+    for (const pro of [true, false]) {
+      const card = clinicCardFor(changed, pro);
+      expect(card.finding).toBeNull();
+      expect(card.teaser).toBeNull();
+      const out = render(card);
+      expect(out).toContain("The Clinic&#x27;s engine changed with this update — open it to re-read your book.");
+      expect(out).not.toContain("has not read this book yet");
+      expect(out).toContain("Open the Clinic");
+    }
+    // The flag never outranks something to print: a finding (Pro) or a teaser (free) still wins.
+    expect(render({ ...fullCard(), engineChanged: true })).toContain(MARK.note);
+    // And the six v4.7.0 states carry no flag, so their markup is unchanged.
+    expect("engineChanged" in CLINIC_CARD_MISSING).toBe(false);
+  });
 });
 
 /** Every .ts/.tsx under a directory. */
@@ -225,5 +242,24 @@ describe("rendering — the engine's words, the engine's verb", () => {
     expect(ageLabel("2026-10-03T10:00:00.000Z", t0 + 72 * 3_600_000)).toBe("3 days");
     expect(ageLabel(null, t0)).toBeNull();
     expect(ageLabel("garbage", t0)).toBeNull();
+  });
+});
+
+// v4.8.0 FIX-B, finding F-DOC-1 — two comments that outlived the change that made them untrue. The applied
+// migration file drizzle/0081_clinic-card-summary.sql is NOT edited (an applied migration is history).
+describe("F-DOC-1 — the comments say what the code does", () => {
+  const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+
+  it("schema.ts: a pre-0081 row is refused by the engine-version check since c4.0 — 'derives it on read' is a current-engine row's", () => {
+    const src = read("lib/db/schema.ts");
+    const at = src.indexOf("export const clinicCache = sqliteTable(");
+    const head = src.slice(src.lastIndexOf("// clinic_cache", at), at);
+    expect(head).not.toMatch(/NULL on a row cached before 0081 \(the card then derives it on read\)/);
+    expect(head).toMatch(/another engine version/);
+    expect(head).toMatch(/current-engine row/);
+  });
+
+  it("decay-chart.tsx: no claim that the Clinic report prints — it has no print action", () => {
+    expect(read("components/edge-clinic/decay-chart.tsx")).not.toMatch(/the Clinic report prints/);
   });
 });

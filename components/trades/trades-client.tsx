@@ -55,6 +55,8 @@ import {
 import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, Paperclip, Lock, Undo2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { entryLegOf, sideOf } from "@/lib/domain/side";
+// v4.8.0 FIX-A (J-3): the ONE label for the un-join door (pure module).
+import { UNJOIN_MENU_LABEL } from "@/lib/import/close-open-lots";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -493,6 +495,36 @@ export function TradesClient({
     }
   }, [router]);
 
+  /**
+   * v4.8.0 FIX-A (J-3) — UNDO a Data Quality join, from the lot it closed. Same
+   * shape as `unClose` (route handler + `fetch` + `router.refresh()`, never a
+   * server action); the server's own sentence — success or refusal — is shown
+   * in the same card, because a refusal names what it met (the sale purged
+   * from Deleted items, a join made before this update) and what to do.
+   */
+  const unJoin = React.useCallback(async (id: number) => {
+    setUnClosing(id);
+    setUnCloseMsg(null);
+    try {
+      const res = await fetch("/api/data-quality/unjoin-stale", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lotId: id }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+      if (!data?.ok) {
+        setUnCloseMsg({ ok: false, text: data?.message ?? "The join could not be undone. Nothing was changed." });
+        return;
+      }
+      setUnCloseMsg({ ok: true, text: data.message ?? "Undone." });
+      router.refresh();
+    } catch (e) {
+      setUnCloseMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setUnClosing(null);
+    }
+  }, [router]);
+
   const deletePreview = React.useMemo(() => {
     if (visibleSelected.size === 0) return null;
     return resolveDeleteScope(data.map(toDeletable), { kind: "ids", ids: [...visibleSelected] });
@@ -773,6 +805,26 @@ export function TradesClient({
               </Button>
             </Tip>
           )}
+          {/* FIX-A J-3: offered ONLY on a lot the user closed from Data Quality
+              (`staleJoined`, derived server-side from the row's own notes). It
+              reopens the position as it was and brings the sale back from
+              Deleted items — the door every "already recorded as part of its
+              close" sentence names. */}
+          {row.original.staleJoined && (
+            <Tip label={`${UNJOIN_MENU_LABEL} — reopen the position as it was before the join and bring the sale back from Deleted items as its own row`}>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7 text-muted-foreground hover:text-warning"
+                aria-label={UNJOIN_MENU_LABEL}
+                data-testid="unjoin-stale"
+                disabled={unClosing === row.original.id}
+                onClick={() => unJoin(row.original.id)}
+              >
+                <Undo2 className="size-3.5" />
+              </Button>
+            </Tip>
+          )}
           <form action={deleteTrade}>
             <input type="hidden" name="tradeId" value={row.original.id} />
             <Tip label="Delete">
@@ -786,7 +838,7 @@ export function TradesClient({
         );
       },
     },
-  ], [today, data, visibleSelected, attachmentCounts, unClose, unClosing]);
+  ], [today, data, visibleSelected, attachmentCounts, unClose, unJoin, unClosing]);
 
   // Reorder the ARRAY, never TanStack's `columnOrder`: DataTable reads the raw
   // prop positionally for its width budget and sticky offsets, and those would

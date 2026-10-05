@@ -57,7 +57,8 @@ export type RuleId =
   | "trade-side-writer"
   | "fmv-per-share"
   | "intra-range-split"
-  | "tradingsymbol-pairing";
+  | "tradingsymbol-pairing"
+  | "exec-bill-writer";
 
 export interface FieldRule {
   id: RuleId;
@@ -307,6 +308,24 @@ export const REGISTRY: FieldRule[] = [
       "un-close's lot finder (commit.ts:3525-3531, :3356-3362), the supersede key (:909-911), legacy-short and the echoes note — so an " +
       "OpenAlgo lot sold through a native pull never met its sale and the book held the position twice (harness case RESIDUAL R4'). " +
       "Red fixture: HEAD 180dd3c lib/import/close-open-lots.ts, lib/analytics/data-quality.ts, lib/import/commit.ts.",
+  },
+  {
+    id: "exec-bill-writer",
+    field: "exec-bill:",
+    rule:
+      "The `exec-bill:` segment of `import_notes` (the closing execution's half of a merged bill, eleven numbers in " +
+      "STALE_CHARGE_PARTS order) has TWO writers since v4.8.0 FIX-A — the auto-close applier (commit.ts) and the Data " +
+      "Quality join `closeStaleLot` — and ONE reader, `execBillFromNotes`; `withoutAutoCloseNotes` and the editor's H1 " +
+      "strip remove it. All of them spell the prefix through `EXEC_BILL_PREFIX` / `withExecBillNote` in close-open-lots.ts; " +
+      "a second literal spelling is a third writer or reader that the inverse (un-close, un-join) cannot see.",
+    forbidden: "the literal text `exec-bill:` in a string or template outside lib/import/close-open-lots.ts",
+    allowed: "`EXEC_BILL_PREFIX`, `withExecBillNote(...)`, `execBillFromNotes(...)`, and the one leaf that defines them",
+    triggers: ["exec-bill:"],
+    roots: ["lib", "app", "components"],
+    provenance:
+      "v4.8.0 FIX-A design review §J-3 / §Cross-design seams (2026-10-05): `closeStaleLot` became the marker's second writer " +
+      "so the un-join can subtract exactly the sale's half; a reader or writer spelling the prefix itself would diverge from " +
+      "the two doors that undo a close.",
   },
 ];
 
@@ -1070,6 +1089,30 @@ function scanTradingsymbolPairing(sf: TS.SourceFile, file: string): Violation[] 
 }
 
 // ---------------------------------------------------------------------------
+// v4.8.0 FIX-A J-3 — `exec-bill:` is spelled in ONE leaf; two writers, one reader.
+// ---------------------------------------------------------------------------
+
+const EXEC_BILL_LEAF = "lib/import/close-open-lots.ts";
+
+function scanExecBill(sf: TS.SourceFile, file: string): Violation[] {
+  const out: Violation[] = [];
+  // A `git show <sha>:<path>` copy is labelled `<sha>:<path>` — scoped by its path.
+  if (file.replace(/^[0-9a-f]{7,40}:/, "") === EXEC_BILL_LEAF) return out;
+  walk(sf, (n) => {
+    const text = ts.isStringLiteralLike(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n) ? n.text : null;
+    if (text == null || !text.includes("exec-bill:")) return;
+    out.push({
+      rule: "exec-bill-writer",
+      file,
+      line: lineOf(sf, n),
+      expr: oneLine(sf, n.parent ?? n),
+      why: "the `exec-bill:` prefix spelled as a literal: a third writer or reader of the closing half of a merged bill — go through EXEC_BILL_PREFIX / withExecBillNote / execBillFromNotes (close-open-lots.ts)",
+    });
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -1100,6 +1143,7 @@ export function scanSource(fileName: string, text: string, only?: RuleId[]): Vio
     if (r.id === "fmv-per-share") out.push(...scanFmvPerShare(parse(), file));
     if (r.id === "intra-range-split") out.push(...scanIntraRangeSplit(parse(), file));
     if (r.id === "tradingsymbol-pairing") out.push(...scanTradingsymbolPairing(parse(), file));
+    if (r.id === "exec-bill-writer") out.push(...scanExecBill(parse(), file));
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule));
 }

@@ -295,7 +295,9 @@ describe("the card path — one small row, no book read, no report parse", () =>
     const row = rowOf("acct:1")!;
     setRow("acct:1", { engineVersion: "c3.0" });
     try {
-      expect(q.getClinicCard()).toEqual(CLINIC_CARD_MISSING);
+      // Never read: no finding, no teaser, no report flag. v4.8.0 FIX-B (J-4): the card is told the ENGINE changed —
+      // the row exists — instead of "has not read this book yet" (the seventh state, below).
+      expect(q.getClinicCard()).toEqual({ ...CLINIC_CARD_MISSING, engineChanged: true });
       expect(q.getClinicState().status).toBe("missing"); // the same rule readCache applies
     } finally {
       setRow("acct:1", { engineVersion: row.engineVersion });
@@ -332,6 +334,34 @@ describe("the card is the v4.7.0 card — same facts, byte-identical markup, sam
     expect(newMarkup(clinicCardFor(q.getClinicCard(), true))).toContain("No finding in your book is past the evidence bar this week.");
     select(C);
     expect(newMarkup(clinicCardFor(q.getClinicCard(), true))).toContain("The Clinic has not read this book yet.");
+    select(A);
+  });
+
+  // v4.8.0 FIX-B, finding J-4 — the seventh state. After an upgrade moves ENGINE_VERSION (c3.1 → c4.0), every cached
+  // row is refused by the engine check, and the card used to say the Clinic had never read the book.
+  it("J-4: a row from another engine version reads 'the engine changed' (Pro and free); a scope with NO row keeps 'has not read this book yet'", () => {
+    // renderToStaticMarkup escapes the apostrophe of "The Clinic's".
+    const ENGINE = "The Clinic&#x27;s engine changed with this update — open it to re-read your book.";
+    select(A);
+    const row = rowOf("acct:1")!;
+    setRow("acct:1", { engineVersion: "c3.1" });
+    try {
+      for (const pro of [true, false]) {
+        const card = clinicCardFor(q.getClinicCard(), pro);
+        expect(card.finding, `pro=${pro}`).toBeNull(); // the free cut still nulls the finding; nothing was read
+        const out = newMarkup(card);
+        expect(out, `pro=${pro}`).toContain(ENGINE);
+        expect(out, `pro=${pro}`).not.toContain("has not read this book yet");
+      }
+    } finally {
+      setRow("acct:1", { engineVersion: row.engineVersion });
+    }
+    select(C); // no row at all: the old sentence, the old markup
+    for (const pro of [true, false]) {
+      const out = newMarkup(clinicCardFor(q.getClinicCard(), pro));
+      expect(out).toContain("The Clinic has not read this book yet.");
+      expect(out).not.toContain("engine changed");
+    }
     select(A);
   });
 

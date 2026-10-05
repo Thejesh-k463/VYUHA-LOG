@@ -33,6 +33,10 @@ export function ArjunClinicCard({ card }: { card: ClinicCard }) {
         ) : card.teaser ? (
           // Seam D3: a free copy's card carries the teaser but no report flag — the book HAS been read.
           <p className="text-muted-foreground">{card.teaser.headline}</p>
+        ) : card.engineChanged ? (
+          // v4.8.0 FIX-B (J-4): the scope HAS a cached row, from another engine version — after an upgrade the
+          // book was read, by the old engine; "has not read this book yet" would be untrue.
+          <p className="text-muted-foreground">The Clinic&apos;s engine changed with this update — open it to re-read your book.</p>
         ) : (
           <p className="text-muted-foreground">The Clinic has not read this book yet.</p>
         )}

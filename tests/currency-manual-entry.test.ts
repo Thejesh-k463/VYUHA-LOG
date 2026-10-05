@@ -38,6 +38,7 @@ let buildManualPreviewBody: typeof import("@/components/trades/manual-preview-bo
 let closePreviewBody: typeof import("@/components/trades/close-trade-dialog").closePreviewBody;
 let editPreviewBody: typeof import("@/components/trades/edit-trade-dialog").editPreviewBody;
 let manualCurrencyRefused: typeof import("@/components/trades/manual-trade-form").manualCurrencyRefused;
+let manualSubmitState: typeof import("@/components/trades/manual-trade-form").manualSubmitState;
 let toSlimTrade: typeof import("@/lib/domain/slim-trade").toSlimTrade;
 
 const PREV = { ok: false, message: "" };
@@ -49,7 +50,7 @@ beforeAll(async () => {
   ({ buildManualPreviewBody } = await import("@/components/trades/manual-preview-body"));
   ({ closePreviewBody } = await import("@/components/trades/close-trade-dialog"));
   ({ editPreviewBody } = await import("@/components/trades/edit-trade-dialog"));
-  ({ manualCurrencyRefused } = await import("@/components/trades/manual-trade-form"));
+  ({ manualCurrencyRefused, manualSubmitState } = await import("@/components/trades/manual-trade-form"));
   ({ toSlimTrade } = await import("@/lib/domain/slim-trade"));
   t.db.update(t.schema.settings).set({ selectedAccountId: 1 }).run();
 }, 120_000);
@@ -245,5 +246,33 @@ describe("R4 — the form says so BEFORE submit (the save's predicate, derived a
     expect(src).toMatch(/<Button type="submit" disabled=\{pending \|\| currencyRefused\}/);
     // Derived, never set: AGENTS.md "Never silence react-hooks/set-state-in-effect — derive instead".
     expect(src).not.toMatch(/setCurrencyRefused/);
+  });
+
+  // v4.8.0 FIX-B, finding U-1: the limits verdict is fetched by its own effect and is NOT cleared when a
+  // currency symbol is typed, so a "block" from the trade before stayed in state — and the disabled Save
+  // read "Override & add anyway" in red, with the breach line under it, beside the refusal sentence.
+  it("U-1: a stale limit 'block' under the refusal shows no override — Save reads its normal label in the default variant, no breach line", () => {
+    for (const open of [true, false]) {
+      expect(manualSubmitState({ pending: false, open, currencyRefused: true, limitStatus: "block" }), `open=${open}`).toEqual({
+        blocked: false,
+        variant: "default",
+        label: open ? "Add open trade" : "Add trade",
+      });
+    }
+    // Without the refusal a block is still the explicit, advisory override (P1.4) — unchanged.
+    expect(manualSubmitState({ pending: false, open: true, currencyRefused: false, limitStatus: "block" })).toEqual({
+      blocked: true,
+      variant: "destructive",
+      label: "Override & add anyway",
+    });
+    expect(manualSubmitState({ pending: false, open: false, currencyRefused: false, limitStatus: "block" }).blocked).toBe(false);
+    expect(manualSubmitState({ pending: true, open: true, currencyRefused: false, limitStatus: "block" }).label).toBe("Saving…");
+    expect(manualSubmitState({ pending: false, open: true, currencyRefused: false, limitStatus: undefined }).label).toBe("Add open trade");
+    // The form renders the button AND the breach line from that one derived answer — no second rule.
+    const src = fs.readFileSync(path.join(process.cwd(), "components/trades/manual-trade-form.tsx"), "utf8");
+    expect(src).toMatch(/const submit = manualSubmitState\(\{ pending, open, currencyRefused, limitStatus: limit\?\.status \}\);/);
+    expect(src).toMatch(/\{submit\.blocked && <span/);
+    expect(src).toMatch(/variant=\{submit\.variant\}>\s*\{submit\.label\}/);
+    expect(src).not.toMatch(/\{pending \? "Saving…" : blocked \?/);
   });
 });

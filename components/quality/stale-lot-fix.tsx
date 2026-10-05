@@ -58,6 +58,13 @@ import { toast } from "@/components/ui/toaster";
 import { num } from "@/lib/format";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
 import { LEGACY_SHORT_PAIR_NOTE, MONTH_ONLY_PAIR_NOTE, staleAmbiguousNote } from "@/lib/analytics/data-quality";
+// v4.8.0 FIX-A (J-3): the un-join door's one label, named where the join is confirmed.
+import { UNJOIN_MENU_LABEL } from "@/lib/import/close-open-lots";
+
+/** FIX-A J-3: how a join is undone, and why that does not survive a backup. */
+export const UNJOIN_HINT =
+  `You can undo this from Trades (the row's menu → ${UNJOIN_MENU_LABEL}): the position reads open again and the removed row comes back from Deleted items. ` +
+  "Deleted items are kept beside the journal, not inside a backup, so a join cannot be undone on a machine restored from one.";
 
 /** Structurally `StaleOpenView` (lib/queries/data-quality.ts), restated for the client. */
 export interface StaleLotFixPair {
@@ -292,7 +299,8 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
                 ? `${num(target.lotQty, 0)} ${target.tradingsymbol} open since ${target.lotDate} at ${num(target.lotPrice)} ` +
                   `${target.side === "long" ? "closes" : "is covered"} at the recorded ${what(target)}'s price, ${num(target.salePrice)}, ` +
                   `for its ${num(target.saleQty, 0)}. Both rows' stored charges are kept. The ${what(target)} row is then removed — ` +
-                  "recoverable from Backup & Restore → Deleted items."
+                  "recoverable from Backup & Restore → Deleted items. " +
+                  UNJOIN_HINT
                 : ""}
             </DialogDescription>
           </DialogHeader>
@@ -324,7 +332,8 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
                 <p className="text-xs text-muted-foreground" data-stale-month-only-confirm="">
                   {target.tradingsymbol} and {target.saleTradingsymbol} share a contract month, but one of them states no
                   expiry day. The journal cannot tell from the names whether they are one contract, so it is confirmed
-                  here rather than assumed (a weekly against the monthly of the same strike is two contracts).
+                  here rather than assumed (a weekly against the monthly of the same strike is two contracts).{" "}
+                  {UNJOIN_HINT}
                 </p>
                 <label className="flex items-center gap-2 text-xs">
                   <input type="checkbox" checked={contractAccepted} onChange={(e) => setContractAccepted(e.target.checked)} />

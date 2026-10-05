@@ -125,6 +125,16 @@ export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]> & {
    * every other projection through `toSlimTrade` leaves it null.
    */
   closedBy?: string | null;
+  /**
+   * v4.8.0 FIX-A (J-3) — this row is a lot the USER closed from Data Quality
+   * with a sale the book had stored beside it, and nobody re-made that close
+   * since (`closedByStaleJoin`: STALE_CLOSE_NOTE + its alias, read off
+   * `import_notes` the same way `closedBy` is). DERIVED, never a column. It is
+   * the only thing that may show the "Undo Data Quality join" row action — a
+   * Data Quality join has no Un-close (the server would answer NOT_FOUND), and
+   * a sentence that sent the user there was release-audit finding J-2 / J-3.
+   */
+  staleJoined?: boolean;
 };
 
 /** Project a row carrying at least the slim fields down to the wire shape
@@ -136,5 +146,6 @@ export function toSlimTrade(t: SlimTrade): SlimTrade {
   // Derived, so it is not in the field list; carried through when the caller
   // has already derived it, and stated as null rather than absent when not.
   out.closedBy = t.closedBy ?? null;
+  out.staleJoined = t.staleJoined ?? false;
   return out as SlimTrade;
 }

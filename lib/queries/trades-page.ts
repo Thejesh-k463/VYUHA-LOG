@@ -11,6 +11,8 @@ import { getSelectedAccountId } from "./accounts";
 // execution an auto-close piece belongs to, which is what the "Un-close" row
 // action names. W2b.
 import { executionHashOfPiece, saysAutoClosePiece } from "@/lib/import/close-open-lots";
+// v4.8.0 FIX-A (J-3): the ONE reading of "a Data Quality join closed this row".
+import { closedByStaleJoin } from "@/lib/analytics/data-quality";
 
 /**
  * /trades, ONE PAGE AT A TIME (v3.9).
@@ -202,7 +204,11 @@ function toWireRow(r: SlimTrade & { dedupHash: string; importNotes: string | nul
   const closedBy = saysAutoClosePiece({ importNotes })
     ? executionHashOfPiece({ dedupHash, importNotes })
     : null;
-  return { ...(slim as SlimTrade), closedBy };
+  // FIX-A J-3: a Data Quality join has its own door ("Undo Data Quality join"),
+  // derived from the same notes column, by the predicate Data Quality itself
+  // reads — the editor's re-make drops the sentence and the menu with it.
+  const staleJoined = closedByStaleJoin({ importNotes });
+  return { ...(slim as SlimTrade), closedBy, staleJoined };
 }
 
 /**

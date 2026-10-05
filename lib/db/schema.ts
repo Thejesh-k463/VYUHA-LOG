@@ -1579,7 +1579,10 @@ export const clinicExperiments = sqliteTable(
 // exact engine input. No account_id; never backed up; a digest mismatch makes a
 // row stale, never fresh. `summary_json` (v4.8.0 P2, migration 0081) is the few
 // hundred bytes the Arjun's Eye card prints, derived from the SAME report at the
-// compute; NULL on a row cached before 0081 (the card then derives it on read).
+// compute. NULL on a row cached before 0081 — but every such row was written by
+// another engine version (v4.7.0's c3.x; v4.8.0 moved ENGINE_VERSION to c4.0), so
+// the engine-version check refuses it first and the card reads it as nothing. Only
+// a current-engine row whose summary is NULL is derived from its report on read.
 // ---------------------------------------------------------------------------
 export const clinicCache = sqliteTable("clinic_cache", {
   scopeKey: text("scope_key").primaryKey(),

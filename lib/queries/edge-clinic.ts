@@ -23,6 +23,7 @@ import {
   type StoredExperiment,
 } from "@/lib/analytics/edge-clinic-note";
 import {
+  CLINIC_CARD_ENGINE_CHANGED,
   CLINIC_CARD_MISSING,
   EXPERIMENT_TARGET_N,
   type ClinicCard,
@@ -315,8 +316,13 @@ export function getClinicState(): ClinicState {
  * perf book that path cost the page a projection, a sha256 over every closed row and
  * a 4.69 MB `JSON.parse` to print one finding.
  *
+ * A row from another engine version is never read; it returns `CLINIC_CARD_ENGINE_CHANGED`
+ * (the card says the engine changed — J-4), a scope with no row `CLINIC_CARD_MISSING`.
+ * Every row cached before migration 0081 is a v4.7.0 (c3.x) row, so since v4.8.0's c4.0
+ * it lands there, not in the fallback below.
+ *
  * The stored summary is believed only when it is THIS report's (`storedSummary`).
- * Otherwise — a row cached before migration 0081, or a summary that does not parse —
+ * Otherwise — a current-engine row whose summary is NULL, or one that does not parse —
  * it falls back to the report on THIS read (`readCache`, derive with the same function
  * the compute stores with): never a blank card, and never a write on a read path; the
  * next compute stores the summary, also when the report is still fresh. The object
@@ -330,7 +336,9 @@ export function getClinicCard(): ClinicCard {
     .from(clinicCache)
     .where(eq(clinicCache.scopeKey, scopeKey))
     .get();
-  if (!row || row.engineVersion !== ENGINE_VERSION) return CLINIC_CARD_MISSING;
+  if (!row) return CLINIC_CARD_MISSING;
+  // Another engine's row is never read (readCache's rule) — but it exists, so the card says the engine changed (J-4).
+  if (row.engineVersion !== ENGINE_VERSION) return CLINIC_CARD_ENGINE_CHANGED;
   const stored = storedSummary(row.summaryJson, row.computedAt);
   if (stored) return clinicCardOf(stored);
   const cached = readCache(scopeKey);

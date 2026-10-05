@@ -166,7 +166,9 @@ describe("the Positions ledger renders a stated window, not the book", () => {
     expect(move).toContain("nextFocusIndex(focusIdx, shown.length, order.length");
     expect(move).toMatch(/if \(next < shown\.length\) \{\s*document\.querySelector\([^)]*\)\?\.scrollIntoView/);
     expect(move).toContain("pendingScroll.current = next");
-    expect(move).toContain("askFor(next + 1)");
+    // v4.8.0 FIX-B U-2: the mark is raised on every move (the width on screen, or the row past the edge) —
+    // tests/positions-window-hold.test.ts replays it; `askFor(next + 1)` past the edge alone let the window shrink.
+    expect(move).toContain("askFor(markAfterMove(shown.length, next))");
   });
 
   it("hands the memoised row nothing that defeats the memo", () => {

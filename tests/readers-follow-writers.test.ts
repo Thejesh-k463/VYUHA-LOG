@@ -663,7 +663,7 @@ export function reads(p: P, list: P[]) {
   });
 
   it("the registry states a rule, its forbidden shapes and its provenance for every field it guards", () => {
-    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer", "fmv-per-share", "intra-range-split", "tradingsymbol-pairing"]);
+    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer", "fmv-per-share", "intra-range-split", "tradingsymbol-pairing", "exec-bill-writer"]);
     for (const r of REGISTRY) {
       expect(r.rule.length, r.id).toBeGreaterThan(40);
       expect(r.forbidden.length, r.id).toBeGreaterThan(20);
@@ -818,6 +818,30 @@ describe("X1 D11 — the pairing rule sees the class it guards, and the tree is 
  * `rates.findRates(...)`, split across lines, or quoted in a comment, is a
  * different thing to a line-based scan and the same thing to a parser.
  */
+describe("v4.8.0 FIX-A J-3 — `exec-bill:` is spelled in one leaf (exec-bill-writer), and the tree is clean under it", () => {
+  it("a literal spelling outside close-open-lots.ts is reported — a string, a template, a concatenation; the leaf itself and a comment are not", () => {
+    const bad = [
+      'const marker = "exec-bill:";',
+      "const seg = `exec-bill:[${nums.join(\",\")}]`;",
+      "const hit = parts.find((p) => p.startsWith('exec-bill:'));",
+    ].join("\n");
+    const hits = scanSource("lib/import/elsewhere.ts", bad, ["exec-bill-writer"]);
+    expect(hits.map((v) => v.line)).toEqual([1, 2, 3]);
+    expect(hits[0]!.why).toContain("EXEC_BILL_PREFIX");
+    // The ONE leaf that defines the prefix, and a `git show` copy of it.
+    const leaf = 'export const EXEC_BILL_PREFIX = "exec-bill:";';
+    expect(scanSource("lib/import/close-open-lots.ts", leaf, ["exec-bill-writer"])).toEqual([]);
+    expect(scanSource("60c809b:lib/import/close-open-lots.ts", leaf, ["exec-bill-writer"])).toEqual([]);
+    // A comment quoting the marker is prose, not a writer.
+    expect(scanSource("lib/import/commit.ts", "// the execution's half of it (`exec-bill:`), which is\nconst x = EXEC_BILL_PREFIX;", ["exec-bill-writer"])).toEqual([]);
+  });
+
+  it("HEAD: both writers (the applier, closeStaleLot) and the reader go through the leaf — no literal anywhere under lib/, app/, components/", () => {
+    const report = scanTree(["exec-bill-writer"]);
+    expect(report.violations.map(format)).toEqual([]);
+  });
+});
+
 describe("wave U — findRates is called only inside the engine (and the comparison screen)", () => {
   /** Every call expression whose callee is named `findRates`, with its line. */
   const findRatesCalls = (file: string, src: string): { file: string; line: number; text: string }[] => {

@@ -226,6 +226,59 @@ export function isAutoCloseMerged(row: { dedupHash: string; importNotes: string 
 }
 
 /**
+ * v4.8.0 FIX-A (S-1 / J-1 / J-3, review 2026-10-05) — WHAT closed this row, read
+ * off its own notes. ONE predicate for the three readers that must agree on it:
+ * the snapshot admission (`planSnapshot`), the collision copy (`cross-source.ts`)
+ * and the Trades row menu (`trades-page.ts`). A second copy of this reading is
+ * how the v4.3.0 fix waves regressed.
+ *
+ *  • `"pull"`       — an `exec-origin:` segment: an X1 (≥ v4.8.0) import close,
+ *                     which records the closing execution's own file.
+ *  • `"dq-join"`    — `STALE_CLOSE_NOTE`: the user joined the lot with its stored
+ *                     sale from Data Quality (R26; the legacy-short join too).
+ *  • `"auto-close"` — `AUTO_CLOSE_NOTE` / `PARTIAL_CLOSE_NOTE` with no origin: an
+ *                     import close written by ≤ v4.7.0, whose closing file was
+ *                     never stored (so nothing may name one — invariant 6).
+ *  • `null`         — nothing closed it, or an alias of unknown provenance.
+ */
+export type CloseOrigin = "pull" | "auto-close" | "dq-join";
+
+export function closeOriginOf(importNotes: string | null): CloseOrigin | null {
+  const notes = importNotes ?? "";
+  if (execOriginFromNotes(notes) != null) return "pull";
+  if (notes.includes(STALE_CLOSE_NOTE)) return "dq-join";
+  if (notes.includes(AUTO_CLOSE_NOTE) || notes.includes(PARTIAL_CLOSE_NOTE)) return "auto-close";
+  return null;
+}
+
+/**
+ * S-1 — is this a FROZEN row whose close records no closing pull, closed on
+ * `day`? Such a row holds its sale's identity as an alias but sits in no row of
+ * the pull's file (a ≤ v4.7.0 whole-fold under the LOT's file, a Data Quality
+ * join, the legacy-short join — review probes P-A / P-B), so the day's snapshot
+ * set could not see it and a same-day restating pull read as a plain new
+ * position: 225 sold where the broker stated 150. Admitted, it can only ever be
+ * ASKED about (frozen → never superseded in place). The closing side is the
+ * row's own (`sideOf`): a long closes on `sellDate`, a short on `buyDate`.
+ */
+export function closedOnDayWithoutPull(
+  row: RowLegs & { dedupHash: string; importNotes: string | null },
+  day: string,
+): boolean {
+  if (!isLotIdentityFrozen(row) || closeOriginOf(row.importNotes) === "pull") return false;
+  const closing = readsLong(row) ? row.sellDate : row.buyDate;
+  return closing != null && closing === day;
+}
+
+/**
+ * J-3 — the ONE label for the un-join door, read by the Trades row menu and by
+ * every sentence that sends the user to it (J-1's dq-join branch, J-2's joined
+ * holder). A sentence that names a button that does not exist sent the user to
+ * an Un-close the row never had (release audit J-2).
+ */
+export const UNJOIN_MENU_LABEL = "Undo Data Quality join";
+
+/**
  * Written to `import_notes` on the row an execution left OVER: the file said
  * 100, 40 of it closed lots this account held, and this row is the other 60.
  *
@@ -672,7 +725,10 @@ export function autoCloseSentences(c: AutoCloseCounters): string[] {
   if (c.refusedHeldIdentity > 0) {
     const one = c.refusedHeldIdentity === 1;
     out.push(
-      `${c.refusedHeldIdentity} incoming ${one ? "execution" : "executions"} would close an open position, but what is left of ${one ? "it" : "them"} after that close is already recorded as a row of its own, so nothing was closed automatically: the row lands as stated. Un-close the earlier record from Trades and import again, or leave both and join them from Data Quality.`,
+      // FIX-A J-2: this counter knows no row, so it names no remedy — the per-row
+      // collision detail (cross-source.ts) says which earlier record it met and
+      // what resolves it (an Un-close, a delete, or an Undo Data Quality join).
+      `${c.refusedHeldIdentity} incoming ${one ? "execution" : "executions"} would close an open position, but what is left of ${one ? "it" : "them"} after that close is already recorded as a row of its own, so nothing was closed automatically: the row lands as stated. The collision listed for ${one ? "it" : "each"} names the earlier record and the way to resolve it.`,
     );
   }
   return out;

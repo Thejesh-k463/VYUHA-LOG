@@ -84,6 +84,8 @@ export interface BookMods {
   aisRoute: typeof import("@/app/api/ais/route");
   closeRoute: typeof import("@/app/api/positions/close/route");
   staleRoute: typeof import("@/app/api/data-quality/close-stale/route");
+  /** v4.8.0 FIX-A (J-3): the un-join door. */
+  unjoinRoute: typeof import("@/app/api/data-quality/unjoin-stale/route");
   settingsRoute: typeof import("@/app/api/settings/route");
   riskRoute: typeof import("@/app/api/positions/risk/route");
   riskCap: typeof import("@/lib/queries/risk-cap");
@@ -110,6 +112,7 @@ export async function loadBookMods(): Promise<BookMods> {
     aisRoute: await import("@/app/api/ais/route"),
     closeRoute: await import("@/app/api/positions/close/route"),
     staleRoute: await import("@/app/api/data-quality/close-stale/route"),
+    unjoinRoute: await import("@/app/api/data-quality/unjoin-stale/route"),
     settingsRoute: await import("@/app/api/settings/route"),
     riskRoute: await import("@/app/api/positions/risk/route"),
     riskCap: await import("@/lib/queries/risk-cap"),
@@ -218,8 +221,10 @@ export interface BookCtx {
    * only such op is `reimportSameHash`: re-pulling the broker file that carries
    * the Data Quality SALE, after the lot that recorded it has been deleted,
    * genuinely leaves a sale with no purchase beside it — the state the app
-   * itself surfaces as the `stale_sale` warning (W2-DQ P2), not a defect. Every
-   * other op must leave every book flat or long.
+   * itself surfaces as the `stale_sale` warning (W2-DQ P2), not a defect. Since
+   * v4.8.0 FIX-A a row DELETE declares the same state when it removes an open
+   * lot whose stored sale still sits beside it (the un-joined pair, then the
+   * lot deleted). Every other op must leave every book flat or long.
    */
   mayReadShort: Set<string>;
   /**
@@ -623,6 +628,17 @@ async function deleteRow(ctx: BookCtx, opName: string, tradeId: number, why: str
   // The journal must lose exactly the legs that row stated — no cascade, no
   // survivor.
   bump(ctx, row.tradingsymbol, -netOf(row));
+  // v4.8.0 FIX-A: deleting an OPEN single-sided lot while its stored sale still
+  // sits beside it (the un-joined pair) leaves that sale alone — the state the
+  // app itself lists under "Closing trades with no open position left to close"
+  // (`stale_sale`), not a phantom the delete manufactured. Declared, like
+  // `reimportSameHash` declares the same state reached the other way round.
+  if (row.isOpen && row.buyQty > 0 && row.sellQty === 0) {
+    const orphan = allTrades(ctx).some(
+      (r) => r.accountId === row.accountId && r.tradingsymbol === row.tradingsymbol && r.isOpen && r.sellQty > 0 && r.buyQty === 0,
+    );
+    if (orphan) ctx.mayReadShort.add(row.tradingsymbol);
+  }
   record(ctx, opName, "applied", `deleted #${row.id} from account ${row.accountId}`);
 }
 
@@ -690,6 +706,41 @@ export const OPS: BookOp[] = [
         bump(ctx, pair.saleTradingsymbol, signed);
       }
       record(ctx, "closeStaleLot", "applied", `joined #${pair.saleId} into #${pair.lotId}${pair.monthOnly ? " (month-level, acknowledged)" : ""}`);
+    },
+  },
+  {
+    // v4.8.0 FIX-A (J-3, review §Guards): the inverse of `closeStaleLot`, on the
+    // fixture's joined lot. Counted-once (I1/I2): the sale comes back as ONE row
+    // holding its own hash while the lot drops the alias; recoverable-once (I1):
+    // the envelope is consumed, so the identity is in the journal and nowhere in
+    // Trash. It reverses the month-only `bump` the join declared (the fixture's
+    // pair is same-name, so the branch is exercised only by a month-level join).
+    name: "unJoinStaleClose",
+    needs: "the Data Quality-joined lot is in the journal, closed, still carrying the join's sentence and alias",
+    drives: "POST /api/data-quality/unjoin-stale → lib/import/commit.ts unJoinStaleClose",
+    run: async (_db, ctx) => {
+      const lot = tradeById(ctx, ctx.ids.dqLot);
+      if (!lot) return record(ctx, "unJoinStaleClose", "skipped", "the lot is not in the journal");
+      if (lot.isOpen || !(lot.importNotes ?? "").includes(ctx.m.lots.STALE_CLOSE_NOTE)) {
+        return record(ctx, "unJoinStaleClose", "skipped", "the lot is not closed by a Data Quality join");
+      }
+      selectAccount(ctx, lot.accountId);
+      const res = await ctx.m.unjoinRoute.POST(jsonReq("/api/data-quality/unjoin-stale", { lotId: lot.id }));
+      const body = (await res.json()) as { ok: boolean; message: string; saleId?: number };
+      if (res.status !== 200) return record(ctx, "unJoinStaleClose", "refused", `${res.status} ${body.message}`);
+      const sale = body.saleId != null ? tradeById(ctx, body.saleId) : null;
+      // Net-neutral by construction (the lot gives the sale's quantity back to
+      // the sale row) — except a MONTH-ONLY join, whose transfer across two
+      // pairing keys the join declared with `bump`; reversed here.
+      if (sale && pairKeyOf(lot.tradingsymbol) !== pairKeyOf(sale.tradingsymbol)) {
+        const signed = ctx.m.lots.readsLong(lot) ? sale.sellQty : -sale.buyQty;
+        bump(ctx, lot.tradingsymbol, signed);
+        bump(ctx, sale.tradingsymbol, -signed);
+      }
+      // X1 I8: the lot is open again beside its later sale — exactly what Data
+      // Quality lists; declared, as the un-close op declares it.
+      ctx.mayHoldSplit.add(pairKeyOf(lot.tradingsymbol));
+      record(ctx, "unJoinStaleClose", "applied", `un-joined #${lot.id}; the sale is back as #${String(body.saleId)}`);
     },
   },
   {

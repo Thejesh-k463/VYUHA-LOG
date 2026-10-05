@@ -1054,6 +1054,17 @@ const OPS: Op[] = [
       expect(joined.ok, joined.message).toBe(true);
       expect(await readOracle(t), "the join reads exactly as the import's close did").toEqual(afterClose);
 
+      // v4.8.0 FIX-A (J-3, review §Guards): join → UN-JOIN → counted once in every
+      // consumer — nothing realised (the open book again), the sale back as its
+      // own row under its own hash; then the join again reads as the close did.
+      const unjoined = importer.unJoinStaleClose(pair.lotId);
+      expect(unjoined.ok, unjoined.message).toBe(true);
+      expect(rows().map((r) => [r.tradingsymbol, r.isOpen]).sort()).toEqual([[OA, true], [NAT, true]].sort());
+      expect(await readOracle(t), "after the un-join every consumer reads the open book").toEqual(open);
+      const rejoined = importer.closeStaleLot(pair.lotId, unjoined.saleId!, pair.saleDate);
+      expect(rejoined.ok, rejoined.message).toBe(true);
+      expect(await readOracle(t), "the second join counts the sale once, like the first").toEqual(afterClose);
+
       // An OpenAlgo re-pull restating the day (the day aggregate of a lot opened earlier: the
       // sale alone under the dated name) is asked about, never written.
       const repull = file([fy({ sellQty: 50, avgSellPrice: 120, sellValue: 6000, sellDate: "2025-09-22" })], "openalgo-api");

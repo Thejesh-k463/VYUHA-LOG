@@ -1,5 +1,5 @@
 import "server-only";
-import { db } from "@/lib/db";
+import { db, sqlite } from "@/lib/db";
 import { isDerivativeInstrument, writeTypedMark } from "@/lib/queries/mtm";
 import {
   trades as tradesTable,
@@ -11,8 +11,14 @@ import {
   tradeAttachments,
   accounts as accountsTable,
   brokerReference,
+  auditLog,
+  ipos as iposTable,
+  ledgerEntries,
 } from "@/lib/db/schema";
-import { eq, and, ne, or, sql, isNull, inArray, notInArray } from "drizzle-orm";
+import { eq, and, ne, or, sql, isNull, inArray, notInArray, desc } from "drizzle-orm";
+// v4.8.0 FIX-A (J-3): the un-join puts the joined sale back from its Trash
+// envelope inside ONE transaction — never through `restoreTrashSnapshot`.
+import { listTrashSnapshots, purgeTrashSnapshot, readTrashEnvelope, withSide } from "@/lib/trash";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { pricingDate, ratesForTrade, resolvePlan, type PlanAccount, type RatesMap } from "@/lib/engine/rates";
@@ -51,7 +57,7 @@ import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { resolvePerTradeCap, type CapRow } from "@/lib/risk/limits";
-import { capR, type RiskSource } from "@/lib/queries/risk-cap";
+import { capR, classifyUnsourcedRisk, repriceCapTrades, type RiskSource } from "@/lib/queries/risk-cap";
 import { ipoEditCharges, type IpoEditPricing } from "@/lib/analytics/ipo";
 import { sellChargerFor } from "@/lib/queries/ipos";
 // D20 (wave 2O): the ladder is the SINGLE writer of a staged parent's priced heads,
@@ -93,6 +99,11 @@ import {
   // v4.8.0 X1 (D4 b): where the closing execution came from, on every piece.
   withExecOriginNote,
   execOriginFromNotes,
+  // v4.8.0 FIX-A: S-1's admission clause and J-3's un-join door.
+  closedOnDayWithoutPull,
+  lotIdentityHashes,
+  EXEC_BILL_PREFIX,
+  UNJOIN_MENU_LABEL,
   type AutoCloseCounters,
   type LotClose,
   type OpenLot,
@@ -863,6 +874,12 @@ const REFERENCE_SOURCE_IDS: readonly string[] = RECONCILE_SOURCE_IDS;
 
 type TxLike = Pick<typeof db, "select">;
 
+/** A trade's leg count read INSIDE a transaction — the one tx-side copy of `legCountOf` (lib/queries/staged.ts),
+ *  which reads outside it. `closeStaleLot` and `unJoinStaleClose` both need it (tests/wave2p-mtf-dates.test.ts D5). */
+function txLegCount(tx: TxLike, tradeId: number): number {
+  return tx.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
+}
+
 function holdsBookTrades(tx: TxLike, accountId: number, broker: string): boolean {
   const refBatches = tx
     .select({ b: brokerReference.importBatchId })
@@ -970,6 +987,11 @@ interface SnapshotStoredRow {
   sourceFile: string | null;
   dedupHash: string;
   importNotes: string | null;
+  // FIX-A S-1: the legs and side, so `closedOnDayWithoutPull` can read which
+  // date is the row's CLOSING side (`sideOf`).
+  buyQty: number;
+  sellQty: number;
+  side?: string | null;
   // W2R N1: what setAcquisitionAction and the journal route write.
   acquisition: string | null;
   acquisitionPrice: number | null;
@@ -1068,7 +1090,16 @@ function planSnapshot(
     // position and the sale was counted twice. Such a row is frozen (it holds
     // the execution's hash as an alias), so it can only ever be ASKED about.
     const inPullFile = r.sourceFile === snap.fileName || execOriginFromNotes(r.importNotes)?.sourceFile === snap.fileName;
-    if (!inPullFile || (r.buyDate !== day && r.sellDate !== day)) continue;
+    const onDay = r.buyDate === day || r.sellDate === day;
+    // FIX-A S-1 (review P-A / P-B): ALSO a frozen row closed on `day` that records
+    // no closing pull at all — a ≤ v4.7.0 whole-fold (filed under the LOT's file,
+    // `exec-origin:` did not exist), a Data Quality join of this pull's own
+    // kept-separate sale, or the legacy-short join. It holds the sale's identity
+    // as an alias but sits in no row of the pull's file, so the set could not see
+    // it and a same-day restating pull was a plain new position (225 sold where
+    // the broker stated 150). Frozen, it can only ever be ASKED about; a row
+    // closed on another day is never admitted.
+    if (!((inPullFile && onDay) || closedOnDayWithoutPull(r, day))) continue;
     const k = snapshotKey(r.tradingsymbol, r.symbol, r.segment, r.exchange);
     storedByKey.set(k, [...(storedByKey.get(k) ?? []), r]);
     const bySymbol = storedBySymbol.get(tradingsymbolKey(r.tradingsymbol));
@@ -1585,7 +1616,9 @@ export function previewParsedFile(
         sourceFile: r.sourceFile,
         dedupHash: r.dedupHash,
         // X1 D6b (iii): read only for `exec-origin:` (the file that closed it).
+        // FIX-A: and for `closeOriginOf` / `heldIdentityHashes` (with `side`).
         importNotes: r.importNotes,
+        side: r.side,
       })),
       fileName,
     ),
@@ -3087,7 +3120,11 @@ function withoutStaleCloseNote(importNotes: string | null): string | null {
   const parts = importNotes
     .split("|")
     .map((s) => s.trim())
-    .filter((s) => s && s !== STALE_CLOSE_NOTE);
+    // FIX-A J-3: the join's `exec-bill:` (the sale's half of the bill) goes with
+    // the sentence — a re-made close is no longer the join's, so the bill it
+    // recorded describes nothing, and a reader (`unCloseExecution`) must not
+    // take it for an import close's.
+    .filter((s) => s && s !== STALE_CLOSE_NOTE && !s.startsWith(EXEC_BILL_PREFIX));
   return parts.length > 0 ? parts.join(" | ") : null;
 }
 
@@ -3453,6 +3490,19 @@ export function unCloseExecution(
       // it is nothing left to undo, and the second press says so (idempotence).
       return { ok: false, code: "NOT_FOUND", message: "Nothing in this account was closed by that execution. Nothing was changed." };
     }
+    // FIX-A J-3: a lot the USER joined from Data Quality now carries `exec-bill:`
+    // too (the sale's half, so the un-join can invert it exactly), so the bill
+    // check below no longer refuses it. It is not an import's close and this is
+    // not its door: that join is undone by the un-join, which also brings the
+    // sale back from Deleted items.
+    const joined = [...(converted ? [converted] : []), ...slices].find((r) => notes(r).includes(STALE_CLOSE_NOTE));
+    if (joined) {
+      return {
+        ok: false,
+        code: "SHAPE",
+        message: `${joined.tradingsymbol} was closed from Data Quality with a sale the book had stored as its own row, not by an import. Undo that join instead (Trades → the row's menu → ${UNJOIN_MENU_LABEL}). Nothing was changed.`,
+      };
+    }
     // A ladder is never rebuilt from here (invariant 4/5), and a piece the user
     // has written on is never deleted by a machine.
     const laddered = tradeIdsWithLegs(tx as unknown as TxLike, touched.map((r) => r.id));
@@ -3745,7 +3795,7 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       // with the sale row already removed (measured 2026-09-15). The ladder's
       // own exit prices each tranche and keeps R frozen at the first entry
       // (invariant 4).
-      const lotLegs = tx.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, lot.id)).all().length;
+      const lotLegs = txLegCount(tx, lot.id);
       if (lot.staged || lotLegs > 0) {
         const what = pair.side === "long" ? "sale" : "purchase";
         return {
@@ -3763,7 +3813,7 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       // R2-DQ N10 — a sale recorded in several fills (staged, or holding
       // trade_legs) is never joined: the join removes the row with its fills.
       // Read from the stored row, not only the pure rule (defence in depth).
-      const saleLegs = tx.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, sale.id)).all().length;
+      const saleLegs = txLegCount(tx, sale.id);
       if (sale.staged || saleLegs > 0) {
         return { ok: false, code: "FILLS", message: `Nothing was changed. ${staleFillsNote(pair.side)}` };
       }
@@ -3880,52 +3930,67 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       // short, so that re-import is a plain duplicate of this row.
       const legacyShort = isShort && lot.acquisition === "unknown" && lot.buyQty === 0 && sale.sellQty === 0;
       const joinedNotes = withStaleCloseNote(lot.importNotes, sale.dedupHash);
-      const importNotes = legacyShort ? withDedupAlias(joinedNotes, joinedShortHash(lot, sale)) : joinedNotes;
+      const aliased = legacyShort ? withDedupAlias(joinedNotes, joinedShortHash(lot, sale)) : joinedNotes;
+      // FIX-A J-3 (review §J-3.1): the SALE's half of the bill — stated by its row,
+      // or priced from the card at this moment — travels on the joined lot as
+      // `exec-bill:` (the applier's marker, `withExecBillNote`), so the un-join
+      // subtracts exactly what was added whatever the rate card says later. The
+      // marker is not an auto-close sentence: `isAutoCloseMerged`,
+      // `saysAutoClosePiece` and the Trades Un-close button all ignore it.
+      const importNotes = withExecBillNote(aliased, { ...saleSide.parts, total: saleSide.total });
       const what = isShort ? "purchase" : "sale";
 
       // 4 — S leaves through the one delete path (snapshot + audit).
       const del = deleteTradesByIds([sale.id], `joined to trade #${lot.id} (${lot.tradingsymbol}) as its recorded ${what} — Data Quality`, "data-quality");
       if (!del.ok) throw new StaleCloseAbort(del.message);
 
+      const joinedPatch = {
+        // v4.6.0 W6: the pair's side — the joined row is flat and states it here.
+        side: pair.side,
+        ...(legacyShort ? { acquisition: null } : {}),
+        buyQty,
+        avgBuyPrice,
+        buyValue,
+        buyDate,
+        buyOrderCount,
+        sellQty,
+        avgSellPrice,
+        sellValue,
+        sellDate,
+        sellOrderCount,
+        isOpen: false,
+        unrealisedPnl: 0,
+        grossPnl,
+        chargesTotal,
+        netPnl,
+        realisedPct,
+        rMultiple,
+        ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
+        ...parts,
+        mtfFundedAmount,
+        importNotes,
+      };
       tx.update(tradesTable)
-        .set({
-          // v4.6.0 W6: the pair's side — the joined row is flat and states it here.
-          side: pair.side,
-          ...(legacyShort ? { acquisition: null } : {}),
-          buyQty,
-          avgBuyPrice,
-          buyValue,
-          buyDate,
-          buyOrderCount,
-          sellQty,
-          avgSellPrice,
-          sellValue,
-          sellDate,
-          sellOrderCount,
-          isOpen: false,
-          unrealisedPnl: 0,
-          grossPnl,
-          chargesTotal,
-          netPnl,
-          realisedPct,
-          rMultiple,
-          ...(kept.followsCap ? { riskAmount: kept.riskAmount } : {}),
-          ...parts,
-          mtfFundedAmount,
-          importNotes,
-          updatedAt: sql`(datetime('now'))`,
-        })
+        .set({ ...joinedPatch, updatedAt: sql`(datetime('now'))` })
         .where(eq(tradesTable.id, lot.id))
         .run();
 
-      // 5
+      // 5 — FIX-A J-3 (review §J-3.1): the audit `before` is the lot's FULL
+      // pre-join row (as `deleteTradesByIds` records a deleted row), because it
+      // is the only place four values the join overwrites survive: a partly sold
+      // lot's earlier exit date (P-G), an `eq_mtf` lot's pre-join interest /
+      // pledge / GST (replaced, not added), the sale's half when it was priced
+      // rather than stated, and the mark. `unJoinStaleClose` restores from it.
+      // `after` is projected from the same key list (the audit's shape rule).
+      const lotBefore = lot as unknown as Record<string, unknown>;
+      const lotAfter: Record<string, unknown> = { ...lotBefore, ...joinedPatch };
       recordAudit({
         entity: "trade",
         entityId: lot.id,
         action: "close",
         summary: `${lot.symbol} ${isShort ? "covered" : "closed"} @ ${pair.salePrice} with the recorded ${what} #${sale.id} (Data Quality) · net ${netPnl}`,
-        before: { isOpen: true, buyQty: lot.buyQty, sellQty: lot.sellQty, sellDate: lot.sellDate, chargesTotal: lot.chargesTotal, netPnl: lot.netPnl, importNotes: lot.importNotes },
-        after: { isOpen: false, buyQty, sellQty, sellDate, chargesTotal, netPnl, importNotes },
+        before: lotBefore,
+        after: lotAfter,
         source: "data-quality",
       });
 
@@ -3936,6 +4001,307 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
     });
   } catch (e) {
     if (e instanceof StaleCloseAbort) return { ok: false, code: "DELETE_FAILED", message: e.message };
+    throw e;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// v4.8.0 FIX-A (J-3, owner 2026-10-05) — the Un-join door for a Data Quality join
+// ---------------------------------------------------------------------------
+
+/** Why `unJoinStaleClose` refused — the stable wire value the route maps to HTTP. Every refusal changes nothing. */
+export type UnJoinCode = "NOT_FOUND" | "OTHER_ACCOUNT" | "SHAPE" | "STAGED" | "ENVELOPE_GONE" | "FAILED";
+
+export interface UnJoinResult {
+  ok: boolean;
+  message: string;
+  code?: UnJoinCode;
+  /** On success: the lot that reads open again and the sale row that came back. */
+  lotId?: number;
+  saleId?: number;
+}
+
+/** Thrown inside the transaction to roll it back with a sentence for the user. */
+class UnJoinAbort extends Error {
+  constructor(message: string, readonly code: UnJoinCode) {
+    super(message);
+  }
+}
+
+/** The columns a restore from the audit `before` leaves as the row holds them NOW. */
+const UNJOIN_KEEP_CURRENT = new Set(["id", "accountId", "createdAt", "updatedAt", "importBatchId"]);
+
+/**
+ * The envelope the join wrote (`deleteTradesByIds` with the join's reason), by
+ * scanning Deleted items newest first (`trashedTradeIds`' precedent): the sale
+ * row is the one whose own hash the lot holds as an alias.
+ */
+function findJoinEnvelope(lotId: number, aliases: readonly string[]) {
+  const want = new Set(aliases.map((h) => h.toLowerCase()));
+  for (const s of listTrashSnapshots()) {
+    const env = readTrashEnvelope(s.id);
+    if (!env || !env.reason.startsWith(`joined to trade #${lotId} `)) continue;
+    const row = env.trades.find((r) => typeof r.dedupHash === "string" && want.has(r.dedupHash.toLowerCase()));
+    if (row) return { id: s.id, env, row: row as Record<string, unknown> & { id: number; dedupHash: string } };
+  }
+  return null;
+}
+
+/**
+ * UNDO a Data Quality join (`closeStaleLot`): the lot reads open again exactly as
+ * it did before the join, and the sale the join removed comes back from Deleted
+ * items as its own row — ONE transaction, so the book is never half-way.
+ *
+ * Design review 2026-10-05 (J-3, binding):
+ *  1. The lot is restored from the audit `before` the join recorded. Since this
+ *     fix that is the lot's FULL pre-join row (byte-identical, MTF and partial-leg
+ *     cases included). A join made BEFORE this fix left a seven-field `before`
+ *     (isOpen, buyQty, sellQty, sellDate, chargesTotal, netPnl, importNotes), so
+ *     the closing leg is DERIVED — joined minus the sale's — and what cannot be
+ *     derived is REFUSED with the reason rather than invented (invariant 6): an
+ *     `eq_mtf` lot (its interest, pledge and GST were REPLACED, not added) and a
+ *     short lot that had already been partly covered (its earlier cover date was
+ *     not recorded). A sale half that was PRICED at join time (the sale row
+ *     stated no charges) is re-priced from today's card and the message says so.
+ *  2. The sale is inserted from the Trash envelope INSIDE this transaction —
+ *     never through `restoreTrashSnapshot`, which skips a row the lot still
+ *     records (P-E), answers ACCOUNT_GONE after a merge (P-F) and leaves the
+ *     envelope on disk. `withSide` fills a pre-0077 envelope's side; `ipoRefs`
+ *     and `ledgerRefs` are re-pointed as the restore does; the row lands in the
+ *     LOT's CURRENT account (the anchor — invariant 8; never the envelope's);
+ *     its original id when free, else a fresh one. The envelope is then purged:
+ *     Deleted items must not offer a second restore of a row that is back.
+ *  3. Envelope gone (purged; or a backup restored on another machine — a backup
+ *     carries no Trash folder) → refused: nothing is invented.
+ *  4. Scope mirrors `closeStaleLot`: the LOT's account must be a place
+ *     (invariant 9); the view may be 0 or the lot's own (invariant 8).
+ *
+ * A `'cap'` row follows TODAY's cap after the restore (v4.4.0 D1: a cap is a
+ * unit, not money), so a rate edit between join and un-join moves nothing but
+ * the R a cap row reads in. Money is rupees here (invariant 1).
+ */
+export function unJoinStaleClose(lotId: number): UnJoinResult {
+  if (!Number.isInteger(lotId) || lotId <= 0) {
+    return { ok: false, code: "NOT_FOUND", message: "Name the position whose Data Quality join to undo. Nothing was changed." };
+  }
+  const view = getSelectedAccountId();
+  let envelopeId: string | null = null;
+  try {
+    const res = db.transaction((tx): UnJoinResult => {
+      const lot = tx.select().from(tradesTable).where(eq(tradesTable.id, lotId)).get();
+      if (!lot) return { ok: false, code: "NOT_FOUND", message: "That position is no longer in the journal. Nothing was changed." };
+      if (lot.accountId <= 0 || (view > 0 && view !== lot.accountId)) {
+        return { ok: false, code: "OTHER_ACCOUNT", message: "That position belongs to a different account from the one you are viewing. Nothing was changed." };
+      }
+      const notes = lot.importNotes ?? "";
+      const own = lot.dedupHash.toLowerCase();
+      const aliases = lotIdentityHashes(lot).filter((h) => h !== own);
+      // Un-joining twice, or a row the editor has since re-made (H1 dropped the
+      // sentence): nothing here was joined, and the second press says so.
+      if (!notes.includes(STALE_CLOSE_NOTE) || aliases.length === 0) {
+        return { ok: false, code: "NOT_FOUND", message: `${lot.tradingsymbol} is not closed by a Data Quality join, so there is nothing to undo. Nothing was changed.` };
+      }
+      if (lot.isOpen) {
+        return { ok: false, code: "SHAPE", message: `${lot.tradingsymbol} already reads open, so its close is no longer the join's. Nothing was changed.` };
+      }
+      const lotLegs = txLegCount(tx, lot.id);
+      if (lot.staged || lotLegs > 0) {
+        return { ok: false, code: "STAGED", message: `${lot.tradingsymbol} is a staged position with its own ladder in Trades, so the join is not undone here. Nothing was changed.` };
+      }
+
+      // 2 — the sale, exactly as the join removed it.
+      const found = findJoinEnvelope(lot.id, aliases);
+      if (!found) {
+        return {
+          ok: false,
+          code: "ENVELOPE_GONE",
+          message: "The sale this join removed is no longer in Deleted items, so the join cannot be undone here. Nothing was changed.",
+        };
+      }
+      const sale = found.row;
+      const isShort = sideOf(lot) === "short";
+      const what = isShort ? "purchase" : "sale";
+      const saleQty = isShort ? Number(sale.buyQty ?? 0) : Number(sale.sellQty ?? 0);
+
+      // 3 — the lot as it was before the join: the audit row the join wrote.
+      const audit = tx
+        .select({ beforeJson: auditLog.beforeJson })
+        .from(auditLog)
+        .where(and(eq(auditLog.entity, "trade"), eq(auditLog.entityId, lot.id), eq(auditLog.action, "close"), eq(auditLog.source, "data-quality")))
+        .orderBy(desc(auditLog.id))
+        .all()
+        .find((a) => a.beforeJson != null);
+      const before = audit?.beforeJson ?? null;
+      if (!before) {
+        return { ok: false, code: "SHAPE", message: `${lot.tradingsymbol}'s join is not in the audit trail, so the position's earlier state cannot be restored. Nothing was changed.` };
+      }
+      const num = (v: unknown, fallback = 0) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const { defaults, rates } = loadRatesContext();
+      const patch: Record<string, unknown> = {};
+      let repriced = false;
+      const full = typeof before.dedupHash === "string" && typeof before.buyValue === "number";
+      if (full) {
+        // (1) the full pre-join row — every column as it was, in the account,
+        // batch and ids the row holds NOW.
+        for (const [k, v] of Object.entries(before)) if (!UNJOIN_KEEP_CURRENT.has(k) && k in lot) patch[k] = v;
+      } else {
+        // (1′) a join made before this fix: derive the closing leg.
+        if (lot.segment === "eq_mtf") {
+          return {
+            ok: false,
+            code: "SHAPE",
+            message: `${lot.tradingsymbol} is an MTF position joined before this update: the join replaced its interest, pledge fee and GST and did not record the earlier figures, so it cannot be restored exactly. Nothing was changed.`,
+          };
+        }
+        const beforeBuy = num(before.buyQty);
+        const beforeSell = num(before.sellQty);
+        if (isShort && beforeBuy > 0) {
+          return {
+            ok: false,
+            code: "SHAPE",
+            message: `${lot.tradingsymbol} is a short that had already been partly covered when it was joined (before this update), and the join did not record that earlier cover's date. Nothing was changed.`,
+          };
+        }
+        const closingNow = isShort ? lot.buyQty : lot.sellQty;
+        const closingBefore = isShort ? beforeBuy : beforeSell;
+        if (Math.abs(r2(closingNow - saleQty) - r2(closingBefore)) > 1e-9) {
+          return { ok: false, code: "SHAPE", message: `${lot.tradingsymbol} has been edited since the join, so the join cannot be undone exactly. Nothing was changed.` };
+        }
+        const closingValue = r2((isShort ? lot.buyValue : lot.sellValue) - num(isShort ? sale.buyValue : sale.sellValue));
+        const closingOrders = Math.max(0, (isShort ? lot.buyOrderCount : lot.sellOrderCount) - (num(isShort ? sale.buyOrderCount : sale.sellOrderCount) || 1));
+        if (isShort) {
+          Object.assign(patch, { buyQty: 0, buyValue: 0, avgBuyPrice: 0, buyDate: null, buyOrderCount: closingOrders });
+          // The legacy-short join (two aliases) cleared 'unknown'; back to it.
+          if (aliases.length >= 2) patch.acquisition = "unknown";
+        } else {
+          const open = closingBefore <= 1e-9;
+          Object.assign(patch, {
+            sellQty: closingBefore,
+            sellValue: open ? 0 : closingValue,
+            avgSellPrice: open ? 0 : closingValue / closingBefore,
+            sellDate: open ? null : (typeof before.sellDate === "string" ? before.sellDate : null),
+            sellOrderCount: closingOrders,
+          });
+        }
+        // The sale's half of the bill: stated by its row, else priced from the
+        // card as the join did — but TODAY's card, which the message says.
+        const saleStated = num(sale.chargesTotal) > 0;
+        let half: StaleChargeParts;
+        if (saleStated) {
+          half = partsOf(sale as unknown as StaleChargeParts);
+        } else {
+          const lotPlanAccount = planAccountOf(lot.accountId);
+          const ratesOn = (day: string) =>
+            ratesForTrade(rates, { broker: lot.broker as Broker, segment: lot.segment as Segment, exchange: lot.exchange as Exchange, isin: lot.isin, symbol: lot.symbol }, day, resolvePlan(lotPlanAccount, lot.broker, day, rates));
+          const exitDay = (isShort ? lot.buyDate : lot.sellDate) ?? todayIstIso();
+          half = statedOrPricedCharges(
+            sale as unknown as StaleChargeParts & { chargesTotal: number },
+            isShort
+              ? { buyValue: num(sale.buyValue), sellValue: 0, buyQty: saleQty, sellQty: 0, buyOrderCount: num(sale.buyOrderCount) || 1, sellOrderCount: 0 }
+              : { buyValue: 0, sellValue: num(sale.sellValue), buyQty: 0, sellQty: saleQty, buyOrderCount: 0, sellOrderCount: num(sale.sellOrderCount) || 1 },
+            lot.segment as Segment,
+            exitDay,
+            ratesOn,
+          ).parts;
+          repriced = true;
+        }
+        const joinedParts = partsOf(lot as unknown as StaleChargeParts);
+        const chargesTotal = num(before.chargesTotal);
+        for (const k of STALE_CHARGE_PARTS) patch[k] = chargesTotal === 0 ? 0 : r2(joinedParts[k] - (half[k] ?? 0));
+        const netPnl = num(before.netPnl);
+        const grossPnl = r2(netPnl + chargesTotal);
+        Object.assign(patch, {
+          isOpen: true,
+          unrealisedPnl: 0, // a mark, re-derived by the next quote
+          chargesTotal,
+          netPnl,
+          grossPnl,
+          realisedPct: !isShort && closingBefore > 0 && lot.buyValue > 0 ? Math.round((grossPnl / lot.buyValue) * 10000) / 100 : null,
+          importNotes: typeof before.importNotes === "string" ? before.importNotes : null,
+          side: isShort ? "short" : "long",
+        });
+        patch.rMultiple = lot.riskAmount && lot.riskAmount > 0 ? Math.round((netPnl / lot.riskAmount) * 100) / 100 : lot.rMultiple;
+      }
+      // A 'cap' row reads in TODAY's cap (D1), by the writers' one formula.
+      const kept = keptRisk({ riskSource: (patch.riskSource as string | null | undefined) ?? lot.riskSource, riskAmount: (patch.riskAmount as number | null | undefined) ?? lot.riskAmount }, lot.bucket, lot.segment, defaults.capRows);
+      if (kept.followsCap) {
+        patch.riskAmount = kept.riskAmount;
+        patch.rMultiple = capR(num(patch.netPnl, lot.netPnl), kept.riskAmount);
+      }
+      // The notes the join wrote — the sentence, the sale's alias (and the
+      // legacy second alias), the bill — must be gone whichever path set them.
+      const restoredNotes = typeof patch.importNotes === "string" ? patch.importNotes : null;
+      if (restoredNotes && (restoredNotes.includes(STALE_CLOSE_NOTE) || aliases.some((h) => restoredNotes.toLowerCase().includes(`${DEDUP_ALIAS_PREFIX}${h}`)))) {
+        return { ok: false, code: "SHAPE", message: `${lot.tradingsymbol}'s recorded earlier state still names the join, so it cannot be restored. Nothing was changed.` };
+      }
+
+      tx.update(tradesTable)
+        .set({ ...(patch as Partial<typeof tradesTable.$inferInsert>), updatedAt: sql`(datetime('now'))` })
+        .where(eq(tradesTable.id, lot.id))
+        .run();
+
+      // 4 — the sale back, in the lot's CURRENT account, inside this transaction.
+      const { id: oldId, ...fields } = withSide(sale);
+      const idFree = tx.select({ id: tradesTable.id }).from(tradesTable).where(eq(tradesTable.id, oldId)).get() == null;
+      const values = { ...fields, ...(idFree ? { id: oldId } : {}), accountId: lot.accountId } as unknown as typeof tradesTable.$inferInsert;
+      let newId: number;
+      try {
+        newId = tx.insert(tradesTable).values(values).returning({ id: tradesTable.id }).get()!.id;
+      } catch (e) {
+        const msg = e instanceof Error && /unique/i.test(e.message)
+          ? `the ${what} is already in the journal as a row of its own (re-imported since the join)`
+          : e instanceof Error ? e.message : "unknown error";
+        throw new UnJoinAbort(`The join was not undone: ${msg}. Nothing was changed.`, "FAILED");
+      }
+      // D1 (v4.4.0): a restored row reads in TODAY's cap, not the one it was
+      // trashed under — the same two steps the Trash restore runs on the rows it
+      // lands, on this one row, inside this transaction (the harness's I7).
+      classifyUnsourcedRisk(sqlite, { ids: [newId] });
+      repriceCapTrades(sqlite, { ids: [newId] });
+      for (const ref of found.env.ledgerRefs ?? []) {
+        if (ref.tradeId !== oldId) continue;
+        tx.update(ledgerEntries).set({ refTradeId: newId }).where(and(eq(ledgerEntries.id, ref.ledgerId), isNull(ledgerEntries.refTradeId))).run();
+      }
+      for (const ref of found.env.ipoRefs ?? []) {
+        if (ref.tradeId !== oldId) continue;
+        tx.update(iposTable).set({ tradeId: newId }).where(and(eq(iposTable.id, ref.ipoId), isNull(iposTable.tradeId))).run();
+      }
+
+      // 5 — the trail: the lot's two states from ONE key list, and the sale's return.
+      const lotNow = lot as unknown as Record<string, unknown>;
+      recordAudit({
+        entity: "trade",
+        entityId: lot.id,
+        action: "update",
+        summary: `${lot.symbol} — the Data Quality join undone: the position reads open again, the ${what} #${newId} is back as its own row`,
+        before: lotNow,
+        after: { ...lotNow, ...patch },
+        source: "data-quality",
+      });
+      recordAudit({
+        entity: "trade",
+        entityId: newId,
+        action: "create",
+        summary: `${String(sale.tradingsymbol ?? lot.tradingsymbol)} — the ${what} the Data Quality join removed, back from Deleted items (${found.id})`,
+        after: { ...fields, id: newId, accountId: lot.accountId } as Record<string, unknown>,
+        source: "data-quality",
+      });
+      envelopeId = found.id;
+      return {
+        ok: true,
+        lotId: lot.id,
+        saleId: newId,
+        message:
+          `Undone. ${lot.tradingsymbol} is open again as it was before the join, and the ${what} of ${saleQty} is back as its own row. Data Quality lists the pair again.` +
+          (repriced ? ` The ${what} row stated no charges of its own, so its half of the bill was re-priced from today's rate card.` : ""),
+      };
+    });
+    // Consumed: Deleted items must not offer a second restore of a row that is back.
+    if (res.ok && envelopeId) purgeTrashSnapshot(envelopeId);
+    return res;
+  } catch (e) {
+    if (e instanceof UnJoinAbort) return { ok: false, code: e.code, message: e.message };
     throw e;
   }
 }

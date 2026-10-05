@@ -30,7 +30,15 @@
 // imports only `lib/domain/constants` (no parser, no DB) —
 // `components/import/import-client.tsx` imports this module into the client bundle.
 import { contractKeyOf, monthKeyOf, sameContractDay, sameContractDayOf, type ContractKey } from "./contract-key";
-import { execOriginFromNotes } from "./close-open-lots";
+import {
+  closeOriginOf,
+  execOriginFromNotes,
+  heldIdentityHashes,
+  isLotIdentityFrozen,
+  saysAutoClosePiece,
+  UNJOIN_MENU_LABEL,
+  type CloseOrigin,
+} from "./close-open-lots";
 
 // v4.8.0 X1 (D1): the contract key LIVES in `./contract-key` now; re-exported so
 // `pull-symbols.ts` and every test keep importing from here.
@@ -57,6 +65,8 @@ export interface ExistingRow {
    * Optional: a caller that hands in none gets exactly the report it got before.
    */
   importNotes?: string | null;
+  /** v4.8.0 FIX-A: which side opened a flat row (`sideOf`); read only through `heldIdentityHashes`. */
+  side?: string | null;
 }
 
 export interface IncomingRow {
@@ -150,6 +160,20 @@ export interface CrossSourceCollision {
    * same-month weekly, so this is INFORMATIONAL: reported, never risky.
    */
   monthOnly?: boolean;
+  /**
+   * v4.8.0 FIX-A (J-1): for a snapshot candidate, WHAT closed the stored row —
+   * `closeOriginOf` on its notes — so the sentence can name today's earlier pull,
+   * "an earlier pull today" (≤ v4.7.0, no file stored) or a Data Quality join,
+   * each with the remedy that actually ends at the broker's figure.
+   */
+  origin?: CloseOrigin;
+  /**
+   * v4.8.0 FIX-A (J-2): for `held-identity`, the HOLDER's shape — an auto-close
+   * piece (has an Un-close), a plain never-closed row (deletable), or a row that
+   * holds the identity as an alias / carries its own other leg (never advise a
+   * delete: it holds a purchase on no other row — U1).
+   */
+  holder?: "auto-close" | "plain-row" | "joined";
 }
 
 export interface CrossSourceReport {
@@ -186,7 +210,43 @@ const closedFromFile = (e: ExistingRow): string | null => execOriginFromNotes(e.
  * belongs to the pull's book too, whatever file opened it.
  */
 const snapshotOf = (inc: IncomingRow, e: ExistingRow, fileName: string) =>
-  inc.snapshotIds?.includes(e.id) === true && ((e.sourceFile ?? "") === fileName || closedFromFile(e) === fileName);
+  inc.snapshotIds?.includes(e.id) === true &&
+  ((e.sourceFile ?? "") === fileName ||
+    closedFromFile(e) === fileName ||
+    // FIX-A S-1: the plan admitted a frozen row that records no closing pull (a
+    // ≤ v4.7.0 whole-fold, a Data Quality join) — `closedOnDayWithoutPull`, whose
+    // day half the plan has already applied; the file halves above cannot see it.
+    (isLotIdentityFrozen({ dedupHash: e.dedupHash, importNotes: e.importNotes ?? null }) && closeOriginOf(e.importNotes ?? null) !== "pull"));
+
+/**
+ * FIX-A J-1: WHERE the stored row's figure came from, as the detail names it.
+ * A plain row names its file; a row an execution CLOSED names what closed it —
+ * never the LOT's file (P-D: "already recorded from lot.csv" sent the user to
+ * the wrong record), and never a guessed file for a ≤ v4.7.0 close, whose
+ * closing pull was not stored (invariant 6).
+ */
+const recordedFrom = (e: ExistingRow, snapshot: boolean): string => {
+  const origin = snapshot ? closeOriginOf(e.importNotes ?? null) : null;
+  if (origin === "pull") return `today's earlier pull (${closedFromFile(e) ?? "this broker"})`;
+  if (origin === "auto-close") return "an earlier pull today";
+  if (origin === "dq-join") return "a Data Quality join you made today";
+  return e.sourceFile ?? "an earlier import";
+};
+
+/**
+ * FIX-A J-2: the three shapes a holder of a refused identity can have (`heldBy`
+ * is any stored row whose `heldIdentityHashes` contains the slice / remainder
+ * hash). An auto-close piece keeps the Un-close remedy; a plain one-sided row
+ * holding only its own hash may be deleted; a row holding the identity as a
+ * HELD alias, or carrying its own other leg, is never advised deleted — it holds
+ * a purchase recorded on no other row (U1, lib/trash.ts).
+ */
+const holderShapeOf = (e: ExistingRow): NonNullable<CrossSourceCollision["holder"]> => {
+  if (saysAutoClosePiece({ importNotes: e.importNotes ?? null })) return "auto-close";
+  const oneSided = (statesBuy(e) && !statesSell(e)) || (statesSell(e) && !statesBuy(e));
+  const held = heldIdentityHashes({ dedupHash: e.dedupHash, importNotes: e.importNotes ?? null, buyQty: e.buyQty, sellQty: e.sellQty, buyDate: e.buyDate, sellDate: e.sellDate, side: e.side ?? null });
+  return oneSided && held.length === 1 ? "plain-row" : "joined";
+};
 
 /** X1 D6b (ii): does `e` hold the identity the plan refused to store twice? */
 const holderOf = (inc: IncomingRow, e: ExistingRow) => inc.heldIds?.includes(e.id) === true;
@@ -396,27 +456,42 @@ export function detectCrossSourceDuplicates(
       const incQty = Math.max(buy ? inc.buyQty : 0, sell ? inc.sellQty : 0);
       const exQty = Math.max(buy ? e.buyQty : 0, sell ? e.sellQty : 0);
 
+      // FIX-A J-1: a stored row an execution CLOSED is named by what closed it.
+      const from = recordedFrom(e, snapshot);
+      const origin = snapshot ? closeOriginOf(e.importNotes ?? null) : null;
+      let holderShape: CrossSourceCollision["holder"];
       if (incQty > 0 && incQty === exQty) {
         kind = "same-quantity";
-        detail = `${incQty} shares already recorded from ${e.sourceFile ?? "an earlier import"}.`;
+        detail = `${incQty} shares already recorded from ${from}.`;
       } else if ((buy && closeEnough(inc.buyValue, e.buyValue)) || (sell && closeEnough(inc.sellValue, e.sellValue))) {
         kind = "same-value";
-        detail = `A trade of nearly the same value is already recorded from ${e.sourceFile ?? "an earlier import"}.`;
+        detail = `A trade of nearly the same value is already recorded from ${from}.`;
       } else if (incQty > 0 && exQty > 0 && (incQty % exQty === 0 || exQty % incQty === 0)) {
         kind = "partial-quantity";
-        detail = `${incQty} shares here against ${exQty} already recorded from ${e.sourceFile ?? "an earlier import"} — one may be part of the other.`;
+        detail = `${incQty} shares here against ${exQty} already recorded from ${from} — one may be part of the other.`;
       }
       // W2R N2: the commit's plan asked about this row, so today's earlier
       // snapshot on its key is reported whether or not a relation was found.
       if (!kind && snapshot) {
         kind = "earlier-snapshot";
-        detail = `Today's earlier pull recorded ${e.buyQty} bought and ${e.sellQty} sold in ${e.sourceFile ?? "this pull"}; this pull states ${inc.buyQty} bought and ${inc.sellQty} sold.`;
+        detail = origin
+          ? `${from[0]!.toUpperCase()}${from.slice(1)} recorded ${e.buyQty} bought and ${e.sellQty} sold against an older position; this pull states ${inc.buyQty} bought and ${inc.sellQty} sold.`
+          : `Today's earlier pull recorded ${e.buyQty} bought and ${e.sellQty} sold in ${e.sourceFile ?? "this pull"}; this pull states ${inc.buyQty} bought and ${inc.sellQty} sold.`;
       }
       // X1 D6b (ii): the plan refused to close with this row's identity; said
       // as its own kind whatever the quantity relation, and always risky.
+      // FIX-A J-2: the remedy is the HOLDER's — three shapes, three sentences.
       if (holder) {
         kind = "held-identity";
-        detail = `Part of this execution — what would be left of it after closing the position it matches — is already recorded as ${e.sourceFile ?? "an earlier import"} (${e.buyQty} bought, ${e.sellQty} sold), so nothing was closed automatically. Un-close that record from Trades and pull again, or commit this row beside it.`;
+        holderShape = holderShapeOf(e);
+        const file = e.sourceFile ?? "an earlier import";
+        const when = e.sellDate ?? e.buyDate ?? "no date";
+        detail =
+          holderShape === "auto-close"
+            ? `Part of this execution — what would be left of it after closing the position it matches — is already recorded as ${file} (${e.buyQty} bought, ${e.sellQty} sold), so nothing was closed automatically. Un-close that record from Trades and pull again, or commit this row beside it.`
+            : holderShape === "plain-row"
+              ? `That earlier row (${file}, ${when}) already records this sale — it is part of this file's ${incQty || Math.max(inc.buyQty, inc.sellQty)}. Delete that row in Trades, then import / pull again; committing anyway records this row beside it.`
+              : `Trade #${e.id} (${e.tradingsymbol}) already records this sale as part of its close. Undo that join (Trades → the row's menu → ${UNJOIN_MENU_LABEL}) and import again, or commit anyway to record this row beside it.`;
       }
 
       if (kind) {
@@ -439,6 +514,8 @@ export function detectCrossSourceDuplicates(
           detail,
           ...(sameSnapshot ? { sameSnapshot: true } : {}),
           ...(monthOnly ? { monthOnly: true } : {}),
+          ...(origin ? { origin } : {}),
+          ...(holderShape ? { holder: holderShape } : {}),
         };
         // The MOST severe candidate of each kind: a partial overlap met first
         // must not hide a risky one behind it (R43: two products of one
@@ -498,15 +575,29 @@ export function detectCrossSourceDuplicates(
   // W2H: an ask made only because nothing is on the key has its own reason and path.
   const converted = collisions.filter((c) => offKey.has(c) && c.kind !== "held-identity");
   const parts: string[] = [];
-  if (held.length > 0) {
-    const one = held.length === 1;
-    // X1 D6b (ii): the plan would have stored what is left of this execution
-    // under a record the journal already holds (the unique index refuses it), so
-    // the close is refused and the row is asked about rather than inserted.
-    parts.push(
-      `${held.length} row${one ? "" : "s"} in this pull (${listOf(held)}) would close a position this account holds, but what is left of ${one ? "it" : "them"} after that close is already recorded as a row of its own — a sale of the same quantity, price and day. ` +
-        `Nothing was closed automatically and nothing was committed. Un-close that earlier record (Trades → the row's menu → "Un-close") and pull again, or commit anyway to add this pull's row${one ? "" : "s"} beside it.`,
-    );
+  // X1 D6b (ii): the plan would have stored what is left of this execution
+  // under a record the journal already holds (the unique index refuses it), so
+  // the close is refused and the row is asked about rather than inserted.
+  // FIX-A J-2: the remedy is the HOLDER's — an auto-close piece has an Un-close;
+  // a plain never-closed row has none (Trades offers no button, the server
+  // answers NOT_FOUND) and may be deleted; a joined lot holds a purchase on no
+  // other row and is never advised deleted — its door is the un-join.
+  const heldBy = (shape: CrossSourceCollision["holder"]) => held.filter((c) => (c.holder ?? "auto-close") === shape);
+  for (const shape of ["auto-close", "plain-row", "joined"] as const) {
+    const group = heldBy(shape);
+    if (group.length === 0) continue;
+    const one = group.length === 1;
+    const lead =
+      shape === "joined"
+        ? `${group.length} row${one ? "" : "s"} in this pull (${listOf(group)}) would close a position this account holds, but what is left of ${one ? "it" : "them"} after that close is already recorded as part of a position's close — a Data Quality join. `
+        : `${group.length} row${one ? "" : "s"} in this pull (${listOf(group)}) would close a position this account holds, but what is left of ${one ? "it" : "them"} after that close is already recorded as a row of its own — a sale of the same quantity, price and day. `;
+    const remedy =
+      shape === "auto-close"
+        ? `Nothing was closed automatically and nothing was committed. Un-close that earlier record (Trades → the row's menu → "Un-close") and pull again, or commit anyway to add this pull's row${one ? "" : "s"} beside it.`
+        : shape === "plain-row"
+          ? `Nothing was closed automatically and nothing was committed. Delete that earlier row in Trades, then pull again — the pull then closes the position itself; committing anyway records this pull's row${one ? "" : "s"} beside it.`
+          : `Nothing was closed automatically and nothing was committed. Undo that join (Trades → the row's menu → ${UNJOIN_MENU_LABEL}) and pull again, or commit anyway to record this pull's row${one ? "" : "s"} beside it.`;
+    parts.push(lead + remedy);
   }
   if (crossFile.length > 0) {
     parts.push(
@@ -515,12 +606,50 @@ export function detectCrossSourceDuplicates(
         "Nothing is merged automatically: merging means choosing whose numbers to keep, and getting that wrong silently corrupts cost basis and holding period. Delete the earlier import first if these are the same trades.",
     );
   }
-  if (earlier.length > 0) {
-    const one = earlier.length === 1;
+  // FIX-A J-1 (release audit, PROBE-1's 409): a restated figure whose earlier
+  // part was FOLDED INTO AN OLDER POSITION is its own case — the recorded row is
+  // not "today's earlier pull's row" but a lot that pull (or a Data Quality
+  // join) closed. The old sentence listed reasons that did not include it, and
+  // its "committing anyway adds this pull's row beside the earlier one" ended
+  // at 225 sold against the broker's 150. The only remedy that ends at the
+  // broker's figure with the lot closed (review P-C / P-D): undo the close,
+  // delete the sale it brings back, pull again — the pull then closes the lot.
+  const earlierPlain = earlier.filter((c) => !c.origin);
+  const earlierClosed = earlier.filter((c) => c.origin === "pull" || c.origin === "auto-close");
+  const earlierJoined = earlier.filter((c) => c.origin === "dq-join");
+  if (earlierPlain.length > 0) {
+    const one = earlierPlain.length === 1;
     parts.push(
-      `${earlier.length} row${one ? "" : "s"} in this pull (${listOf(earlier)}) restate${one ? "s" : ""} a position today's earlier pull already recorded, and ${one ? "is" : "are"} not written over it: ` +
+      `${earlierPlain.length} row${one ? "" : "s"} in this pull (${listOf(earlierPlain)}) restate${one ? "s" : ""} a position today's earlier pull already recorded, and ${one ? "is" : "are"} not written over it: ` +
         "the recorded row carries detail a replacement would lose (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. " +
         "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.",
+    );
+  }
+  const closedQty = (c: CrossSourceCollision) => Math.max(c.existing.buyQty, c.existing.sellQty);
+  const statedQty = (c: CrossSourceCollision) => Math.max(c.incoming.buyQty, c.incoming.sellQty);
+  if (earlierClosed.length > 0) {
+    const one = earlierClosed.length === 1;
+    const c = earlierClosed[0]!;
+    // A ≤ v4.7.0 close stored no closing file, so none is named (invariant 6).
+    const who = one && c.origin === "pull" ? "Today's earlier pull from this broker" : one ? "An earlier pull today" : "Today's earlier pulls from this broker";
+    parts.push(
+      (one
+        ? `${who} already closed ${closedQty(c)} of ${c.symbol} against an older position; this pull states the day's total as ${statedQty(c)}. `
+        : `${who} already closed ${earlierClosed.length} positions (${listOf(earlierClosed)}) with sales this pull now restates as larger day totals. `) +
+        `To record the new total: in Trades, Un-close ${one ? "that position" : "each position"} (the row's menu → Un-close), delete the sale row that brings back, then pull again — the pull then closes the position itself. ` +
+        `Committing anyway records this pull's figure beside the sale already counted, so the day is counted twice. ` +
+        `The deleted sale stays in Deleted items; a later restore of it is skipped because the pull has recorded it.`,
+    );
+  }
+  if (earlierJoined.length > 0) {
+    const one = earlierJoined.length === 1;
+    const c = earlierJoined[0]!;
+    parts.push(
+      (one
+        ? `A Data Quality join you made today already closed ${closedQty(c)} of ${c.symbol} against an older position with this pull's earlier sale; this pull states the day's total as ${statedQty(c)}. `
+        : `Data Quality joins you made today already closed ${earlierJoined.length} positions (${listOf(earlierJoined)}) with sales this pull now restates as larger day totals. `) +
+        `To record the new total: in Trades, undo ${one ? "that join" : "each join"} (the row's menu → ${UNJOIN_MENU_LABEL}), delete the sale row that brings back, then pull again — the pull then closes the position itself. ` +
+        `Committing anyway records this pull's figure beside the sale already counted, so the day is counted twice.`,
     );
   }
   if (converted.length > 0) {

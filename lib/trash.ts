@@ -247,6 +247,19 @@ function readEnvelope(id: string): TrashEnvelope | null {
   }
 }
 
+/**
+ * v4.8.0 FIX-A (J-3, review §J-3.2) — ONE envelope, read exactly as the restore
+ * reads it (validated; null when missing or unreadable). Exported for the
+ * Data Quality un-join (`unJoinStaleClose`, lib/import/commit.ts), which puts
+ * the joined sale back INSIDE its own transaction instead of calling
+ * `restoreTrashSnapshot`: that door skips a row the lot still records (P-E),
+ * answers ACCOUNT_GONE after a merge (P-F) and leaves the envelope on disk.
+ * It reads; it never writes or removes anything.
+ */
+export function readTrashEnvelope(id: string): TrashEnvelope | null {
+  return readEnvelope(id);
+}
+
 function dirSize(dir: string): number {
   let total = 0;
   const walk = (d: string) => {

@@ -220,6 +220,16 @@ export function stepsToShow(shown: number, target: number, step: number): number
   return target <= shown ? 0 : Math.ceil((target - shown) / step);
 }
 
+/**
+ * The rows the user's own window mark must hold after j / k lands on `next` (v4.8.0 FIX-B, U-2): the width on
+ * screen (`shownCount`, which the focus or the card may have widened past the mark — a filter cleared under the
+ * focused row leaves it 900 places down), or the landing row, whichever is wider. Raised on EVERY move, so walking
+ * up with `k` from a derived-wide window keeps the rows below instead of shrinking it a step at a time.
+ */
+export function markAfterMove(shownCount: number, next: number): number {
+  return Math.max(shownCount, next + 1);
+}
+
 /** P7 — the close of the last bar strictly BEFORE `today`; null when there is none. */
 export function prevCloseOf(bars: readonly Pick<Bar, "date" | "closeP">[], today: string): Paise | null {
   for (let i = bars.length - 1; i >= 0; i--) if (bars[i].date < today) return bars[i].closeP;

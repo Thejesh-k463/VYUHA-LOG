@@ -135,10 +135,19 @@ export interface ClinicCard {
   computedAt: string | null;
   finding: ClinicCardFinding | null;
   teaser: ClinicTeaser | null;
+  /**
+   * v4.8.0 FIX-B (J-4): the scope HAS a cached row, but another engine version wrote it — it is never read (no
+   * finding, no teaser), and the card says the engine changed rather than that the book was never read. Absent on
+   * every other state, so those cards (and their markup) are the v4.7.0 ones.
+   */
+  engineChanged?: true;
 }
 
-/** No cached report from this engine version for the scope. */
+/** No cached report for the scope. */
 export const CLINIC_CARD_MISSING: ClinicCard = { hasReport: false, computedAt: null, finding: null, teaser: null };
+
+/** A cached row from ANOTHER engine version — read as nothing, said as "the engine changed" (J-4). */
+export const CLINIC_CARD_ENGINE_CHANGED: ClinicCard = { ...CLINIC_CARD_MISSING, engineChanged: true };
 
 /**
  * What a FREE copy's card may receive — the SAME cut `clinicStateFor` makes: the note's finding and the report's

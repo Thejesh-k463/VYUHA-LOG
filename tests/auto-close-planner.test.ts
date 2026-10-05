@@ -227,11 +227,15 @@ describe("W2a · autoCloseSentences — what the import is allowed to SAY", () =
     expect(emptyAutoCloseCounters()).toMatchObject({ refusedMonthOnly: 0, refusedHeldIdentity: 0 });
   });
 
-  it("X1 D6b (ii) — a close refused because its remainder is already held is said, and points at un-close", () => {
+  it("X1 D6b (ii) — a close refused because its remainder is already held is said; FIX-A J-2: the counter names NO remedy (it knows no row) and points at the per-row collision", () => {
     const one = autoCloseSentences(c({ refusedHeldIdentity: 1 }));
     expect(one).toHaveLength(1);
     expect(one[0]).toContain("already recorded as a row of its own");
-    expect(one[0]).toContain("Un-close the earlier record");
+    // Release audit J-2: the holder may be a plain row with no Un-close, or a
+    // joined lot that must never be deleted — only the per-row detail knows.
+    expect(one[0]).not.toContain("Un-close the earlier record");
+    expect(one[0]).not.toContain("join them from Data Quality");
+    expect(one[0]).toContain("names the earlier record and the way to resolve it");
     const out = autoCloseSentences(c({ closedWhole: 1, refusedNoDate: 1, refusedMonthOnly: 1, refusedHeldIdentity: 1, closedAgainstStoredLot: 1 }));
     expect(out.map((s) => s.slice(0, 22))).toEqual(["1 position closed agai", "1 incoming execution s", "1 incoming execution n", "1 incoming execution w"]);
   });

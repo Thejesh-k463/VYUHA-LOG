@@ -7,9 +7,11 @@ import { DECAY_CHART_HEIGHT } from "./decay-chart-height";
  * v4.8.0 F1 — the decay card's small line (owner-picked design "N1"): the engine's
  * rolling-mean trace, the usual mean as a dashed level, and — only when the CUSUM
  * alarmed — the stretch from the alarm trade in the loss colour behind a dashed
- * marker. recharts, not canvas: the Clinic report prints, and the print palette
- * re-themes SVG through the CSS custom properties below (AGENTS.md, "Charts that
- * reach paper stay recharts"). No colour is written any other way.
+ * marker. recharts, not canvas: SVG takes its colours from the shared theme's CSS
+ * custom properties below, so it follows the light / dark / colorblind palettes —
+ * and the print palette, should the page reach paper through the browser (the
+ * Clinic has no print action of its own; AGENTS.md, "Charts that reach paper stay
+ * recharts"). No colour is written any other way.
  *
  * It draws; it decides nothing. Whether the cell alarmed, and from which trade, is
  * the engine's `decay.cusum` — the card passes `splitAt` or null.

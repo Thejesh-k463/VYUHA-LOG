@@ -63,6 +63,25 @@ export function manualCurrencyRefused(f: {
   return isManualCurrencyTrade({ tradingsymbol: f.tradingsymbol, segment: f.segment, exchange: f.exchange });
 }
 
+/**
+ * The Save button and the breach line, derived at render (v4.8.0 FIX-B, U-1). The limits verdict is fetched by
+ * its own effect and survives a currency symbol typed after it, so a stale "block" must not turn the disabled
+ * Save into "Override & add anyway": while `currencyRefused` holds, the refusal alert is the one reason on screen.
+ */
+export function manualSubmitState(s: {
+  pending: boolean;
+  open: boolean;
+  currencyRefused: boolean;
+  limitStatus: LimitResult["status"] | undefined;
+}): { blocked: boolean; variant: "destructive" | "default"; label: string } {
+  const blocked = s.open && !s.currencyRefused && s.limitStatus === "block";
+  return {
+    blocked,
+    variant: blocked ? "destructive" : "default",
+    label: s.pending ? "Saving…" : blocked ? "Override & add anyway" : s.open ? "Add open trade" : "Add trade",
+  };
+}
+
 const MONTHS_ABBR =["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "2026-07-28" -> "28 Jul 2026" (the OPT/FUT format classify() parses). */
@@ -322,7 +341,7 @@ export function ManualTradeForm({
   const isMtf =
     kind === "equity" &&
     (productHint === "mtf" || segment === "eq_mtf" || preview?.classification.segment === "eq_mtf");
-  const blocked = open && limit?.status === "block";
+  const submit = manualSubmitState({ pending, open, currencyRefused, limitStatus: limit?.status });
   const dte = kind === "fno" && expiry ? daysBetween(todayIstIso(), expiry) : null;
   const fnoQty = (Number(lots) || 0) * (Number(lotSize) || 0);
 
@@ -717,13 +736,13 @@ export function ManualTradeForm({
       </div>
 
       <DialogFooter>
-        {blocked && <span className="mr-auto text-xs text-loss">Limit breached — you stay in control; saving records the breach on your Discipline scorecard.</span>}
+        {submit.blocked && <span className="mr-auto text-xs text-loss">Limit breached — you stay in control; saving records the breach on your Discipline scorecard.</span>}
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         {/* Limits are advisory — the trader always has final say. A breach flips
             the button to an explicit override (recorded in rule_violations and
             on the Discipline scorecard) but never disables saving. */}
-        <Button type="submit" disabled={pending || currencyRefused} variant={blocked ? "destructive" : "default"}>
-          {pending ? "Saving…" : blocked ? "Override & add anyway" : open ? "Add open trade" : "Add trade"}
+        <Button type="submit" disabled={pending || currencyRefused} variant={submit.variant}>
+          {submit.label}
         </Button>
       </DialogFooter>
     </form>

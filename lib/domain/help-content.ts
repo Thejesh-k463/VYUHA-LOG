@@ -261,6 +261,8 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "Select rows with the checkboxes for bulk delete — the confirmation shows exactly what will go, and past ten trades you type the count. Deleting a trade takes its notes, tags and chart attachments with it.",
       "An open position with no current price appears under Open but in neither 'in gain' nor 'in loss' — a missing price is never read as breakeven.",
       "A row an import closed against a position you already held carries an Un-close button. It reopens the position exactly as it was and writes the closing execution back as its own row, with the bill the broker stated for it — nothing is re-estimated. Deleting or merging such a row is refused until it is un-closed, so a half-undone close can never exist.",
+      // FIX-A J-3: the Data Quality join's own door, beside the import's.
+      "A position you closed from Data Quality with a sale the book had stored beside it carries Undo Data Quality join instead: the position reads open again exactly as it was before the join and the sale comes back from Deleted items as its own row — the pair is then listed in Data Quality again. It needs the sale's entry in Deleted items, which a backup does not carry.",
     ],
     keywords: ["journal", "add trade", "delete", "bulk", "select", "filter", "unmarked", "un-close", "auto-close"],
   },
@@ -473,7 +475,12 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "The whole-book grade and the trades it still needs are free; the full report, the weekly note and experiments are Pro. The report is computed once per change to your book, off the page, and reused until something it reads changes. Experiments start in one account at a time, never in the All-accounts view.",
       "The sizing ceiling counts only trades with a stop or a typed risk — cap-unit R is not a risk — and needs 30 of them in a cell.",
       // v4.8.0 F1 — the decay card in a cell's Detail.
-      "A cell with at least 60 trades carrying an R shows a decay card in its Detail: the average R of the first half of its trades (usual) beside the average since the trade where a possible drop was flagged — or, when no drop is detected, the average of the trades after that first half — and a small line of the 30-trade rolling average. The line stating rupees for every ₹1,000 risked appears only when every trade in the cell has a stop or a typed risk.",
+      // FIX-A D-2: the rupee-line rule stated as the card computes it
+      // (`everyRIsARisk`, components/edge-clinic/decay-card.tsx): the sample is
+      // the trades that CARRY an R; none of those from the default per-trade cap,
+      // none unclassified, at least one from a stop or a typed risk. A trade with
+      // no R at all is outside the sample and does not bar the line.
+      "A cell with at least 60 trades carrying an R shows a decay card in its Detail: the average R of the first half of its trades (usual) beside the average since the trade where a possible drop was flagged — or, when no drop is detected, the average of the trades after that first half — and a small line of the 30-trade rolling average. The line stating rupees for every ₹1,000 risked appears only when every trade in the cell has a stop or a typed risk, counting only the trades that carry an R: a trade with no R is not in the card's sample, and one R from the default per-trade cap, or one that cannot be classified, hides the line.",
     ],
     keywords: ["clinic", "evidence", "grade", "weekly note", "experiment", "multiple comparisons", "edge decay", "kelly"],
     refusals: [
@@ -555,8 +562,10 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "One confidence score over missing cost basis, marks, stops, MTF funding, option metadata, instrument coverage, IPO links and missing attachment files — each with a direct route to fix it. Critical means it changes money; info means coverage.",
       "An open position whose closing trade the book stored as a row of its own is listed with both rows' names; when the two names share only a contract month — one is the exchange's compact monthly or future name, which states no expiry day — nothing is joined until you confirm they are one contract.",
+      // FIX-A J-3 (owner 2026-10-05): every Data Quality join can be undone.
+      "A join can be undone from Trades (the row's menu → Undo Data Quality join): the position reads open again exactly as it was and the removed row comes back from Deleted items as its own row, so the pair is listed here again. Deleted items are kept beside the journal and are not part of a backup, so a join cannot be undone on a machine restored from one — the row is then recoverable only from the audit log's record of the delete.",
     ],
-    keywords: ["quality", "score", "missing", "confidence", "stale", "month"],
+    keywords: ["quality", "score", "missing", "confidence", "stale", "month", "undo", "un-join"],
   },
   {
     href: "/rule-packs",

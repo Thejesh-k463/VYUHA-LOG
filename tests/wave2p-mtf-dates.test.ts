@@ -89,20 +89,24 @@ describe("D4 · patchMovesChargeInput / chargeInputsChanged compare days, not by
  * `closeStaleLot`'s transaction, and the accrual job had none — so a
  * staged-flagged row with no legs was rewritten from an empty ladder there. The
  * six sites now read `legCountOf` / `hasLadder` (lib/queries/staged), and the
- * literal lives in exactly two places: that helper, and `closeStaleLot`'s `tx`
- * block (a transaction cannot borrow a non-transactional helper).
+ * literal lives in exactly two places: that helper, and ONE tx-side helper in
+ * commit.ts (a transaction cannot borrow a non-transactional helper). v4.8.0
+ * FIX-A: `unJoinStaleClose` needed the same count inside its transaction, so the
+ * two tx copies became `txLegCount(tx, id)` — one tx copy, read by both.
  */
 describe("D5 · the leg-count query has one owner", () => {
   const LITERAL = /from\(tradeLegs\)\.where\(eq\(tradeLegs\.tradeId/g;
 
-  it("lib/queries/staged.ts states it once (legCountOf); commit.ts only inside closeStaleLot's tx", () => {
+  it("lib/queries/staged.ts states it once (legCountOf); commit.ts once, inside txLegCount's tx", () => {
     expect(read("lib/queries/staged.ts").match(LITERAL)?.length).toBe(1);
     const commit = read("lib/import/commit.ts");
-    expect(commit.match(LITERAL)?.length).toBe(2);
+    expect(commit.match(LITERAL)?.length).toBe(1);
     for (const m of commit.matchAll(LITERAL)) {
       const line = commit.slice(commit.lastIndexOf("\n", m.index) + 1, commit.indexOf("\n", m.index));
       expect(line, "a copy outside the transaction").toMatch(/\btx\.select\(/);
     }
+    expect(commit).toMatch(/function txLegCount\(tx: TxLike, tradeId: number\): number \{\s*return tx\.select\(/);
+    expect(commit.match(/\btxLegCount\(tx, /g)?.length, "closeStaleLot (lot + sale) and unJoinStaleClose (lot)").toBe(3);
   });
 
   it.each([

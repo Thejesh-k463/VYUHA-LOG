@@ -11,6 +11,7 @@ import { daysToResults } from "@/lib/live/results-date";
 import {
   cohortConcentration,
   headerTotals,
+  markAfterMove,
   nearStop,
   riskLensSummary,
   sinceClose,
@@ -254,14 +255,18 @@ export function PositionsTab({
         // j / k with the card open: the card follows the focus (D2).
         if (cardId !== null && id !== null) setCardId(id);
         if (next < 0) return;
+        // The width on screen — which the focus or the card may have widened
+        // past the user's mark (a filter cleared under the focus) — or the row
+        // past the edge becomes the user's own, so the window never shrinks
+        // under the cursor as `k` walks back up (FIX-B U-2). An event handler,
+        // never an effect; a move inside the mark asks for nothing.
+        askFor(markAfterMove(shown.length, next));
         if (next < shown.length) {
           document.querySelector(`[data-pos-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
         } else {
           // Past the window's edge: the new focus widens it at the next render
-          // (`windowLimit`), `askFor` makes that width the user's own so it
-          // stays when the focus moves back, and the scroll waits for the row
-          // to be in the document — never `scrollIntoView` on a missing node.
-          askFor(next + 1);
+          // (`windowLimit`) and the scroll waits for the row to be in the
+          // document — never `scrollIntoView` on a missing node.
           pendingScroll.current = next;
         }
         return;
