@@ -86,7 +86,9 @@ You have two paths — use either or both:
    text for you to enter by hand — it does not import trades. Live **API pulls** work for
    Zerodha, Dhan, Upstox and Angel One (Import → Connect broker) — Angel One runs unattended from your
    TOTP secret, and all API credentials are stored encrypted, bound to this machine, and sent
-   nowhere except the broker itself. Any other broker's CSV/XLSX
+   nowhere except the broker itself. Since v4.7.0 **Fyers, Kotak Neo and Nuvama** can be pulled
+   from the same screen — today's trades only, and *documented, not yet verified with a real
+   account*, so check those pulls against your contract note. Any other broker's CSV/XLSX
    imports through the column mapper — Vyuha asks once and remembers.
    *Setting up a broker API? **BROKER_API_SETUP_GUIDE.html** in this package walks through each
    broker's own form, field by field — including Angel One's Redirect URL and Static IP boxes.*
@@ -146,32 +148,48 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
-**Upgrading from v4.5.x to v4.6.0 — nothing is asked of you.** The v4.6.0 installer runs the
-v4.5.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
+**Upgrading from v4.6.x to v4.7.0 — nothing is asked of you during the install** (four disclosures
+are re-read once afterwards — below)**.** The v4.7.0 installer runs the
+v4.6.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
 "Delete the application data" checkbox appears, ticking it still erases the whole data folder, but
 not before your journal database and licence key have been named and copied to
 `Documents\Vyuha-backup-<date>`, and Cancel leaves everything exactly as it is.
 
-**Migrations on first launch of v4.6.0.** **Four** database upgrades, applied behind the same
-automatic `backups\pre-migrate-<timestamp>.sqlite` copy described below: **0075** moves a Telegram
-digest send time still at the old **15:35** default to **15:45**, after the F&O close (a time you
-typed yourself is left alone); **0076** adds the Market Atlas regime thresholds (blank = the shipped
-defaults); **0077** adds the column that records which side opened a trade — a one-time data fix
-then states it for your existing trades from their own dates and notes, and leaves it blank where
-they cannot tell; **0078** adds the **16 Fyers and Nuvama margin rows**. The same first start adds
-the **280 Fyers and Nuvama rate rows** to your rate card. None of it touches a row you added or
-edited yourself, and no money figure already stored on a trade moves. **Take your own backup
-first, as always.** Upgrading from **v4.4.x** applies **0074 to 0078** in order.
+**Migrations on first launch of v4.7.0.** **Two** database upgrades, applied behind the same
+automatic `backups\pre-migrate-<timestamp>.sqlite` copy described below: **0079** adds the optional
+setup grade and intra-trade high/low on a trade and the Edge Clinic's experiments and cache;
+**0080** adds the Telegram alert settings and the alert receipts (the receipts are machine state —
+never part of a backup). No money figure
+already stored on a trade moves. **Take your own backup first, as always.** Upgrading from
+**v4.5.x** applies **0075 to 0080** in order, and the notes for that step — Paytm Money and Groww
+ladders, the covered short, OpenAlgo 2.0.2.6 — are under "New in v4.6.0" in the README.
 
-**What changes in how imports land, with no switch to set.** Paytm Money and Groww fills are now
-allocated to exactly one position each, so a ladder always sums to its position and some positions
-that used to arrive as staged ladders arrive as single rows. **A Paytm Money or Groww book imported
-before v4.6.0 keeps its old ladders** — the update does not rewrite them, and re-importing the same
-file is skipped as a duplicate. **Data Quality** lists them as "Staged positions whose fills do not
-add up to the position"; delete the position, then re-import the same file, to rebuild it. An
-overnight F&O sale covered by a later buy in the same file now lands as one closed short, filed in
-the financial year it was covered. If you use OpenAlgo, it must be version **2.0.2.6** or later,
-and you are asked once to re-acknowledge its disclosure (version 4).
+**What you will be asked once after the update.** Four disclosures changed, and each is re-read
+before its feature runs again: **Telegram (version 2)** — your end-of-day digest **pauses** until you
+re-accept it in Settings (a one-time strip on every page points there); **OpenAlgo (version 5)** —
+both its trade pull and its live feed (your own bridge, on `127.0.0.1` unless you entered another
+address) stay closed until you re-accept; **Upstox and Angel One live feeds (version 2 each)** — the
+feed stays closed and the desk uses the end-of-day price until you re-accept. While a feed is
+closed, the Live Desk says why and links to Settings → Live feed, and — if you have a saved
+OpenAlgo instance — the Import screen's OpenAlgo section states its reason instead of disappearing.
+
+**What changes with no switch to set.** **Currency derivatives are now refused at import** by
+every broker pull and by every file import, the column mapper included: the row is counted and its
+contract named, and nothing is imported for it. A contract is recognised by a stated currency segment
+or venue, or by a name Vyuha reads as one of the seven exchange-traded pairs; a file that states
+neither is not caught, and a trade typed in by hand is not refused. Currency rows you imported before v4.7.0 **keep the
+charges they were stored with** — the update does not re-price them, and importing the same file
+again refuses the row rather than correcting it — so delete those trades if you want them gone. A
+currency position still **open** from an earlier import will not close itself, because its sale is
+now refused; the refusal note names it for you to close or delete by hand. The duplicate check now
+matches one broker's contract written two ways by two of your sources, so a re-import or a pull may
+now stop at the duplicate dialog where it did not, and the launch auto-pull skips those rows for
+you to review. Every live feed stops at the end of the live window (about 15:45 IST). If your
+OpenAlgo's streaming port is not 8765, put its `WEBSOCKET_URL` in the OpenAlgo connection's
+**Streaming address** to get the stream; without it the desk keeps polling as before. `/reports/itr`
+now counts exited IPO allotments, so its capital gains can move if you exited one. Telegram
+stop/target alerts, where you switch them on, stop after **31 December 2026** until an update
+bundles the 2027 holiday list.
 
 **One thing that happens on its own at first launch, and nothing to switch on.** The desktop
 rate-card refresh had failed on every launch since v3.2.0; 4.3.0 repairs the F&O STT rates for
@@ -234,7 +252,7 @@ removed. Leave the box unticked to keep the data where it is.
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_4.6.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.6`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_4.7.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.7`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

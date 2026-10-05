@@ -92,6 +92,7 @@ import { extractTime } from "../time-parse";
 import { corroborate, inferProduct, productReason, splitMixedRow } from "../product-signature";
 import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
 import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
+import { statesCurrency, withCurrencyRefusals } from "./zerodha";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.]/g, "");
 
@@ -292,6 +293,7 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   const dataRows = rows.slice(h + 1).filter((r) => r.some((c) => c.trim() !== ""));
   const warnings: string[] = [];
   const unreadable: string[] = [];
+  const refusedCurrency: string[] = [];
 
   /**
    * Label → the ISIN the file itself gave that label, where it gave exactly one.
@@ -331,6 +333,14 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   for (const r of dataRows) {
     const symbol = (r[cScript] ?? "").trim();
     if (!symbol) continue;
+    // v4.7.0 — an execution whose Exchange cell states currency (CDS, BCD, …)
+    // is REFUSED and named before it touches a position or the file's charge
+    // totals. `exchangeFrom` read that venue as "not stated", and the row was
+    // stored as an NSE contract (no charge_config row covers currency).
+    if (statesCurrency(cExch >= 0 ? r[cExch] : "")) {
+      refusedCurrency.push(symbol);
+      continue;
+    }
     const stated = cIsin >= 0 ? (r[cIsin] ?? "").trim().toUpperCase() || null : null;
     const isin = stated ?? isinOfLabel.get(symbol) ?? null;
     if (stated == null && isin != null) bridgedRows++;
@@ -750,14 +760,18 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
     );
   }
 
-  return {
-    sourceId: "paytm-tradebook",
-    broker: "paytm",
-    format: "tradebook",
-    trades,
-    // Executions as read, BEFORE pairing — so the UI can say
-    // "414 lines → 57 trades" instead of a count that looks like loss.
-    sourceRows: fills.length,
-    warnings,
-  };
+  return withCurrencyRefusals(
+    {
+      sourceId: "paytm-tradebook",
+      broker: "paytm",
+      format: "tradebook",
+      trades,
+      // Executions as read, BEFORE pairing — so the UI can say
+      // "414 lines → 57 trades" instead of a count that looks like loss.
+      sourceRows: fills.length,
+      warnings,
+    },
+    refusedCurrency,
+    "fill",
+  );
 }

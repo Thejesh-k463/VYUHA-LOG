@@ -42,6 +42,7 @@ import { fillSidesOf, isShortableSymbol, pairLegs, summarisePairing, type Leg } 
 import { allocateSymbolLegs, executionsByAllocation, matchAllocations } from "../leg-allocation";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
+import { statesCurrency, withCurrencyRefusals } from "./zerodha";
 
 export const FYERS_TRADEBOOK_SOURCE_ID = "fyers-tradebook";
 
@@ -133,6 +134,7 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
   const groups = new Map<string, Group>();
   const warnings: string[] = [];
   const unreadable: string[] = [];
+  const refusedCurrency: string[] = [];
   let mirrors = 0;
   let fills = 0;
   let equityRows = 0;
@@ -148,6 +150,16 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
 
     if (isFyersMirrorRow(productRaw ?? "", exchId ?? "", dateTime ?? "")) {
       mirrors++;
+      continue;
+    }
+    // v4.7.0 — a fill whose Segment cell states currency is REFUSED and named,
+    // never paired: no charge_config row covers currency (invariant 3), and the
+    // file states no charges, so the engine would price it as equity F&O. The
+    // verified export shows only "Derivatives" and "Capital Market" here; a
+    // currency pair the Segment cell does NOT flag is caught by name in
+    // `refuseCurrencyRows` (the import route's shared guard).
+    if (statesCurrency(segment)) {
+      refusedCurrency.push(symbol);
       continue;
     }
     if ((productRaw ?? "").trim() === "-") dashNotMirror++;
@@ -272,5 +284,5 @@ export function parseFyersTradebook(ctx: ParseContext): ParsedFile {
     warnings.push(`Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta} against a ${check.valueTolerance} rounding tolerance) — please report this file.`);
   }
 
-  return { ...base, trades, sourceRows: fills, warnings };
+  return withCurrencyRefusals({ ...base, trades, sourceRows: fills, warnings }, refusedCurrency, "fill");
 }

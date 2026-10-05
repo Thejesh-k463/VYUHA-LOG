@@ -2,12 +2,26 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 // Pure modules only — neither reaches lib/db, so the temp-db helper still binds
 // the connection first (the routes are imported dynamically in beforeAll).
+import * as XLSX from "xlsx";
 import {
   CURRENCY_NOT_PRICED,
   currencyRefusalsOf,
+  isCurrencyRow,
   parseZerodha,
+  refuseCurrencyRows,
+  statesCurrency,
   strandedCurrencyNotes,
 } from "@/lib/import/parsers/zerodha";
+import { parseFyersTradebook } from "@/lib/import/parsers/fyers-tradebook";
+import { parseDhanCsv } from "@/lib/import/parsers/dhan-csv";
+import { parseDhanGtr } from "@/lib/import/parsers/dhan-gtr";
+import { parseNuvamaPnlReport } from "@/lib/import/parsers/nuvama-pnl-report";
+import { parseAngelOneTaxPnl } from "@/lib/import/parsers/angelone-taxpnl";
+import { parsePaytmTradebook } from "@/lib/import/parsers/paytm-tradebook";
+import { parseGenericTable } from "@/lib/import/parsers/generic-table";
+import { applyMapping, isCurrencyVenueCell, type ColumnMapping } from "@/lib/import/generic-map";
+import type { NormalizedTrade } from "@/lib/engine/types";
+import type { ParsedFile } from "@/lib/import/types";
 import { normalizeAngelTrades, toParsedFile as angelToParsedFile, type AngelTradeRow } from "@/lib/import/api/angelone";
 import { normalizeUpstoxTrades, toParsedFile as upstoxToParsedFile, type UpstoxTradeRow } from "@/lib/import/api/upstox";
 import { normalizeOpenAlgoTrades, toParsedFile as openAlgoToParsedFile, type OpenAlgoTradeRow } from "@/lib/import/api/openalgo";
@@ -977,5 +991,497 @@ describe("G2 — the Dhan pull through the REAL broker route", () => {
     // not incoming, so the stored open row never looks vanished or replaced.
     expect(after.slice(0, 2)).toEqual(before);
     expect(after.map((r) => r.tradingsymbol)).toEqual(["USDINR-Oct2026-FUT", "EURINR-Oct2026-FUT", DHAN_NIFTY]);
+  });
+});
+
+// ===========================================================================
+// H — the SEVEN file paths that had NO currency check (v4.7.0 money audit):
+// Fyers tradebook, Dhan P&L, Dhan GTR, Nuvama P&L report, Angel One tax P&L,
+// Paytm tradebook and the generic column mapper. ONE shared guard
+// (`refuseCurrencyRows`, called by app/api/import/route.ts straight after the
+// parser) refuses a row by its classified underlying or by its own stated
+// venue. The parsers whose file STATES a venue / segment also refuse a row
+// there, so a currency contract whose NAME is outside
+// lib/domain/currency-pairs.ts is still caught — AUDINR below is synthetic (no
+// such contract is listed) and stands for exactly that case.
+//
+// Every layout is the parser's own verified header (copied from its existing
+// test); the rows are synthetic.
+// ===========================================================================
+
+const nt = (tradingsymbol: string, over: Partial<NormalizedTrade> = {}): NormalizedTrade => ({
+  broker: "dhan",
+  tradingsymbol,
+  isin: null,
+  buyQty: 1,
+  avgBuyPrice: 10,
+  buyValue: 10,
+  sellQty: 1,
+  avgSellPrice: 11,
+  sellValue: 11,
+  closingPrice: null,
+  grossPnl: 1,
+  unrealisedPnl: 0,
+  buyDate: "2026-10-01",
+  sellDate: "2026-10-01",
+  productHint: null,
+  exchangeHint: null,
+  sourceFile: "synthetic.csv",
+  ...over,
+});
+const parsedOf = (trades: NormalizedTrade[]): ParsedFile => ({
+  sourceId: "dhan-csv",
+  broker: "dhan",
+  format: "pnl",
+  trades,
+  warnings: ["an earlier warning"],
+});
+const refusalsOf = (warnings: string[]) => warnings.filter((w) => w.includes(CURRENCY_NOT_PRICED));
+const symbolsOf = (p: ParsedFile) => p.trades.map((x) => x.tradingsymbol);
+
+describe("H1 — the shared guard (pure): refuseCurrencyRows", () => {
+  it("removes the currency future and option, keeps the equity and the equity-F&O row; ONE note, count 2, both names", () => {
+    const p = parsedOf([nt("USDINR26OCTFUT"), nt("RELIANCE"), nt("OPT USDINR 28 Oct 2026 84.5 CE"), nt("NIFTY26OCTFUT")]);
+    const out = refuseCurrencyRows(p);
+    expect(out).toBe(p);
+    expect(symbolsOf(out)).toEqual(["RELIANCE", "NIFTY26OCTFUT"]);
+    expect(out.warnings).toEqual(["an earlier warning", noteFor(2, "row", "USDINR26OCTFUT, OPT USDINR 28 Oct 2026 84.5 CE")]);
+    expect(currencyRefusalsOf(out)).toEqual(["USDINR26OCTFUT", "OPT USDINR 28 Oct 2026 84.5 CE"]);
+  });
+
+  it("a row whose OWN venue states currency is refused whatever its name; a pair as a mere PREFIX is not (R6)", () => {
+    // `exchangeHint` is typed NSE / BSE / MCX, but the Dhan GTR hands the file's raw cell through.
+    const onCds = nt("FUT AUDINR 28 Oct 2026", { exchangeHint: "CDS" as unknown as NormalizedTrade["exchangeHint"] });
+    const out = refuseCurrencyRows(parsedOf([onCds, nt("USDINRBEES"), nt("NIFTY26OCTFUT", { exchangeHint: "NSE" })]));
+    expect(symbolsOf(out)).toEqual(["USDINRBEES", "NIFTY26OCTFUT"]);
+    expect(refusalsOf(out.warnings)).toEqual([noteFor(1, "row", "FUT AUDINR 28 Oct 2026")]);
+    expect(isCurrencyRow(nt("USDINRBEES"))).toBe(false);
+    expect(isCurrencyRow(nt("USDINR26OCTFUT"))).toBe(true);
+  });
+
+  it("nothing to refuse: the file comes back untouched — no note, no names; a second pass adds nothing", () => {
+    const clean = parsedOf([nt("RELIANCE"), nt("NIFTY26OCTFUT")]);
+    const trades = clean.trades;
+    expect(refuseCurrencyRows(clean).trades).toBe(trades);
+    expect(clean.warnings).toEqual(["an earlier warning"]);
+    expect(currencyRefusalsOf(clean)).toEqual([]);
+
+    const once = refuseCurrencyRows(parsedOf([nt("USDINR26OCTFUT"), nt("RELIANCE")]));
+    const warnings = [...once.warnings];
+    refuseCurrencyRows(once);
+    expect(once.warnings).toEqual(warnings);
+    expect(currencyRefusalsOf(once)).toEqual(["USDINR26OCTFUT"]);
+  });
+
+  const STATES = ["CDS", "BCD", "CD", "cds", "Currency", "Currency Derivatives", "NSE-CDS", "NSE_CURRENCY", "BSE_CURRENCY", "NSE CD", "BSE-BCD"];
+  const DOES_NOT = ["NSE", "BSE", "NFO", "BFO", "MCX", "NCDEX", "EQ", "FO", "NSE_EQ", "NSE_FNO", "MCX_COMM", "Derivatives", "Capital Market", ""];
+  it.each(STATES)("a venue cell '%s' states currency", (cell) => {
+    expect(statesCurrency(cell)).toBe(true);
+    expect(isCurrencyVenueCell(cell)).toBe(true);
+  });
+  it.each(DOES_NOT)("a venue cell '%s' does not", (cell) => {
+    expect(statesCurrency(cell)).toBe(false);
+    expect(isCurrencyVenueCell(cell)).toBe(false);
+  });
+});
+
+describe("H2 — the guard MERGES with a parser's own refusals, and adds nothing where the parser already refused", () => {
+  it("names are the UNION, exactly one NEW note, the parser's note intact", () => {
+    const p = parseZerodha(ctx("zerodha-tradebook.csv", tradebook([...TB_NIFTY, ...TB_CURRENCY])));
+    const parserNote = noteFor(2, "fill", "USDINR26OCTFUT, EURINR26OCT90.5PE");
+    expect(refusalsOf(p.warnings)).toEqual([parserNote]);
+    p.trades.push(nt("GBPINR26OCTFUT", { broker: "zerodha" })); // a currency row the parser did not see
+    refuseCurrencyRows(p);
+    expect(symbolsOf(p)).toEqual(["NIFTY26OCTFUT"]);
+    expect(refusalsOf(p.warnings)).toEqual([parserNote, noteFor(1, "row", "GBPINR26OCTFUT")]);
+    expect(currencyRefusalsOf(p)).toEqual(["USDINR26OCTFUT", "EURINR26OCT90.5PE", "GBPINR26OCTFUT"]);
+  });
+
+  it.each([
+    ["Zerodha tradebook", () => parseZerodha(ctx("zerodha-tradebook.csv", tradebook([...TB_NIFTY, ...TB_CURRENCY])))],
+    ["Zerodha tax P&L", () => parseZerodha(ctx("taxpnl.csv", taxpnl([TW_USDINR])))],
+    ["Zerodha Console P&L", () => parseZerodha(ctx("zerodha-console-pnl.csv", console_(["USDINR26OCTFUT,,1,1,84100,84200,100"])))],
+    ["Upstox trade report", () => parseUpstox(ctx("trade_2026.csv", upReport([...UP_NIFTY, ...UP_CCY])))],
+    ["Angel One Trades_History", () => parseAngelOne(ctx("Trades_History_X.csv", aoBook([...AO_NIFTY, ...AO_CCY])))],
+  ] as const)("%s: trades, warnings, counts and names do NOT move through the guard", (_label, parse) => {
+    const p = parse();
+    const before = { trades: [...p.trades], warnings: [...p.warnings], names: [...currencyRefusalsOf(p)], sourceRows: p.sourceRows };
+    expect(before.names.length).toBeGreaterThan(0); // the parser did refuse something
+    expect(refuseCurrencyRows(p)).toBe(p);
+    expect(p.trades).toEqual(before.trades);
+    expect(p.warnings).toEqual(before.warnings);
+    expect([...currencyRefusalsOf(p)]).toEqual(before.names);
+    expect(p.sourceRows).toBe(before.sourceRows);
+  });
+});
+
+// ── Fyers tradebook ─────────────────────────────────────────────────────────
+const FY_HEAD = [
+  "Report Title,Tradebook report,,,,,,,,,",
+  "Date Range,From 01/10/2026 to 01/10/2026,,,,,,,,,",
+  ",,,,,,,,,,",
+  "Symbol name,Symbol code,Date & time,Side,Product type,Qty,Traded price,Total value,Segment,Exchange order ID,OMS order ID",
+];
+const FY_NIFTY = [
+  'NIFTY26OCTFUT,NIFTY FUT,"01 Oct 2026, 02:20:00 PM",SELL,Intraday,75,25100,"18,82,500.00",Derivatives,1300000000000002,2610010000002',
+  'NIFTY26OCTFUT,NIFTY FUT,"01 Oct 2026, 09:20:00 AM",BUY,Intraday,75,25000,"18,75,000.00",Derivatives,1300000000000001,2610010000001',
+];
+// The Segment cell says Currency; the name is outside the pair list.
+const FY_SEGMENT = 'AUDINR26OCTFUT,AUDINR FUT,"01 Oct 2026, 10:00:00 AM",BUY,Overnight,1000,55.5,"55,500.00",Currency,1300000000000003,2610010000003';
+// The Segment cell says Derivatives; only the classified underlying says currency.
+const FY_BYNAME = 'USDINR26OCTFUT,USDINR FUT,"01 Oct 2026, 11:00:00 AM",SELL,Overnight,1000,84.1,"84,100.00",Derivatives,1300000000000004,2610010000004';
+const fyers = (rows: string[]) => parseFyersTradebook(ctx("FYERS_tradebook_CCY.csv", [...FY_HEAD, ...rows].join("\n")));
+
+describe("H3a — Fyers tradebook", () => {
+  it("a fill whose Segment cell states currency is refused AT THE PARSER, named, never paired", () => {
+    const withCcy = fyers([...FY_NIFTY, FY_SEGMENT]);
+    const without = fyers(FY_NIFTY);
+    expect(symbolsOf(withCcy)).toEqual(["NIFTY26OCTFUT"]);
+    expect(withCcy.trades).toEqual(without.trades);
+    expect(withCcy.sourceRows).toBe(2);
+    expect(refusalOf(withCcy.warnings)).toBe(noteFor(1, "fill", "AUDINR26OCTFUT"));
+    expect(currencyRefusalsOf(withCcy)).toEqual(["AUDINR26OCTFUT"]);
+    expect(refusalOf(without.warnings)).toBeUndefined();
+  });
+
+  it("a pair the Segment cell calls 'Derivatives' is refused by the guard, by its classified underlying", () => {
+    const out = refuseCurrencyRows(fyers([...FY_NIFTY, FY_BYNAME, FY_SEGMENT]));
+    expect(symbolsOf(out)).toEqual(["NIFTY26OCTFUT"]);
+    expect(out.trades).toEqual(fyers(FY_NIFTY).trades);
+    expect(refusalsOf(out.warnings)).toEqual([noteFor(1, "fill", "AUDINR26OCTFUT"), noteFor(1, "row", "USDINR26OCTFUT")]);
+    expect(currencyRefusalsOf(out)).toEqual(["AUDINR26OCTFUT", "USDINR26OCTFUT"]);
+  });
+});
+
+// ── Dhan P&L (CSV) — no venue cell at all: the guard is the only check ───────
+const DP_HEAD = [
+  "PnL report,From 01-10-2026 to 05-10-2026",
+  "Name,TESTUSER",
+  "UCC,TEST0001",
+  "",
+  "Scrip Name,Buy Qty.,Avg. Buy Price,Buy Value,Sell Qty.,Avg. Sell Price,Sell Value,Closing Price,Realised P&L,Realised P&L %,Unrealised P&L,Unrealised P&L %",
+  '"A2ETEST ALPHA","100","250.00","25000.00","100","262.00","26200.00","0.00","1200.00","4.80","0.00","0.00"',
+  '"FUT NIFTY 27 Oct 2026","75","25000.00","1875000.00","75","25100.00","1882500.00","0.00","7500.00","0.40","0.00","0.00"',
+];
+const DP_CCY = [
+  '"FUT USDINR 28 Oct 2026","1000","84.00","84000.00","1000","84.10","84100.00","0.00","100.00","0.12","0.00","0.00"',
+  '"OPT EURINR 28 Oct 2026 90.5 PE","1000","0.25","250.00","1000","0.30","300.00","0.00","50.00","20.00","0.00","0.00"',
+];
+const DP_NAMES = "FUT USDINR 28 Oct 2026, OPT EURINR 28 Oct 2026 90.5 PE";
+const dhanPnl = (rows: string[]) => `${[...DP_HEAD, ...rows].join("\n")}\n`;
+
+describe("H3b — Dhan P&L export (names only)", () => {
+  it("the USDINR future and the EURINR option are refused by the guard; the equity and the NIFTY future are untouched", () => {
+    const out = refuseCurrencyRows(parseDhanCsv(ctx("Dhan_PnL_report.csv", dhanPnl(DP_CCY))));
+    const without = parseDhanCsv(ctx("Dhan_PnL_report.csv", dhanPnl([])));
+    expect(symbolsOf(out)).toEqual(["A2ETEST ALPHA", "FUT NIFTY 27 Oct 2026"]);
+    expect(out.trades).toEqual(without.trades);
+    expect(refusalOf(out.warnings)).toBe(noteFor(2, "row", DP_NAMES));
+    expect(currencyRefusalsOf(out)).toEqual(DP_NAMES.split(", "));
+  });
+});
+
+// ── Dhan Global Transaction Report ──────────────────────────────────────────
+const GTR_HEADER = "Date,Scrip Name,Exchange,Bill No.,Buy Qty.,Buy Value,Sell Qty.,Sell Value,Brokerage,GST,STT,SEBI Fees,Stamp Duty,Txn. Charges,Oth. Charges,Gross Amount";
+const GTR_SCRIP = "OPT NIFTY 29 Sep 2026 24500 CE";
+// Charges 59.61 + 26.21 = 85.82; gross 9150 − 6750 = 2400.
+const GTR_NIFTY = [
+  `"01 Sep 2026 00:00:00","${GTR_SCRIP}","NSE","B1","0","0.00","75","9150.00","40.00","7.20","9.15","0.01","0.00","3.25","0.00","9090.39"`,
+  `"02 Sep 2026 00:00:00","${GTR_SCRIP}","NSE","B2","75","6750.00","0","0.00","20.00","3.60","0.00","0.01","0.20","2.40","0.00","-6776.21"`,
+];
+// One currency bill: charges 24.21, gross 100.
+const gtrCcy = (scrip: string, exchange: string) =>
+  `"01 Sep 2026 00:00:00","${scrip}","${exchange}","B3","1000","84000.00","1000","84100.00","20.00","3.60","0.00","0.01","0.10","0.50","0.00","75.79"`;
+const gtrFile = (lines: string[], gross: number, charges: number) =>
+  [
+    "Global transction report,From 01-09-2026 to 02-09-2026",
+    "Name,TESTUSER",
+    "UCC,TEST0001A",
+    "",
+    GTR_HEADER,
+    ...lines,
+    "",
+    `Net P&L,${(gross - charges).toFixed(2)},Brokerage,0,Gross P&L,${gross},Total Charges,${charges}`,
+  ].join("\n");
+const GTR_NAME = "Dhan_GlobalTransction_Report_01-09-2026_02-09-2026.csv";
+const gtr = (lines: string[], gross: number, charges: number) => parseDhanGtr(ctx(GTR_NAME, gtrFile(lines, gross, charges)));
+
+describe("H3c — Dhan Global Transaction Report", () => {
+  it("a bill whose Exchange cell says CDS is refused AT THE PARSER and named; the NSE bills are the same position they were", () => {
+    const withCcy = gtr([...GTR_NIFTY, gtrCcy("FUT AUDINR 28 Sep 2026", "CDS")], 2500, 110.03);
+    const without = gtr(GTR_NIFTY, 2400, 85.82);
+    expect(symbolsOf(withCcy)).toEqual([GTR_SCRIP]);
+    expect(withCcy.trades).toEqual(without.trades); // same charges, to the paisa
+    expect(withCcy.trades.map((x) => x.exchangeHint)).toEqual(["NSE"]);
+    expect(withCcy.sourceRows).toBe(2);
+    expect(refusalOf(withCcy.warnings)).toBe(noteFor(1, "row", "FUT AUDINR 28 Sep 2026"));
+    expect(currencyRefusalsOf(withCcy)).toEqual(["FUT AUDINR 28 Sep 2026"]);
+    // The refused bill's ₹24.21 is not an unexplained footer difference.
+    expect(withCcy.warnings.filter((w) => /Please report this file|differ from the positions/i.test(w))).toEqual([]);
+  });
+
+  it("a report whose ONLY bill is currency: no trades, the refusal note — not 'no transaction rows'", () => {
+    const only = gtr([gtrCcy("FUT USDINR 28 Sep 2026", "BCD")], 100, 24.21);
+    expect(only.trades).toEqual([]);
+    expect(only.warnings).toEqual([noteFor(1, "row", "FUT USDINR 28 Sep 2026")]);
+  });
+
+  it("no cost basis is derived from a footer that still includes a refused currency bill (invariant 6)", () => {
+    // A holding sold with no purchase in the window: 10 shares for ₹5,000, true cost ₹4,000 (gross 1,000), charges 17.01.
+    const orphan = `"02 Sep 2026 00:00:00","A2ETEST IPOSTK","NSE","B4","0","0.00","10","5000.00","10.00","1.80","5.00","0.01","0.00","0.20","0.00","4982.99"`;
+    const alone = gtr([orphan], 1000, 17.01);
+    expect(alone.trades.map((x) => x.suggestedBasisPrice)).toEqual([400]); // the footer derivation, when the footer is the book
+    // With the CDS bill refused the footer's gross (1,100) covers a trade the book does not hold: 390 would be wrong.
+    const withCcy = gtr([orphan, gtrCcy("FUT USDINR 28 Sep 2026", "CDS")], 1100, 41.22);
+    expect(symbolsOf(withCcy)).toEqual(["A2ETEST IPOSTK"]);
+    expect(withCcy.trades.map((x) => x.suggestedBasisPrice ?? null)).toEqual([null]);
+    expect(withCcy.warnings.filter((w) => /recovered the missing cost|derived from the footer/.test(w))).toEqual([]);
+  });
+
+  it("a pair billed with Exchange = NSE is refused by the guard, by its classified underlying", () => {
+    const out = refuseCurrencyRows(gtr([...GTR_NIFTY, gtrCcy("FUT USDINR 28 Sep 2026", "NSE")], 2500, 110.03));
+    expect(symbolsOf(out)).toEqual([GTR_SCRIP]);
+    expect(refusalOf(out.warnings)).toBe(noteFor(1, "row", "FUT USDINR 28 Sep 2026"));
+    expect(currencyRefusalsOf(out)).toEqual(["FUT USDINR 28 Sep 2026"]);
+  });
+});
+
+// ── Nuvama P&L report ───────────────────────────────────────────────────────
+const NV_HEADER = ["", "Isin", "Instrument", "TxnDate", "TxnType", "Action", "Quantity", "Price", "Brok", "STax/GST on Brokerage", "STT", "Stamp Duty", "Sebi Fees", "Txn Charges", "Tax on Txn Charges", "Other Charges", "Cumulative Quantity", "Net Charges", "Delete Flag"];
+// Each line bills 20 + 3.6 + 0.01 + 0.3 + 0.05 = 23.96.
+const nvLine = (instrument: string, date: string, venue: string, action: "Buy" | "Sell", qty: number, price: number, cum: number) =>
+  ["", "", instrument, date, venue, action, qty, price, 20, 3.6, 0, 0, 0.01, 0.3, 0.05, 0, cum, 23.96, "False"];
+const NV_NIFTY_INST = "NIFTY-OPT-29Sep2026-CE-24500-NSE";
+const NV_NIFTY = [nvLine(NV_NIFTY_INST, "01-Sep-26", "NSE", "Sell", 75, 122, -75), nvLine(NV_NIFTY_INST, "02-Sep-26", "NSE", "Buy", 75, 90, 0)];
+function nuvama(lines: unknown[][]): ParsedFile {
+  const pre = (title: string) => [["Nuvama Wealth and Investment Limited"], [title], ["Period as on : 01-Sep-2026 to 22-Sep-2026"], ["Calculation Method : FIFO"]];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Nuvama Wealth and Investment Limited"], ["Summary"]]), "Summary");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...pre("Detail Realised"), NV_HEADER, ...lines, ["DISCLAIMER"]]), "Detail Realised");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...pre("Unrealised Details"), NV_HEADER, ["DISCLAIMER"]]), "Unrealised Details");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Dividend"]]), "Dividend");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Understanding the Report"]]), "Understanding the Report");
+  return parseNuvamaPnlReport({ filename: "NUVAMA_PnL_Report_CCY.xlsx", buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer });
+}
+
+describe("H3d — Nuvama P&L report (the pull's rule: CDS / BCD / NCDEX refused by name)", () => {
+  it("a CDS line, a BCD line named only by its closing token and an NCDEX line are refused AT THE PARSER; NIFTY is unchanged", () => {
+    const withCcy = nuvama([
+      ...NV_NIFTY,
+      nvLine("USDINR-FUT-28Oct2026-CDS", "01-Sep-26", "CDS", "Buy", 1000, 84, 1000),
+      nvLine("EURINR-OPT-28Oct2026-PE-90.5-BCD", "01-Sep-26", "", "Buy", 1000, 0.25, 1000),
+      nvLine("DHANIYA-FUT-20Oct2026-NCDEX", "01-Sep-26", "NCDEX", "Buy", 10, 7000, 10),
+    ]);
+    const without = nuvama(NV_NIFTY);
+    expect(symbolsOf(withCcy)).toEqual(["OPT NIFTY 29 Sep 2026 24500 CE"]);
+    expect(withCcy.trades).toEqual(without.trades);
+    expect(withCcy.sourceRows).toBe(2);
+    expect(withCcy.reported?.totalCharges).toBe(without.reported?.totalCharges);
+    // Named as the book would hold them, so a row stored before v4.7.0 can be matched.
+    expect(refusalOf(withCcy.warnings)).toBe(noteFor(2, "row", "FUT USDINR 28 Oct 2026, OPT EURINR 28 Oct 2026 90.5 PE"));
+    expect(currencyRefusalsOf(withCcy)).toEqual(["FUT USDINR 28 Oct 2026", "OPT EURINR 28 Oct 2026 90.5 PE"]);
+    expect(withCcy.warnings.filter((w) => /NCDEX/.test(w))).toEqual([
+      "1 NCDEX line was refused: NCDEX contracts are not imported from this report (no charge profile covers them), so nothing was imported for: FUT DHANIYA 20 Oct 2026.",
+    ]);
+    expect(without.warnings.filter((w) => /NCDEX/.test(w) || w.includes(CURRENCY_NOT_PRICED))).toEqual([]);
+  });
+
+  it("a pair the report places on NSE is refused by the guard, by its classified underlying", () => {
+    const out = refuseCurrencyRows(nuvama([...NV_NIFTY, nvLine("GBPINR-FUT-28Oct2026-NSE", "01-Sep-26", "NSE", "Buy", 1000, 105, 1000)]));
+    expect(symbolsOf(out)).toEqual(["OPT NIFTY 29 Sep 2026 24500 CE"]);
+    expect(refusalOf(out.warnings)).toBe(noteFor(1, "row", "FUT GBPINR 28 Oct 2026"));
+  });
+});
+
+// ── Angel One tax P&L — the guard is the only check (the parser reads names) ─
+function angelTax(deriv: unknown[][]): ParsedFile {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Angel One Limited (formerly known as Angel Broking Limited)"], ["Client Basic Information"]]), "Summary");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(deriv), "Derivatives Trade Details");
+  return parseAngelOneTaxPnl({ filename: "statement.xlsx", buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer });
+}
+const AT_OPT_HEAD = ["Segment", "Symbol Name", "Expiry date", "Strike Price", "Option Type", "Qty", "Buy Date", "Sell date", "Avg Buy Price", "Buy Value", "Avg Sell Price", "Sell Value", "Total Charges and Statutory", "STT", "Taxable P&L", "Turnover"];
+const AT_FUT_HEAD = ["Segment", "Symbol Name", "Expiry date", "Qty", "Buy Date", "Sell date", "Avg Buy Price", "Buy Value", "Avg Sell Price", "Sell Value", "Total Charges and Statutory", "STT", "Taxable P&L", "Turnover"];
+const AT_BANKNIFTY = ["NFO", "BANKNIFTY", "31-07-2026", "15", "01-07-2026", "05-07-2026", "50000", "750000", "50500", "757500", "150", "80", "7270", "1507500"];
+
+describe("H3e — Angel One tax P&L (names only)", () => {
+  it("a USDINR future and an EURINR option in the derivatives sheet are refused by the guard; BANKNIFTY keeps its stated charges", () => {
+    const out = refuseCurrencyRows(
+      angelTax([
+        ["Futures"],
+        AT_FUT_HEAD,
+        AT_BANKNIFTY,
+        ["CDS", "USDINR", "29-07-2026", "1000", "01-07-2026", "05-07-2026", "84", "84000", "84.1", "84100", "30", "0", "70", "168100"],
+        [],
+        ["Options"],
+        AT_OPT_HEAD,
+        ["CDS", "EURINR", "29-07-2026", "90.5", "PE", "1000", "01-07-2026", "05-07-2026", "0.25", "250", "0.3", "300", "30", "0", "20", "550"],
+      ]),
+    );
+    const without = angelTax([["Futures"], AT_FUT_HEAD, AT_BANKNIFTY]);
+    expect(symbolsOf(out)).toEqual(["FUT BANKNIFTY 31 Jul 2026"]);
+    expect(out.trades).toEqual(without.trades);
+    expect(refusalOf(out.warnings)).toBe(noteFor(2, "row", "FUT USDINR 29 Jul 2026, OPT EURINR 29 Jul 2026 90.5 PE"));
+    expect(currencyRefusalsOf(out)).toEqual(["FUT USDINR 29 Jul 2026", "OPT EURINR 29 Jul 2026 90.5 PE"]);
+  });
+});
+
+// ── Paytm Money tradebook ───────────────────────────────────────────────────
+const PT_HEADER = ["Date", "Script", "ISIN", "Exchange", "Product Type", "Type", "Quantity", "Price", "Brokerage", "ETT", "GST", "STT", "SEBI", "Stamp Duty", "Order Number", "Trade Number", "Trade Time"];
+const ptRow = (script: string, exchange: string, side: "Buy" | "Sell", qty: number, price: number, id: string, time: string) =>
+  ["01-10-2026", script, "", exchange, "EQ", side, qty, price, 20, 3, 4.14, 0, 0.1, 0.5, `O${id}`, `T${id}`, time];
+const PT_NIFTY = [ptRow("NIFTY26OCTFUT", "NSE", "Buy", 75, 25000, "1", "09:20:00"), ptRow("NIFTY26OCTFUT", "NSE", "Sell", 75, 25100, "2", "14:20:00")];
+function paytm(rows: unknown[][]): ParsedFile {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UCC"], ["Name"], ["PAN Number"], ["Period"], PT_HEADER, ...rows]), "Sheet1");
+  return parsePaytmTradebook({ filename: "Paytm Money - Tradebook CCY.xlsx", buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer });
+}
+
+describe("H3f — Paytm Money tradebook", () => {
+  it("an execution whose Exchange cell says CDS is refused AT THE PARSER, before it touches a position or the charge totals", () => {
+    const withCcy = paytm([...PT_NIFTY, ptRow("AUDINR26OCTFUT", "CDS", "Buy", 1000, 55.5, "3", "10:00:00")]);
+    const without = paytm(PT_NIFTY);
+    expect(symbolsOf(withCcy)).toEqual(["NIFTY26OCTFUT"]);
+    expect(withCcy.trades).toEqual(without.trades); // charges apportioned without the refused fill's
+    expect(withCcy.sourceRows).toBe(2);
+    expect(refusalOf(withCcy.warnings)).toBe(noteFor(1, "fill", "AUDINR26OCTFUT"));
+    expect(currencyRefusalsOf(withCcy)).toEqual(["AUDINR26OCTFUT"]);
+    expect(refusalOf(without.warnings)).toBeUndefined();
+  });
+
+  it("a pair the file places on NSE is refused by the guard, by its classified underlying", () => {
+    const out = refuseCurrencyRows(paytm([...PT_NIFTY, ptRow("USDINR26OCTFUT", "NSE", "Buy", 1000, 84, "3", "10:00:00")]));
+    expect(symbolsOf(out)).toEqual(["NIFTY26OCTFUT"]);
+    expect(refusalOf(out.warnings)).toBe(noteFor(1, "row", "USDINR26OCTFUT"));
+  });
+});
+
+// ── The generic column mapper ───────────────────────────────────────────────
+const GM_HEADERS = ["Date", "Symbol", "Type", "Qty", "Price", "Exchange"];
+const GM_MAP: ColumnMapping = { date: 0, tradingsymbol: 1, side: 2, qty: 3, price: 4, exchange: 5 };
+const GM_OPTS = { broker: "kotakneo" as const, filename: "kotak-export.csv" };
+const GM_NIFTY = [
+  ["01-10-2026", "NIFTY26OCTFUT", "BUY", "75", "25000", "NSE"],
+  ["01-10-2026", "NIFTY26OCTFUT", "SELL", "75", "25100", "NSE"],
+];
+const gmCcy = (symbol: string, exchange: string) => ["01-10-2026", symbol, "BUY", "1000", "55.5", exchange];
+const gmCsv = (rows: string[][]) => `${[GM_HEADERS, ...rows].map((r) => r.join(",")).join("\n")}\n`;
+const gmCtx = (rows: string[][]) => ({ ...ctx(GM_OPTS.filename, gmCsv(rows)), generic: { broker: GM_OPTS.broker, mapping: GM_MAP } });
+
+describe("H3g — the generic column mapper", () => {
+  it.each(["CDS", "BCD", "NSE-CDS", "NSE_CURRENCY", "BSE_CURRENCY", "Currency", "cd"])(
+    "an execution whose exchange cell says '%s' is refused as currency — never mapped to NSE",
+    (venue) => {
+      const r = applyMapping(GM_HEADERS, [...GM_NIFTY, gmCcy("AUDINR26OCTFUT", venue)], GM_MAP, GM_OPTS);
+      const without = applyMapping(GM_HEADERS, GM_NIFTY, GM_MAP, GM_OPTS);
+      expect(r.trades).toEqual(without.trades);
+      expect(r.refusedCurrency).toEqual(["AUDINR26OCTFUT"]);
+      expect(r.skipped).toBe(1); // not counted as a line read …
+      expect(r.warnings).toEqual(without.warnings); // … and not called unreadable
+      expect(without.refusedCurrency).toEqual([]);
+    },
+  );
+
+  it("a round-trip (P&L-shaped) row on a currency venue is refused the same way", () => {
+    const headers = ["Scrip", "Buy Qty", "Buy Price", "Sell Qty", "Sell Price", "Exchange"];
+    const m: ColumnMapping = { tradingsymbol: 0, buyQty: 1, avgBuyPrice: 2, sellQty: 3, avgSellPrice: 4, exchange: 5 };
+    const r = applyMapping(headers, [["RELIANCE", "10", "2400", "10", "2500", "NSE"], ["AUDINR26OCTFUT", "1000", "55", "1000", "55.5", "NSE_CURRENCY"]], m, GM_OPTS);
+    expect(r.trades.map((x) => [x.tradingsymbol, x.exchangeHint])).toEqual([["RELIANCE", "NSE"]]);
+    expect(r.refusedCurrency).toEqual(["AUDINR26OCTFUT"]);
+    expect(r.skipped).toBe(1);
+  });
+
+  it("through parseGenericTable + the guard: ONE shared note for the venue row and the by-name row, both named", () => {
+    const out = refuseCurrencyRows(parseGenericTable(gmCtx([...GM_NIFTY, gmCcy("AUDINR26OCTFUT", "NSE-CDS"), gmCcy("USDINR26OCTFUT", "NSE")])));
+    const without = parseGenericTable(gmCtx(GM_NIFTY));
+    expect(symbolsOf(out)).toEqual(["NIFTY26OCTFUT"]);
+    expect(out.trades).toEqual(without.trades);
+    expect(refusalsOf(out.warnings)).toEqual([noteFor(2, "row", "AUDINR26OCTFUT, USDINR26OCTFUT")]);
+    expect(currencyRefusalsOf(out)).toEqual(["AUDINR26OCTFUT", "USDINR26OCTFUT"]);
+  });
+});
+
+// ── The route seam: every file passes the guard between parse and preview ────
+const H_HAS = 72; // holds an OPEN "FUT USDINR 28 Oct 2026" from a pre-v4.7.0 Dhan P&L import
+const H_NONE = 73;
+
+describe("H4 — app/api/import/route.ts runs the guard on every parser's result", () => {
+  beforeAll(() => {
+    t.db
+      .insert(t.schema.accounts)
+      .values([H_HAS, H_NONE].map((id) => ({ id, name: `H ${id}`, isDefault: false })))
+      .run();
+    t.db
+      .insert(t.schema.trades)
+      .values([
+        tradeRow({
+          accountId: H_HAS,
+          broker: "dhan",
+          bucket: "active",
+          segment: "future",
+          instrumentType: "future",
+          exchange: "NSE",
+          symbol: "USDINR",
+          tradingsymbol: "FUT USDINR 28 Oct 2026",
+          buyQty: 1000,
+          avgBuyPrice: 84,
+          buyValue: 84000,
+          buyDate: "2026-09-30",
+          isOpen: true,
+        }),
+      ])
+      .run();
+  });
+
+  function postNamed(accountId: number, name: string, body: string, extra: Record<string, string> = {}): Promise<Response> {
+    const fd = new FormData();
+    fd.append("file", new File([body], name, { type: "text/csv" }));
+    fd.append("mode", "preview");
+    fd.append("accountId", String(accountId));
+    for (const [k, v] of Object.entries(extra)) fd.append(k, v);
+    return fileRoute.POST(new Request("http://local/api/import", { method: "POST", body: fd }));
+  }
+  type Preview = { detected: { sourceId: string }; warnings: string[]; preview: { rows: PreviewRow[] } };
+  const pricedOf = (rows: PreviewRow[]) =>
+    rows
+      .map((r) => ({ tradingsymbol: r.tradingsymbol, segment: r.segment, exchange: r.exchange, chargesTotal: r.chargesTotal, netPnl: r.netPnl }))
+      .sort((a, b) => a.tradingsymbol.localeCompare(b.tradingsymbol));
+
+  it("a Dhan P&L export (a parser with NO currency check): the preview carries the note and no currency row, and names the stranded open one", async () => {
+    const res = await postNamed(H_HAS, "Dhan_PnL_report.csv", dhanPnl(DP_CCY));
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Preview;
+    expect(json.detected.sourceId).toBe("dhan-csv");
+    expect(refusalOf(json.warnings)).toBe(noteFor(2, "row", DP_NAMES));
+    expect(strandedOf(json.warnings)).toEqual([STRANDED("FUT USDINR 28 Oct 2026")]);
+    // The rows beside them are priced exactly as a file that never had the currency rows prices them.
+    const plain = (await (await postNamed(H_HAS, "Dhan_PnL_report.csv", dhanPnl([]))).json()) as Preview;
+    expect(pricedOf(json.preview.rows).map((r) => r.tradingsymbol)).toEqual(["A2ETEST ALPHA", "FUT NIFTY 27 Oct 2026"]);
+    expect(pricedOf(json.preview.rows)).toEqual(pricedOf(plain.preview.rows));
+    expect(refusalOf(plain.warnings)).toBeUndefined();
+    // Another account: the refusal, no stranded note.
+    const other = (await (await postNamed(H_NONE, "Dhan_PnL_report.csv", dhanPnl(DP_CCY))).json()) as Preview;
+    expect(refusalOf(other.warnings)).toBe(noteFor(2, "row", DP_NAMES));
+    expect(strandedOf(other.warnings)).toEqual([]);
+  });
+
+  it("a Dhan GTR with one CDS bill and one NSE position previews the NSE row and names the CDS one — the file no longer fails whole", async () => {
+    const res = await postNamed(H_NONE, GTR_NAME, gtrFile([...GTR_NIFTY, gtrCcy("FUT USDINR 28 Sep 2026", "CDS")], 2500, 110.03));
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Preview;
+    expect(json.detected.sourceId).toBe("dhan-gtr");
+    expect(json.preview.rows.map((r) => [r.tradingsymbol, r.exchange])).toEqual([[GTR_SCRIP, "NSE"]]);
+    expect(refusalOf(json.warnings)).toBe(noteFor(1, "row", "FUT USDINR 28 Sep 2026"));
+  });
+
+  it("the generic mapper through the route: the venue-refused row reaches the ONE note with the by-name row", async () => {
+    const res = await postNamed(H_NONE, GM_OPTS.filename, gmCsv([...GM_NIFTY, gmCcy("AUDINR26OCTFUT", "CDS"), gmCcy("USDINR26OCTFUT", "NSE")]), {
+      mapping: JSON.stringify({ broker: GM_OPTS.broker, mapping: GM_MAP }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Preview;
+    expect(json.detected.sourceId).toBe("generic-table");
+    expect(json.preview.rows.map((r) => r.tradingsymbol)).toEqual(["NIFTY26OCTFUT"]);
+    expect(refusalsOf(json.warnings)).toEqual([noteFor(2, "row", "AUDINR26OCTFUT, USDINR26OCTFUT")]);
   });
 });

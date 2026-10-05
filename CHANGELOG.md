@@ -1,5 +1,202 @@
 # Changelog
 
+## v4.7.0 — 2026-10-05
+
+*The release where the journal tells you what your own record can and cannot
+prove, the Live Desk gets a Positions view and a live stream, your stops can
+reach your phone, and three more brokers can be pulled directly.*
+
+- **The Edge Clinic's Clinic tab.** A new first (and default) tab in the Edge
+  Clinic hub reads your closed trades per segment, per setup and per setup
+  grade and says how strong the evidence is: the mean R with its interval, how
+  many more trades a cell needs, what costs take out of it, whether the problem
+  is win rate or payoff, and whether an edge is decaying. The best cell is
+  checked against luck across every cell tested. It never states a P&L you
+  "would have had". It is computed off the page and cached per account, so the
+  tab opens fast on a large book ("Computing the Clinic" shows once while a
+  fresh report is built). **Free:** the whole-book evidence grade with its
+  "trades still needed". **Pro:** everything else, plus a weekly note and
+  20-trade experiments you start on a cell (counted from the day after you
+  start). `/reports/clinic` opens the same tab.
+- **Two optional fields on a trade:** a setup grade (A+ / A / B, blank =
+  ungraded) and the intra-trade high and low, typed by you. A typed range is
+  used in place of end-of-day bars only when it actually contains the entry and
+  exit.
+- **Use my journal (Sizing Lab → Kelly, Pro).** One click fills the win rate
+  and payoff measured from your own trades that carry a real risk (a recorded
+  stop or a typed risk) — never the Kelly fraction, which stays at your
+  setting — and prints the Clinic's ceiling for that slice beside it. It needs
+  30 such trades in the slice you pick (whole account, a segment, or a segment
+  and setup; optionally the last 12 months, counted by the day a trade was
+  exited) and is refused in the All-accounts view. A book whose every trade was
+  imported without a stop reads "0 of N … 30 needed" until stops are recorded.
+- **The sizing ceiling is half-Kelly per 1R.** The ceiling on the Clinic's
+  sizing card and beside "Use my journal" is a fraction of capital at risk per
+  trade, where the risk is 1R: half the Kelly at the lower 95% bounds of your
+  win rate and payoff, divided by your average loss in R at its upper 95%
+  bound, and never higher than half the empirical Kelly of your own R
+  outcomes. When either half is unsupported it reads "the data does not
+  support sizing up" or states no ceiling — it is never guessed. The Lab flags
+  a Kelly fraction that puts more at risk than this ceiling; it marks, never
+  clips. The Lab's own Kelly row from the win rate and payoff you type stays
+  the classic formula. (A development build of 4.7.0 stated this ceiling on a
+  different basis, so most books' figure differs from one seen there; no
+  released version showed it.)
+- **The Live Desk's Positions tab.** `/live` now has two tabs: **Charts** (the
+  desk as before, still the default) and **Positions** — every open position
+  ordered by money deployed, with its stop and where that stop came from, the
+  stop → mark → target strip, results and bonus/split chips, and a near-stop
+  tint. Enter (or a click) opens a large card with the arithmetic in words and
+  links to the chart, the Sizing Lab, Edit levels and the trade's own record
+  (`/trades?trade=<id>`). Facts are free; risk at stop, R, heat share, the
+  30-session zone chart, the industry concentration and the inline position
+  calculator are Pro.
+- **Fixed — an option or future on the Live Desk no longer reads its
+  underlying's daily bars.** A stock option or future took the cash scrip's
+  previous close, day change, ATR (the stop distance in ATR, the near-stop tint
+  and the ATR stop), relative volume, distance from the high, sparkline and
+  detail chart as its own — in one case "Unrealised +₹14,55,000 at the previous
+  close" on a ₹20,000 option. Those figures are now blank for a derivative row
+  and it is left out of the since-the-close comparison, on Charts and Positions
+  alike, as an index option always was.
+- **Telegram stop / target alerts (Pro, opt-in, a switch of their own).**
+  While Vyuha is open — minimised included — and during each position's own
+  market session only, the live feed you picked is asked for your open
+  positions' prices about once a minute, and a message goes to your own bot
+  when a recorded stop, trailing stop or target is crossed. A message carries
+  the symbol, the price it was checked at, the level and how far through it the
+  price is, the time, the feed's name and — when you keep more than one
+  account — the account's name; **never a quantity or a rupee figure**. At
+  most 20 alerts are sent a day, then one summary line. A stale or zero-volume price never alerts; pre-open and Muhurat never
+  alert; commodity and currency positions are never checked. Upstox and Angel
+  One price equities only, so alerts on futures and options need the OpenAlgo
+  bridge. The end-of-day feed gives no alerts. **Alerts stop after 31 December
+  2026**, the last day the bundled market calendar covers, until an update
+  bundles the 2027 holiday list — the Telegram card says so.
+- **The OpenAlgo live feed streams.** During the live window the Live Desk
+  holds one streaming connection to your own OpenAlgo — its streaming port 8765
+  on the same machine, or a **Streaming address** you save on the OpenAlgo
+  connection (copy `WEBSOCKET_URL` from its `.env` if you run more than one
+  instance; it must name the same machine as the bridge — `localhost`,
+  `127.0.0.1` and `::1` count as one machine). Streamed prices read "Last
+  traded"; the 1–5 s slider becomes the **fallback refresh**, used only for a
+  symbol the stream has not priced for 30 seconds and while the stream is
+  unavailable. The strip says which: "Live · OpenAlgo stream" or "… poll".
+  Changing the bridge's host clears a saved streaming address, and switching
+  account while the desk is streaming refreshes it once.
+- **Every live feed now stops at the end of the live window** (about 15:45
+  IST). The desk keeps its last prices and reads "not streaming"; a desk left
+  open no longer polls your feed all evening.
+- **Direct pulls for Fyers, Kotak Neo and Nuvama — documented, not yet
+  verified with a real account.** Each reads today's trade book only, behind
+  its own consent sheet. Fyers: App ID and secret saved once, then one browser
+  login a day and a paste of the address it lands on. Kotak Neo: your Trade API
+  token, mobile, UCC, MPIN and TOTP secret saved once (encrypted), a fresh login
+  at every pull, and it can join the launch auto-pull; every pulled Kotak trade
+  notes that an order placed through Kotak's Trade API was charged ₹0
+  brokerage, which a fill cannot show. Nuvama: API key and secret saved once,
+  then a browser login and a paste of the request id; the session lasts until
+  the earlier of 8 hours or 00:30 IST. Currency and NCDEX fills are refused and
+  named. The Kotak Neo and Nuvama pulls follow no redirect: an answer that
+  points elsewhere is refused in words, and nothing is sent to the address it
+  named. Every pulled trade, card and help card carries the "not yet verified"
+  label; check them against your contract note.
+- **Currency derivatives are refused at import — by every broker pull and by
+  every file import, the column mapper included.** No charge profile covers
+  currency, yet a USDINR future or option used to be folded into NSE or BSE and
+  charged equity-F&O STT and stamp duty (on Kite pulls and Zerodha files since
+  11 July 2026; the Angel One, Upstox, OpenAlgo and Dhan paths and the other
+  brokers' files did the same). Now the Kite pull (CDS and BCD), the Angel One,
+  Upstox, OpenAlgo and Dhan pulls (Dhan's trade history and today's positions)
+  and the three new pulls refuse such a row, and every trade file passes one
+  shared check between reading and preview: a row is refused when its own
+  segment or exchange cell states currency (Zerodha, Angel One / Upstox, Fyers,
+  Dhan's Global Transaction Report, Nuvama's P&L report, Paytm Money and the
+  column mapper read that cell) or when its contract name reads as one of the
+  seven exchange-traded pairs (USDINR, EURINR, GBPINR, JPYINR, EURUSD, GBPUSD,
+  USDJPY) — every file, including those with no such cell. The row is counted
+  and the contract named: "currency derivatives are not priced by Vyuha". A
+  Dhan Global Transaction Report with a currency bill used to fail as a whole
+  file; it now imports the rest. Nuvama's P&L report refuses NCDEX lines the
+  same way.
+  **Rows imported earlier keep the charges they were stored with:** nothing is
+  re-priced, and importing the same file again refuses the row rather than
+  correcting it — delete those trades to remove them. **A currency position
+  still open from an earlier import will not close itself** (its sale is now
+  refused): the refusal note names it, for you to close or delete by hand.
+- **The duplicate check now meets a contract written two ways.** When two of
+  your sources for the SAME broker print one contract differently (a compact
+  monthly option against a dated name, for example), the cross-source check
+  now matches them by underlying, month, strike and type as well as by the
+  exact string. **Visible change, for every broker:** with two such sources you
+  may now see the duplicate dialog where you did not, and the launch auto-pull
+  skips those rows as collisions (they wait for the Import screen). A match
+  found only at month level counts as a risk only when the rows share a buy or
+  sell date.
+- **"Pulls missed since …" for Angel One and Upstox.** The Import screen's
+  connect card now says when a pull day was missed for every broker whose pull
+  reads today only — a new line for Angel One and Upstox users — and that the
+  days between come from the broker's file.
+- **The dashboard ships its figures, not your book.** Measured on a
+  25,001-row book the dashboard's page fell from 13.1 MB to 0.75 MB; its filters
+  now live in the address bar, and the CSV export is fetched when you click it.
+  The figures on screen are unchanged.
+- **`/reports/itr` counts exited IPO allotments**, exactly as `/reports/tax`
+  already did — so the ITR pack's capital gains can move for anyone with an
+  exited IPO. (Their STT is not yet added back to the CG figure on either
+  page.)
+- **After the update, a closed feature says why.** When the feed you chose in
+  Settings is not the one running — a disclosure waiting to be re-accepted, for
+  one — `/live` says so, gives the reason and links to Settings → Live feed,
+  instead of dropping to end-of-day prices without a word. The Import screen's
+  OpenAlgo section states the reason it is closed (the disclosure, or the
+  integration switched off) instead of vanishing, for anyone with a saved
+  instance. On the Telegram card, switching the alerts on no longer leaves a
+  stale "alerts are off" or "Paused" line beside them.
+- **Also fixed:** the Market Atlas's industry cohorts fell up to the sector on
+  books whose instruments carried the bundled sector label — a tag that agrees
+  with the exchange's sector now keeps its industry (a tag that disagrees
+  stays yours); Edit levels saves only the fields you changed, so an untouched
+  save no longer rewrites a stop; the Positions card's Size is deployed ÷
+  capital; the dashboard's week-on-week delta is computed on IST dates; a
+  restore from a backup made before v4.7.0 abandons a Clinic experiment whose
+  account the restore removed.
+- **You are asked to re-accept four disclosures once.** Telegram (version 2 —
+  **your end-of-day digest pauses** until you re-read it; a one-time strip on
+  every page says so, and the Settings card links to it); OpenAlgo (version 5 —
+  **its trade pull AND its live feed** stay closed until you re-accept); Upstox
+  and Angel One live feeds (version 2 each — **each feed** stays closed until
+  you re-accept, and the desk falls back to the end-of-day price). Nothing new
+  is sent until you do.
+- **Two database upgrades (0079–0080)**, applied on first launch behind the
+  automatic pre-migration backup — take your own backup first, as always: 0079
+  adds the setup grade, the intra-trade high/low and the Clinic's experiments
+  and cache; 0080 adds the alert settings and the alert receipts (the receipts are
+  machine state — not in a backup).
+  No money figure already stored on a trade moves.
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  The v4.7.0 installer runs the v4.6.0 uninstaller once before it installs, and
+  that one is the guarded one: ticking its "Delete the application data" box
+  erases the whole data folder, but not before your journal and licence key
+  have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel
+  leaves everything as it is.
+- **No new dependency.**
+
+Not in this release: no macOS build; the installer is still unsigned (Windows
+SmartScreen warns once). The Fyers, Kotak Neo and Nuvama pulls are not yet
+verified against a real account, and Fyers' history range is not read (today
+only). Kotak Neo and Sahi FILES still go to the column mapper. The real-network
+paths of the alerts, the three pulls and the stream are proven against
+stand-ins, not against a live broker. Alerts stop at the end of the bundled
+calendar (31 December 2026) until the 2027 holiday list is bundled. Currency
+rows imported before v4.7.0 are not re-priced, and a broker file's own summary
+or footer total (a Zerodha Console P&L, a Dhan or Nuvama report) can still
+include the charges of currency rows this release refuses, so its
+reconciliation can show a gap equal to them. A currency contract is recognised
+by a stated currency segment or venue, or by a name Vyuha can read as one of
+the seven pairs; a file that states neither is not caught, and a currency
+trade typed in by hand is not refused. Rights, buyback and delisting chips are not on the Positions tab.
+
 ## v4.6.0 — 2026-09-26
 
 *The release where the journal learns the market's real clock, two more brokers

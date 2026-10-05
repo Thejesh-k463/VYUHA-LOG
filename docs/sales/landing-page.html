@@ -274,7 +274,7 @@
 
 <header class="hero">
   <div class="wrap">
-    <div class="pill"><span class="dot"></span> v4.6.0 · Windows · Built for Indian retail traders · Desktop or web</div>
+    <div class="pill"><span class="dot"></span> v4.7.0 · Windows · Built for Indian retail traders · Desktop or web</div>
     <h1>Every warrior had a charioteer.<br/><span class="grad">Yours keeps count.</span></h1>
     <p class="lede">
       Your P&amp;L tells you <em>what</em>; Vyuha tells you why. A trade journal and analytics cockpit that
@@ -290,7 +290,7 @@
       <span class="chip">🇮🇳 <b>8 auto-detected brokers</b> · Zerodha · Dhan · Groww · Angel One · Upstox · Paytm Money · Fyers · Nuvama —<b>+ any CSV</b> via the column mapper · <b>+ 4 broker APIs</b> · <b>OpenAlgo</b> optional for the rest</span>
       <span class="chip">🎁 <b>7-day full trial</b> · no card</span>
       <span class="chip">♾ <b>Journal free forever</b></span>
-      <span class="chip">🆕 <b>New in v4.6.0</b> · Fyers and Nuvama import themselves — eight brokers now auto-detect, with Fyers Standard/Prime and Nuvama Lite Plus/Elite rate cards (their equity rows are not yet verified against a real export) · an effective-dated market calendar: the Closing Auction Session, F&amp;O to 15:40, holidays and special sessions, and the day’s mark only after the official close · the exchanges’ own four-level industry for 5,450 of 5,482 listed equities, with AMFI’s rank as the cap band · Market Atlas v3 — industry cohorts, median returns, one rotation table, relative strength against the market median · analytics regrouped into three hubs · Help rewritten task-first · a covered overnight F&amp;O short stored as a short, filed in the year it was covered · the ITR pack’s 2018 grandfathering fixed (it read the per-share FMV as a total) · Paytm Money and Groww ladders now sum to their position</span>
+      <span class="chip">🆕 <b>New in v4.7.0</b> · the Edge Clinic’s Clinic tab — how strong the evidence in your own trades is, and how many more trades a setup needs · setup grades A+ / A / B · the Sizing Lab fills win rate and payoff from your own record, beside a half-Kelly ceiling stated per 1R · a Positions view on the Live Desk with a card per position · Telegram stop/target alerts (Pro) — levels only, never a quantity or a rupee figure · currency derivatives are refused at import, counted and named, rather than priced as equity F&amp;O · the duplicate check matches a contract one broker writes two ways · a lighter dashboard on large books · the ITR pack counts exited IPOs</span>
     </div>
     <div class="wins" aria-label="Why it wins">
       <div class="win"><div class="n">₹29,999 once</div><div class="d">vs ≈ ₹47,000–95,000 over three years for the global journals in our comparison, at their current prices.</div></div>
@@ -597,9 +597,12 @@
         newer signed release exists and fetches the licence-revocation list — it sends no account, no
         identifier and no data, and this one cannot be switched off. Everything else is off by default and
         yours to enable: an end-of-day bhavcopy download for mark-to-market prices; broker pulls that talk
-        only to your own broker's API; and a daily Telegram digest of your own recorded numbers — the one
-        path that uploads anything, and it is enabled only behind a disclosure that says plainly the content
-        goes to Telegram's servers.</p></details>
+        only to your own broker's API; a live price feed from a bridge you run yourself or from your own
+        broker's API, carrying the symbols of your open positions and nothing else about them; and
+        Telegram — a daily digest of your own recorded numbers and, on Pro, stop/target alerts that carry a
+        symbol, a price and your level but never a quantity or a rupee figure. Telegram is the only path
+        that sends anything from your journal to a company other than your own broker, and it is enabled
+        only behind a disclosure that says plainly the content goes to Telegram's servers.</p></details>
       <details><summary>Is the installer code-signed?</summary>
         <p><b>No — and Windows will say so.</b> Vyuha is built by one independent developer and the
         installer carries no code-signing certificate, so SmartScreen shows <i>"Windows protected your PC"</i>

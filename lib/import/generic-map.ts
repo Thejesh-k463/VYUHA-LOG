@@ -218,6 +218,45 @@ export function readProduct(raw: string | undefined | null): ProductHint {
   return null;
 }
 
+/**
+ * PURE. A venue / segment CELL that states the currency segment, in any broker's
+ * vocabulary: `CDS`, `BCD`, `CD`, `Currency`, `Currency Derivatives`, and the
+ * compound forms `NSE-CDS`, `NSE_CURRENCY`, `BSE_CURRENCY`, `NSE CD`.
+ *
+ * The ONE rule for a stated venue across the file importers: `statesCurrency`
+ * in `parsers/zerodha.ts` is this function. It lives HERE because this module
+ * is imported by a client component (`components/import/column-mapper.tsx`), so
+ * it cannot import the parsers (papaparse, xlsx) — they import it instead.
+ *
+ * Two halves: the prefix rule the Zerodha parser has always applied to its own
+ * cells (`CDS…`, `BCD…`, `CD`, `Currenc…`, spaces / `_` / `.` folded), and —
+ * for the compound forms — a WHOLE token of the cell (`NSE-CDS` → `CDS`). It is
+ * for venue and segment cells only, never for a symbol: `CDSL` starts with `CDS`.
+ */
+export function isCurrencyVenueCell(raw: string | null | undefined): boolean {
+  const s = String(raw ?? "").trim().toUpperCase();
+  if (!s) return false;
+  const flat = s.replace(/[\s_.]/g, "");
+  if (flat.startsWith("CDS") || flat.startsWith("BCD") || flat === "CD" || flat.startsWith("CURRENC")) return true;
+  return s.split(/[^A-Z0-9]+/).some((t) => t === "CDS" || t === "BCD" || t === "CD" || t.startsWith("CURRENC"));
+}
+
+/**
+ * The currency rows `applyMapping` refused, for the import guard
+ * (`refuseCurrencyRows` in `parsers/zerodha.ts`), which writes the ONE shared
+ * refusal note and feeds the stranded-open note. Keyed on the returned `trades`
+ * array — `parseGenericTable` hands that array to its ParsedFile unchanged, and
+ * `tests/currency-refusal.test.ts` pins that it does.
+ */
+const MAPPED_CURRENCY = new WeakMap<NormalizedTrade[], readonly string[]>();
+export function mappedCurrencyRefusalsOf(trades: NormalizedTrade[]): readonly string[] {
+  return MAPPED_CURRENCY.get(trades) ?? [];
+}
+function withMappedRefusals(result: ApplyResult): ApplyResult {
+  if (result.refusedCurrency.length > 0) MAPPED_CURRENCY.set(result.trades, result.refusedCurrency);
+  return result;
+}
+
 const EXCHANGES = ["NSE", "BSE", "MCX", "NCDEX"] as const;
 
 function readExchange(raw: string | undefined | null): Exchange | null {
@@ -231,8 +270,17 @@ function readExchange(raw: string | undefined | null): Exchange | null {
 export interface ApplyResult {
   trades: NormalizedTrade[];
   warnings: string[];
-  /** Rows dropped because a required cell could not be read. */
+  /** Rows that became no trade: a required cell could not be read, or the row
+   *  was refused as currency (`refusedCurrency`). */
   skipped: number;
+  /**
+   * v4.7.0 — rows whose EXCHANGE cell states the currency segment
+   * (`isCurrencyVenueCell`), one contract name per row. Refused, never mapped
+   * to NSE: no `charge_config` row covers currency (AGENTS.md invariant 3), so
+   * the row would be priced as an equity future or option. The mapper only
+   * drops and names them; the note is written once, by the import guard.
+   */
+  refusedCurrency: string[];
 }
 
 export interface ApplyOptions {
@@ -264,11 +312,14 @@ export function applyMapping(
       trades: [],
       warnings: [`Mapping incomplete — still needed: ${check.missing.join(", ")}.`],
       skipped: rows.length,
+      refusedCurrency: [],
     };
   }
-  return check.shape === "executions"
-    ? applyExecutions(rows, mapping, opts)
-    : applyRoundTrips(rows, mapping, opts);
+  return withMappedRefusals(
+    check.shape === "executions"
+      ? applyExecutions(rows, mapping, opts)
+      : applyRoundTrips(rows, mapping, opts),
+  );
 }
 
 function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions): ApplyResult {
@@ -288,6 +339,7 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
   const timedFills = new Map<string, { side: "buy" | "sell"; date: string; time: string }[]>();
   let skipped = 0;
   let undated = 0;
+  const refusedCurrency: string[] = [];
 
   for (const row of rows) {
     const symbol = String(cell(row, m.tradingsymbol) ?? "").trim().toUpperCase();
@@ -296,6 +348,9 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     const price = readNumber(cell(row, m.price));
     const date = extractDate(cell(row, m.date));
 
+    // A row the file itself places on a currency venue is refused BEFORE it can
+    // join a leg — never folded into NSE (see `ApplyResult.refusedCurrency`).
+    if (symbol && isCurrencyVenueCell(cell(row, m.exchange))) { refusedCurrency.push(symbol); continue; }
     if (!symbol || !side || qty == null || price == null || qty <= 0) { skipped++; continue; }
     if (!date) { skipped++; undated++; continue; }
 
@@ -390,13 +445,14 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     };
   });
 
-  return { trades, warnings, skipped };
+  return { trades, warnings, skipped: skipped + refusedCurrency.length, refusedCurrency };
 }
 
 function applyRoundTrips(rows: string[][], m: ColumnMapping, opts: ApplyOptions): ApplyResult {
   const warnings: string[] = [];
   const trades: NormalizedTrade[] = [];
   let skipped = 0;
+  const refusedCurrency: string[] = [];
 
   for (const row of rows) {
     const symbol = String(cell(row, m.tradingsymbol) ?? "").trim().toUpperCase();
@@ -405,6 +461,8 @@ function applyRoundTrips(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     const avgBuy = readNumber(cell(row, m.avgBuyPrice));
     const avgSell = readNumber(cell(row, m.avgSellPrice));
 
+    // Refused as currency by its stated venue — see `ApplyResult.refusedCurrency`.
+    if (symbol && isCurrencyVenueCell(cell(row, m.exchange))) { refusedCurrency.push(symbol); continue; }
     if (!symbol || buyQty == null || sellQty == null || avgBuy == null || avgSell == null) { skipped++; continue; }
     if (buyQty <= 0 && sellQty <= 0) { skipped++; continue; }
 
@@ -443,7 +501,7 @@ function applyRoundTrips(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
       `Blank subtotal and header rows are expected here; a large count means a column is mapped wrongly.`,
     );
   }
-  return { trades, warnings, skipped };
+  return { trades, warnings, skipped: skipped + refusedCurrency.length, refusedCurrency };
 }
 
 /** The single product the file describes, when every row agrees on one. */

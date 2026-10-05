@@ -45,6 +45,8 @@ import { DEDUP_LABEL_PREFIX } from "../trade-identity";
 import { bundledSymbolByIsin } from "../isin-symbol";
 import { fyOfDate } from "@/lib/analytics/ais";
 import { FYERS_NUVAMA_EQUITY_UNVERIFIED } from "./fyers-tradebook";
+import { nuvamaUnpricedRow } from "../pull-symbols";
+import { withCurrencyRefusals } from "./zerodha";
 
 export const NUVAMA_PNL_SOURCE_ID = "nuvama-pnl-report";
 
@@ -243,13 +245,17 @@ interface ReadResult {
   lines: Line[];
   deleted: number;
   refused: string[];
+  /** Lines on a currency venue (CDS / BCD) — the instrument, one per line. */
+  refusedCurrency: string[];
+  /** Lines on NCDEX — the instrument, one per line. */
+  refusedNcdex: string[];
   headSumOff: number;
   totalRow: Record<string, number> | null;
   charges: number;
 }
 
 function readDetail(rows: unknown[][], seqStart: number): ReadResult {
-  const out: ReadResult = { lines: [], deleted: 0, refused: [], headSumOff: 0, totalRow: null, charges: 0 };
+  const out: ReadResult = { lines: [], deleted: 0, refused: [], refusedCurrency: [], refusedNcdex: [], headSumOff: 0, totalRow: null, charges: 0 };
   const h = headerIndex(rows);
   if (h < 0) return out;
   const hdr = rows[h].map(norm);
@@ -278,6 +284,18 @@ function readDetail(rows: unknown[][], seqStart: number): ReadResult {
     if (!instrument) continue;
     if (/^true$/i.test(String(at(r, c.del)).trim())) {
       out.deleted++;
+      continue;
+    }
+    // v4.7.0 — the Nuvama PULL's rule (`nuvamaUnpricedRow`, seam D-C6-2): a line
+    // on CDS / BCD / NCDEX, by its stated `TxnType` venue or by the exchange
+    // token closing the instrument, is REFUSED and named. `asExchange` used to
+    // read those venues as "unknown", and the row was stored as an NSE contract.
+    const venue = String(at(r, c.exch)).trim();
+    if (nuvamaUnpricedRow({ trdSym: instrument, exc: venue })) {
+      // Named as the book would hold it (`FUT USDINR 28 Oct 2026`), so the
+      // route's stranded-open note can match a row stored before v4.7.0.
+      const name = nuvamaInstrument(instrument, isinCell.toUpperCase())?.tradingsymbol ?? instrument;
+      (/^NCDEX$/i.test(venue) || /-NCDEX$/i.test(instrument) ? out.refusedNcdex : out.refusedCurrency).push(name);
       continue;
     }
     const inst = nuvamaInstrument(instrument, isinCell.toUpperCase());
@@ -549,7 +567,18 @@ export function parseNuvamaPnlReport(ctx: ParseContext): ParsedFile {
     warnings.push(`${reference.length} Summary figures were stored as the broker's own numbers for reconciliation. Nuvama's buy and sell values there INCLUDE its charges, so its P&L is net.`);
   }
 
-  return { ...base, trades, reported, reference, sourceRows: read, warnings };
+  // NCDEX has no currency sentence of its own; this one mirrors the pull's
+  // (`unpricedRefusalNote`), for a report line, and names the contracts.
+  const ncdex = [...detail.refusedNcdex, ...unreal.refusedNcdex];
+  if (ncdex.length > 0) {
+    warnings.push(`${ncdex.length} NCDEX line${ncdex.length === 1 ? " was" : "s were"} refused: NCDEX contracts are not imported from this report (no charge profile covers them), so nothing was imported for: ${[...new Set(ncdex)].slice(0, 10).join(", ")}.`);
+  }
+
+  return withCurrencyRefusals(
+    { ...base, trades, reported, reference, sourceRows: read, warnings },
+    [...detail.refusedCurrency, ...unreal.refusedCurrency],
+    "row",
+  );
 }
 
 /**

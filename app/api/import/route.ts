@@ -4,7 +4,7 @@ import { buildContext, detectParser, rankParsers } from "@/lib/import/detect";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { AccountRequiredError, getWriteAccountId } from "@/lib/queries/accounts";
 import { db } from "@/lib/db";
-import { currencyRefusalsOf, currencyUnderlyings, strandedCurrencyNotes } from "@/lib/import/parsers/zerodha";
+import { currencyRefusalsOf, currencyUnderlyings, refuseCurrencyRows, strandedCurrencyNotes } from "@/lib/import/parsers/zerodha";
 import { guardReadable, unreadableError } from "@/lib/import/parse-guard";
 import { classifyFileKind, capabilityOf } from "@/lib/import/file-kind";
 import type { ProductHint } from "@/lib/engine/types";
@@ -129,7 +129,11 @@ export async function POST(req: Request) {
 
   let parsed;
   try {
-    parsed = await chosen.parse(ctx);
+    // The ONE shared currency guard: no parser's row reaches preview or commit
+    // without passing it (seven file parsers have no currency check of their
+    // own). It names what it refuses, so the stranded-open block below fires
+    // for those contracts exactly as it does for a parser's own refusals.
+    parsed = refuseCurrencyRows(await chosen.parse(ctx));
   } catch (e) {
     return NextResponse.json({ error: `Parse failed: ${(e as Error).message}` }, { status: 422 });
   }

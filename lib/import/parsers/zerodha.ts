@@ -9,6 +9,7 @@ import { classify } from "@/lib/engine/classify";
 import { isCurrencyPair } from "@/lib/domain/currency-pairs";
 import type { ParseContext, ParsedFile } from "../types";
 import { workbookOf } from "../types";
+import { isCurrencyVenueCell, mappedCurrencyRefusalsOf } from "../generic-map";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -77,17 +78,62 @@ const REFUSED_CURRENCY = new WeakMap<ParsedFile, readonly string[]>();
 export function currencyRefusalsOf(parsed: ParsedFile): readonly string[] {
   return REFUSED_CURRENCY.get(parsed) ?? [];
 }
+/** APPEND-safe: a second call on the same ParsedFile (a parser's own refusals,
+ *  then `refuseCurrencyRows`) adds its note and UNIONS the names — it used to
+ *  overwrite the first call's. */
 export function withCurrencyRefusals(parsed: ParsedFile, refused: readonly string[], noun: string): ParsedFile {
   if (refused.length === 0) return parsed;
   parsed.warnings.push(currencyRefusalNote(refused.length, refused, noun));
-  REFUSED_CURRENCY.set(parsed, [...new Set(refused)]);
+  REFUSED_CURRENCY.set(parsed, [...new Set([...(REFUSED_CURRENCY.get(parsed) ?? []), ...refused])]);
   return parsed;
 }
 
-/** A tradebook / Console cell that states the currency segment or venue. */
-function statesCurrency(raw: string): boolean {
-  const s = norm(raw);
-  return s.startsWith("cds") || s.startsWith("bcd") || s === "cd" || s.startsWith("currenc");
+/** PURE. A venue / segment cell that states the currency segment — CDS, BCD, CD,
+ *  Currency, and the compound forms (NSE-CDS, NSE_CURRENCY, BSE_CURRENCY). The
+ *  rule itself is `isCurrencyVenueCell` (lib/import/generic-map.ts, which a
+ *  client component imports and so cannot import this file). */
+export function statesCurrency(raw: string | null | undefined): boolean {
+  return isCurrencyVenueCell(raw);
+}
+
+/**
+ * PURE. Is this parsed row a currency derivative? Either its own venue states
+ * it (`exchangeHint` is typed NSE / BSE / MCX, but the Dhan GTR hands the
+ * file's raw cell through — a "CDS" there used to reach `findRates` and fail
+ * the WHOLE file), or its classified underlying is a currency pair (R6: exact
+ * membership of lib/domain/currency-pairs.ts, never a tradingsymbol prefix).
+ */
+export function isCurrencyRow(t: Pick<NormalizedTrade, "tradingsymbol" | "exchangeHint">): boolean {
+  return statesCurrency(String(t.exchangeHint ?? "")) || isCurrencyContract(t.tradingsymbol);
+}
+
+/**
+ * The ONE shared post-parse guard (v4.7.0 money audit, LEDGER L-61): every FILE
+ * import passes through it in `app/api/import/route.ts`, straight after the
+ * parser. Seven file paths (Fyers tradebook, Dhan P&L, Dhan GTR, Nuvama P&L
+ * report, Angel One tax P&L, Paytm tradebook, the generic column mapper) had no
+ * currency check of their own, so a USDINR future reached `commit.ts` as an NSE
+ * equity future and was priced with equity-F&O STT and stamp (invariant 3).
+ *
+ * Removes every `isCurrencyRow` from `parsed.trades` — the only array that
+ * becomes trades; `reference` (broker-stated figures) and `enrich` (facts about
+ * rows ALREADY stored, never a new trade) are left as the file states them —
+ * and records the names through `withCurrencyRefusals`: the one existing note,
+ * and the side channel the stranded-open note reads. A parser that refused its
+ * own currency rows (Zerodha, Angel One / Upstox) leaves none behind, so the
+ * guard adds nothing and no second note. The generic mapper's venue refusals
+ * (`mappedCurrencyRefusalsOf`) are named here too, in the same note.
+ */
+export function refuseCurrencyRows(parsed: ParsedFile): ParsedFile {
+  const refused: string[] = [...mappedCurrencyRefusalsOf(parsed.trades)];
+  const kept: NormalizedTrade[] = [];
+  for (const t of parsed.trades) {
+    if (isCurrencyRow(t)) refused.push(t.tradingsymbol);
+    else kept.push(t);
+  }
+  if (refused.length === 0) return parsed;
+  parsed.trades = kept;
+  return withCurrencyRefusals(parsed, refused, "row");
 }
 
 /** Convert a CSV/XLSX file into per-sheet matrices of rows.

@@ -39,6 +39,7 @@ import { deriveBasisFromFooter } from "@/lib/analytics/acquisition";
 import { parseInstrumentName } from "@/lib/engine/classify";
 import { securityByCompanyName } from "../isin-symbol";
 import { DEDUP_LABEL_PREFIX } from "../trade-identity";
+import { statesCurrency, withCurrencyRefusals } from "./zerodha";
 import { COMMODITY_UNDERLYINGS } from "@/lib/domain/constants";
 
 const COMMODITY_SET = new Set<string>(COMMODITY_UNDERLYINGS);
@@ -327,8 +328,26 @@ function venueOffMcx(flag: boolean, p: PairedPosition, sink: string[]): boolean 
 
 export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   const text = ctx.text ?? ctx.buffer?.toString("utf-8") ?? "";
-  const { rows, reported, unparsedDates, ambiguousDates } = readGtr(text);
+  const { rows: allRows, reported, unparsedDates, ambiguousDates } = readGtr(text);
   const warnings: string[] = [];
+
+  // v4.7.0 — a bill whose Exchange cell states currency (CDS, BCD, …) is
+  // REFUSED and named, never the whole file: that cell is handed through as the
+  // row's venue, and `findRates` THROWS on a venue no charge_config row covers
+  // ("No charge_config for dhan / … / CDS"), which failed every other bill in
+  // the report with it. Currency only — every other venue is left as stated.
+  const refusedRows = allRows.filter((r) => statesCurrency(r.exchange));
+  const rows = refusedRows.length > 0 ? allRows.filter((r) => !statesCurrency(r.exchange)) : allRows;
+  const refusedCurrency = refusedRows.map((r) => r.scrip);
+  /** What the refused bills were charged — the footer's Total Charges still includes it. */
+  const refusedCharges = r2(refusedRows.reduce((s, r) => s + rowCharges(r), 0));
+  if (rows.length === 0 && refusedRows.length > 0) {
+    return withCurrencyRefusals(
+      { sourceId: "dhan-gtr", broker: "dhan", format: "transactions", trades: [], reported, sourceRows: 0, warnings },
+      refusedCurrency,
+      "row",
+    );
+  }
 
   if (rows.length === 0) {
     // A detected GTR that yields nothing is a parser gap until proven
@@ -376,7 +395,10 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   const matchedGross = paired
     .filter((p) => p.kind === "closed")
     .reduce((s, p) => s + (p.sellValue - p.buyValue), 0);
-  const derived = deriveBasisFromFooter(reported.grossPnl, r2(matchedGross), orphans);
+  // The footer's gross P&L also covers any REFUSED currency bill, whose own gross
+  // no single bill line states — so with one refused there is nothing honest to
+  // subtract, and no cost is derived (invariant 6).
+  const derived = deriveBasisFromFooter(refusedRows.length > 0 ? undefined : reported.grossPnl, r2(matchedGross), orphans);
   const suggestedBasis =
     derived?.exact && derived.pricePerShare != null && orphans[0]
       ? { symbol: orphans[0].symbol, pricePerShare: derived.pricePerShare, cost: derived.impliedCost }
@@ -474,7 +496,11 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   // and call it "rounding" (one 13-13-2026 line moved ₹238.87 onto an unrelated
   // scrip — audit finding 1). Then Vyuha says so and leaves every position's
   // charges exactly as the report states them.
-  const statedTotal = reported.totalCharges != null ? r2(reported.totalCharges) : r2(totalCharges);
+  // Refused currency bills are in the footer and in no position, so their own
+  // charges come off the figure the book is conserved to — otherwise they read
+  // as an unexplained difference and the file is flagged "please report".
+  const statedTotal = reported.totalCharges != null ? r2(reported.totalCharges - refusedCharges) : r2(totalCharges);
+  const statedLabel = refusedCharges > 0 ? "Total Charges less the refused currency bills'" : "Total Charges";
   const given = r2(trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0));
   const residual = r2(statedTotal - given);
   const foldCap = check.valueTolerance;
@@ -483,7 +509,7 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
     warnings.push(
       unparsedDates.count > 0
         ? `₹${Math.abs(residual).toFixed(2)} of the footer's charges belong to ${unparsedDates.count} skipped line${unparsedDates.count === 1 ? "" : "s"} — more than the ₹${foldCap.toFixed(2)} this file's rounding can explain, so it was NOT folded into any position. Every position keeps the charges the report states for it, and the book's charges total ₹${given.toLocaleString("en-IN")} against the footer's ₹${statedTotal.toLocaleString("en-IN")}.`
-        : `The footer's Total Charges (₹${statedTotal.toLocaleString("en-IN")}) differ from the positions' own charges (₹${given.toLocaleString("en-IN")}) by ₹${Math.abs(residual).toFixed(2)} — more than the ₹${foldCap.toFixed(2)} rounding tolerance, so nothing was folded and each position keeps the report's own figures. Please report this file.`,
+        : `The footer's ${statedLabel} (₹${statedTotal.toLocaleString("en-IN")}) differ from the positions' own charges (₹${given.toLocaleString("en-IN")}) by ₹${Math.abs(residual).toFixed(2)} — more than the ₹${foldCap.toFixed(2)} rounding tolerance, so nothing was folded and each position keeps the report's own figures. Please report this file.`,
     );
   } else if (residual !== 0 && last?.reportedCharges) {
     const b = last.reportedCharges;
@@ -494,7 +520,7 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
     b.total = r2((b.total ?? 0) + residual);
     last.importNotes = [
       ...(last.importNotes ?? []),
-      `Carries ₹${residual.toFixed(2)} of rounding so the book's charges equal the report's Total Charges (₹${statedTotal.toLocaleString("en-IN")}) to the paisa: per-bill charges are apportioned to the paisa, and the footer is stated to four decimals.`,
+      `Carries ₹${residual.toFixed(2)} of rounding so the book's charges equal the report's ${statedLabel} (₹${statedTotal.toLocaleString("en-IN")}) to the paisa: per-bill charges are apportioned to the paisa, and the footer is stated to four decimals.`,
     ];
   }
 
@@ -540,15 +566,19 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
     "MTF cannot be identified from this file — an MTF position carries the same STT and stamp duty as delivery, and financing interest is a ledger entry. Confirm any delivery rows that were actually MTF.",
   );
 
-  return {
-    sourceId: "dhan-gtr",
-    broker: "dhan",
-    format: "transactions",
-    trades,
-    reported,
-    // Bill lines as read, BEFORE pairing — so the UI can say
-    // "92 lines → 73 trades" instead of a count that looks like loss.
-    sourceRows: rows.length,
-    warnings,
-  };
+  return withCurrencyRefusals(
+    {
+      sourceId: "dhan-gtr",
+      broker: "dhan",
+      format: "transactions",
+      trades,
+      reported,
+      // Bill lines as read, BEFORE pairing — so the UI can say
+      // "92 lines → 73 trades" instead of a count that looks like loss.
+      sourceRows: rows.length,
+      warnings,
+    },
+    refusedCurrency,
+    "row",
+  );
 }
