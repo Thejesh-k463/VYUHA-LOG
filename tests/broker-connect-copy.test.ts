@@ -555,6 +555,8 @@ describe("Seam D1 · the pull dialog's words for a collision with today's earlie
     expect(collisionBadge("same-quantity")).toBe("same quantity");
     expect(collisionBadge("same-value")).toBe("same value");
     expect(collisionBadge("partial-quantity")).toBe("partial overlap");
+    // v4.8.0 X1 D6b(ii): a close that would recreate a held sale is not an "overlap".
+    expect(collisionBadge("held-identity")).toBe("already recorded");
   });
 
   it("an earlier-snapshot-only 409: the route's sentence is shown, and no other-source text or footer", () => {

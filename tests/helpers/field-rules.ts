@@ -56,7 +56,8 @@ export type RuleId =
   | "trade-side-reader"
   | "trade-side-writer"
   | "fmv-per-share"
-  | "intra-range-split";
+  | "intra-range-split"
+  | "tradingsymbol-pairing";
 
 export interface FieldRule {
   id: RuleId;
@@ -282,7 +283,41 @@ export const REGISTRY: FieldRule[] = [
       "else; a typed range left in pre-split rupees no longer brackets the post-split fills, and MAE/MFE then falls back to " +
       "bars without a word. Red fixture: HEAD 1c92bdc lib/corporate-actions-apply.ts.",
   },
+  {
+    id: "tradingsymbol-pairing",
+    field: "tradingsymbol",
+    rule:
+      "A stored `tradingsymbol` is whatever the SOURCE wrote (OpenAlgo `OPT NIFTY 22 Sep 2026 25000 CE`, a native pull " +
+      "`NIFTY2692225000CE`, a file `SBIN-EQ`), so it is never an IDENTITY on its own: a lot and its closing execution are paired " +
+      "through ONE pure leaf, `lib/import/contract-key.ts` (`pairKeyOf` / `monthKeyOf` / `pairLevel`), and nowhere else under " +
+      "lib/import/ or in lib/analytics/data-quality.ts. The dedup HASH keeps the raw string (frozen identity, dedup.ts) and is not a pairing.",
+    forbidden:
+      "a `.tradingsymbol` property read as the RECEIVER of `.trim()` / `.toUpperCase()` / `.toLowerCase()`, or as an operand of " +
+      "`===` / `!==` / `==` / `!=`, under lib/import/ (outside contract-key.ts) and in lib/analytics/data-quality.ts — a raw-string join " +
+      "of two names that one contract can be written two ways",
+    allowed:
+      "`pairKeyOf(x.tradingsymbol)`, `monthKeyOf(…)`, `pairLevel(a, b)`, handing the string on (`tradingsymbol: t.tradingsymbol`), a " +
+      "normaliser whose receiver is a PARAMETER or a mapped local (`norm(s)`, `contractKey(s)` — the hash and the display paths), an " +
+      "index (`overrides[t.tradingsymbol]`), and the sites in `PAIRING_ALLOWLIST`, each with a reason",
+    triggers: ["tradingsymbol"],
+    roots: ["lib/import", "lib/analytics"],
+    provenance:
+      "v4.8.0 X1 (design §1, review D11): six pairing readers joined on `tradingsymbol.trim().toUpperCase()` — `matchKey` " +
+      "(close-open-lots.ts:688 at 180dd3c), Data Quality's `booksOf` (data-quality.ts:785), `closeStaleLot`'s book filter and " +
+      "un-close's lot finder (commit.ts:3525-3531, :3356-3362), the supersede key (:909-911), legacy-short and the echoes note — so an " +
+      "OpenAlgo lot sold through a native pull never met its sale and the book held the position twice (harness case RESIDUAL R4'). " +
+      "Red fixture: HEAD 180dd3c lib/import/close-open-lots.ts, lib/analytics/data-quality.ts, lib/import/commit.ts.",
+  },
 ];
+
+/**
+ * X1 D11 (review: ACCEPT, "add an allowlist registry with a reason per exempt
+ * site"). A site the pairing rule reports that is NOT a pairing of two names —
+ * each entry names the file, the expression as the scanner prints it, and WHY
+ * the raw read is right there. An entry whose expression no longer exists is a
+ * stale exemption and fails the registry test.
+ */
+export const PAIRING_ALLOWLIST: { file: string; expr: RegExp; reason: string }[] = [];
 
 export const RULE = Object.fromEntries(REGISTRY.map((r) => [r.id, r])) as Record<RuleId, FieldRule>;
 
@@ -983,6 +1018,58 @@ function scanIntraRangeSplit(sf: TS.SourceFile, file: string): Violation[] {
 }
 
 // ---------------------------------------------------------------------------
+// v4.8.0 X1 D11 — `tradingsymbol` is paired through the contract key only.
+// ---------------------------------------------------------------------------
+
+const NORMALISERS = new Set(["trim", "toUpperCase", "toLowerCase"]);
+const EQUALITY = new Set([
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+]);
+
+/** The files the pairing rule governs: every pairing reader of a lot and its execution lives here. */
+function inPairingScope(fileLabel: string): boolean {
+  // A `git show <sha>:<path>` copy is labelled `<sha>:<path>` — scoped by its path.
+  const file = fileLabel.replace(/^[0-9a-f]{7,40}:/, "");
+  if (file === "lib/import/contract-key.ts") return false; // the ONE leaf that may read the raw string
+  return file.startsWith("lib/import/") || file === "lib/analytics/data-quality.ts";
+}
+
+function scanTradingsymbolPairing(sf: TS.SourceFile, file: string): Violation[] {
+  const out: Violation[] = [];
+  if (!inPairingScope(file)) return out;
+  const allow = PAIRING_ALLOWLIST.filter((a) => a.file === file);
+  const push = (node: TS.Node, shown: TS.Node, why: string) => {
+    const expr = oneLine(sf, shown);
+    if (allow.some((a) => a.expr.test(expr))) return;
+    out.push({ rule: "tradingsymbol-pairing", file, line: lineOf(sf, node), expr, why });
+  };
+  walk(sf, (n) => {
+    if (!isFieldRead(n, "tradingsymbol")) return;
+    let cur: TS.Node = n;
+    // Through parens / casts / `!`.
+    while (cur.parent && (ts.isParenthesizedExpression(cur.parent) || ts.isAsExpression(cur.parent) || ts.isNonNullExpression(cur.parent))) cur = cur.parent;
+    const p = cur.parent;
+    if (!p) return;
+    // `x.tradingsymbol.trim()` / `.toUpperCase()` / `.toLowerCase()` — the receiver of a normaliser.
+    if (ts.isPropertyAccessExpression(p) && p.expression === cur && NORMALISERS.has(p.name.text) && p.parent && ts.isCallExpression(p.parent) && p.parent.expression === p) {
+      // Climb the whole `.trim().toUpperCase()` chain so the report shows it once.
+      let top: TS.Node = p.parent;
+      while (top.parent && ts.isPropertyAccessExpression(top.parent) && NORMALISERS.has(top.parent.name.text) && top.parent.parent && ts.isCallExpression(top.parent.parent)) top = top.parent.parent;
+      push(n, top, "a raw `tradingsymbol` normalised for comparison: two sources write one contract two ways, so the string is not its identity — key it through pairKeyOf / monthKeyOf");
+      return;
+    }
+    // `x.tradingsymbol === y` — an operand of an equality.
+    if (ts.isBinaryExpression(p) && EQUALITY.has(p.operatorToken.kind) && (p.left === cur || p.right === cur)) {
+      push(n, p, "a raw `tradingsymbol` compared for equality: a pairing of two names belongs to pairLevel / pairKeyOf, never the string");
+    }
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -1012,6 +1099,7 @@ export function scanSource(fileName: string, text: string, only?: RuleId[]): Vio
     if (r.id === "trade-side-writer") out.push(...scanSideWriter(parse(), file));
     if (r.id === "fmv-per-share") out.push(...scanFmvPerShare(parse(), file));
     if (r.id === "intra-range-split") out.push(...scanIntraRangeSplit(parse(), file));
+    if (r.id === "tradingsymbol-pairing") out.push(...scanTradingsymbolPairing(parse(), file));
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule));
 }

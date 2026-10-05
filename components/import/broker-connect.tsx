@@ -238,6 +238,8 @@ export function collisionBadge(kind: string, monthOnly?: boolean): string {
   if (kind === "same-quantity") return "same quantity";
   if (kind === "same-value") return "same value";
   if (kind === "earlier-snapshot") return "today's earlier pull";
+  // v4.8.0 X1 (D6b ii): closing this row would recreate a sale the journal already holds.
+  if (kind === "held-identity") return "already recorded";
   return "partial overlap";
 }
 

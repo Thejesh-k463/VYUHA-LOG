@@ -38,8 +38,8 @@ const parse = (file: string): ParsedFile => {
 };
 
 describe("stripSeriesSuffix", () => {
-  it("drops the five equity series and nothing else", () => {
-    expect(["SBIN-EQ", "sbin-be", " X-BZ ", "Y-SM", "Z-ST"].map(stripSeriesSuffix)).toEqual(["SBIN", "SBIN", "X", "Y", "Z"]);
+  it("drops the seven equity series (X1 D1: the union of the three pre-X1 copies — +BL, +GS) and nothing else", () => {
+    expect(["SBIN-EQ", "sbin-be", " X-BZ ", "Y-SM", "Z-ST", "P-BL", "Q-GS"].map(stripSeriesSuffix)).toEqual(["SBIN", "SBIN", "X", "Y", "Z", "P", "Q"]);
     expect(stripSeriesSuffix("BAJAJ-AUTO")).toBe("BAJAJ-AUTO");
     expect(stripSeriesSuffix("M&M")).toBe("M&M");
     expect(stripSeriesSuffix("NIFTY26SEPFUT")).toBe("NIFTY26SEPFUT");

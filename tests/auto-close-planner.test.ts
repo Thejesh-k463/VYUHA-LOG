@@ -215,6 +215,26 @@ describe("W2a · autoCloseSentences — what the import is allowed to SAY", () =
     expect(out[1]).toContain("2 positions reduced");
     expect(out[2]).toContain("1 incoming execution states");
   });
+
+  it("X1 D3 (owner ruling S6) — a month-level pair is SAID, never closed: the sentence names the unstated day and both rows staying", () => {
+    const one = autoCloseSentences(c({ refusedMonthOnly: 1 }));
+    expect(one).toHaveLength(1);
+    expect(one[0]).toContain("1 incoming execution names a contract");
+    expect(one[0]).toContain("states no expiry day");
+    expect(one[0]).toContain("nothing was closed automatically");
+    expect(one[0]).toContain("Open positions with their closing trade stored beside them");
+    expect(autoCloseSentences(c({ refusedMonthOnly: 2 }))[0]).toContain("2 incoming executions name");
+    expect(emptyAutoCloseCounters()).toMatchObject({ refusedMonthOnly: 0, refusedHeldIdentity: 0 });
+  });
+
+  it("X1 D6b (ii) — a close refused because its remainder is already held is said, and points at un-close", () => {
+    const one = autoCloseSentences(c({ refusedHeldIdentity: 1 }));
+    expect(one).toHaveLength(1);
+    expect(one[0]).toContain("already recorded as a row of its own");
+    expect(one[0]).toContain("Un-close the earlier record");
+    const out = autoCloseSentences(c({ closedWhole: 1, refusedNoDate: 1, refusedMonthOnly: 1, refusedHeldIdentity: 1, closedAgainstStoredLot: 1 }));
+    expect(out.map((s) => s.slice(0, 22))).toEqual(["1 position closed agai", "1 incoming execution s", "1 incoming execution n", "1 incoming execution w"]);
+  });
 });
 
 // ═════════ (4/5, pure half) ONE execution hash, ONE holder ═════════════════

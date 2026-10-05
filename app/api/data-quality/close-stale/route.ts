@@ -33,11 +33,13 @@ const STATUS: Record<StaleCloseCode, number> = {
   // R2-DQ N10 — a sale recorded in several fills is never joined.
   FILLS: 409,
   JOURNAL: 409,
+  // v4.8.0 X1 (D5) — a month-level pair joined without the user's acknowledgement.
+  MONTH_ONLY: 409,
   DELETE_FAILED: 500,
 };
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => null)) as { lotId?: unknown; saleId?: unknown; exitDate?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { lotId?: unknown; saleId?: unknown; exitDate?: unknown; monthOnlyAcknowledged?: unknown } | null;
   const lotId = Number(body?.lotId);
   const saleId = Number(body?.saleId);
   if (!Number.isInteger(lotId) || lotId <= 0 || !Number.isInteger(saleId) || saleId <= 0) {
@@ -51,7 +53,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const res = closeStaleLot(lotId, saleId, exitDate);
+  // X1 D5: the screen's "these are one contract" tick, passed through as stated.
+  const res = closeStaleLot(lotId, saleId, exitDate, { monthOnlyAcknowledged: body?.monthOnlyAcknowledged === true });
   if (res.ok) {
     for (const p of ["/data-quality", "/trades", "/equity", "/risk", "/active", "/"]) revalidatePath(p);
   }

@@ -57,6 +57,9 @@ import type { ParsedFile } from "@/lib/import/types";
 import type { PreviewResult } from "@/lib/import/commit";
 // Pure (no DB): the note an overnight F&O short carries (v4.6.0 W6).
 import { OVERNIGHT_SHORT_NOTE } from "@/lib/domain/side";
+// Pure (no DB): the ONE pairing key (v4.8.0 X1 D1) — I3's statement sum and I8
+// read it; the phantom-short check and `mayReadShort` stay on the RAW name.
+import { pairKeyOf, pairLevel } from "@/lib/import/contract-key";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Modules — ALL loaded dynamically. A static import of anything that reaches
@@ -219,6 +222,16 @@ export interface BookCtx {
    * other op must leave every book flat or long.
    */
   mayReadShort: Set<string>;
+  /**
+   * v4.8.0 X1 (I8) — pairing keys (`pairKeyOf`) under which an op has declared
+   * the book may legitimately hold an open lot beside a LATER opposite
+   * single-sided row at pairLevel EXACT: an un-close (the sale back as its own
+   * row), a same-day restatement superseded in place with the lot open beside
+   * it (PROBE-2a / PROBE-4's end state — Data Quality lists the pair), a
+   * restore that puts a sale back beside a lot the editor re-opened. Every
+   * other op must leave no such split: it IS the defect X1 fixed.
+   */
+  mayHoldSplit: Set<string>;
   /** Bumped by ops that must not collide with their own earlier call. */
   seq: number;
   /**
@@ -584,7 +597,7 @@ export function snapshotTemplate(ctx: BookCtx): Template {
 
 /** A scenario's own context over the reset database. */
 export function freshCtx(t: TempDb, m: BookMods, ids: SeedIds): BookCtx {
-  return { t, m, ids, expectedQty: statementOf(), log: [], mayReadShort: new Set(), seq: 0, frozenRisk: new Map() };
+  return { t, m, ids, expectedQty: statementOf(), log: [], mayReadShort: new Set(), mayHoldSplit: new Set(), seq: 0, frozenRisk: new Map() };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -646,6 +659,9 @@ export const OPS: BookOp[] = [
       if (!res.ok && landed.length === 0) return record(ctx, "restoreLatestSnapshot", "refused", res.message);
       // The journal must gain exactly the rows this envelope said came back.
       for (const r of landed) bump(ctx, r.tradingsymbol, netOf(r));
+      // X1 I8: a restored sale may land beside a lot the editor re-opened
+      // (sequence 11 of the design) — Data Quality lists it; declared.
+      for (const r of landed) ctx.mayHoldSplit.add(pairKeyOf(r.tradingsymbol));
       record(ctx, "restoreLatestSnapshot", "applied", `restored ${res.restored}, skipped ${res.skipped.length} (${id})`);
     },
   },
@@ -658,14 +674,22 @@ export const OPS: BookOp[] = [
       const pair = ctx.m.dq.getStaleOpenPairs().find((p) => p.oneClick && !p.ambiguous && !p.blocked);
       if (!pair) return record(ctx, "closeStaleLot", "skipped", "no one-click pair is offered");
       selectAccount(ctx, pair.accountId);
+      // X1 D5: a month-level pair is joined only with the user's tick — the op IS the user here.
       const res = await ctx.m.staleRoute.POST(
-        jsonReq("/api/data-quality/close-stale", { lotId: pair.lotId, saleId: pair.saleId, exitDate: pair.saleDate }),
+        jsonReq("/api/data-quality/close-stale", { lotId: pair.lotId, saleId: pair.saleId, exitDate: pair.saleDate, ...(pair.monthOnly ? { monthOnlyAcknowledged: true } : {}) }),
       );
       const body = (await res.json()) as { ok: boolean; message: string };
       if (res.status !== 200) return record(ctx, "closeStaleLot", "refused", `${res.status} ${body.message}`);
       // Net-neutral by construction: the lot takes the sale's quantity onto its
-      // closing leg and the sale ROW leaves the journal for Trash.
-      record(ctx, "closeStaleLot", "applied", `joined #${pair.saleId} into #${pair.lotId}`);
+      // closing leg and the sale ROW leaves the journal for Trash. X1: a MONTH-ONLY
+      // join moves the sale's quantity from the sale's name onto the lot's — two
+      // pairing keys — so the op declares that transfer (review §Harness).
+      if (pair.monthOnly && pairKeyOf(pair.tradingsymbol) !== pairKeyOf(pair.saleTradingsymbol)) {
+        const signed = pair.side === "long" ? pair.matchedQty : -pair.matchedQty;
+        bump(ctx, pair.tradingsymbol, -signed);
+        bump(ctx, pair.saleTradingsymbol, signed);
+      }
+      record(ctx, "closeStaleLot", "applied", `joined #${pair.saleId} into #${pair.lotId}${pair.monthOnly ? " (month-level, acknowledged)" : ""}`);
     },
   },
   {
@@ -770,6 +794,9 @@ export const OPS: BookOp[] = [
       // A re-pulled SALE is the one op that can leave a book short of a
       // purchase (see `mayReadShort`) — declared, never inferred.
       if (res.added > 0) ctx.mayReadShort.add(SYM.dq);
+      // X1 I8: and beside a lot the editor re-opened (auto-close is OFF on this
+      // path, as on a v4.2.0 pull) — Data Quality lists it; declared.
+      if (res.added > 0) ctx.mayHoldSplit.add(pairKeyOf(SYM.dq));
       // "applied" either way: the importer RAN. `skipped` in this table means a
       // product call was never made at all (see `OpStatus`).
       record(ctx, "reimportSameHash", "applied", `added ${res.added}, deduped ${res.skipped} (rows ${before} → ${allTrades(ctx).length})`);
@@ -958,6 +985,8 @@ export const OPS: BookOp[] = [
       selectAccount(ctx, acc);
       const res = ctx.m.commit.unCloseExecution(acc, piece.broker, ctx.m.lots.executionHashOfPiece(piece));
       if (!res.ok) return record(ctx, "unCloseImport", "refused", res.message);
+      // X1 I8: the sale is back as its own row beside the re-opened lot — declared.
+      ctx.mayHoldSplit.add(pairKeyOf(piece.tradingsymbol));
       record(ctx, "unCloseImport", "applied", `${piece.tradingsymbol}: ${res.message}`);
     },
   },
@@ -1056,24 +1085,53 @@ export const C6_NIFTY = {
 } as const;
 export const C6_QTY = { nifty: 75, sbinMorning: 10, sbinEvening: 20 } as const;
 
+/**
+ * v4.8.0 X1 — one NIFTY WEEKLY option, as each Fyers path names it. A weekly
+ * states its expiry DAY in both grammars, so the two names pair EXACTLY
+ * (`pairLevel` "exact") — the class D2 heals; the monthly above (`C6_NIFTY`)
+ * pairs at MONTH level only and is asked, never closed (owner ruling S6).
+ */
+export const X1_NIFTY_WEEKLY = {
+  fyersApi: "NSE:NIFTY2692225000CE",
+  compact: "NIFTY2692225000CE",
+  canonical: "OPT NIFTY 22 Sep 2026 25000 CE",
+} as const;
+/** The native weekly sale quantities the X1 cases state (review §Harness). */
+export const X1_QTY = { sale: 75, partial: 40, over: 100, grown: 150 } as const;
+
 interface C6Pull {
   name: string;
   why: string;
   broker: NormalizedTrade["broker"];
   sourceId: string;
   fileName: string;
-  /** In the route's `snapshotPull` set (Angel One today; fyers once C wires it). */
+  /** In the route's `snapshotPull` set (Angel One today; fyers once C wires it; OpenAlgo since X1 — owner ruling S7). */
   snapshot: boolean;
   product: NormalizedTrade["productHint"];
-  /** The symbol: a literal, or `fyers` → `fyersTradingsymbol(C6_NIFTY.fyersApi)`. */
-  symbol: string | "fyers";
+  /** The symbol: a literal, or `fyers` → `fyersTradingsymbol(C6_NIFTY.fyersApi)`, `fyersWeekly` → the weekly's. */
+  symbol: string | "fyers" | "fyersWeekly";
   trade: (tradingsymbol: string) => Partial<NormalizedTrade> & { tradingsymbol: string };
   mayReadShort?: boolean;
+  /**
+   * X1: the quantity delta the pull DECLARES when it commits (status 200). The
+   * default is the row's own net when a row was inserted; a sale that was folded
+   * INTO a held lot (added 0, closed 1) moved the book by its net just the same,
+   * and a restatement superseded in place moved it by the difference. Stated
+   * per pull, never inferred from the book.
+   */
+  delta?: (out: PullOutcome, trade: NormalizedTrade) => number;
+  /** X1 I8: the pull's end state may hold the lot open beside its later sale (a superseded restatement). */
+  mayHoldSplit?: (out: PullOutcome) => boolean;
 }
 
 const niftyBuy = (day: string) => (tradingsymbol: string) => ({
   tradingsymbol, exchangeHint: "NSE" as const, buyQty: C6_QTY.nifty, avgBuyPrice: 120, buyValue: 120 * C6_QTY.nifty, buyDate: day,
 });
+const niftySell = (qty: number) => (tradingsymbol: string) => ({
+  tradingsymbol, exchangeHint: "NSE" as const, sellQty: qty, avgSellPrice: 140, sellValue: 140 * qty, sellDate: C6_DAY,
+});
+/** A committed pull moved the book by the row's own net, inserted or folded into a lot alike. */
+const committedNet = (out: PullOutcome, trade: NormalizedTrade) => (out.status === 200 ? (trade.buyQty ?? 0) - (trade.sellQty ?? 0) : 0);
 
 export const C6_PULLS: C6Pull[] = [
   {
@@ -1097,28 +1155,89 @@ export const C6_PULLS: C6Pull[] = [
   {
     name: "pullOpenAlgoFyersNifty",
     why: "OpenAlgo-Fyers (openalgo-fyers-<day>, the canonical name) of the same NIFTY monthly bought today",
-    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgo, snapshot: false, product: null, symbol: C6_NIFTY.canonical,
+    // X1 (owner ruling S7): OpenAlgo's day aggregate is in the snapshot set.
+    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgo, snapshot: true, product: null, symbol: C6_NIFTY.canonical,
     trade: niftyBuy(C6_DAY),
   },
   {
     name: "pullOpenAlgoFyersNiftyPrevDay",
     why: "R4' — OpenAlgo-Fyers opens the NIFTY monthly lot the session before",
-    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgoPrev, snapshot: false, product: null, symbol: C6_NIFTY.canonical,
+    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgoPrev, snapshot: true, product: null, symbol: C6_NIFTY.canonical,
     trade: niftyBuy(C6_PREV_DAY),
   },
   {
     name: "pullNativeFyersNiftySale",
-    why: "R4' — the native pull states today's SALE of that lot under the compact name",
+    why: "R4' — the native pull states today's SALE of that lot under the compact MONTHLY name: month level, asked (S6)",
     broker: "fyers", sourceId: "fyers-api", fileName: C6_FILES.fyers, snapshot: true, product: null, symbol: "fyers",
-    trade: (s) => ({ tradingsymbol: s, exchangeHint: "NSE" as const, sellQty: C6_QTY.nifty, avgSellPrice: 140, sellValue: 140 * C6_QTY.nifty, sellDate: C6_DAY }),
+    trade: niftySell(C6_QTY.nifty),
     mayReadShort: true,
+  },
+  // ── v4.8.0 X1 — the WEEKLY, which pairs exactly across the two grammars ──
+  {
+    name: "pullOpenAlgoFyersNiftyWeeklyPrevDay",
+    why: "X1 — OpenAlgo-Fyers opens a NIFTY WEEKLY lot the session before (the dated grammar)",
+    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgoPrev, snapshot: true, product: null, symbol: X1_NIFTY_WEEKLY.canonical,
+    trade: niftyBuy(C6_PREV_DAY),
+  },
+  {
+    name: "pullOpenAlgoFyersNiftyWeekly",
+    why: "X1 — OpenAlgo-Fyers opens the same weekly lot TODAY (PROBE-5b's first step)",
+    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgo, snapshot: true, product: null, symbol: X1_NIFTY_WEEKLY.canonical,
+    trade: niftyBuy(C6_DAY),
+  },
+  {
+    name: "pullOpenAlgoFyersNiftyWeeklyRepull",
+    why: "X1 — OpenAlgo-Fyers pulled again today: the DAY AGGREGATE, bought 75 and sold 75 (PROBE-5a / 5b)",
+    broker: "fyers", sourceId: "openalgo-api", fileName: C6_FILES.openalgo, snapshot: true, product: null, symbol: X1_NIFTY_WEEKLY.canonical,
+    trade: (s) => ({
+      tradingsymbol: s, exchangeHint: "NSE" as const,
+      buyQty: C6_QTY.nifty, avgBuyPrice: 120, buyValue: 120 * C6_QTY.nifty, buyDate: C6_DAY,
+      sellQty: C6_QTY.nifty, avgSellPrice: 140, sellValue: 140 * C6_QTY.nifty, sellDate: C6_DAY, grossPnl: 20 * C6_QTY.nifty,
+    }),
+    // Flat whatever happened: a round trip states no quantity. When it SUPERSEDES
+    // the morning's buy of 75 in place (5a), the book loses that +75.
+    delta: (out) => (out.status === 200 && out.preview.summary.supersededCount > 0 ? -C6_QTY.nifty : 0),
+  },
+  {
+    name: "pullNativeFyersNiftyWeeklySale",
+    why: "X1 — the native pull states today's SALE of the weekly under the compact name: EXACT, closes the lot",
+    broker: "fyers", sourceId: "fyers-api", fileName: C6_FILES.fyers, snapshot: true, product: null, symbol: "fyersWeekly",
+    trade: niftySell(X1_QTY.sale),
+    delta: committedNet,
+    mayReadShort: true,
+  },
+  {
+    name: "pullNativeFyersNiftyWeeklySalePartial",
+    why: "X1 — the native pull sells 40 of the 75: the lot is reduced, the slice stored under the lot's name",
+    broker: "fyers", sourceId: "fyers-api", fileName: C6_FILES.fyers, snapshot: true, product: null, symbol: "fyersWeekly",
+    trade: niftySell(X1_QTY.partial),
+    delta: committedNet,
+    mayReadShort: true,
+  },
+  {
+    name: "pullNativeFyersNiftyWeeklySaleOver",
+    why: "X1 — the native pull sells 100 against the 75: the lot closes, the remainder of 25 is the execution's own row",
+    broker: "fyers", sourceId: "fyers-api", fileName: C6_FILES.fyers, snapshot: true, product: null, symbol: "fyersWeekly",
+    trade: niftySell(X1_QTY.over),
+    delta: committedNet,
+    mayReadShort: true,
+  },
+  {
+    name: "pullNativeFyersNiftyWeeklySaleGrown",
+    why: "X1 — the same pull later the same day states 150 sold (PROBE-1 / PROBE-2a / PROBE-4): asked, or superseded in place",
+    broker: "fyers", sourceId: "fyers-api", fileName: C6_FILES.fyers, snapshot: true, product: null, symbol: "fyersWeekly",
+    trade: niftySell(X1_QTY.grown),
+    // Superseding the earlier sale of 75 in place states 75 more sold; a plain insert states all 150.
+    delta: (out) => (out.status !== 200 ? 0 : out.preview.summary.supersededCount > 0 ? -(X1_QTY.grown - X1_QTY.sale) : -X1_QTY.grown),
+    mayReadShort: true,
+    mayHoldSplit: (out) => out.status === 200 && out.preview.summary.supersededCount > 0,
   },
 ];
 
 async function c6Symbol(p: C6Pull): Promise<string> {
-  if (p.symbol !== "fyers") return p.symbol;
+  if (p.symbol !== "fyers" && p.symbol !== "fyersWeekly") return p.symbol;
   const { fyersTradingsymbol } = await import("@/lib/import/pull-symbols");
-  return fyersTradingsymbol(C6_NIFTY.fyersApi)!.tradingsymbol;
+  return fyersTradingsymbol(p.symbol === "fyers" ? C6_NIFTY.fyersApi : X1_NIFTY_WEEKLY.fyersApi)!.tradingsymbol;
 }
 
 export interface PullOutcome {
@@ -1604,13 +1723,58 @@ export const VARIANTS: BookOp[] = [
       const trade = normalized({ broker: p.broker, productHint: p.product, ...p.trade(await c6Symbol(p)) });
       const out = routePull(ctx, { sourceId: p.sourceId, broker: p.broker, format: "api", trades: [trade], warnings: [] }, p.fileName, p.snapshot, acc);
       C6_LAST.outcome = out;
-      bump(ctx, trade.tradingsymbol, ((trade.buyQty ?? 0) - (trade.sellQty ?? 0)) * out.added);
-      // R4' (design §5): the one pull that sells a lot another source's NAME opened. Declared, never inferred.
-      if (p.mayReadShort && out.added > 0) ctx.mayReadShort.add(trade.tradingsymbol);
+      // The delta the pull DECLARES (X1): its own rule, else the row's net per inserted row.
+      bump(ctx, trade.tradingsymbol, p.delta ? p.delta(out, trade) : ((trade.buyQty ?? 0) - (trade.sellQty ?? 0)) * out.added);
+      // R4' (design §5): a pull that sells a lot another source's NAME opened may leave a
+      // row under its own name — a remainder, a sale no lot took. Declared, never inferred.
+      if (p.mayReadShort && out.status === 200 && (out.added > 0 || out.preview.summary.supersededCount > 0)) ctx.mayReadShort.add(trade.tradingsymbol);
+      if (p.mayHoldSplit?.(out)) ctx.mayHoldSplit.add(pairKeyOf(trade.tradingsymbol));
       if (out.status === 409) return record(ctx, p.name, "refused", `409 ${out.reason}`);
-      record(ctx, p.name, "applied", `${trade.tradingsymbol}: added ${out.added} to ${p.fileName}`);
+      record(ctx, p.name, "applied", `${trade.tradingsymbol}: added ${out.added} to ${p.fileName}${out.preview.summary.supersededCount ? `, superseded ${out.preview.summary.supersededCount}` : ""}`);
     },
   })),
+  {
+    // v4.8.0 X1 — the un-close of the weekly's cross-name close (design seq 6, PROBE-4's second step).
+    name: "unCloseNativeWeeklySale",
+    needs: "a lot in account A that an import closed (the OpenAlgo weekly lot sold through the native pull)",
+    drives: "lib/import/commit.ts unCloseExecution — the sale back as ITS file stated it (D4 b: own name, own file, own batch)",
+    run: async (_db, ctx) => {
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, "unCloseNativeWeeklySale", "skipped", "account A is gone");
+      const piece = allTrades(ctx).find((r) => r.accountId === acc && r.broker === "fyers" && ctx.m.lots.isAutoClosePiece(r));
+      if (!piece) return record(ctx, "unCloseNativeWeeklySale", "skipped", "no Fyers lot was closed by an import");
+      selectAccount(ctx, acc);
+      const res = ctx.m.commit.unCloseExecution(acc, piece.broker, ctx.m.lots.executionHashOfPiece(piece));
+      if (!res.ok) return record(ctx, "unCloseNativeWeeklySale", "refused", res.message);
+      // Flat either way (the close merged two legs; the un-close states them as two rows).
+      // The sale is back as its own row under ITS name: declared short under that raw name, and the split declared.
+      ctx.mayReadShort.add(X1_NIFTY_WEEKLY.compact);
+      ctx.mayHoldSplit.add(pairKeyOf(piece.tradingsymbol));
+      record(ctx, "unCloseNativeWeeklySale", "applied", `${piece.tradingsymbol}: ${res.message}`);
+    },
+  },
+  {
+    // v4.8.0 X1 — PROBE-2a's second step: the older buy arrives from a FILE after the sale.
+    name: "importFileFyersNiftyWeeklyLot",
+    needs: "account A exists",
+    drives: "lib/import/commit.ts commitParsedFile of a Fyers tradebook stating the weekly lot bought the previous session (auto-close on, no snapshot identity)",
+    run: async (_db, ctx) => {
+      const acc = ctx.ids.acctA;
+      if (!accountExists(ctx, acc)) return record(ctx, "importFileFyersNiftyWeeklyLot", "skipped", "account A is gone");
+      selectAccount(ctx, acc);
+      const trade = normalized({ broker: "fyers", productHint: null, ...niftyBuy(C6_PREV_DAY)(X1_NIFTY_WEEKLY.compact) });
+      const res = ctx.m.commit.commitParsedFile(
+        { sourceId: "fyers-tradebook", broker: "fyers", format: "tradebook", trades: [trade], warnings: [] },
+        "fyers-tradebook-prev.csv", null, acc, { autoClose: true },
+      );
+      // A sale already in the book is dated AFTER this buy, so the buy cannot be its cover
+      // (R4: a lot opened after the sale never closes it) — the buy lands open beside the
+      // earlier sale and Data Quality lists the pair (design seq 3). Declared for I8.
+      bump(ctx, trade.tradingsymbol, C6_QTY.nifty * res.added);
+      if (res.added > 0) ctx.mayHoldSplit.add(pairKeyOf(trade.tradingsymbol));
+      record(ctx, "importFileFyersNiftyWeeklyLot", "applied", `${trade.tradingsymbol}: added ${res.added}, closed ${res.autoClose?.closedWhole ?? 0}`);
+    },
+  },
   {
     name: "deleteNativeFyersPull",
     needs: "a native Fyers pull's rows in account A",
@@ -1741,7 +1905,7 @@ export const isIncompatible = (first: string, second: string) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface Violation {
-  code: "I1" | "I2" | "I3" | "I4" | "I5" | "I6" | "I7";
+  code: "I1" | "I2" | "I3" | "I4" | "I5" | "I6" | "I7" | "I8";
   detail: string;
 }
 
@@ -1873,21 +2037,65 @@ export async function checkInvariants(db: BookDb, ctx: BookCtx): Promise<Violati
   // said adjusted by the deltas the ops declared; and inside a book no symbol
   // may read SHORT when the fixture never sold one short (the phantom the merge
   // used to leave behind).
-  const bySymbol = new Map<string, number>();
+  // v4.8.0 X1 (review §Harness): the statement SUM is keyed through `pairKeyOf`
+  // — after an OpenAlgo lot is sold through a native pull the −75 lives under
+  // the lot's name and the op declared it under the sale's; both are one
+  // contract. LEGITIMATE here and ONLY here: the phantom-short check below and
+  // `mayReadShort` stay on the RAW name, because a split book (+75 under one
+  // name, −75 under the other) nets to zero under the key — which IS the defect.
+  const byKey = new Map<string, number>();
   const byAccountSymbol = new Map<string, number>();
   for (const r of rows) {
-    bySymbol.set(r.tradingsymbol, r2((bySymbol.get(r.tradingsymbol) ?? 0) + netOf(r)));
+    const key = pairKeyOf(r.tradingsymbol);
+    byKey.set(key, r2((byKey.get(key) ?? 0) + netOf(r)));
     const k = `${r.accountId}:${r.tradingsymbol}`;
     byAccountSymbol.set(k, r2((byAccountSymbol.get(k) ?? 0) + netOf(r)));
   }
+  const expectedByKey = new Map<string, { expected: number; names: string[] }>();
   for (const [symbol, expected] of Object.entries(ctx.expectedQty)) {
-    const actual = bySymbol.get(symbol) ?? 0;
-    if (r2(actual) !== r2(expected)) add("I3", `${symbol}: the journal holds ${actual}, the statement says ${expected}`);
+    const key = pairKeyOf(symbol);
+    const e = expectedByKey.get(key) ?? { expected: 0, names: [] };
+    e.expected = r2(e.expected + expected);
+    e.names.push(symbol);
+    expectedByKey.set(key, e);
+  }
+  for (const [key, { expected, names }] of expectedByKey) {
+    const actual = byKey.get(key) ?? 0;
+    if (r2(actual) !== r2(expected)) add("I3", `${names.join(" / ")}: the journal holds ${actual}, the statement says ${expected}`);
   }
   for (const [k, qty] of byAccountSymbol) {
     if (qty >= 0) continue;
     if (ctx.mayReadShort.has(k.split(":")[1]!)) continue;
     add("I3", `${k} reads SHORT ${qty} — a phantom leg with no purchase beside it`);
+  }
+
+  // ── I8 NO UNDECLARED SPLIT (v4.8.0 X1) ───────────────────────────────────
+  // No open single-sided lot sits beside a LATER opposite single-sided row at
+  // pairLevel EXACT in one account, broker, segment and exchange, unless the op
+  // declared it (`mayHoldSplit`). A sale of a held lot that lands as its own
+  // row — whatever name either source wrote — is the class X1 fixed; a lot
+  // whose closing trade is stored beside it is otherwise exactly what Data
+  // Quality lists, and only an un-close, a superseded restatement or a restore
+  // may leave it that way on purpose. A row with an unknown basis (an opening
+  // sell) is not a lot (`openLotOf`), and neither is a staged one.
+  {
+    const single = (r: (typeof rows)[number]) => (r.buyQty > 0 && r.sellQty === 0) || (r.sellQty > 0 && r.buyQty === 0);
+    const lotsOpen = rows.filter((r) => r.isOpen && !r.staged && r.acquisition !== "unknown" && r.accountId > 0 && single(r));
+    for (const lot of lotsOpen) {
+      const long = lot.buyQty > 0;
+      const lotDate = long ? lot.buyDate : lot.sellDate;
+      if (!lotDate) continue;
+      if (ctx.mayHoldSplit.has(pairKeyOf(lot.tradingsymbol))) continue;
+      for (const s of rows) {
+        if (s.id === lot.id || !s.isOpen || s.accountId !== lot.accountId || s.broker !== lot.broker || s.segment !== lot.segment || s.exchange !== lot.exchange) continue;
+        const opposite = long ? s.sellQty > 0 && s.buyQty === 0 : s.buyQty > 0 && s.sellQty === 0;
+        if (!opposite) continue;
+        const sDate = long ? s.sellDate : s.buyDate;
+        if (!sDate || sDate < lotDate) continue;
+        if (pairLevel(lot.tradingsymbol, s.tradingsymbol, sDate) !== "exact") continue;
+        add("I8", `account ${lot.accountId}: open ${long ? "long" : "short"} #${lot.id} (${lot.tradingsymbol}, ${lotDate}) sits beside its later ${long ? "sale" : "cover"} #${s.id} (${s.tradingsymbol}, ${sDate}) — one contract stored as two open rows`);
+      }
+    }
   }
 
   // ── I4 NO-ACCOUNT-0 ───────────────────────────────────────────────────────

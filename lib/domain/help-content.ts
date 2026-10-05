@@ -552,8 +552,11 @@ export const HELP_ENTRIES: HelpEntry[] = [
     href: "/data-quality",
     title: "Data Quality",
     answers: "Which numbers elsewhere in the app cannot be trusted yet, and why?",
-    body: ["One confidence score over missing cost basis, marks, stops, MTF funding, option metadata, instrument coverage, IPO links and missing attachment files — each with a direct route to fix it. Critical means it changes money; info means coverage."],
-    keywords: ["quality", "score", "missing", "confidence"],
+    body: [
+      "One confidence score over missing cost basis, marks, stops, MTF funding, option metadata, instrument coverage, IPO links and missing attachment files — each with a direct route to fix it. Critical means it changes money; info means coverage.",
+      "An open position whose closing trade the book stored as a row of its own is listed with both rows' names; when the two names share only a contract month — one is the exchange's compact monthly or future name, which states no expiry day — nothing is joined until you confirm they are one contract.",
+    ],
+    keywords: ["quality", "score", "missing", "confidence", "stale", "month"],
   },
   {
     href: "/rule-packs",

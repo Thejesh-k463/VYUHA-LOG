@@ -19,6 +19,8 @@ import {
   C6_LAST,
   C6_NIFTY,
   C6_QTY,
+  X1_NIFTY_WEEKLY,
+  X1_QTY,
   checkInvariants,
   describeViolations,
   freshCtx,
@@ -889,19 +891,159 @@ describe("v4.7.0 C6 — native pulls meet the book they restate", () => {
     expect(rowsOf(C6_NIFTY.canonical)).toHaveLength(0);
   }, 60_000);
 
-  it("RESIDUAL R4' (C6-DESIGN §5, recorded, NOT fixed) — OpenAlgo opens the lot, the native pull sells it: the sale lands as a separate opening sell", async () => {
-    // RESIDUAL R4' — the readers the contract key leaves on the raw string: auto-close
-    // (close-open-lots.ts, joins on tradingsymbol), the supersede key (commit.ts), legacy-short and
-    // the cross-broker echoes check. The cross-source check is side-aware (a SELL of a held BUY is
-    // the exit, never a duplicate), so nothing asks; auto-close looks for a lot under the compact
-    // name and finds none. Each of those readers is a pairing rule of its own (LEDGER L-29), named
-    // as a residual in the C6 brief and release copy. This case pins TODAY's behaviour so the day a
-    // fix lands it is changed here on purpose, never by accident.
+  it("R4' REWRITTEN under X1 (owner ruling S6, 'ask') — OpenAlgo opens the MONTHLY lot, the native pull sells it under the compact monthly name: two rows, SAID at import, LISTED with both names, joined by one click with the tick", async () => {
+    // Was "RESIDUAL R4' (recorded, NOT fixed)": the sale landed as a separate opening sell and
+    // nothing said so. `NIFTY26SEP25000CE` states no expiry day and `OPT NIFTY 29 Sep 2026
+    // 25000 CE` does, so whether they are one contract is not readable from the names (X1 design
+    // §2) — month level is ASKED, never applied. The import now counts `refusedMonthOnly`, Data
+    // Quality lists the pair `monthOnly` with BOTH names, `closeStaleLot` refuses it without the
+    // user's acknowledgement (MONTH_ONLY) and joins it with one. A weekly (below) is EXACT and closes.
     const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyPrevDay", "pullNativeFyersNiftySale"]);
     expect(violations.join("\n")).toBe("");
     expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyPrevDay[applied]", "pullNativeFyersNiftySale[applied]"]);
     expect(C6_LAST.outcome!.preview.crossSource!.risky).toBe(false);
+    expect(C6_LAST.outcome!.preview.autoClose, "said at import, in the preview").toMatchObject({ closedWhole: 0, refusedMonthOnly: 1 });
+    expect(C6_LAST.outcome!.preview.warnings.join(" ")).toMatch(/states no expiry day/);
     expect(rowsOf(C6_NIFTY.canonical).map((r) => [r.buyQty, r.sellQty, r.isOpen])).toEqual([[C6_QTY.nifty, 0, true]]);
     expect(rowsOf(C6_NIFTY.compact).map((r) => [r.buyQty, r.sellQty])).toEqual([[0, C6_QTY.nifty]]);
+
+    t.db.update(t.schema.settings).set({ selectedAccountId: ids.acctA }).run();
+    const pairs = m.dq.getStaleOpenPairs().filter((p) => p.broker === "fyers");
+    expect(pairs.map((p) => [p.tradingsymbol, p.saleTradingsymbol, p.monthOnly, p.ambiguous, p.oneClick, p.blocked])).toEqual([
+      [C6_NIFTY.canonical, C6_NIFTY.compact, true, false, true, null],
+    ]);
+    const [p] = pairs;
+    const refused = await m.staleRoute.POST(new Request("http://localhost/api/data-quality/close-stale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lotId: p!.lotId, saleId: p!.saleId, exitDate: p!.saleDate }) }));
+    expect([refused.status, ((await refused.json()) as { code?: string }).code], "without the tick: refused").toEqual([409, "MONTH_ONLY"]);
+    const joined = await m.staleRoute.POST(new Request("http://localhost/api/data-quality/close-stale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lotId: p!.lotId, saleId: p!.saleId, exitDate: p!.saleDate, monthOnlyAcknowledged: true }) }));
+    expect(joined.status, "with it: joined").toBe(200);
+    expect(rowsOf(C6_NIFTY.canonical).map((r) => [r.buyQty, r.sellQty, r.isOpen])).toEqual([[C6_QTY.nifty, C6_QTY.nifty, false]]);
+    expect(rowsOf(C6_NIFTY.compact)).toHaveLength(0);
+    // The month-only join is a TRANSFER between two pairing keys (the names pair at month level,
+    // not exactly): the user's statement moves the −75 from the compact name onto the dated one —
+    // declared here, as the `closeStaleLot` op declares it (review §Harness: "a month-only join op
+    // declares its transfer with `bump`").
+    ctx.expectedQty[C6_NIFTY.canonical] = (ctx.expectedQty[C6_NIFTY.canonical] ?? 0) - C6_QTY.nifty;
+    ctx.expectedQty[C6_NIFTY.compact] = (ctx.expectedQty[C6_NIFTY.compact] ?? 0) + C6_QTY.nifty;
+    expect(describeViolations(await checkInvariants(t.db, ctx)).join("\n"), "the join leaves every invariant standing").toBe("");
+  }, 60_000);
+
+  // ── v4.8.0 X1 — the WEEKLY: exact across the two grammars (review §Harness op rows) ──
+
+  const weeklyRows = (name: string) => rowsOf(name).map((r) => [r.buyQty, r.sellQty, r.isOpen] as const);
+
+  it("X1 seq 1 — OpenAlgo opens the weekly lot, the native pull sells 75: the lot CLOSES under its own name, the book sells 75 once", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeeklyPrevDay", "pullNativeFyersNiftyWeeklySale"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeeklyPrevDay[applied]", "pullNativeFyersNiftyWeeklySale[applied]"]);
+    expect(C6_LAST.outcome!.preview.autoClose).toMatchObject({ closedWhole: 1, closedAgainstStoredLot: 1 });
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, C6_QTY.nifty, false]]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.compact), "no row under the sale's name").toEqual([]);
+  }, 60_000);
+
+  it("X1 seq 5 / 7 — a re-pull of the sale is a duplicate (the alias); after un-close it is a duplicate of the reinstated row", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeeklyPrevDay", "pullNativeFyersNiftyWeeklySale", "pullNativeFyersNiftyWeeklySale", "unCloseNativeWeeklySale", "pullNativeFyersNiftyWeeklySale"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual([
+      "pullOpenAlgoFyersNiftyWeeklyPrevDay[applied]", "pullNativeFyersNiftyWeeklySale[applied]", "pullNativeFyersNiftyWeeklySale[refused]",
+      "unCloseNativeWeeklySale[applied]", "pullNativeFyersNiftyWeeklySale[refused]",
+    ]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, 0, true]]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.compact), "the sale back as ONE row under ITS name (D4 b)").toEqual([[0, C6_QTY.nifty, true]]);
+  }, 60_000);
+
+  it("X1 seq 8 — the native pull sells 40: the lot is reduced to 35 and the slice is stored under the LOT's name", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeeklyPrevDay", "pullNativeFyersNiftyWeeklySalePartial"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeeklyPrevDay[applied]", "pullNativeFyersNiftyWeeklySalePartial[applied]"]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical).sort()).toEqual([[C6_QTY.nifty - X1_QTY.partial, 0, true], [X1_QTY.partial, X1_QTY.partial, false]].sort());
+    expect(weeklyRows(X1_NIFTY_WEEKLY.compact)).toEqual([]);
+  }, 60_000);
+
+  it("X1 seq 9 — the native pull sells 100 against 75: the lot closes and the remainder of 25 is the execution's own row; un-close folds it back", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeeklyPrevDay", "pullNativeFyersNiftyWeeklySaleOver", "unCloseNativeWeeklySale"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeeklyPrevDay[applied]", "pullNativeFyersNiftyWeeklySaleOver[applied]", "unCloseNativeWeeklySale[applied]"]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, 0, true]]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.compact)).toEqual([[0, X1_QTY.over, true]]);
+  }, 60_000);
+
+  it("X1 seq 12 (PROBE-1, cross-name) — the sale folded whole into the lot, then the same pull states 150: ASKED (409), the book sells 75", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeeklyPrevDay", "pullNativeFyersNiftyWeeklySale", "pullNativeFyersNiftyWeeklySaleGrown"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeeklyPrevDay[applied]", "pullNativeFyersNiftyWeeklySale[applied]", "pullNativeFyersNiftyWeeklySaleGrown[refused]"]);
+    expect([C6_LAST.outcome!.status, C6_LAST.outcome!.reason]).toEqual([409, "needsForce"]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, C6_QTY.nifty, false]]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.compact)).toEqual([]);
+  }, 60_000);
+
+  it("X1 PROBE-4 — sale, un-close, then the grown pull: the reinstated sale is SUPERSEDED in place (no throw), the lot open beside it", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeeklyPrevDay", "pullNativeFyersNiftyWeeklySale", "unCloseNativeWeeklySale", "pullNativeFyersNiftyWeeklySaleGrown"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeeklyPrevDay[applied]", "pullNativeFyersNiftyWeeklySale[applied]", "unCloseNativeWeeklySale[applied]", "pullNativeFyersNiftyWeeklySaleGrown[applied]"]);
+    expect(C6_LAST.outcome!.preview.summary.supersededCount).toBe(1);
+    expect(C6_LAST.outcome!.added).toBe(0);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, 0, true]]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.compact)).toEqual([[0, X1_QTY.grown, true]]);
+    t.db.update(t.schema.settings).set({ selectedAccountId: ids.acctA }).run();
+    expect(m.dq.getStaleOpenPairs().filter((p) => p.broker === "fyers").map((p) => [p.tradingsymbol, p.saleTradingsymbol, p.oneClick])).toEqual([[X1_NIFTY_WEEKLY.canonical, X1_NIFTY_WEEKLY.compact, false]]);
+  }, 60_000);
+
+  it("X1 PROBE-2a — the sale first, then the lot from a FILE, then the grown pull: superseded in place, the lot never closed by the restatement", async () => {
+    const { ctx, violations } = await runSequence(["pullNativeFyersNiftyWeeklySale", "importFileFyersNiftyWeeklyLot", "pullNativeFyersNiftyWeeklySaleGrown"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullNativeFyersNiftyWeeklySale[applied]", "importFileFyersNiftyWeeklyLot[applied]", "pullNativeFyersNiftyWeeklySaleGrown[applied]"]);
+    expect(C6_LAST.outcome!.preview.summary.supersededCount).toBe(1);
+    expect(C6_LAST.outcome!.preview.autoClose?.closedWhole).toBe(0);
+    // One name here (the file states the compact name too): one open lot, one restated sale.
+    expect(weeklyRows(X1_NIFTY_WEEKLY.compact).sort()).toEqual([[C6_QTY.nifty, 0, true], [0, X1_QTY.grown, true]].sort());
+  }, 60_000);
+
+  it("X1 PROBE-5a — OpenAlgo alone, two pulls one day: the day aggregate supersedes the morning row (bought 75, sold 75)", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeekly", "pullOpenAlgoFyersNiftyWeeklyRepull"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeekly[applied]", "pullOpenAlgoFyersNiftyWeeklyRepull[applied]"]);
+    expect(C6_LAST.outcome!.preview.summary.supersededCount).toBe(1);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, C6_QTY.nifty, false]]);
+  }, 60_000);
+
+  it("X1 PROBE-5b — OpenAlgo opens the lot today, the native sale closes it, OpenAlgo pulls again: 409, one row", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeekly", "pullNativeFyersNiftyWeeklySale", "pullOpenAlgoFyersNiftyWeeklyRepull"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeekly[applied]", "pullNativeFyersNiftyWeeklySale[applied]", "pullOpenAlgoFyersNiftyWeeklyRepull[refused]"]);
+    expect([C6_LAST.outcome!.status, C6_LAST.outcome!.reason]).toEqual([409, "needsForce"]);
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, C6_QTY.nifty, false]]);
+  }, 60_000);
+
+  it("X1 seq 19 — the calendar spread: a dated weekly lot and a compact MONTHLY sale are month level — listed with both names, never one-click without the tick, never closed", async () => {
+    const { ctx, violations } = await runSequence(["pullOpenAlgoFyersNiftyWeeklyPrevDay", "pullNativeFyersNiftySale"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullOpenAlgoFyersNiftyWeeklyPrevDay[applied]", "pullNativeFyersNiftySale[applied]"]);
+    expect(C6_LAST.outcome!.preview.autoClose).toMatchObject({ closedWhole: 0, refusedMonthOnly: 1 });
+    expect(weeklyRows(X1_NIFTY_WEEKLY.canonical)).toEqual([[C6_QTY.nifty, 0, true]]);
+    expect(rowsOf(C6_NIFTY.compact).map((r) => [r.buyQty, r.sellQty])).toEqual([[0, C6_QTY.nifty]]);
+    t.db.update(t.schema.settings).set({ selectedAccountId: ids.acctA }).run();
+    expect(m.dq.getStaleOpenPairs().filter((p) => p.broker === "fyers").map((p) => [p.tradingsymbol, p.saleTradingsymbol, p.monthOnly])).toEqual([[X1_NIFTY_WEEKLY.canonical, C6_NIFTY.compact, true]]);
+  }, 60_000);
+
+  it("X1 — a compact weekly sale against a compact MONTHLY lot: one grammar, two contracts — never listed, never said", async () => {
+    const { ctx, violations } = await runSequence(["pullNativeFyersNifty", "pullNativeFyersNiftyWeeklySale"]);
+    expect(violations.join("\n")).toBe("");
+    expect(steps(ctx)).toEqual(["pullNativeFyersNifty[applied]", "pullNativeFyersNiftyWeeklySale[applied]"]);
+    expect(C6_LAST.outcome!.preview.autoClose).toMatchObject({ closedWhole: 0, refusedMonthOnly: 0 });
+    t.db.update(t.schema.settings).set({ selectedAccountId: ids.acctA }).run();
+    expect(m.dq.getStaleOpenPairs().filter((p) => p.broker === "fyers")).toEqual([]);
+  }, 60_000);
+
+  it("X1 I8 can go red: a weekly lot beside its later native sale, planted as two open rows, is reported", async () => {
+    tpl.reset();
+    const ctx = freshCtx(t, m, ids);
+    const base = { accountId: ids.acctA, broker: "fyers", bucket: "active", segment: "index_option", instrumentType: "option", exchange: "NSE", symbol: "NIFTY", expiry: "2026-09-22", strike: 25000, optionType: "CE", isOpen: true };
+    t.db.insert(t.schema.trades).values([
+      { ...base, tradingsymbol: X1_NIFTY_WEEKLY.canonical, side: "long", buyQty: 75, avgBuyPrice: 120, buyValue: 9000, buyDate: "2026-09-14", dedupHash: "i8-lot".padEnd(40, "0") },
+      { ...base, tradingsymbol: X1_NIFTY_WEEKLY.compact, side: "short", sellQty: 75, avgSellPrice: 140, sellValue: 10500, sellDate: "2026-09-15", dedupHash: "i8-sale".padEnd(40, "0") },
+    ]).run();
+    const v = describeViolations(await checkInvariants(t.db, ctx));
+    expect(v.some((x) => x.startsWith("I8 ") && x.includes("one contract stored as two open rows"))).toBe(true);
   }, 60_000);
 });

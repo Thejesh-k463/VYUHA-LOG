@@ -90,10 +90,16 @@ import {
   // read by the re-tag.
   STATED_BILL_NOTE,
   hasStatedBillNote,
+  // v4.8.0 X1 (D4 b): where the closing execution came from, on every piece.
+  withExecOriginNote,
+  execOriginFromNotes,
   type AutoCloseCounters,
   type LotClose,
   type OpenLot,
 } from "./close-open-lots";
+// v4.8.0 X1 (D1): the ONE pairing key — the supersede key (D6a), the un-close
+// finder (D4) and the Data Quality re-derivation (D5) all read it from here.
+import { monthKeyOf, pairKeyOf, pairLevel } from "./contract-key";
 import { withoutSyncChargesNote } from "@/lib/analytics/ipo-link";
 import { saleJournalFields, staleAmbiguousNote, staleFillsNote, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
 
@@ -397,6 +403,10 @@ function splitParts(parts: StaleChargeParts, share: number): { slice: StaleCharg
  * R41: the entry time comes from the LOT, the exit time from the execution.
  * R62: `importNotes` is null here — the piece gets a FRESH note, never a copy
  * of the lot's.
+ * X1 D4(a): the piece is stored under the LOT's name and ISIN (`lot`), never the
+ * execution's — once a lot and its execution can be named two ways (an OpenAlgo
+ * lot sold through a native pull), one position must not be stored under two
+ * names. The execution's own name travels on the piece as `exec-origin:`.
  */
 function closedTradeOf(
   t: NormalizedTrade,
@@ -404,6 +414,7 @@ function closedTradeOf(
   entryTime: string | null,
   parts: StaleChargeParts,
   total: number,
+  lot: { tradingsymbol: string; isin: string | null },
 ): NormalizedTrade {
   const long = c.side === "long";
   const closeValue = r2m(c.qty * c.price);
@@ -411,6 +422,8 @@ function closedTradeOf(
   const sellValue = long ? closeValue : c.openValue;
   return {
     ...t,
+    tradingsymbol: lot.tradingsymbol,
+    isin: lot.isin ?? t.isin,
     buyQty: c.qty,
     sellQty: c.qty,
     avgBuyPrice: long ? c.openPrice : c.price,
@@ -494,12 +507,23 @@ function openLotOf(r: typeof tradesTable.$inferSelect, hasLegs: boolean): OpenLo
     value: long ? r.buyValue : r.sellValue,
     charges: r.chargesTotal,
     date: long ? r.buyDate : r.sellDate,
+    isin: r.isin,
   };
+}
+
+/** X1 D4(a): what a piece copies from its LOT's stored row, never re-classified. */
+interface LotFields {
+  tradingsymbol: string;
+  symbol: string;
+  isin: string | null;
+  expiry: string | null;
+  strike: number | null;
+  optionType: string | null;
 }
 
 interface ExecutionClosePlan {
   /** One piece per lot this execution consumed, with its merged bill. */
-  pieces: { c: LotClose; parts: StaleChargeParts; total: number; entryTime: string | null; execShare: { parts: StaleChargeParts; total: number } }[];
+  pieces: { c: LotClose; parts: StaleChargeParts; total: number; entryTime: string | null; execShare: { parts: StaleChargeParts; total: number }; lot: LotFields }[];
   /** What is left of each touched lot, with the bill it KEEPS (R6). */
   remainders: { lotId: number; qty: number; value: number; charges: number; parts: StaleChargeParts | null }[];
   /** What is left of the execution after the closes (0 = consumed whole). */
@@ -511,6 +535,57 @@ interface ExecutionClosePlan {
   execRestTotal: number;
   /** True when a lot was there to close and the execution states no date. */
   refusedNoDate: boolean;
+  /**
+   * X1 D3: the execution has quantity left and an open lot of the wanted side,
+   * same book, dated on or before it, pairs with it at MONTH level only (one of
+   * the two names states no expiry day). Never closed; said (owner ruling S6).
+   */
+  refusedMonthOnly: boolean;
+  /**
+   * X1 D6b (ii): the plan was ABANDONED because a remainder or slice it would
+   * write is already held by a stored row (`heldBy`, the holders' ids) — an
+   * insert the unique index would reject. `pieces` is empty; the row lands as
+   * stated and the preview asks about it.
+   */
+  refusedHeldIdentity: boolean;
+  heldBy: number[];
+}
+
+/** The lot-side fields a piece copies (D4 a), read off the stored row. */
+const lotFieldsOf = (row: typeof tradesTable.$inferSelect): LotFields => ({
+  tradingsymbol: row.tradingsymbol,
+  symbol: row.symbol,
+  isin: row.isin,
+  expiry: row.expiry,
+  strike: row.strike,
+  optionType: row.optionType,
+});
+
+/**
+ * X1 D3: is an open lot of `wanted` side in this book, dated on or before the
+ * execution, at MONTH level with it? Exact pairs were already matched by the
+ * key; this asks about the ones the key deliberately kept apart.
+ */
+function monthLevelLotBeside(
+  incoming: { accountId: number; broker: string; tradingsymbol: string; segment: string; exchange: string; date: string | null },
+  wanted: OpenLot["side"],
+  lots: readonly OpenLot[],
+): boolean {
+  if (!incoming.date) return false;
+  const day = incoming.date;
+  const broker = incoming.broker.trim().toLowerCase();
+  return lots.some(
+    (l) =>
+      l.qty > 0 &&
+      l.side === wanted &&
+      l.accountId === incoming.accountId &&
+      l.broker.trim().toLowerCase() === broker &&
+      l.segment === incoming.segment &&
+      l.exchange === incoming.exchange &&
+      l.date != null &&
+      l.date <= day &&
+      pairLevel(l.tradingsymbol, incoming.tradingsymbol, day) === "month",
+  );
 }
 
 /**
@@ -521,6 +596,10 @@ interface ExecutionClosePlan {
  * Both the preview and the commit call it, which is what makes the preview's
  * Net P&L the commit's to the paisa (R2). The commit then writes the plan; the
  * preview only adds it up.
+ *
+ * `holderOf` (X1 D6b ii) answers which stored row, if any, already holds a hash
+ * — the preview's and the commit's own held-identity set, handed in so the plan
+ * reads nothing the caller did not.
  */
 function planExecutionCloses(
   t: NormalizedTrade,
@@ -529,6 +608,7 @@ function planExecutionCloses(
   lots: readonly OpenLot[],
   lotRows: ReadonlyMap<number, typeof tradesTable.$inferSelect>,
   ratesOnFor: (row: typeof tradesTable.$inferSelect) => (day: string) => Parameters<typeof computeCharges>[1],
+  holderOf: (hash: string) => number | null = () => null,
 ): ExecutionClosePlan | null {
   const exec = singleSidedOf(t);
   if (!exec) return null;
@@ -546,21 +626,36 @@ function planExecutionCloses(
     value: exec.value,
     charges: b.charges.total,
     date: execDate,
+    isin: t.isin,
   };
+  const wanted: OpenLot["side"] = exec.side === "sell" ? "long" : "short";
   const plan = planLotCloses(lots, [incoming]);
+  const refused = (over: Partial<ExecutionClosePlan>): ExecutionClosePlan => ({
+    pieces: [],
+    remainders: [],
+    untouchedQty: exec.qty,
+    holder: { kind: "remainder", at: -1 },
+    execRest: partsOf(b.charges as unknown as StaleChargeParts),
+    execRestTotal: b.charges.total,
+    refusedNoDate: false,
+    refusedMonthOnly: false,
+    refusedHeldIdentity: false,
+    heldBy: [],
+    ...over,
+  });
   if (plan.closes.length === 0) {
     // R72 / ruling A2 — worth SAYING only when a lot was actually there to
     // close: a dateless row in a book holding nothing is an ordinary open
     // position, not a refused close.
     let refusedNoDate = false;
     if (!execDate) {
-      const wanted = exec.side === "sell" ? "long" : "short";
       const key = matchKey(incoming);
       refusedNoDate = lots.some((l) => l.qty > 0 && l.side === wanted && matchKey(l) === key);
     }
-    return refusedNoDate
-      ? { pieces: [], remainders: [], untouchedQty: exec.qty, holder: { kind: "remainder", at: -1 }, execRest: partsOf(b.charges as unknown as StaleChargeParts), execRestTotal: b.charges.total, refusedNoDate }
-      : null;
+    if (refusedNoDate) return refused({ refusedNoDate });
+    // X1 D3: nothing matched exactly, but a month-level lot sits beside it.
+    if (monthLevelLotBeside(incoming, wanted, lots)) return refused({ refusedMonthOnly: true });
+    return null;
   }
 
   // R6 — every component split BY REMAINDER, per side, in plan order.
@@ -598,7 +693,7 @@ function planExecutionCloses(
     for (const k of STALE_CHARGE_PARTS) parts[k] = r2m(lp.slice[k] + ep.slice[k]);
     // `execShare` is the EXECUTION's half of this piece's bill, kept because the
     // merge of the two halves is not invertible from the ten columns (W3).
-    pieces.push({ c, parts, total: r2m(lt.slice + et.slice), entryTime: row.entryTime, execShare: { parts: ep.slice, total: et.slice } });
+    pieces.push({ c, parts, total: r2m(lt.slice + et.slice), entryTime: row.entryTime, execShare: { parts: ep.slice, total: et.slice }, lot: lotFieldsOf(row) });
   }
 
   const untouchedQty = plan.untouched[0]?.qty ?? 0;
@@ -609,6 +704,26 @@ function planExecutionCloses(
       : untouchedQty > 0
         ? { kind: "remainder", at: -1 }
         : { kind: "slice", at: pieces.findIndex((p) => !p.c.fullyConsumed) };
+
+  // X1 D6b (ii) — every hash the applier would INSERT under (a slice that does
+  // not hold the execution's own hash; a remainder that does not), computed
+  // here with the same functions the applier uses, and refused when a stored
+  // row already holds one. The applier used to find out from the unique index
+  // (PROBE-4: `UNIQUE constraint failed: trades.dedup_hash` out of a commit the
+  // preview had called safe). The row then lands as stated, and the caller asks.
+  const heldBy = new Set<number>();
+  for (const [pi, piece] of pieces.entries()) {
+    if (piece.c.fullyConsumed || (holder.kind !== "remainder" && holder.at === pi)) continue;
+    const closed = closedTradeOf(t, piece.c, piece.entryTime, piece.parts, piece.total, piece.lot);
+    const id = holderOf(executionIdentity({ ...closed, segment: incoming.segment, exchange: incoming.exchange }).hash);
+    if (id != null) heldBy.add(id);
+  }
+  if (untouchedQty > 0 && holder.kind !== "remainder") {
+    const scaled = scaledRemainderOf(t, untouchedQty, execRest, execRestTotal);
+    const id = holderOf(executionIdentity({ ...scaled, segment: incoming.segment, exchange: incoming.exchange }).hash);
+    if (id != null) heldBy.add(id);
+  }
+  if (heldBy.size > 0) return refused({ refusedHeldIdentity: true, heldBy: [...heldBy].sort((a, b) => a - b) });
 
   return {
     pieces,
@@ -622,6 +737,10 @@ function planExecutionCloses(
     execRest,
     execRestTotal,
     refusedNoDate: false,
+    // X1 D3: what is LEFT of the execution may still sit beside a month-level lot.
+    refusedMonthOnly: untouchedQty > 0 && monthLevelLotBeside(incoming, wanted, lots),
+    refusedHeldIdentity: false,
+    heldBy: [],
   };
 }
 
@@ -906,7 +1025,11 @@ function isSnapshotRow(t: NormalizedTrade, day: string): boolean {
   return (t.executions ?? []).every((e) => normalizeDate(e.date) === day);
 }
 
-const tradingsymbolKey = (tradingsymbol: string) => tradingsymbol.trim().toUpperCase();
+// X1 D6a: the name half of the supersede key is the ONE pairing key
+// (`pairKeyOf`), not the raw string — behaviour-neutral for whole rows (one
+// file, one normaliser) and required so a D4 slice stored under the LOT's name
+// is still on the key of the pull that restates its execution.
+const tradingsymbolKey = (tradingsymbol: string) => pairKeyOf(tradingsymbol);
 const snapshotKey = (tradingsymbol: string, symbol: string, segment: string, exchange: string) =>
   `${tradingsymbolKey(tradingsymbol)}|${symbol}|${segment}|${exchange}`;
 
@@ -939,7 +1062,13 @@ function planSnapshot(
   // W2G M1: every row of today's snapshot, by tradingsymbol alone (any segment or exchange).
   const storedBySymbol = new Map<string, SnapshotStoredRow[]>();
   for (const r of stored) {
-    if (r.sourceFile !== snap.fileName || (r.buyDate !== day && r.sellDate !== day)) continue;
+    // X1 D6b (PROBE-1): a stored lot THIS pull's earlier row closed is part of
+    // today's snapshot too — the sale it folded in is in no row of the pull's
+    // own file, so a later pull restating a larger figure read as a plain new
+    // position and the sale was counted twice. Such a row is frozen (it holds
+    // the execution's hash as an alias), so it can only ever be ASKED about.
+    const inPullFile = r.sourceFile === snap.fileName || execOriginFromNotes(r.importNotes)?.sourceFile === snap.fileName;
+    if (!inPullFile || (r.buyDate !== day && r.sellDate !== day)) continue;
     const k = snapshotKey(r.tradingsymbol, r.symbol, r.segment, r.exchange);
     storedByKey.set(k, [...(storedByKey.get(k) ?? []), r]);
     const bySymbol = storedBySymbol.get(tradingsymbolKey(r.tradingsymbol));
@@ -1199,6 +1328,12 @@ export function previewParsedFile(
   // with no alias rows gets v4.2.0's set, own hashes only. V1: an alias counts
   // only while its lot still closes on the sale (`heldIdentityHashes`).
   const existing = new Set(existingRows.flatMap((r) => heldIdentityHashes(r)));
+  // X1 D6b (ii): WHICH row holds a hash — the same set, kept by id, for the plan.
+  const holderById = new Map<string, number>();
+  for (const r of existingRows) for (const h of heldIdentityHashes(r)) if (!holderById.has(h)) holderById.set(h, r.id);
+  const holderOf = (h: string) => holderById.get(h) ?? null;
+  // X1 D6b (ii): incoming row index → the stored rows holding what its close would write.
+  const heldAsk = new Map<number, number[]>();
 
   const rows: PreviewRow[] = [];
   let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, supersededCount = 0, openCount = 0, openingSells = 0;
@@ -1267,12 +1402,18 @@ export function previewParsedFile(
     // become the pieces it would write.
     let rowGross = t.grossPnl, rowCharges = b.charges.total, rowNet = b.netPnl, rowOpen = b.isOpen, rowBasisUnknown = !!t.basisUnknown;
     if (autoClose && !isDuplicate && !snapshot?.supersede.has(i)) {
-      const plan = planExecutionCloses(t, b, accountId, previewLots, previewLotRows, previewRatesOn);
+      const plan = planExecutionCloses(t, b, accountId, previewLots, previewLotRows, previewRatesOn, holderOf);
+      // X1 D3 / D6b (ii): the refusals are counted beside whatever the plan did.
+      if (plan?.refusedMonthOnly) counters.refusedMonthOnly++;
+      if (plan?.refusedHeldIdentity) {
+        counters.refusedHeldIdentity++;
+        heldAsk.set(i, plan.heldBy);
+      }
       if (plan?.refusedNoDate) counters.refusedNoDate++;
       else if (plan && plan.pieces.length > 0) {
         rowGross = 0; rowCharges = 0; rowNet = 0;
         for (const [pi, piece] of plan.pieces.entries()) {
-          const closed = closedTradeOf(t, piece.c, piece.entryTime, piece.parts, piece.total);
+          const closed = closedTradeOf(t, piece.c, piece.entryTime, piece.parts, piece.total, piece.lot);
           const cb = buildRow(closed, rates, overrides, defaults, planAccount);
           rowGross = r2m(rowGross + closed.grossPnl);
           rowCharges = r2m(rowCharges + cb.charges.total);
@@ -1427,6 +1568,8 @@ export function previewParsedFile(
         // that earlier one — on its own key only — here, and is reported
         // whatever the relation, so the pull asks instead of adding a second row.
         ...(snapshot?.ask.has(i) ? { snapshotIds: snapshot.ask.get(i), ...(snapshot.offKey.has(i) ? { snapshotOffKey: true } : {}) } : {}),
+        // X1 D6b (ii): the plan refused this row's close; the holders are asked about.
+        ...(heldAsk.has(i) ? { heldIds: heldAsk.get(i) } : {}),
       })),
       existingRows.map((r) => ({
         id: r.id,
@@ -1441,6 +1584,8 @@ export function previewParsedFile(
         sellDate: r.sellDate,
         sourceFile: r.sourceFile,
         dedupHash: r.dedupHash,
+        // X1 D6b (iii): read only for `exec-origin:` (the file that closed it).
+        importNotes: r.importNotes,
       })),
       fileName,
     ),
@@ -1962,6 +2107,11 @@ export function commitParsedFile(
       .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
       .all();
     const existing = new Set(heldRows.flatMap((r) => heldIdentityHashes(r)));
+    // X1 D6b (ii): which stored row holds a hash — the preview's own map, so the
+    // commit refuses exactly the close the preview refused.
+    const holderById = new Map<string, number>();
+    for (const r of heldRows) for (const h of heldIdentityHashes(r)) if (!holderById.has(h)) holderById.set(h, r.id);
+    const holderOf = (h: string) => holderById.get(h) ?? null;
     // Wave U: the account row is read ONCE, not once per trade.
     const planAccount = planAccountOf(accountId);
     const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults, planAccount) }));
@@ -2087,13 +2237,19 @@ export function commitParsedFile(
       t: NormalizedTrade,
       b: BuiltRow,
     ): { remainder: { t: NormalizedTrade; hash: string; note: (n: string | null) => string } | null; netPnl: number; added: number } | null => {
-      const plan = planExecutionCloses(t, b, accountId, lots, lotRows, ratesOnFor);
+      const plan = planExecutionCloses(t, b, accountId, lots, lotRows, ratesOnFor, holderOf);
       if (!plan) return null;
+      // X1 D3 / D6b (ii): the same refusals the preview counted, in the same order.
+      if (plan.refusedMonthOnly) counters.refusedMonthOnly++;
+      if (plan.refusedHeldIdentity) counters.refusedHeldIdentity++;
       if (plan.refusedNoDate) {
         counters.refusedNoDate++;
         return null;
       }
+      if (plan.pieces.length === 0) return null;
       const { pieces, untouchedQty, holder, execRest, execRestTotal } = plan;
+      // X1 D4(b): where the execution came from, on every piece this close makes.
+      const origin = { tradingsymbol: t.tradingsymbol, isin: t.isin ?? null, sourceFile: fileName, importBatchId: batchId };
 
       let netDelta = 0;
       let inserted = 0;
@@ -2101,7 +2257,7 @@ export function commitParsedFile(
         const { c } = piece;
         const row = lotRows.get(c.lotId)!;
         const execBill = { ...piece.execShare.parts, total: piece.execShare.total };
-        const closed = closedTradeOf(t, c, piece.entryTime, piece.parts, piece.total);
+        const closed = closedTradeOf(t, c, piece.entryTime, piece.parts, piece.total, piece.lot);
         const cb = buildRow(closed, rates, overrides, defaults, planAccount);
         const holdsHash = holder.kind !== "remainder" && holder.at === pi;
         netDelta = r2m(netDelta + cb.netPnl);
@@ -2115,9 +2271,12 @@ export function commitParsedFile(
           // The LOT ROW becomes the closed row: no slice, its own hash kept,
           // the execution's hash held as an alias when it holds it.
           const kept = keptRisk(row, row.bucket, row.segment, defaults.capRows);
-          const notes = holdsHash
-            ? withExecBillNote(withLotCloseNote(row.importNotes, b.dedup), execBill)
-            : withExecBillNote(withClosedByNote(withAutoClosedLotNote(row.importNotes), b.dedup), execBill);
+          const notes = withExecOriginNote(
+            holdsHash
+              ? withExecBillNote(withLotCloseNote(row.importNotes, b.dedup), execBill)
+              : withExecBillNote(withClosedByNote(withAutoClosedLotNote(row.importNotes), b.dedup), execBill),
+            origin,
+          );
           const patch = {
             // v4.6.0 W6: the lot's own side — the close never flips it.
             side: c.side,
@@ -2207,9 +2366,12 @@ export function commitParsedFile(
           counters.reduced++;
 
           const sliceHash = holdsHash ? b.dedup : executionIdentity({ ...closed, segment: cb.classification.segment, exchange: cb.classification.exchange }).hash;
-          const sliceNotes = holdsHash
-            ? withExecBillNote(withLotCloseNote(null, b.dedup), execBill)
-            : withExecBillNote(withClosedByNote(AUTO_CLOSE_NOTE, b.dedup), execBill);
+          const sliceNotes = withExecOriginNote(
+            holdsHash
+              ? withExecBillNote(withLotCloseNote(null, b.dedup), execBill)
+              : withExecBillNote(withClosedByNote(AUTO_CLOSE_NOTE, b.dedup), execBill),
+            origin,
+          );
           const ins = tx
             .insert(tradesTable)
             .values({
@@ -2219,12 +2381,14 @@ export function commitParsedFile(
               segment: cb.classification.segment,
               instrumentType: cb.classification.instrumentType,
               exchange: cb.classification.exchange,
-              symbol: cb.classification.symbol,
-              tradingsymbol: closed.tradingsymbol,
-              isin: closed.isin,
-              expiry: cb.classification.expiry,
-              strike: cb.classification.strike,
-              optionType: cb.classification.optionType,
+              // X1 D4(a): the LOT's own name and identity columns, copied from its
+              // stored row — never the execution's, never a re-classification.
+              symbol: piece.lot.symbol,
+              tradingsymbol: piece.lot.tradingsymbol,
+              isin: piece.lot.isin,
+              expiry: piece.lot.expiry,
+              strike: piece.lot.strike,
+              optionType: piece.lot.optionType,
               // v4.6.0 W6 (R-8): the slice is the LOT's side, from the plan.
               side: c.side,
               buyQty: closed.buyQty,
@@ -2301,9 +2465,12 @@ export function commitParsedFile(
           t: scaled,
           hash: scaledHash,
           note: (n) =>
-            withExecBillNote(
-              holder.kind === "remainder" ? withScaledRemainderNote(n, scaledHash) : withClosedByNote(n, b.dedup),
-              { ...execRest, total: execRestTotal },
+            withExecOriginNote(
+              withExecBillNote(
+                holder.kind === "remainder" ? withScaledRemainderNote(n, scaledHash) : withClosedByNote(n, b.dedup),
+                { ...execRest, total: execRestTotal },
+              ),
+              origin,
             ),
         },
         netPnl: netDelta,
@@ -2348,9 +2515,15 @@ export function commitParsedFile(
       }
       seenInThisFile.add(b.dedup);
 
-      // W2a — does this execution close something the book holds? (dormant)
+      // W2a — does this execution close something the book holds?
+      // X1 D10 (review: NOT conditional): a row that REPLACES today's earlier
+      // snapshot in place never runs the applier — exactly as the preview
+      // decided. PROBE-2a: the applier consumed the row whole, `continue`d past
+      // the supersede, and the 11:00 row survived beside the close (225 sold
+      // against the broker's 150). End state now: the earlier row restated, the
+      // lot open beside it, Data Quality lists the pair.
       let noteDecorator: ((n: string | null) => string) | null = null;
-      if (autoClose) {
+      if (autoClose && !snapshot?.supersede.has(i)) {
         const done = runAutoClose(t, b);
         if (done) {
           added += done.added;
@@ -3139,6 +3312,8 @@ export type StaleCloseCode =
   | "AMBIGUOUS"
   | "FILLS"
   | "JOURNAL"
+  // X1 D5: a month-level pair joined without the user's acknowledgement.
+  | "MONTH_ONLY"
   | "DELETE_FAILED";
 
 export interface StaleCloseResult {
@@ -3353,9 +3528,11 @@ export function unCloseExecution(
       const openValue = long ? slice.buyValue : slice.sellValue;
       const openPrice = long ? slice.avgBuyPrice : slice.avgSellPrice;
       const openDate = long ? slice.buyDate : slice.sellDate;
+      // X1 D4: the slice is stored under the LOT's name (D4 a), so the two agree
+      // on the pairing key — compared through it, never the raw string.
       const lot = reduced.find(
         (r) =>
-          r.tradingsymbol.trim().toUpperCase() === slice.tradingsymbol.trim().toUpperCase() &&
+          pairKeyOf(r.tradingsymbol) === pairKeyOf(slice.tradingsymbol) &&
           r.segment === slice.segment &&
           r.exchange === slice.exchange &&
           (long ? r.avgBuyPrice === openPrice && r.buyDate === openDate : r.avgSellPrice === openPrice && r.sellDate === openDate),
@@ -3423,6 +3600,12 @@ export function unCloseExecution(
       audits.push({ id: remainder.id, action: "delete", summary: `${remainder.symbol} — what was left of the execution, folded back into it`, before: remainder as unknown as Record<string, unknown> });
     }
     const sells = execSide === "sell";
+    // X1 D4(b): the execution comes back as the row ITS FILE stated — its own
+    // name and ISIN (so `dedupHash` is derivable again from its own columns,
+    // and the Paytm re-key recomputes the same hash), filed under its own pull
+    // and batch (so a same-day re-pull supersedes it in place — PROBE-4). The
+    // pieces all record the same origin; the first that states one is read.
+    const origin = [...pieces, ...(remainder ? [remainder] : [])].map((p) => execOriginFromNotes(p.importNotes)).find((o) => o != null) ?? null;
     const restored = tx
       .insert(tradesTable)
       .values({
@@ -3433,8 +3616,8 @@ export function unCloseExecution(
         instrumentType: model.instrumentType,
         exchange: model.exchange,
         symbol: model.symbol,
-        tradingsymbol: model.tradingsymbol,
-        isin: model.isin,
+        tradingsymbol: origin?.tradingsymbol ?? model.tradingsymbol,
+        isin: origin ? origin.isin : model.isin,
         expiry: model.expiry,
         strike: model.strike,
         optionType: model.optionType,
@@ -3461,8 +3644,8 @@ export function unCloseExecution(
         // its R (I7, tests/harness-book-sequences.test.ts).
         rMultiple: capR(r2m(0 - execTotal), model.riskAmount),
         ...execParts,
-        sourceFile: remainder?.sourceFile ?? model.sourceFile,
-        importBatchId: remainder?.importBatchId ?? model.importBatchId,
+        sourceFile: origin?.sourceFile ?? remainder?.sourceFile ?? model.sourceFile,
+        importBatchId: origin?.importBatchId ?? remainder?.importBatchId ?? model.importBatchId,
         dedupHash: hash,
         staged: false,
         // A sale with no purchase beside it is exactly what it was before the
@@ -3489,7 +3672,16 @@ export function unCloseExecution(
   });
 }
 
-export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string | null): StaleCloseResult {
+/**
+ * X1 D5 (owner ruling S6): a month-level pair — one name states no expiry day —
+ * is joined only when the user has said the two names are one contract. The
+ * screen's tick sends it; the route passes it; nothing else can set it.
+ */
+export interface StaleCloseOptions {
+  monthOnlyAcknowledged?: boolean;
+}
+
+export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string | null, options: StaleCloseOptions = {}): StaleCloseResult {
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const raw = typeof exitDateIn === "string" ? exitDateIn.trim() : "";
   const exitDate = /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(raw)) ? raw : null;
@@ -3522,16 +3714,28 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
       if (badStored) return { ok: false, code: "BAD_DATE", message: badStored };
 
       // 1 — re-derive, over the lot's own book only (pairs never cross books).
-      const sym = lot.tradingsymbol.trim().toUpperCase();
+      // X1 D5: the book is the contract MONTH's (`monthKeyOf`, the same key
+      // Data Quality's `booksOf` groups on), so a cross-name pair the screen
+      // listed is re-derived over the rows the screen read.
+      const bookKey = monthKeyOf(lot.tradingsymbol);
       const book = tx
         .select()
         .from(tradesTable)
         .where(and(eq(tradesTable.accountId, lot.accountId), eq(tradesTable.broker, lot.broker), eq(tradesTable.segment, lot.segment), eq(tradesTable.exchange, lot.exchange)))
         .all()
-        .filter((r) => r.tradingsymbol.trim().toUpperCase() === sym);
+        .filter((r) => monthKeyOf(r.tradingsymbol) === bookKey);
       const pair = staleOpenPairs(book).find((p) => p.lotId === lot.id && p.saleId === sale.id);
       if (!pair) {
         return { ok: false, code: "NO_PAIR", message: "These two rows no longer pair — the position is closed, the sale has gone, or an older position now takes the sale first. Nothing was changed." };
+      }
+      // X1 D5 (owner ruling S6): a month-level pair is the USER's statement that
+      // two names are one contract; without the tick nothing is joined.
+      if (pair.monthOnly && options.monthOnlyAcknowledged !== true) {
+        return {
+          ok: false,
+          code: "MONTH_ONLY",
+          message: `${pair.tradingsymbol} and ${pair.saleTradingsymbol} share a contract month, but one of them states no expiry day. Confirm they are one contract first. Nothing was changed.`,
+        };
       }
       // W2-FIXD2 — a STAGED lot is never joined here, read from the stored row
       // and its ladder rather than from the pure rule (defence in depth). This

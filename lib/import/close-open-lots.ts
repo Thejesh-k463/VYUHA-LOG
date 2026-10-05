@@ -89,6 +89,10 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // (R26, `withStaleCloseNote`), and a restore can bring aliased rows in.
 
 import { sideOf } from "@/lib/domain/side";
+// v4.8.0 X1 (D1/D2): the ONE pairing key every reader joins a lot and its
+// execution on. A pure leaf (classify → constants only), so this module stays
+// client-safe for lib/analytics/data-quality.ts.
+import { pairKeyOf, sameIssuer } from "./contract-key";
 
 /** Marks one alias hash inside `import_notes`. Segments are joined by " | ". */
 export const DEDUP_ALIAS_PREFIX = "dedup-alias:";
@@ -372,6 +376,69 @@ export function execBillFromNotes(importNotes: string | null): ExecBill | null {
   return null;
 }
 
+/**
+ * v4.8.0 X1 (review D4 b) — WHERE THE CLOSING EXECUTION CAME FROM, on every
+ * piece an auto-close makes (the converted lot, every slice, the remainder).
+ *
+ * D4(a) stores a closed piece under the LOT's name, ISIN and classification,
+ * because one position must not be stored under two names once a lot and its
+ * execution can be named two ways (an OpenAlgo lot sold through a native pull).
+ * The execution's OWN name, ISIN, file and import batch are then recorded here,
+ * so `unCloseExecution` can reinstate it as the row the FILE stated — its hash
+ * derivable again from its own columns (`dedup.ts`), filed under its own pull
+ * so a same-day re-pull supersedes it in place (PROBE-4) and the Paytm re-key
+ * recomputes the same hash from the same ISIN (data-fixes.ts).
+ *
+ * Four fields, each percent-encoded and joined by `;` — NOT `|`: every reader of
+ * `import_notes` splits the column on `|`, so a `|` inside the payload would
+ * shear the segment into fragments that nothing could strip again. Provenance
+ * only: `lotIdentityHashes` never reads it, and no other prefix starts with
+ * `exec-` but `exec-bill:` (checked: `gtr-name:`, `closed-by:`, `dedup-alias:`).
+ */
+export const EXEC_ORIGIN_PREFIX = "exec-origin:";
+
+export interface ExecOrigin {
+  tradingsymbol: string;
+  isin: string | null;
+  sourceFile: string | null;
+  importBatchId: number | null;
+}
+
+/** Append `exec-origin:…` once. A row has one closing execution. */
+export function withExecOriginNote(importNotes: string | null, o: ExecOrigin): string {
+  const parts = (importNotes ?? "").split("|").map((s) => s.trim()).filter(Boolean);
+  if (parts.some((p) => p.startsWith(EXEC_ORIGIN_PREFIX))) return parts.join(" | ");
+  const enc = (s: string | number | null | undefined) => encodeURIComponent(s == null ? "" : String(s));
+  parts.push(`${EXEC_ORIGIN_PREFIX}${[enc(o.tradingsymbol), enc(o.isin), enc(o.sourceFile), enc(o.importBatchId)].join(";")}`);
+  return parts.join(" | ");
+}
+
+/** The closing execution's own name, ISIN, file and batch, or null when the row records none. */
+export function execOriginFromNotes(importNotes: string | null): ExecOrigin | null {
+  for (const seg of (importNotes ?? "").split("|")) {
+    const s = seg.trim();
+    if (!s.startsWith(EXEC_ORIGIN_PREFIX)) continue;
+    const fields = s.slice(EXEC_ORIGIN_PREFIX.length).split(";");
+    if (fields.length !== 4) return null;
+    let dec: string[];
+    try {
+      dec = fields.map((f) => decodeURIComponent(f));
+    } catch {
+      return null;
+    }
+    const [tradingsymbol, isin, sourceFile, batch] = dec as [string, string, string, string];
+    if (!tradingsymbol) return null;
+    const importBatchId = batch === "" ? null : Number(batch);
+    return {
+      tradingsymbol,
+      isin: isin === "" ? null : isin,
+      sourceFile: sourceFile === "" ? null : sourceFile,
+      importBatchId: importBatchId != null && Number.isInteger(importBatchId) ? importBatchId : null,
+    };
+  }
+  return null;
+}
+
 /** Strip every W2a/W3 machine segment, leaving the row's own prose. */
 export function withoutAutoCloseNotes(importNotes: string | null): string | null {
   const parts = (importNotes ?? "")
@@ -379,7 +446,13 @@ export function withoutAutoCloseNotes(importNotes: string | null): string | null
     .map((s) => s.trim())
     .filter(Boolean)
     .filter((s) => s !== AUTO_CLOSE_NOTE && s !== PARTIAL_CLOSE_NOTE)
-    .filter((s) => !s.startsWith(CLOSED_BY_PREFIX) && !s.startsWith(EXEC_BILL_PREFIX) && !s.startsWith(DEDUP_ALIAS_PREFIX));
+    .filter(
+      (s) =>
+        !s.startsWith(CLOSED_BY_PREFIX) &&
+        !s.startsWith(EXEC_BILL_PREFIX) &&
+        !s.startsWith(EXEC_ORIGIN_PREFIX) &&
+        !s.startsWith(DEDUP_ALIAS_PREFIX),
+    );
   return parts.length ? parts.join(" | ") : null;
 }
 
@@ -529,6 +602,19 @@ export interface AutoCloseCounters {
   closedAgainstThisFilesLot: number;
   /** Executions refused a close because they state no date (R72 / ruling A2). */
   refusedNoDate: number;
+  /**
+   * v4.8.0 X1 (D3, owner ruling S6): executions left with quantity beside an
+   * open lot of the same contract MONTH where one of the two names states no
+   * expiry day (a compact monthly / future against a dated name). Never closed
+   * automatically — both rows stay, Data Quality lists the pair with both names.
+   */
+  refusedMonthOnly: number;
+  /**
+   * v4.8.0 X1 (review D6b ii): executions whose close was refused because what
+   * would be left of them — the remainder or a slice — is already recorded as a
+   * row of its own; inserting it would have thrown on the unique index (PROBE-4).
+   */
+  refusedHeldIdentity: number;
 }
 
 export const emptyAutoCloseCounters = (): AutoCloseCounters => ({
@@ -538,6 +624,8 @@ export const emptyAutoCloseCounters = (): AutoCloseCounters => ({
   closedAgainstStoredLot: 0,
   closedAgainstThisFilesLot: 0,
   refusedNoDate: 0,
+  refusedMonthOnly: 0,
+  refusedHeldIdentity: 0,
 });
 
 /**
@@ -573,6 +661,20 @@ export function autoCloseSentences(c: AutoCloseCounters): string[] {
       `${c.refusedNoDate} incoming ${c.refusedNoDate === 1 ? "execution states" : "executions state"} no date, so nothing was closed automatically: both rows stay open and Data Quality lists them under "Open positions with their closing trade stored beside them", where you confirm the date.`,
     );
   }
+  // X1 D3 (owner ruling S6): month level is said, never applied.
+  if (c.refusedMonthOnly > 0) {
+    const one = c.refusedMonthOnly === 1;
+    out.push(
+      `${c.refusedMonthOnly} incoming ${one ? "execution names" : "executions name"} a contract an open position of this account holds under another name that states its expiry DAY (one name is the exchange's compact monthly or future, the other spells the date), so nothing was closed automatically: a compact monthly name states no expiry day, both rows stay, and Data Quality lists the pair with both names under "Open positions with their closing trade stored beside them", where you confirm they are one contract.`,
+    );
+  }
+  // X1 D6b (ii): the remainder or slice would be stored under a held record.
+  if (c.refusedHeldIdentity > 0) {
+    const one = c.refusedHeldIdentity === 1;
+    out.push(
+      `${c.refusedHeldIdentity} incoming ${one ? "execution" : "executions"} would close an open position, but what is left of ${one ? "it" : "them"} after that close is already recorded as a row of its own, so nothing was closed automatically: the row lands as stated. Un-close the earlier record from Trades and import again, or leave both and join them from Data Quality.`,
+    );
+  }
   return out;
 }
 
@@ -597,6 +699,8 @@ export interface OpenLot {
   charges: number;
   /** ISO open date, or null when the file carried none. */
   date: string | null;
+  /** X1 D2 rider: the ISIN the row states, if any — two issuers never pair. */
+  isin?: string | null;
 }
 
 /** A single-sided execution arriving in the file (or pull) being imported. */
@@ -616,6 +720,8 @@ export interface IncomingRow {
   /** Charges computed for the whole incoming row; apportioned per slice. */
   charges: number;
   date: string | null;
+  /** X1 D2 rider: the ISIN the row states, if any — two issuers never pair. */
+  isin?: string | null;
 }
 
 /** One lot consumed (wholly or partly) by one incoming row. */
@@ -674,7 +780,16 @@ export interface LotClosePlan {
   untouched: UnmatchedIncoming[];
 }
 
-/** The book a lot and an execution must share before they can be matched. */
+/**
+ * The book a lot and an execution must share before they can be matched.
+ *
+ * v4.8.0 X1 (D2): the name is keyed by `pairKeyOf` — the contract plus the
+ * expiry day it states — so an OpenAlgo lot (`OPT NIFTY 22 Sep 2026 25000 CE`)
+ * and a native sale (`NIFTY2692225000CE`) of one weekly, or `SBIN-EQ` and
+ * `SBIN`, are one book. EXACT only: a compact monthly (`…|M`) never meets a
+ * dated name of its month here (owner ruling S6 — that pair is asked, D3).
+ * Account, broker, segment and exchange stay in the key exactly as before.
+ */
 export function matchKey(x: {
   accountId: number;
   broker: string;
@@ -685,10 +800,29 @@ export function matchKey(x: {
   return [
     x.accountId,
     x.broker.trim().toLowerCase(),
-    x.tradingsymbol.trim().toUpperCase(),
+    pairKeyOf(x.tradingsymbol),
     x.segment,
     x.exchange,
   ].join("|");
+}
+
+/**
+ * X1 cost check (design §7): `planExecutionCloses` hands the SAME lot objects to
+ * `planLotCloses` once per incoming row, so each lot's key is built once per
+ * import rather than once per row. The key's fields (account, broker, name,
+ * segment, exchange) never change on a lot object; its quantity does, and is
+ * not in the key. Measured 2026-10-05, 25k lots × 5k incoming: 62.1 s before,
+ * see DECISIONS for after. The shape is still lots × incoming per import — an
+ * index built once per import is the structural fix, not X1's.
+ */
+const lotKeyMemo = new WeakMap<OpenLot, string>();
+function lotKeyOf(lot: OpenLot): string {
+  let k = lotKeyMemo.get(lot);
+  if (k === undefined) {
+    k = matchKey(lot);
+    lotKeyMemo.set(lot, k);
+  }
+  return k;
 }
 
 /** Oldest first; a lot with no date is not assumed to be old, so it sorts last. */
@@ -719,7 +853,7 @@ export function planLotCloses(
   const byKey = new Map<string, State[]>();
   for (const lot of openLots) {
     if (lot.qty <= 0) continue;
-    const k = matchKey(lot);
+    const k = lotKeyOf(lot);
     const list = byKey.get(k);
     const state: State = { lot, qty: lot.qty, value: lot.value, charges: lot.charges, touched: false };
     if (list) list.push(state);
@@ -758,6 +892,9 @@ export function planLotCloses(
       if (st.qty <= 0) continue;
       if (st.lot.side !== wanted) continue;
       if (!st.lot.date || st.lot.date > row.date) continue;
+      // X1 D2 rider: two stated ISINs of different issuers are two companies on
+      // one ticker (or one key), never one position — refused, not guessed.
+      if (!sameIssuer(st.lot.isin, row.isin)) continue;
 
       const take = Math.min(remaining, st.qty);
       const lotShare = take / st.qty;

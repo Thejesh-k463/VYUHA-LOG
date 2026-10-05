@@ -26,10 +26,15 @@
 // detail for a person to decide, and the import stays a decision rather than a
 // guess. That is the same rule the product applies to MTF and to product type.
 
-// The ONE non-type import, and still a leaf: `classify.ts` imports only
-// `lib/domain/constants` (no parser, no DB) — `components/import/import-client.tsx`
-// imports this module into the client bundle.
-import { parseInstrumentContract } from "@/lib/engine/classify";
+// Still a leaf: `contract-key.ts` imports only `lib/engine/classify`, which
+// imports only `lib/domain/constants` (no parser, no DB) —
+// `components/import/import-client.tsx` imports this module into the client bundle.
+import { contractKeyOf, monthKeyOf, sameContractDay, sameContractDayOf, type ContractKey } from "./contract-key";
+import { execOriginFromNotes } from "./close-open-lots";
+
+// v4.8.0 X1 (D1): the contract key LIVES in `./contract-key` now; re-exported so
+// `pull-symbols.ts` and every test keep importing from here.
+export { contractKeyOf, sameContractDay, stripSeriesSuffix, type ContractKey } from "./contract-key";
 
 export interface ExistingRow {
   id: number;
@@ -44,6 +49,14 @@ export interface ExistingRow {
   sellDate: string | null;
   sourceFile: string | null;
   dedupHash: string;
+  /**
+   * v4.8.0 X1 (review D6b iii, PROBE-5b): the row's `import_notes`, read ONLY
+   * for the `exec-origin:` segment an auto-close writes — a lot this very file
+   * opened that ANOTHER file's execution has since closed is not "a second
+   * trade in the same file", so the same-file exclusion below must not hide it.
+   * Optional: a caller that hands in none gets exactly the report it got before.
+   */
+  importNotes?: string | null;
 }
 
 export interface IncomingRow {
@@ -83,6 +96,15 @@ export interface IncomingRow {
    * path that reaches the broker's book. The collision object is unchanged.
    */
   snapshotOffKey?: boolean;
+  /**
+   * v4.8.0 X1 (review D6b ii, PROBE-4): the stored rows that ALREADY HOLD the
+   * hash this execution's remainder or slice would be stored under, as the
+   * auto-close plan found them (`heldIdentityHashes`). The plan REFUSED the
+   * close rather than insert a row the unique index would reject; the row lands
+   * as stated and is reported here as RISKY — whatever file the holder came
+   * from — so the pull asks instead of adding a second sale.
+   */
+  heldIds?: readonly number[];
 }
 
 /**
@@ -91,8 +113,11 @@ export interface IncomingRow {
  * when nothing is on the key), with no quantity or value relation to it — a
  * position that grew or changed product, or one of two positions the key
  * cannot tell apart.
+ * `held-identity` (X1 D6b ii): the stored row already holds the identity part
+ * of this execution would be stored under after an auto-close, so the close
+ * was refused and the row is asked about before it is added beside it.
  */
-export type OverlapKind = "same-quantity" | "same-value" | "partial-quantity" | "earlier-snapshot";
+export type OverlapKind = "same-quantity" | "same-value" | "partial-quantity" | "earlier-snapshot" | "held-identity";
 
 export interface CrossSourceCollision {
   symbol: string;
@@ -149,68 +174,29 @@ type Sides = { buyQty: number; sellQty: number; buyValue: number; sellValue: num
 const statesBuy = (r: Sides) => r.buyQty > 0 || r.buyValue !== 0;
 const statesSell = (r: Sides) => r.sellQty > 0 || r.sellValue !== 0;
 
-/** R43: is `e` the earlier snapshot of `inc`'s own position — this very pull file, on its key? */
+/**
+ * X1 D6b (iii): the file whose execution CLOSED this stored row (the
+ * `exec-origin:` segment an auto-close writes), or null when nothing did.
+ */
+const closedFromFile = (e: ExistingRow): string | null => execOriginFromNotes(e.importNotes ?? null)?.sourceFile ?? null;
+
+/**
+ * R43: is `e` the earlier snapshot of `inc`'s own position — this very pull
+ * file, on its key? X1 D6b (PROBE-1): a row this pull's earlier execution CLOSED
+ * belongs to the pull's book too, whatever file opened it.
+ */
 const snapshotOf = (inc: IncomingRow, e: ExistingRow, fileName: string) =>
-  inc.snapshotIds?.includes(e.id) === true && (e.sourceFile ?? "") === fileName;
+  inc.snapshotIds?.includes(e.id) === true && ((e.sourceFile ?? "") === fileName || closedFromFile(e) === fileName);
+
+/** X1 D6b (ii): does `e` hold the identity the plan refused to store twice? */
+const holderOf = (inc: IncomingRow, e: ExistingRow) => inc.heldIds?.includes(e.id) === true;
 
 /** Likely a double count. Any overlap with today's earlier snapshot of the same
  *  pull is: a snapshot is cumulative, so "part of" it is the same position grown.
- *  A month-only contract match with no shared date (C6) never is. */
+ *  A month-only contract match with no shared date (C6) never is. A row that
+ *  already holds the identity an auto-close would have stored (X1) always is. */
 const isRisky = (c: CrossSourceCollision) =>
-  c.monthOnly !== true && (c.kind === "same-quantity" || c.kind === "same-value" || c.sameSnapshot === true);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// The CONTRACT key (v4.7.0 wave C6, design review R1 + R2)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** An equity series suffix: `SBIN-EQ`, `X-BE`, `X-BZ`, `X-SM`, `X-ST`. */
-const SERIES_SUFFIX = /-(?:EQ|BE|BZ|SM|ST)$/;
-
-/** Trim, upper-case and drop an equity series suffix (`SBIN-EQ` → `SBIN`). */
-export function stripSeriesSuffix(t: string): string {
-  return norm(t).replace(SERIES_SUFFIX, "");
-}
-
-export interface ContractKey {
-  /**
-   * Derivatives: `option|UNDERLYING|YYYY-MM|STRIKE|CE` / `future|UNDERLYING|YYYY-MM||`
-   * — the MONTH, so a compact monthly (`CDSL26SEP1400CE`, day unstated) and a
-   * dated name of the same contract (`OPT CDSL 29 Sep 2026 1400 CE`) share it.
-   * Equity: `equity|TICKER`, series suffix stripped. NO segment anywhere (R2):
-   * a broker-side product conversion keeps its contract.
-   */
-  key: string;
-  /** The expiry DAY the name states (ISO), or null when it states only the month. */
-  day: string | null;
-}
-
-/**
- * The contract a stored or incoming `tradingsymbol` names, read through the
- * classifier's own grammar (`parseInstrumentContract`), or null when the name
- * is a derivative whose month or strike does not parse — such a row is matched
- * on its string alone, exactly as before C6.
- */
-export function contractKeyOf(tradingsymbol: string): ContractKey | null {
-  if (!tradingsymbol || !tradingsymbol.trim()) return null;
-  const { parsed, month } = parseInstrumentContract(tradingsymbol);
-  if (parsed.kind === "equity") {
-    const bare = stripSeriesSuffix(tradingsymbol);
-    return bare ? { key: `equity|${bare}`, day: null } : null;
-  }
-  if (!month) return null;
-  if (parsed.kind === "option") {
-    if (parsed.strike == null || !Number.isFinite(parsed.strike) || !parsed.optionType) return null;
-    return { key: `option|${parsed.symbol.toUpperCase()}|${month}|${parsed.strike}|${parsed.optionType}`, day: parsed.expiry };
-  }
-  return { key: `future|${parsed.symbol.toUpperCase()}|${month}||`, day: parsed.expiry };
-}
-
-/**
- * Two names of one contract key are the SAME contract when their expiry days
- * are equal or either is unstated (R1); two different stated days are two
- * expiries of one month (a weekly and the monthly), never the same contract.
- */
-export const sameContractDay = (a: string | null, b: string | null) => a === null || b === null || a === b;
+  c.monthOnly !== true && (c.kind === "same-quantity" || c.kind === "same-value" || c.kind === "held-identity" || c.sameSnapshot === true);
 
 /**
  * Find incoming rows that look like trades already recorded from a DIFFERENT
@@ -232,25 +218,29 @@ export function detectCrossBrokerEchoes(
   otherBrokerRows: ExistingRow[],
 ): string | null {
   if (incoming.length === 0 || otherBrokerRows.length === 0) return null;
-  const byKey = new Map<string, Set<string>>();
+  // X1 D8: keyed on the contract MONTH plus the day, and admitted only when the
+  // two names state the same expiry day (or one states none) — two brokers
+  // print one contract two ways, and the raw string missed the echo. The date
+  // is shared by construction (C6 Q6), which is what makes month level safe here.
+  const byKey = new Map<string, { broker: string; name: string }[]>();
   for (const e of otherBrokerRows) {
     for (const d of [e.buyDate, e.sellDate]) {
       if (!d) continue;
-      const key = `${norm(e.tradingsymbol)}|${d}`;
-      const set = byKey.get(key) ?? new Set<string>();
-      set.add(e.broker);
-      byKey.set(key, set);
+      const key = `${monthKeyOf(e.tradingsymbol)}|${d}`;
+      const list = byKey.get(key) ?? [];
+      list.push({ broker: e.broker, name: e.tradingsymbol });
+      byKey.set(key, list);
     }
   }
   const echoes = new Map<string, Set<string>>();
   for (const inc of incoming) {
     for (const d of [inc.buyDate, inc.sellDate]) {
       if (!d) continue;
-      const brokers = byKey.get(`${norm(inc.tradingsymbol)}|${d}`);
-      if (!brokers) continue;
+      const hits = byKey.get(`${monthKeyOf(inc.tradingsymbol)}|${d}`);
+      if (!hits) continue;
       const set = echoes.get(inc.tradingsymbol) ?? new Set<string>();
-      for (const b of brokers) set.add(b);
-      echoes.set(inc.tradingsymbol, set);
+      for (const h of hits) if (sameContractDayOf(h.name, inc.tradingsymbol)) set.add(h.broker);
+      if (set.size > 0) echoes.set(inc.tradingsymbol, set);
     }
   }
   if (echoes.size === 0) return null;
@@ -369,8 +359,15 @@ export function detectCrossSourceDuplicates(
         e.dedupHash !== inc.dedupHash &&
         // A row from the SAME file is a genuine second trade in that scrip, not
         // a cross-source echo of the first — except (R43) today's earlier
-        // snapshot of the same pull, which is the same book stated earlier.
-        ((e.sourceFile ?? "") !== incomingFileName || snapshotOf(inc, e, incomingFileName)),
+        // snapshot of the same pull, which is the same book stated earlier;
+        // except (X1 D6b iii) a lot this file opened that ANOTHER file's
+        // execution has since closed — a day-aggregate re-pull then restates
+        // that closed position, and hiding the row doubled it (PROBE-5b); and
+        // except (X1 D6b ii) the holder of an identity the plan refused.
+        ((e.sourceFile ?? "") !== incomingFileName ||
+          snapshotOf(inc, e, incomingFileName) ||
+          holderOf(inc, e) ||
+          (closedFromFile(e) != null && closedFromFile(e) !== incomingFileName)),
     );
 
     let softer: CrossSourceCollision | null = null;
@@ -394,7 +391,8 @@ export function detectCrossSourceDuplicates(
       // A snapshot candidate with no shared side still goes on: no relation
       // below can fire for it (both quantities read 0), and it is reported.
       const snapshot = snapshotOf(inc, e, incomingFileName);
-      if (!buy && !sell && !snapshot) continue;
+      const holder = holderOf(inc, e);
+      if (!buy && !sell && !snapshot && !holder) continue;
       const incQty = Math.max(buy ? inc.buyQty : 0, sell ? inc.sellQty : 0);
       const exQty = Math.max(buy ? e.buyQty : 0, sell ? e.sellQty : 0);
 
@@ -413,6 +411,12 @@ export function detectCrossSourceDuplicates(
       if (!kind && snapshot) {
         kind = "earlier-snapshot";
         detail = `Today's earlier pull recorded ${e.buyQty} bought and ${e.sellQty} sold in ${e.sourceFile ?? "this pull"}; this pull states ${inc.buyQty} bought and ${inc.sellQty} sold.`;
+      }
+      // X1 D6b (ii): the plan refused to close with this row's identity; said
+      // as its own kind whatever the quantity relation, and always risky.
+      if (holder) {
+        kind = "held-identity";
+        detail = `Part of this execution — what would be left of it after closing the position it matches — is already recorded as ${e.sourceFile ?? "an earlier import"} (${e.buyQty} bought, ${e.sellQty} sold), so nothing was closed automatically. Un-close that record from Trades and pull again, or commit this row beside it.`;
       }
 
       if (kind) {
@@ -488,11 +492,22 @@ export function detectCrossSourceDuplicates(
   // today's earlier snapshot of this same pull is NOT from a different file,
   // and deleting that earlier import would delete the recorded position with
   // whatever the user wrote on it (W2R N3) — so it never reads the advice below.
-  const crossFile = collisions.filter((c) => !c.sameSnapshot);
-  const earlier = collisions.filter((c) => c.sameSnapshot && !offKey.has(c));
+  const held = collisions.filter((c) => c.kind === "held-identity");
+  const crossFile = collisions.filter((c) => !c.sameSnapshot && c.kind !== "held-identity");
+  const earlier = collisions.filter((c) => c.sameSnapshot && c.kind !== "held-identity" && !offKey.has(c));
   // W2H: an ask made only because nothing is on the key has its own reason and path.
-  const converted = collisions.filter((c) => offKey.has(c));
+  const converted = collisions.filter((c) => offKey.has(c) && c.kind !== "held-identity");
   const parts: string[] = [];
+  if (held.length > 0) {
+    const one = held.length === 1;
+    // X1 D6b (ii): the plan would have stored what is left of this execution
+    // under a record the journal already holds (the unique index refuses it), so
+    // the close is refused and the row is asked about rather than inserted.
+    parts.push(
+      `${held.length} row${one ? "" : "s"} in this pull (${listOf(held)}) would close a position this account holds, but what is left of ${one ? "it" : "them"} after that close is already recorded as a row of its own — a sale of the same quantity, price and day. ` +
+        `Nothing was closed automatically and nothing was committed. Un-close that earlier record (Trades → the row's menu → "Un-close") and pull again, or commit anyway to add this pull's row${one ? "" : "s"} beside it.`,
+    );
+  }
   if (crossFile.length > 0) {
     parts.push(
       `${crossFile.length} row${crossFile.length === 1 ? "" : "s"} in this file (${listOf(crossFile)}) look like trades already recorded from a different file. ` +

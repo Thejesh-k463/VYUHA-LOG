@@ -57,7 +57,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
 import { num } from "@/lib/format";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
-import { LEGACY_SHORT_PAIR_NOTE, staleAmbiguousNote } from "@/lib/analytics/data-quality";
+import { LEGACY_SHORT_PAIR_NOTE, MONTH_ONLY_PAIR_NOTE, staleAmbiguousNote } from "@/lib/analytics/data-quality";
 
 /** Structurally `StaleOpenView` (lib/queries/data-quality.ts), restated for the client. */
 export interface StaleLotFixPair {
@@ -85,6 +85,14 @@ export interface StaleLotFixPair {
   saleStaged: boolean;
   /** v4.6.0 W6 (D5) — a pre-4.6 import's two rows of one overnight F&O short. */
   legacyShort: boolean;
+  /** v4.8.0 X1 (D5) — the sale row's OWN name; shown beside the lot's when they differ. */
+  saleTradingsymbol: string;
+  /**
+   * v4.8.0 X1 (D5, owner ruling S6) — the two names pair at MONTH level only
+   * (one states no expiry day). The join needs the user's own tick; the server
+   * refuses it otherwise (MONTH_ONLY).
+   */
+  monthOnly: boolean;
   blocked: string | null;
 }
 
@@ -111,22 +119,27 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
   // True once the user has accepted the date: at once when the sale row states
   // its own, and only by ticking or editing it when the date is the pull day.
   const [dateAccepted, setDateAccepted] = React.useState(false);
+  // X1 D5: true once the user has ticked "these two names are one contract" —
+  // only asked of a month-level pair, and reset in the click handler that opens
+  // the dialog (no state is synced in an effect).
+  const [contractAccepted, setContractAccepted] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   function open(p: StaleLotFixPair, opener: HTMLButtonElement) {
     openerRef.current = opener;
     setDate(p.saleDate);
     setDateAccepted(p.saleDateStated);
+    setContractAccepted(!p.monthOnly);
     setTarget(p);
   }
 
-  async function run(p: StaleLotFixPair, exitDate: string) {
+  async function run(p: StaleLotFixPair, exitDate: string, monthOnlyAcknowledged: boolean) {
     setBusy(true);
     try {
       const res = await fetch("/api/data-quality/close-stale", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ lotId: p.lotId, saleId: p.saleId, exitDate }),
+        body: JSON.stringify({ lotId: p.lotId, saleId: p.saleId, exitDate, ...(p.monthOnly ? { monthOnlyAcknowledged } : {}) }),
       });
       const json = (await res.json()) as { ok?: boolean; message?: string };
       setTarget(null);
@@ -157,8 +170,17 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
               <p className="font-medium">{p.tradingsymbol}</p>
               <Badge variant="outline">{p.side}</Badge>
               <span className="text-muted-foreground">
-                open {num(p.lotQty, 0)} @ {num(p.lotPrice)} since {p.lotDate} · recorded {what(p)} {num(p.saleQty, 0)} @{" "}
-                {num(p.salePrice)}
+                open {num(p.lotQty, 0)} @ {num(p.lotPrice)} since {p.lotDate} · recorded {what(p)}
+                {/* X1 D5: a cross-name pair names the sale's own row too. */}
+                {p.saleTradingsymbol && p.saleTradingsymbol !== p.tradingsymbol ? (
+                  <>
+                    {" "}
+                    <span className="font-medium text-foreground" data-stale-sale-name="">
+                      {p.saleTradingsymbol}
+                    </span>
+                  </>
+                ) : null}{" "}
+                {num(p.saleQty, 0)} @ {num(p.salePrice)}
                 {p.matchedQty !== p.saleQty ? ` (${num(p.matchedQty, 0)} of it against this position)` : ""} ·{" "}
                 {p.saleDateStated ? p.saleDate : `pulled ${p.saleDate}, no date stated`}
               </span>
@@ -166,6 +188,11 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
             {p.legacyShort && (
               <p className="mt-2 text-muted-foreground" data-stale-legacy-short="">
                 {LEGACY_SHORT_PAIR_NOTE}
+              </p>
+            )}
+            {p.monthOnly && (
+              <p className="mt-2 text-muted-foreground" data-stale-month-only="">
+                {MONTH_ONLY_PAIR_NOTE}
               </p>
             )}
             {p.ambiguous ? (
@@ -292,6 +319,19 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
                 </label>
               </>
             )}
+            {target?.monthOnly && (
+              <>
+                <p className="text-xs text-muted-foreground" data-stale-month-only-confirm="">
+                  {target.tradingsymbol} and {target.saleTradingsymbol} share a contract month, but one of them states no
+                  expiry day. The journal cannot tell from the names whether they are one contract, so it is confirmed
+                  here rather than assumed (a weekly against the monthly of the same strike is two contracts).
+                </p>
+                <label className="flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={contractAccepted} onChange={(e) => setContractAccepted(e.target.checked)} />
+                  These two names are one contract
+                </label>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={busy} onClick={() => setTarget(null)}>
@@ -299,9 +339,9 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
             </Button>
             <Button
               type="button"
-              disabled={busy || target === null || !date || !dateAccepted}
+              disabled={busy || target === null || !date || !dateAccepted || !contractAccepted}
               onClick={() => {
-                if (target) void run(target, date);
+                if (target) void run(target, date, contractAccepted);
               }}
             >
               {busy ? "Closing…" : target?.side === "short" ? "Close with the recorded purchase" : "Close with the recorded sale"}

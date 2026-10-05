@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import fs from "node:fs";
+import { execSync } from "node:child_process";
 import { beforeAll, describe, expect, it } from "vitest";
 // Wave U's `findRates` door guard walks the same AST with the same compiler
 // that already ships in node_modules — no new dependency (AGENTS.md).
 import ts from "typescript";
-import { REGISTRY, RULE, format, listSourceFiles, scanSource, scanTree, type RuleId, type ScanReport, type Violation } from "./helpers/field-rules";
+import { PAIRING_ALLOWLIST, REGISTRY, RULE, format, listSourceFiles, scanSource, scanTree, type RuleId, type ScanReport, type Violation } from "./helpers/field-rules";
 // Pure (no DB, no React), so the WRITE half of the raw-date rule is asserted by
 // behaviour here and not only by the shape of the source text.
 import { validateLegs } from "@/lib/domain/staged";
@@ -662,7 +663,7 @@ export function reads(p: P, list: P[]) {
   });
 
   it("the registry states a rule, its forbidden shapes and its provenance for every field it guards", () => {
-    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer", "fmv-per-share", "intra-range-split"]);
+    expect(REGISTRY.map((r) => r.id)).toEqual(["mtf-funded-0", "open-position-funded", "own-capital-null", "raw-date", "ipo-link-scope", "risk-cap-resolver", "trade-side-reader", "trade-side-writer", "fmv-per-share", "intra-range-split", "tradingsymbol-pairing"]);
     for (const r of REGISTRY) {
       expect(r.rule.length, r.id).toBeGreaterThan(40);
       expect(r.forbidden.length, r.id).toBeGreaterThan(20);
@@ -684,6 +685,114 @@ export const f = (t: Row) => t.mtfFundedAmount ?? 0;`;
     const fifty = performance.now() - t1;
     // 50 further scans of the same text cost less than 50x the first parse.
     expect(fifty).toBeLessThan(first * 50 + 50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v4.8.0 X1 D11 — `tradingsymbol` IS PAIRED THROUGH THE CONTRACT KEY ONLY
+// ---------------------------------------------------------------------------
+
+/**
+ * Six pairing readers joined a lot and its closing execution on
+ * `tradingsymbol.trim().toUpperCase()` at 180dd3c, so an OpenAlgo lot
+ * (`OPT NIFTY 22 Sep 2026 25000 CE`) sold through a native pull
+ * (`NIFTY2692225000CE`) never met its sale and the book held the position twice.
+ * X1 moved every pairing onto `lib/import/contract-key.ts`; this rule keeps the
+ * next reader off the raw string. The pre-fix text is asserted TWO ways: an
+ * inline copy of the four sites, verbatim from `git show 180dd3c:<path>` (CI checks
+ * out shallowly), and — where the object is available — the real `git show`.
+ */
+describe("X1 D11 — the pairing rule sees the class it guards, and the tree is clean under it", () => {
+  const PRE_X1 = "180dd3c";
+  /** The four sites, verbatim from `git show 180dd3c:<path>` (lines as the review cites them). */
+  const PRE_FIX_INLINE: Record<string, string> = {
+    "lib/import/close-open-lots.ts": [
+      "export function matchKey(x: { accountId: number; broker: string; tradingsymbol: string; segment: string; exchange: string }): string {",
+      "  return [",
+      "    x.accountId,",
+      "    x.broker.trim().toLowerCase(),",
+      "    x.tradingsymbol.trim().toUpperCase(),",
+      "    x.segment,",
+      "    x.exchange,",
+      '  ].join("|");',
+      "}",
+    ].join("\n"),
+    "lib/analytics/data-quality.ts": [
+      "function booksOf(trades: readonly QualityTrade[]): BookRow[][] {",
+      "  const books = new Map<string, BookRow[]>();",
+      "  for (const t of trades) {",
+      "    const k = `${t.accountId}|${t.broker.trim().toLowerCase()}|${t.tradingsymbol.trim().toUpperCase()}|${t.segment}|${t.exchange}`;",
+      "  }",
+      "  return [...books.values()];",
+      "}",
+    ].join("\n"),
+    "lib/import/commit.ts": [
+      "const lot = reduced.find(",
+      "  (r) =>",
+      "    r.tradingsymbol.trim().toUpperCase() === slice.tradingsymbol.trim().toUpperCase() &&",
+      "    r.segment === slice.segment,",
+      ");",
+      "const sym = lot.tradingsymbol.trim().toUpperCase();",
+      "const book = rows.filter((r) => r.tradingsymbol.trim().toUpperCase() === sym);",
+    ].join("\n"),
+  };
+
+  it("reports every pre-fix pairing site in the inline 180dd3c excerpts, with the expression that breaks the rule", () => {
+    const hits = Object.entries(PRE_FIX_INLINE).flatMap(([f, text]) => scanSource(`${PRE_X1}:${f}`, text, ["tradingsymbol-pairing"]));
+    expect(at(hits).sort()).toEqual([
+      `${PRE_X1}:lib/analytics/data-quality.ts:4 t.tradingsymbol.trim().toUpperCase()`,
+      `${PRE_X1}:lib/import/close-open-lots.ts:5 x.tradingsymbol.trim().toUpperCase()`,
+      `${PRE_X1}:lib/import/commit.ts:3 r.tradingsymbol.trim().toUpperCase()`,
+      `${PRE_X1}:lib/import/commit.ts:3 slice.tradingsymbol.trim().toUpperCase()`,
+      `${PRE_X1}:lib/import/commit.ts:6 lot.tradingsymbol.trim().toUpperCase()`,
+      `${PRE_X1}:lib/import/commit.ts:7 r.tradingsymbol.trim().toUpperCase()`,
+    ]);
+    expect(hits.every((h) => h.rule === "tradingsymbol-pairing" && h.why.includes("pairKeyOf"))).toBe(true);
+  });
+
+  it("…and over the REAL 180dd3c text when git has the object (skipped on a shallow checkout)", () => {
+    let text: string | null = null;
+    try {
+      text = execSync(`git show ${PRE_X1}:lib/import/close-open-lots.ts`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      text = null;
+    }
+    if (text == null) return; // shallow CI: the inline copy above is the proof
+    const hits = scanSource(`${PRE_X1}:lib/import/close-open-lots.ts`, text, ["tradingsymbol-pairing"]);
+    expect(at(hits)).toEqual([`${PRE_X1}:lib/import/close-open-lots.ts:688 x.tradingsymbol.trim().toUpperCase()`]);
+  });
+
+  it("the shapes it must NOT report: a parameter normalised, a mapped local, an index, handing the string on, the key module itself", () => {
+    const src = [
+      'const norm = (s: string) => s.trim().toUpperCase();',
+      'export const bucket = (e: { tradingsymbol: string }) => `${norm(e.tradingsymbol)}|x`;',
+      'export const label = (overrides: Record<string, string>, t: { tradingsymbol: string }) => overrides[t.tradingsymbol];',
+      'export const copy = (t: { tradingsymbol: string }) => ({ tradingsymbol: t.tradingsymbol });',
+      'export const keyed = (t: { tradingsymbol: string }) => pairKeyOf(t.tradingsymbol);',
+      'export const dedupSymbolKey = (tradingsymbol: string) => tradingsymbol.trim().toUpperCase();',
+    ].join("\n");
+    expect(scanSource("lib/import/made-up.ts", src, ["tradingsymbol-pairing"])).toEqual([]);
+    // The one leaf that may read the raw string, and a file outside the scope.
+    const raw = "export const k = (t: { tradingsymbol: string }) => t.tradingsymbol.trim().toUpperCase() === x;";
+    expect(scanSource("lib/import/contract-key.ts", raw, ["tradingsymbol-pairing"])).toEqual([]);
+    expect(scanSource("lib/quotes/manual.ts", raw, ["tradingsymbol-pairing"])).toEqual([]);
+    // In scope, both shapes: the normaliser chain (reported once, whole) and the bare equality.
+    expect(at(scanSource("lib/import/made-up.ts", raw, ["tradingsymbol-pairing"]))).toEqual(["lib/import/made-up.ts:1 t.tradingsymbol.trim().toUpperCase()"]);
+    expect(at(scanSource("lib/import/made-up.ts", "if (a.tradingsymbol !== b.tradingsymbol) x();", ["tradingsymbol-pairing"]))).toEqual([
+      "lib/import/made-up.ts:1 a.tradingsymbol !== b.tradingsymbol",
+      "lib/import/made-up.ts:1 a.tradingsymbol !== b.tradingsymbol",
+    ]);
+  });
+
+  it("HEAD is clean under it, and every allowlist entry still names a site that exists (no stale exemption)", () => {
+    const report = scanTree(["tradingsymbol-pairing"]);
+    expect(at(report.violations)).toEqual([]);
+    expect(report.filesParsed).toBeGreaterThan(5);
+    for (const a of PAIRING_ALLOWLIST) {
+      const text = fs.readFileSync(path.join(process.cwd(), a.file), "utf8");
+      expect(a.reason.length, `${a.file}: an exemption states its reason`).toBeGreaterThan(20);
+      expect(a.expr.test(text.replace(/\s*\r?\n\s*/g, " ")), `${a.file}: ${a.expr} no longer matches — a stale exemption`).toBe(true);
+    }
   });
 });
 

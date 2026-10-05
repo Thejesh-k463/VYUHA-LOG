@@ -13,6 +13,7 @@ import {
   type OracleBook, type OraclePersonFigures, type OracleSnapshot, type OracleView,
 } from "./helpers/oracle-book";
 import type { NormalizedTrade } from "@/lib/engine/types";
+import type { ParsedFile } from "@/lib/import/types";
 // Pure modules (no DB): safe as static imports before openTempDb binds the connection.
 import { parseFyersTradebook } from "@/lib/import/parsers/fyers-tradebook";
 import { fyersTradingsymbol } from "@/lib/import/pull-symbols";
@@ -1006,6 +1007,59 @@ const OPS: Op[] = [
       expect(pre.crossSource?.collisions[0], "the contract key meets the file's row").toMatchObject({ kind: "same-quantity" });
       expect(pre.crossSource?.risky, "so the route answers 409 needsForce and writes nothing").toBe(true);
       return afterFile;
+    },
+  },
+  {
+    // v4.8.0 X1 (review §Harness, "Oracle") — an OpenAlgo WEEKLY lot (the dated grammar) sold
+    // through the NATIVE Fyers pull (the compact name): the two names pair EXACTLY (D2), so the
+    // lot closes under its own name and the sale is counted ONCE in every consumer and view —
+    // after the close, after the un-close (nothing realised), after the Data Quality join of the
+    // reinstated pair, and after an OpenAlgo re-pull restating the day (asked, nothing written).
+    // As with the W3 round trip above, the expectation is MEASURED after the first close and
+    // re-asserted after each later state that must read the same.
+    name: "an OpenAlgo weekly lot, then the native sale: counted once after close, un-close, DQ join and OpenAlgo re-pull",
+    run: async (_b, base) => {
+      selectOracleAccount(t, ORACLE_A1);
+      const OA = "OPT ORACLEX1 22 Sep 2025 100 CE";
+      const NAT = "ORACLEX125922100CE";
+      const fy = (over: Partial<NormalizedTrade>) =>
+        ({ ...oracleReimportTrade(), broker: "fyers", productHint: null, exchangeHint: "NSE", isin: null, tradingsymbol: OA, buyQty: 0, avgBuyPrice: 0, buyValue: 0, buyDate: null, sellQty: 0, avgSellPrice: 0, sellValue: 0, sellDate: null, grossPnl: 0, ...over }) as NormalizedTrade;
+      const file = (trades: NormalizedTrade[], sourceId: string): ParsedFile => ({ ...oracleParsedFile(trades), broker: "fyers", sourceId, format: "api" });
+      const lotFile = "openalgo-fyers-2025-09-19";
+      const saleFile = "fyers-api-2025-09-22";
+      const opts = (fileName: string) => ({ supersedeSnapshot: { fileName }, autoClose: true });
+      expect(importer.commitParsedFile(file([fy({ buyQty: 50, avgBuyPrice: 100, buyValue: 5000, buyDate: "2025-09-19" })], "openalgo-api"), lotFile, null, ORACLE_A1, opts(lotFile)).added).toBe(1);
+      const sale = () => file([fy({ tradingsymbol: NAT, sellQty: 50, avgSellPrice: 120, sellValue: 6000, sellDate: "2025-09-22" })], "fyers-api");
+      const closed = importer.commitParsedFile(sale(), saleFile, null, ORACLE_A1, opts(saleFile));
+      expect([closed.added, closed.autoClose?.closedWhole], "the cross-name sale closed the lot in place").toEqual([0, 1]);
+      const rows = () => rowsIn(ORACLE_A1).filter((r) => r.broker === "fyers");
+      expect(rows().map((r) => [r.tradingsymbol, r.isOpen])).toEqual([[OA, false]]);
+
+      const afterClose = await readOracle(t);
+      expect(afterClose.a1.person.itrCount, "the round trip is counted once").toBe(base.a1.person.itrCount + 1);
+      expect(afterClose.a3.person.itrCount, "and not in the other person's pack").toBe(base.a3.person.itrCount);
+
+      // Un-close: the sale back as its own row under ITS name; nothing realised anywhere.
+      const hash = lots.executionHashOfPiece(rows()[0]!);
+      expect(importer.unCloseExecution(ORACLE_A1, "fyers", hash).ok).toBe(true);
+      expect(rows().map((r) => [r.tradingsymbol, r.isOpen]).sort()).toEqual([[OA, true], [NAT, true]].sort());
+      const open = await readOracle(t);
+      expect(open.a1.person.itrCount).toBe(base.a1.person.itrCount);
+
+      // The Data Quality join of the reinstated pair (exact: no acknowledgement needed).
+      const dq = await import("@/lib/queries/data-quality");
+      const pair = dq.getStaleOpenPairs().find((p) => p.tradingsymbol === OA)!;
+      expect([pair.saleTradingsymbol, pair.monthOnly, pair.oneClick]).toEqual([NAT, false, true]);
+      const joined = importer.closeStaleLot(pair.lotId, pair.saleId, pair.saleDate);
+      expect(joined.ok, joined.message).toBe(true);
+      expect(await readOracle(t), "the join reads exactly as the import's close did").toEqual(afterClose);
+
+      // An OpenAlgo re-pull restating the day (the day aggregate of a lot opened earlier: the
+      // sale alone under the dated name) is asked about, never written.
+      const repull = file([fy({ sellQty: 50, avgSellPrice: 120, sellValue: 6000, sellDate: "2025-09-22" })], "openalgo-api");
+      const pre = importer.previewParsedFile(repull, null, ORACLE_A1, "openalgo-fyers-2025-09-22", opts("openalgo-fyers-2025-09-22"));
+      expect(pre.crossSource?.risky, "the route answers 409 needsForce").toBe(true);
+      return afterClose;
     },
   },
 ];

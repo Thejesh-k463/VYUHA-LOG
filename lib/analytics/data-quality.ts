@@ -1,4 +1,7 @@
 import { DEDUP_ALIAS_PREFIX, STALE_CLOSE_NOTE, lotIdentityHashes } from "@/lib/import/close-open-lots";
+// v4.8.0 X1 (D5): the book is the contract MONTH's, and a lot meets a sale only
+// at a stated pairing level. Pure (classify → constants), client-safe.
+import { contractKeyOf, monthKeyOf, pairLevel } from "@/lib/import/contract-key";
 import { normalizeDate, todayIstIso } from "@/lib/domain/trading-day";
 import { OVERNIGHT_SHORT_NOTE, sideOf, statedSideOf } from "@/lib/domain/side";
 import { etfClass } from "@/lib/engine/etf-class";
@@ -567,7 +570,27 @@ export interface StaleOpenPair {
    * the join is the user's, through the same confirmation as every pair.
    */
   legacyShort: boolean;
+  /**
+   * v4.8.0 X1 (D5, owner ruling S6) — the SALE's own stored name. Since X1 a
+   * book is the contract MONTH's, so a lot and its sale may be named two ways
+   * (`OPT NIFTY 29 Sep 2026 25000 CE` and `NIFTY26SEP25000CE`); the card shows
+   * both, never the lot's alone.
+   */
+  saleTradingsymbol: string;
+  /**
+   * v4.8.0 X1 (D5) — the two names pair at MONTH level only: one states no
+   * expiry day (the exchange's compact monthly / future), the other states it.
+   * Whether they are one contract is not readable from the names, so the join
+   * needs the user's own acknowledgement (`closeStaleLot` refuses it without —
+   * MONTH_ONLY) and is `ambiguous` when the month's book holds more than one
+   * stated expiry day or more than one candidate lot. Never auto-closed.
+   */
+  monthOnly: boolean;
 }
+
+/** v4.8.0 X1 (D5): the sentence a month-level pair is listed with. */
+export const MONTH_ONLY_PAIR_NOTE =
+  "These two names share a contract month, but one of them states no expiry day (the exchange's compact monthly or future name), so the journal cannot tell from the names alone whether they are one contract. Confirm it below only if they are; a weekly expiry against the monthly of the same strike is two contracts, not one.";
 
 /** v4.6.0 W6 (D5): the sentence a pre-4.6 overnight-short pair is listed with. */
 export const LEGACY_SHORT_PAIR_NOTE =
@@ -777,12 +800,17 @@ function staleJoinExempts(c: BookRow, sale: BookRow, side: "long" | "short"): bo
   return !restates;
 }
 
-/** Group rows into books: accountId + broker + tradingsymbol + segment + exchange. */
+/**
+ * Group rows into books: accountId + broker + contract MONTH + segment + exchange.
+ * X1 D5: the name half is `monthKeyOf` (the C6 contract key), so one contract
+ * stored under two names sits in one book; inside it `pairsOfBook` compares a
+ * lot and a sale only where `pairLevel` says they may be one contract.
+ */
 function booksOf(trades: readonly QualityTrade[]): BookRow[][] {
   const books = new Map<string, BookRow[]>();
   for (const t of trades) {
     if (t.accountId == null || !t.broker || !t.tradingsymbol || !t.exchange || t.buyQty == null || t.sellQty == null) continue;
-    const k = `${t.accountId}|${t.broker.trim().toLowerCase()}|${t.tradingsymbol.trim().toUpperCase()}|${t.segment}|${t.exchange}`;
+    const k = `${t.accountId}|${t.broker.trim().toLowerCase()}|${monthKeyOf(t.tradingsymbol)}|${t.segment}|${t.exchange}`;
     const list = books.get(k);
     if (list) list.push(t as BookRow);
     else books.set(k, [t as BookRow]);
@@ -825,32 +853,62 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
     }
     closed.sort(byDateThenId);
 
+    // X1 D5: the distinct expiry DAYS the month's book states, for the month-only
+    // ambiguity test — two stated days mean a weekly sits beside the monthly.
+    const statedDays = new Set<string>();
+    for (const r of rows) {
+      const day = contractKeyOf(r.tradingsymbol)?.day;
+      if (day) statedDays.add(day);
+    }
+
     // P1: FIFO allocation. Each sale, in date order, takes from the oldest lot
     // that still has quantity and is dated on or before it; what is left of
     // the sale carries to the next such lot.
-    const links: { lot: (typeof lots)[number]; sale: (typeof sales)[number]; take: number }[] = [];
+    // X1 D5: a lot is taken only where `pairLevel` says the two names may be one
+    // contract — exact, or month level (said, and asked). A compact weekly
+    // beside a compact monthly, or a sale dated after the dated name's own
+    // expiry, is NOT a candidate and is never listed.
+    const links: { lot: (typeof lots)[number]; sale: (typeof sales)[number]; take: number; monthOnly: boolean; candidates: number }[] = [];
     for (const s of sales) {
       let remaining = s.qty;
+      let candidates = 0;
+      for (const l of lots) {
+        if (l.date > s.date) break; // lots are date-ordered: every later one is later still
+        if (l.row.id === s.row.id) continue;
+        if (pairLevel(l.row.tradingsymbol, s.row.tradingsymbol, s.date) != null) candidates++;
+      }
       for (const l of lots) {
         if (remaining <= 1e-9) break;
-        if (l.date > s.date) break; // lots are date-ordered: every later one is later still
+        if (l.date > s.date) break;
         if (l.left <= 1e-9 || l.row.id === s.row.id) continue;
+        const level = pairLevel(l.row.tradingsymbol, s.row.tradingsymbol, s.date);
+        if (level == null) continue;
         const take = Math.min(remaining, l.left);
         l.left -= take;
         remaining -= take;
-        links.push({ lot: l, sale: s, take });
+        links.push({ lot: l, sale: s, take, monthOnly: level === "month", candidates });
         asSale.add(s.row.id);
         asLot.add(l.row.id);
       }
     }
 
-    for (const { lot, sale: s, take } of links) {
+    for (const { lot, sale: s, take, monthOnly, candidates } of links) {
       // R2F-DQ: only a closed lot that OVERLAPPED this lot — exited on or after
-      // its entry, or with no stated exit — can have taken the sale.
+      // its entry, or with no stated exit — can have taken the sale. X1 D5: and
+      // only one whose name may be the sale's contract.
       const closedLotIds = closed
-        .filter((c) => c.row.id !== s.row.id && c.date <= s.date && (c.exit == null || c.exit >= lot.date) && !staleJoinExempts(c.row, s.row, side))
+        .filter(
+          (c) =>
+            c.row.id !== s.row.id &&
+            c.date <= s.date &&
+            (c.exit == null || c.exit >= lot.date) &&
+            pairLevel(c.row.tradingsymbol, s.row.tradingsymbol) != null &&
+            !staleJoinExempts(c.row, s.row, side),
+        )
         .map((c) => c.row.id);
-      const ambiguous = closedLotIds.length > 0;
+      // X1 D5 (review): a month-only link is ambiguous when the month's book
+      // states more than one expiry day or offers more than one candidate lot.
+      const ambiguous = closedLotIds.length > 0 || (monthOnly && (statedDays.size > 1 || candidates > 1));
       out.push({
         lotId: lot.row.id,
         saleId: s.row.id,
@@ -879,6 +937,8 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
         closedLotIds,
         saleStaged: !!s.row.staged,
         legacyShort: side === "short" && lot.row.acquisition === "unknown",
+        saleTradingsymbol: s.row.tradingsymbol,
+        monthOnly,
       });
     }
   }
@@ -893,7 +953,10 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
  *    did not record (`hasRecordedBasis`, W2-DQ P3).
  *  - A LOT (L) is an open row whose net side is opposite to S, staged or not
  *    (W2-FIXD2); a staged lot is listed with `staged` and never `oneClick`.
- *  - Same book: accountId + broker + tradingsymbol + segment + exchange.
+ *  - Same book: accountId + broker + contract MONTH (`monthKeyOf`) + segment +
+ *    exchange (X1 D5); inside it a lot meets a sale only at `pairLevel` exact
+ *    or month — a month-level link is `monthOnly`, shows both names and needs
+ *    the user's acknowledgement to join.
  *  - S's date (its own, or the IST day it was pulled) is on or after L's
  *    entry date; a lot with no entry date is not evidence of being held.
  *  - Each row takes ONE role. Sales against longs are read first, so a
@@ -964,7 +1027,8 @@ export function staleSaleRows(trades: readonly QualityTrade[]): StaleSaleRow[] {
         if (!r.isOpen || paired.has(r.id) || !saleShaped(r, side) || hasRecordedBasis(r)) continue;
         const when = saleDay(r, side);
         if (!when) continue;
-        const before = closed.filter((c) => c.row.id !== r.id && c.date <= when.date);
+        // X1 D5: a closed lot is evidence only where its name may be this row's contract.
+        const before = closed.filter((c) => c.row.id !== r.id && c.date <= when.date && pairLevel(c.row.tradingsymbol, r.tradingsymbol) != null);
         if (before.length === 0) continue;
         out.push({
           saleId: r.id,
@@ -1042,8 +1106,13 @@ export function staleFillsNote(side: "long" | "short"): string {
  * states which closed position makes the pairing uncertain, and that nothing
  * is joined in one step.
  */
-export function staleAmbiguousNote(p: Pick<StaleOpenPair, "side" | "tradingsymbol" | "closedLotIds">): string {
+export function staleAmbiguousNote(p: Pick<StaleOpenPair, "side" | "tradingsymbol" | "closedLotIds"> & { monthOnly?: boolean; saleTradingsymbol?: string }): string {
   const what = p.side === "long" ? "sale" : "purchase";
+  // X1 D5: a month-level pair ambiguous on the NAMES, not on a closed lot — the
+  // month's book states more than one expiry day, or offers more than one lot.
+  if (p.closedLotIds.length === 0 && p.monthOnly) {
+    return `${p.tradingsymbol} and ${p.saleTradingsymbol ?? "the recorded " + what} share a contract month, but one name states no expiry day and this account holds more than one expiry (or more than one position) of that month, so the journal cannot tell which position the recorded ${what} belongs to. The rows are listed here for review and are not joined in one step.`;
+  }
   const ids = p.closedLotIds.map((id) => `#${id}`).join(", ");
   return `A position in ${p.tradingsymbol} entered on or before this ${what} is already closed (trade ${ids}), so the recorded ${what} may already be counted in that close. The two rows are listed here for review and are not joined in one step.`;
 }

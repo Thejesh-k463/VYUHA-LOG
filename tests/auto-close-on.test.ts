@@ -363,6 +363,8 @@ function counters(over: Partial<ic2.CommitAutoClose>): ic2.CommitAutoClose {
     closedAgainstStoredLot: 0,
     closedAgainstThisFilesLot: 0,
     refusedNoDate: 0,
+    refusedMonthOnly: 0,
+    refusedHeldIdentity: 0,
     ...over,
   };
 }
@@ -439,6 +441,89 @@ describe("(6) /trades derives `closedBy` from the row's OWN words, and the notes
       expect(Object.keys(row), `${sym} must not carry dedup_hash`).not.toContain("dedupHash");
     }
   });
+});
+
+// ===========================================================================
+// (8) v4.8.0 X1 D10 — PREVIEW = COMMIT on a row that SUPERSEDES today's earlier snapshot
+// ===========================================================================
+
+/**
+ * PROBE-2 (X1-REVIEW-2026-10-05.md): the 11:00 sale lands with no lot; the
+ * older buy arrives from a FILE; the 15:00 pull states 150. The preview skipped
+ * the applier on the superseding row (`!snapshot.supersede.has(i)`) while the
+ * commit ran it: 2a (lot 150) consumed the row whole and `continue`d past the
+ * supersede, so the 11:00 row SURVIVED beside the close — 225 sold against the
+ * broker's 150, preview net −64.43 against commit net 2903.39; 2b (lot 75) wrote
+ * the remainder over the 11:00 row without its `closed-by:` / `exec-bill:` thread.
+ * D10 (review: NOT conditional): the commit skips the applier exactly as the
+ * preview does. End state: the sale restated in place, the lot open beside it,
+ * listed in Data Quality.
+ */
+describe("(8) X1 D10 — a superseding row never runs the applier, in the commit as in the preview (PROBE-2a / 2b)", () => {
+  let commit: typeof import("@/lib/import/commit");
+  const A_2A = 76;
+  const A_2B = 77;
+  const DAY2 = "2026-09-15";
+  const PULL = `angelone-api-${DAY2}`;
+  const SYM = "NIFTY2692225000CE";
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const row = (over: Record<string, unknown>) =>
+    ({
+      broker: "angelone", isin: null, buyQty: 0, avgBuyPrice: 0, buyValue: 0, sellQty: 0, avgSellPrice: 0, sellValue: 0,
+      closingPrice: null, grossPnl: 0, unrealisedPnl: 0, buyDate: null, sellDate: null, productHint: null, exchangeHint: "NSE",
+      sourceFile: null, tradingsymbol: SYM, ...over,
+    }) as unknown as import("@/lib/engine/types").NormalizedTrade;
+  const sale = (qty: number) => row({ sellQty: qty, avgSellPrice: 140, sellValue: r2(qty * 140), sellDate: DAY2 });
+  const file = (trades: unknown[], sourceId = "angelone-api") =>
+    ({ sourceId, broker: "angelone", format: "api", trades, warnings: [] }) as unknown as import("@/lib/import/types").ParsedFile;
+  const all = (acc: number) =>
+    t.sqlite.prepare("SELECT id, tradingsymbol, is_open, buy_qty, sell_qty, import_notes FROM trades WHERE account_id = ? ORDER BY id").all(acc) as {
+      id: number; tradingsymbol: string; is_open: number; buy_qty: number; sell_qty: number; import_notes: string | null;
+    }[];
+
+  beforeAll(async () => {
+    commit = await import("@/lib/import/commit");
+    t.db.insert(t.schema.accounts).values([{ id: A_2A, name: "X1 probe-2a" }, { id: A_2B, name: "X1 probe-2b" }]).run();
+  });
+
+  for (const [acc, lotQty, label] of [[A_2A, 150, "2a — a lot of 150: the row is consumed whole on HEAD"], [A_2B, 75, "2b — a lot of 75: a remainder is written over the 11:00 row on HEAD"]] as const) {
+    it(`${label}; now the 11:00 row is restated in place and the lot stays open — preview = commit to the paisa`, () => {
+      selectAccount(acc);
+      const snap = { supersedeSnapshot: { fileName: PULL }, autoClose: true };
+      // 11:00 — the sale, with no lot to close: an opening sell.
+      expect(commit.commitParsedFile(file([sale(75)]), PULL, null, acc, snap).added).toBe(1);
+      const eleven = all(acc)[0]!;
+      // The older buy arrives from a FILE (a sale with an unknown basis is not a lot — it lands open).
+      expect(commit.commitParsedFile(file([row({ buyQty: lotQty, avgBuyPrice: 120, buyValue: r2(lotQty * 120), buyDate: "2026-09-10" })], "angelone-tradebook"), "angelone-tradebook-prev.csv", null, acc, { autoClose: true }).added).toBe(1);
+      expect(all(acc).map((r) => [r.buy_qty, r.sell_qty, r.is_open])).toEqual([[0, 75, 1], [lotQty, 0, 1]]);
+
+      // 15:00 — the same pull states 150.
+      const pre = commit.previewParsedFile(file([sale(150)]), null, acc, PULL, snap);
+      expect(pre.summary.supersededCount).toBe(1);
+      expect(pre.autoClose?.closedWhole, "the preview skips the applier on the superseding row").toBe(0);
+      const res = commit.commitParsedFile(file([sale(150)]), PULL, null, acc, snap);
+      // THE assertion (D10): on HEAD 3502995 the commit's `autoClose.closedWhole`
+      // was 1 and its net 2903.39 (2a) / 1440.39 (2b) against the preview's −64.43.
+      expect(res.autoClose?.closedWhole).toBe(0);
+      expect(res.autoClose).toEqual(pre.autoClose);
+      // NET: no close is realised on either side. The preview's row net is the
+      // restated row's own bill (what the supersede stores on it); the commit's
+      // `netPnl` counts ADDED rows only (R43: a superseded row is neither added
+      // nor skipped), so it is 0 — on HEAD it carried the close's 2903.39 / 1440.39.
+      expect(res.added).toBe(0);
+      expect(r2(res.netPnl)).toBe(0);
+      expect(res.warnings).toContain("1 position updated from today's earlier pull.");
+
+      const after = all(acc);
+      const storedNet = (t.sqlite.prepare("SELECT net_pnl_paise AS p FROM trades WHERE id = ?").get(eleven.id) as { p: number }).p / 100;
+      expect(r2(pre.rows[0]!.netPnl), "the preview's row net is what the supersede stored on the row").toBe(r2(storedNet));
+      expect(storedNet, "a sale alone realises nothing: its net is its own bill").toBeLessThan(0);
+      expect(after.map((r) => [r.id, r.buy_qty, r.sell_qty, r.is_open])).toEqual([[eleven.id, 0, 150, 1], [after[1]!.id, lotQty, 0, 1]]);
+      expect(after.reduce((s, r) => s + r.sell_qty, 0), "the broker sold 150").toBe(150);
+      // 2b's second half: nothing of a close is written over the restated row.
+      expect(after[0]!.import_notes ?? "").not.toMatch(/closed-by:|exec-bill:|exec-origin:/);
+    });
+  }
 });
 
 // ===========================================================================

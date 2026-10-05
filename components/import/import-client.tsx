@@ -57,6 +57,10 @@ export interface CommitAutoClose {
   closedAgainstStoredLot: number;
   closedAgainstThisFilesLot: number;
   refusedNoDate: number;
+  /** v4.8.0 X1 (D3): month-level pairs said, never closed. */
+  refusedMonthOnly: number;
+  /** v4.8.0 X1 (D6b ii): a close whose remainder the journal already holds. */
+  refusedHeldIdentity: number;
 }
 
 /** The toggle's label. One writer — `lib/domain/import-shape.ts` — because the

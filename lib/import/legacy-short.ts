@@ -12,6 +12,19 @@ import { dedupHash, dedupSymbolKey } from "./dedup";
 import { dedupLabelFromNotes } from "./trade-identity";
 import { DEDUP_ALIAS_PREFIX, heldIdentityHashes } from "./close-open-lots";
 import { pairSymbolLegs, type Leg, type PairedPosition } from "./pair-legs";
+// v4.8.0 X1 (D7): the symbol key is read at MONTH level plus the stated day.
+import { monthKeyOf, pairKeyOf, sameContractDayOf } from "./contract-key";
+
+/**
+ * X1 D7 — the month-level form of `dedupSymbolKey`: Paytm's `ISIN:` rule and
+ * the `gtr-name:` label are kept, and the result is passed through `monthKeyOf`
+ * so a pre-4.6 two-row short restated by ANOTHER grammar (a native pull's
+ * compact name against the file's dated one) is still refused. The refusal
+ * stays bounded by leg equality to the paisa plus the date (C6 Q6), and by
+ * `sameContractDayOf` — two stated expiry days are two contracts.
+ */
+const legacySymbolKey = (broker: string, tradingsymbol: string, isin: string | null | undefined, label?: string | null) =>
+  monthKeyOf(dedupSymbolKey(broker, tradingsymbol, isin, label));
 
 // ─── v4.6.0 W6 (contract D5, design review R-6) — the pre-W6 overnight short ──
 //
@@ -71,11 +84,12 @@ const sameLeg = (q1: number, p1: number, v1: number, d1: string | null, q2: numb
 export function legacyShortLegMatch(t: LegacyLegIncoming, stored: readonly LegacyLegRow[]): { saleId: number | null; purchaseId: number | null } {
   const none = { saleId: null, purchaseId: null };
   if (!(t.buyQty > 0 && t.buyQty === t.sellQty) || sideOf(t) !== "short") return none;
-  const key = dedupSymbolKey(t.broker, t.tradingsymbol, t.isin, t.dedupLabel);
+  const key = legacySymbolKey(t.broker, t.tradingsymbol, t.isin, t.dedupLabel);
   let saleId: number | null = null;
   let purchaseId: number | null = null;
   for (const r of stored) {
-    if (r.broker !== t.broker || dedupSymbolKey(r.broker, r.tradingsymbol, r.isin, dedupLabelFromNotes(r.importNotes)) !== key) continue;
+    if (r.broker !== t.broker || legacySymbolKey(r.broker, r.tradingsymbol, r.isin, dedupLabelFromNotes(r.importNotes)) !== key) continue;
+    if (!sameContractDayOf(r.tradingsymbol, t.tradingsymbol)) continue;
     if (saleId == null && r.buyQty === 0 && r.sellQty > 0 && sameLeg(r.sellQty, r.avgSellPrice, r.sellValue, r.sellDate, t.sellQty, t.avgSellPrice, t.sellValue, t.sellDate)) saleId = r.id;
     if (purchaseId == null && r.sellQty === 0 && r.buyQty > 0 && sameLeg(r.buyQty, r.avgBuyPrice, r.buyValue, r.buyDate, t.buyQty, t.avgBuyPrice, t.buyValue, t.buyDate)) purchaseId = r.id;
   }
@@ -203,28 +217,36 @@ export function legacyShortGroupRefusals(
   incoming: readonly LegacyGroupIncoming[],
   stored: readonly LegacyGroupStored[],
 ): LegacyGroupRefusal[] {
-  const keyOf = (broker: string, sym: string, isin: string | null, label: string | null | undefined) =>
-    `${broker}|${dedupSymbolKey(broker, sym, isin, label)}`;
+  // X1 D7: the STORED book is indexed at month level; the incoming file's rows
+  // are grouped by their EXACT key (month + the day the name states), so two
+  // weeklies of one month in one file are two groups, as they always were.
+  const monthKey = (broker: string, sym: string, isin: string | null, label: string | null | undefined) =>
+    `${broker}|${legacySymbolKey(broker, sym, isin, label)}`;
+  const exactKey = (broker: string, sym: string, isin: string | null, label: string | null | undefined) =>
+    `${broker}|${pairKeyOf(dedupSymbolKey(broker, sym, isin, label))}`;
   const groups = new Map<string, number[]>();
   incoming.forEach((t, i) => {
-    const k = keyOf(t.broker, t.tradingsymbol, t.isin, t.dedupLabel);
+    const k = exactKey(t.broker, t.tradingsymbol, t.isin, t.dedupLabel);
     groups.set(k, [...(groups.get(k) ?? []), i]);
   });
   let storedByKey: Map<string, LegacyGroupStored[]> | null = null;
   const out: LegacyGroupRefusal[] = [];
-  for (const [k, idx] of groups) {
+  for (const idx of groups.values()) {
     const rows = idx.map((i) => incoming[i]!);
     if (!rows.some(isOvernightClosedShort)) continue;
     if (!storedByKey) {
       storedByKey = new Map();
       for (const r of stored) {
-        const sk = keyOf(r.broker, r.tradingsymbol, r.isin, dedupLabelFromNotes(r.importNotes));
+        const sk = monthKey(r.broker, r.tradingsymbol, r.isin, dedupLabelFromNotes(r.importNotes));
         storedByKey.set(sk, [...(storedByKey.get(sk) ?? []), r]);
       }
     }
-    const book = storedByKey.get(k) ?? [];
-    if (book.length === 0) continue;
     const first = rows[0]!;
+    // X1 D7: same month key AND the same stated expiry day (or one unstated).
+    const book = (storedByKey.get(monthKey(first.broker, first.tradingsymbol, first.isin, first.dedupLabel)) ?? []).filter((r) =>
+      sameContractDayOf(r.tradingsymbol, first.tradingsymbol),
+    );
+    if (book.length === 0) continue;
     const legs = groupLegs(first.tradingsymbol, rows);
     if (!legs) continue;
     const after = pairSymbolLegs(legs, { shortable: true });

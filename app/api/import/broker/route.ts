@@ -1646,8 +1646,13 @@ export async function POST(req: Request) {
       // it on every pull, so a later pull the same day replaces the earlier
       // snapshot of a changed position instead of adding a second row.
       // v4.7.0 C6: the three native pulls read TODAY's book too (design D2).
+      // v4.8.0 X1 (owner ruling S7, PROBE-5a): OpenAlgo's pull is a DAY AGGREGATE
+      // (lib/import/api/openalgo.ts), so a second pull the same day restates the
+      // first — it joins the snapshot set, and a position an earlier pull's row
+      // already closed against a lot is asked about (409), never added beside it.
       const snapshotPull =
-        broker === "dhan" || broker === "angelone" || broker === "upstox" || broker === "fyers" || broker === "kotakneo" || broker === "nuvama";
+        broker === "dhan" || broker === "angelone" || broker === "upstox" || broker === "fyers" || broker === "kotakneo" || broker === "nuvama" ||
+        isOpenAlgoConnectionId(broker);
       const snapshotOpts = snapshotPull ? { supersedeSnapshot: { fileName } } : {};
       // W2b (owner ruling A1, design review revision 13) — a MANUAL pull shows
       // the same per-import toggle as a file import, default unchecked, so
