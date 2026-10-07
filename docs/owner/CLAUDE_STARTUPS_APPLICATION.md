@@ -5,6 +5,15 @@ Program: https://claude.com/programs/startups · Form: https://platform.claude.c
 Nothing has been submitted. Owner executes the steps; this file is the repo record.
 
 ## Decisions (reversible, recorded so they are not re-asked)
+- **Identity (2026-10-07 evening):** apply ONCE, as one company, platform-first. The form says **Vyuha** because it is the
+  only name with a site + matching email today; the description leads with the all-in-one desk that teaches by explaining
+  the trader's own record, uses Vyuha / MARKET SENTINEL / GAMMA-UNWIND as shipped proof, and lays out Claude now (SENTINEL) /
+  next (Vyuha Intelligence narration adapter, STATE backlog item 4) / then (desk coach + Learn layer, D64/D68/D69/D71, E01-E03).
+  Rejected: Vyuha-only journal pitch (undersells); PLATFORM-only (no name/site/users, weakest under the AUP finance rule and
+  SEBI's 2025 educator guidance); SENTINEL as applicant (no site). Education is worded as explanation of definitions and of
+  the user's own record, never advice. The org is renamed + a domain added when the house brand lands; never a second org.
+- Landing page gets `founder@vyuhatrade.in` in the footer and one "Also from Vyuha" line naming MARKET SENTINEL and
+  GAMMA-UNWIND, observation-only wording, no numbers.
 - Apply NOW as **Vyuha** under a Vyuha domain; do not wait for the house brand (BRAND-NAMING = NO NAME).
   Rejected: wait for brand; apply as MARKET SENTINEL (no public site, one key); apply as PLATFORM (not public).
   Console org is a label — rename when the house brand lands. Credits/Team attach to the org.
@@ -26,11 +35,11 @@ OK; Console account + company email matching the website domain + short descript
 **Company / website:** Vyuha · https://vyuhatrade.in
 
 **What are you building, and how does Claude fit?**
-Vyuha builds software for Indian retail traders that records and explains, and never advises. Three products ship today. Vyuha is a local-first Windows trade journal that imports six brokers' exports, computes exact statutory charges and an ITR pack on the trader's own machine, and has issued paid licences since August 2026. MARKET SENTINEL is a market-intelligence bot that posts results, management guidance, insider and bulk-deal activity and surveillance changes to the buyer's own Telegram, running on their own machine. GAMMA-UNWIND is F&O open-interest automation with a local dashboard, shipping to clients. We are unifying them into one desk for Indian markets with an AI coach.
+Vyuha is building one desk for Indian retail traders that teaches finance by explaining the trader's own record, and never advises. Three products ship today and are being unified into that desk. Vyuha is a local-first Windows trade journal: six brokers' exports in, statutory charges computed to the rupee, an ITR pack, and an Intelligence lens that states plain-language observations about the trader's own journal; paid licences since August 2026. MARKET SENTINEL posts results, management guidance, insider and bulk-deal activity and surveillance changes to the buyer's own Telegram, running on their own machine. GAMMA-UNWIND is F&O open-interest automation with a local dashboard, shipping to clients.
 
-Claude is already in production. MARKET SENTINEL uses Claude Haiku 4.5 to read NSE concall transcripts and filing PDFs and extract management guidance as verbatim quotes; every extracted line must pass a quote-verification gate against the source document before it reaches a user. Next, the unified desk's coach uses Claude for natural-language questions over the trader's own SQLite journal, plain-language explanations of charges and tax, and proposed journal fixes that the user approves before anything changes. AI use is disclosed to users, every output is observation-only, and user data stays on the user's machine or in India.
+Claude is already in production. MARKET SENTINEL uses Claude Haiku 4.5 to read NSE concall transcripts and filing PDFs and extract management guidance as verbatim quotes; every line must pass a quote-verification gate against the source document before a user sees it. Next, Vyuha's Intelligence lens gets a Claude narration adapter over its existing fact contract, so each sentence a trader reads is tied to the fact it came from. Then the unified desk's coach and learn layer: questions over the trader's own data answered with the SQL and rows shown, "explain this number", a glossary and concept cards drafted from exchange and SEBI definitions with citations and reviewed by a human, and practice drills on market data at least three months old. Every AI write is a proposal the user approves, and no prompt or model ships until an evaluation suite passes, including prompts that ask when to buy a stock, which must be refused. AI use is disclosed, every output is an observation with its source shown, and user data stays on the user's machine or in India.
 
-Founded 2026. Bootstrapped, single founder-developer. The credits fund moving guidance extraction to Sonnet for accuracy and building the coach's evaluation harness.
+Founded 2026. Bootstrapped, single founder-developer. The credits move guidance extraction to Sonnet for accuracy and fund the Vyuha adapter and the evaluation suites.
 
 ## Never write
 Win rates / returns / signal accuracy (SEBI posture) · macOS as sold · revenue beyond the licence ledger
