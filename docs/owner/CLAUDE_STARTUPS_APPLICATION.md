@@ -2,7 +2,40 @@
 
 Plan page (decision page, owner steps, spend plan): https://claude.ai/artifact/PFHxf1vCVRgBisqFHPNdFS
 Program: https://claude.com/programs/startups · Form: https://platform.claude.com/offers/startups-application
-Nothing has been submitted. Owner executes the steps; this file is the repo record.
+SUBMITTED 2026-10-08 (see STATUS block). This file is the repo record.
+
+## STATUS 2026-10-08 00:40 IST — SUBMITTED (read this block first; it outranks the rest of the file)
+
+Submitted 2026-10-08 ~00:35 IST from the Console org **VyuhaLens** (owner founder@vyuhalens.com). On-screen:
+"Thanks for submitting! We'll review your application and email you with next steps." Decision mail goes to
+founder@vyuhalens.com (mail.zoho.in; check Spam once). Everything below this block was built and VERIFIED on 2026-10-07/08:
+
+| Item | State | Verified by |
+|---|---|---|
+| Domain `vyuhalens.com` | bought at Cloudflare Registrar, Cloudflare DNS, auto-renew | registrar panel; NS = abdullah/julissa.ns.cloudflare.com |
+| Mailbox `founder@vyuhalens.com` | Zoho Mail Lite, 1 user, INR 826/yr, auto-renews 7 Oct 2027 | MX mx/mx2/mx3.zoho.in, SPF, DKIM zmail._domainkey all resolve |
+| Website | https://vyuhalens.com = GitHub Pages (VYUHA-LOG docs/), HTTPS enforced, www -> root, old github.io -> 301 | curl 200, ssl_verify 0; commit a104373 |
+| Landing page | footer founder@vyuhalens.com, (c) VyuhaLens, "Also from VyuhaLens" line (SENTINEL + GAMMA-UNWIND) | live page grep |
+| Console org | VyuhaLens, Small or medium business, no payment method, no invites, advice-to-consumers = No, under-18 = No | onboarding screens |
+| Form | First/Last Thejeswar Reddy; Founder; India, Kadapa; Financial Services; founded July 2026; Not yet raised; no outside funding; AI spend 81-100%; LinkedIn given; email updates ticked | JS read-back before submit |
+
+**Submitted texts (both fields are capped at 500 chars; the long paste text below was NOT used):**
+
+What are you building on Claude? (490 chars)
+> One desk for Indian retail traders that explains the trader's own record and never advises. Three products ship: Vyuha trade journal (paid since Aug 2026), MARKET SENTINEL intelligence bot, GAMMA-UNWIND F&O OI automation. Claude in production: SENTINEL extracts management guidance from NSE concall and filing PDFs as verbatim quotes, each gated against the source. Next: Claude narration of the Vyuha journal, then the desk's coach: SQL and rows shown, user-approved proposals, eval-gated.
+
+Where do you want support from Anthropic? (471 chars)
+> Applied AI office hours on the quote-verification gate behind MARKET SENTINEL's guidance extraction, and on the evaluation gate the desk's coach must pass before any prompt or model ships (text-to-SQL over the user's own data, user-approved proposals, refusal of advice prompts). API credits to move extraction from Haiku to Sonnet and to build the eval suites. Higher rate limits for the extraction pipeline. Claude Team for Claude Code, which builds all three products.
+
+**Pending, in order (owner unless marked):**
+1. Decision email -> if accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
+2. Console -> Settings -> Members -> invite thejesh463.git@gmail.com as **Developer** (not Admin).
+3. SENTINEL session: owner creates key `sentinel-prod` in the VyuhaLens org -> replace ANTHROPIC_API_KEY in SENTINEL .env -> restart with SENTINEL's own procedure (bot down briefly) -> confirm usage appears in the VyuhaLens org -> revoke the Gmail-org key.
+4. Team seat trial: one week of Claude Code on founder@ Premium seat; read the usage card; only then decide Max.
+5. If rejected: confirm site + email still resolve, resubmit the same texts; no appeal process published.
+6. Separate decisions, NOT part of this record: website redesign (Vyuha session, Opus builder, reference-first per design memory, v4.7/v4.8 features from VYUHA-STATE); support-email migration (RECEIPT_TEMPLATE.md + feedback-form OWNER_EMAIL still say the Gmail); buy `vyuhalens.in` as a redirect; Learn-brief Q1-Q8 (PLATFORM W2-00).
+
+Traps met on the way: Zoho "Forever Free" is NOT offered on the India DC (zoho.in) for new orgs -> Mail Lite; Cloudflare Registrar sells no .in; `gh api -f https_enforced=true` sends a string (422) -> use `-F`; Zoho's domain field shows a static `www.` prefix it strips itself.
 
 ## Decisions (reversible, recorded so they are not re-asked)
 - **Identity (2026-10-07 evening):** apply ONCE, as one company, platform-first. The form says **Vyuha** because it is the
