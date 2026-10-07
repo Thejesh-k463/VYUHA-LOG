@@ -12,21 +12,24 @@ Nothing has been submitted. Owner executes the steps; this file is the repo reco
   Rejected: Vyuha-only journal pitch (undersells); PLATFORM-only (no name/site/users, weakest under the AUP finance rule and
   SEBI's 2025 educator guidance); SENTINEL as applicant (no site). Education is worded as explanation of definitions and of
   the user's own record, never advice. The org is renamed + a domain added when the house brand lands; never a second org.
-- Landing page gets `founder@vyuhalens.in` in the footer and one "Also from VyuhaLens" line naming MARKET SENTINEL and
+- Landing page gets `founder@vyuhalens.com` in the footer and one "Also from VyuhaLens" line naming MARKET SENTINEL and
   GAMMA-UNWIND, observation-only wording, no numbers.
 - Apply NOW as **Vyuha** under a Vyuha domain; do not wait for the house brand (BRAND-NAMING = NO NAME).
   Rejected: wait for brand; apply as MARKET SENTINEL (no public site, one key); apply as PLATFORM (not public).
   Console org is a label — rename when the house brand lands. Credits/Team attach to the org.
-- Domain (OWNER pick 2026-10-07 evening): `vyuhalens.in` + `vyuhalens.com` bought together; org + form name **VyuhaLens**,
+- Domain (OWNER pick 2026-10-07 evening, PRIMARY = .com per owner "will go with Vyuhalens.com"): `vyuhalens.com` is the
+  website + email (`founder@vyuhalens.com`); `vyuhalens.in` bought as a defensive redirect (not needed for the
+  application). The program scores neither TLD; .com clears every later surface (Rainmatter, VCs, KYC). Buy the .com at
+  Cloudflare Registrar (at cost, card; DNS included) or at the Indian UPI registrar. Org + form name **VyuhaLens**,
   product stays Vyuha. `vyuhalens.in` DROPPED: B08 bans "trade-". Rejected: FinanceVyuha (12 letters, breaks B02;
   "Finance" prefix reads as a content channel under SEBI's educator guidance); vyuha.app / vyuhahq.in / vyuhalabs.in /
-  vyuhadesk.in (free, not chosen). Fallback if taken: `vyuhahq.in`.
+  vyuhadesk.in (free, not chosen). Fallback if taken: `vyuhahq.com` + `vyuhahq.in`.
   RDAP + NS 2026-10-07 evening: vyuhalens .in/.com/.app/.co.in free; vyuha .in/.com/.co.in/.co/.io/.dev/.ai/.net registered.
-- Email: `founder@vyuhalens.in` on Zoho Mail Free (send + receive). Cloudflare Email Routing is the fallback.
+- Email: `founder@vyuhalens.com` on Zoho Mail Free (send + receive). Cloudflare Email Routing is the fallback.
 - Cloudflare (checked 2026-10-07, cloudflare.com/tld-policies): Registrar sells .com/.app at cost, NOT .in, cards only.
   Use it for DNS of both domains (free); Email Routing is receive-only so Zoho keeps the mailbox; Pages not needed
   (GitHub Pages already deploys). Proxy OFF on the GitHub records until HTTPS is enforced.
-- Website: GitHub Pages custom domain. Pages serves `docs/` on main → the CNAME file is `docs/CNAME`.
+- Website: GitHub Pages custom domain `vyuhalens.com`. Pages serves `docs/` on main → the CNAME file is `docs/CNAME`.
 - After acceptance: new API key in the Vyuha org → SENTINEL `.env` → restart; revoke the Gmail-org key.
 - Claude Team: claim on the domain-email org (new to Team). Measure one Premium seat for a week before touching Max.
 
@@ -38,7 +41,7 @@ OK; Console account + company email matching the website domain + short descript
 2–3 business days · up to $100K extra only via a partner VC.
 
 ## Paste text
-**Company / website:** VyuhaLens · https://vyuhalens.in
+**Company / website:** VyuhaLens · https://vyuhalens.com
 
 **What are you building, and how does Claude fit?**
 VyuhaLens is building one desk for Indian retail traders that teaches finance by explaining the trader's own record, and never advises. Three products ship today and are being unified into that desk. Vyuha is a local-first Windows trade journal: six brokers' exports in, statutory charges computed to the rupee, an ITR pack, and an Intelligence lens that states plain-language observations about the trader's own journal; paid licences since August 2026. MARKET SENTINEL posts results, management guidance, insider and bulk-deal activity and surveillance changes to the buyer's own Telegram, running on their own machine. GAMMA-UNWIND is F&O open-interest automation with a local dashboard, shipping to clients. MARKET SENTINEL's intelligence already feeds Vyuha's desk, sector mapping and F&O views, and is being folded into Vyuha and the unified desk.
