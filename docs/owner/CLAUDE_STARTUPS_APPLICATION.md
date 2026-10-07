@@ -23,6 +23,9 @@ Nothing has been submitted. Owner executes the steps; this file is the repo reco
   vyuhadesk.in (free, not chosen). Fallback if taken: `vyuhahq.in`.
   RDAP + NS 2026-10-07 evening: vyuhalens .in/.com/.app/.co.in free; vyuha .in/.com/.co.in/.co/.io/.dev/.ai/.net registered.
 - Email: `founder@vyuhalens.in` on Zoho Mail Free (send + receive). Cloudflare Email Routing is the fallback.
+- Cloudflare (checked 2026-10-07, cloudflare.com/tld-policies): Registrar sells .com/.app at cost, NOT .in, cards only.
+  Use it for DNS of both domains (free); Email Routing is receive-only so Zoho keeps the mailbox; Pages not needed
+  (GitHub Pages already deploys). Proxy OFF on the GitHub records until HTTPS is enforced.
 - Website: GitHub Pages custom domain. Pages serves `docs/` on main → the CNAME file is `docs/CNAME`.
 - After acceptance: new API key in the Vyuha org → SENTINEL `.env` → restart; revoke the Gmail-org key.
 - Claude Team: claim on the domain-email org (new to Team). Measure one Premium seat for a week before touching Max.
