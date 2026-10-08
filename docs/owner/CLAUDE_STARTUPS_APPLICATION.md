@@ -4,11 +4,13 @@ Plan page (decision page, owner steps, spend plan): https://claude.ai/artifact/P
 Program: https://claude.com/programs/startups · Form: https://platform.claude.com/offers/startups-application
 SUBMITTED 2026-10-08 (see STATUS block). This file is the repo record.
 
-## STATUS 2026-10-08 14:10 IST — SUBMITTED, awaiting decision; SENTINEL already on the VyuhaLens org (read this block first)
+## STATUS 2026-10-08 14:15 IST — SUBMITTED, awaiting decision; SENTINEL already on the VyuhaLens org (read this block first)
 
 Submitted 2026-10-08 ~00:35 IST from the Console org **VyuhaLens** (owner founder@vyuhalens.com). On-screen:
 "Thanks for submitting! We'll review your application and email you with next steps." Decision mail goes to
-founder@vyuhalens.com (mail.zoho.in; check Spam once). Everything below this block was built and VERIFIED on 2026-10-07/08:
+founder@vyuhalens.com (mail.zoho.in). **Check Spam every time:** the Anthropic receipt (invoice+statements@mail.anthropic.com,
+#2077-5605-2979, 08 Oct 10:08) was filed in Zoho Spam. Inbox + Spam read 08 Oct 14:15 IST: no decision mail yet (expected).
+Everything below this block was built and VERIFIED on 2026-10-07/08:
 
 | Item | State | Verified by |
 |---|---|---|
@@ -30,6 +32,7 @@ Where do you want support from Anthropic? (471 chars)
 > Applied AI office hours on the quote-verification gate behind MARKET SENTINEL's guidance extraction, and on the evaluation gate the desk's coach must pass before any prompt or model ships (text-to-SQL over the user's own data, user-approved proposals, refusal of advice prompts). API credits to move extraction from Haiku to Sonnet and to build the eval suites. Higher rate limits for the extraction pipeline. Claude Team for Claude Code, which builds all three products.
 
 **Pending, in order (owner unless marked):**
+0. Zoho -> Spam -> open the Anthropic receipt -> **Not Spam** (and allowlist `mail.anthropic.com` under Settings -> Anti-spam -> Allowed list), so the decision mail lands in Inbox.
 1. Decision email (submitted 00:35 IST 08 Oct, manual-review window = 2-3 business days -> by Tue 13 Oct; if nothing by Wed 14 Oct, support.claude.com ticket first, public post only after that) -> if accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
 2. Console -> Settings -> Members -> invite thejesh463.git@gmail.com as **Developer** (not Admin).
 3. DONE 08 Oct 12:15 (key swap + restart, usage confirmed). STILL OPEN: owner revokes the old key in the Gmail-org Console. SENTINEL session: ship the uncommitted config.yaml change via ship.py; remove the temperature=0 pins in verdict/llm.py so `llm.model` can follow to Haiku 5.5; watch quote-gate rejections / truncated JSON on guidance (Haiku 5.5 thinks by default; raise guidance.max_tokens or set effort low if seen).
