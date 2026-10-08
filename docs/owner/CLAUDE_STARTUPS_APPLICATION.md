@@ -4,7 +4,7 @@ Plan page (decision page, owner steps, spend plan): https://claude.ai/artifact/P
 Program: https://claude.com/programs/startups · Form: https://platform.claude.com/offers/startups-application
 SUBMITTED 2026-10-08 (see STATUS block). This file is the repo record.
 
-## STATUS 2026-10-08 00:40 IST — SUBMITTED (read this block first; it outranks the rest of the file)
+## STATUS 2026-10-08 14:10 IST — SUBMITTED, awaiting decision; SENTINEL already on the VyuhaLens org (read this block first)
 
 Submitted 2026-10-08 ~00:35 IST from the Console org **VyuhaLens** (owner founder@vyuhalens.com). On-screen:
 "Thanks for submitting! We'll review your application and email you with next steps." Decision mail goes to
@@ -16,7 +16,9 @@ founder@vyuhalens.com (mail.zoho.in; check Spam once). Everything below this blo
 | Mailbox `founder@vyuhalens.com` | Zoho Mail Lite, 1 user, INR 826/yr, auto-renews 7 Oct 2027 | MX mx/mx2/mx3.zoho.in, SPF, DKIM zmail._domainkey all resolve |
 | Website | https://vyuhalens.com = GitHub Pages (VYUHA-LOG docs/), HTTPS enforced, www -> root, old github.io -> 301 | curl 200, ssl_verify 0; commit a104373 |
 | Landing page | footer founder@vyuhalens.com, (c) VyuhaLens, "Also from VyuhaLens" line (SENTINEL + GAMMA-UNWIND) | live page grep |
-| Console org | VyuhaLens, Small or medium business, no payment method, no invites, advice-to-consumers = No, under-18 = No | onboarding screens |
+| Console org | VyuhaLens, Small or medium business, advice-to-consumers = No, under-18 = No; $5 credits bought 08 Oct (invoice SVDZ4DCF-0001, expire 9 Oct 2027), Visa on file, $500/mo limit; no invites yet | billing page |
+| SENTINEL on the new org | workspace `Sentinel`, key `sentinel-prod`; LLM_API_KEY swapped in SENTINEL/bot/sentinel/.env; `/restart` 12:15 IST 08 Oct; bot online as @Tradesentina_bot; org spend $0.02 by 14:00 | Telegram online card; Console billing $4.99 |
+| Haiku 5.5 | SENTINEL `guidance.model` -> `claude-haiku-5-5` + price row, UNCOMMITTED in SENTINEL/bot working tree (config.yaml); `llm.model` stays Haiku 4.5 because verdict/llm.py pins temperature=0 at 4 call sites (Haiku 5.5 400s on it) | git diff in SENTINEL/bot; no API 4xx in logs/sentinel.log since restart |
 | Form | First/Last Thejeswar Reddy; Founder; India, Kadapa; Financial Services; founded July 2026; Not yet raised; no outside funding; AI spend 81-100%; LinkedIn given; email updates ticked | JS read-back before submit |
 
 **Submitted texts (both fields are capped at 500 chars; the long paste text below was NOT used):**
@@ -28,9 +30,9 @@ Where do you want support from Anthropic? (471 chars)
 > Applied AI office hours on the quote-verification gate behind MARKET SENTINEL's guidance extraction, and on the evaluation gate the desk's coach must pass before any prompt or model ships (text-to-SQL over the user's own data, user-approved proposals, refusal of advice prompts). API credits to move extraction from Haiku to Sonnet and to build the eval suites. Higher rate limits for the extraction pipeline. Claude Team for Claude Code, which builds all three products.
 
 **Pending, in order (owner unless marked):**
-1. Decision email -> if accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
+1. Decision email (submitted 00:35 IST 08 Oct, manual-review window = 2-3 business days -> by Tue 13 Oct; if nothing by Wed 14 Oct, support.claude.com ticket first, public post only after that) -> if accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
 2. Console -> Settings -> Members -> invite thejesh463.git@gmail.com as **Developer** (not Admin).
-3. SENTINEL session: owner creates key `sentinel-prod` in the VyuhaLens org -> replace ANTHROPIC_API_KEY in SENTINEL .env -> restart with SENTINEL's own procedure (bot down briefly) -> confirm usage appears in the VyuhaLens org -> revoke the Gmail-org key.
+3. DONE 08 Oct 12:15 (key swap + restart, usage confirmed). STILL OPEN: owner revokes the old key in the Gmail-org Console. SENTINEL session: ship the uncommitted config.yaml change via ship.py; remove the temperature=0 pins in verdict/llm.py so `llm.model` can follow to Haiku 5.5; watch quote-gate rejections / truncated JSON on guidance (Haiku 5.5 thinks by default; raise guidance.max_tokens or set effort low if seen).
 4. Team seat trial: one week of Claude Code on founder@ Premium seat; read the usage card; only then decide Max.
 5. If rejected: confirm site + email still resolve, resubmit the same texts; no appeal process published.
 6. Separate decisions, NOT part of this record: website redesign (Vyuha session, Opus builder, reference-first per design memory, v4.7/v4.8 features from VYUHA-STATE); support-email migration (RECEIPT_TEMPLATE.md + feedback-form OWNER_EMAIL still say the Gmail); buy `vyuhalens.in` as a redirect; Learn-brief Q1-Q8 (PLATFORM W2-00).
