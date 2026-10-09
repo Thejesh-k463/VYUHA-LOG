@@ -1,0 +1,56 @@
+# Publishes vyuhalens.com from an ALLOWLIST of public files in docs/.
+# Before 2026-10-09 GitHub Pages served the whole docs/ folder, so internal notes
+# (docs/owner/, DECISIONS.md, LEDGER.md, build plans) were reachable on the company
+# domain. Add a file here only if it is meant for the public.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/index.html"
+      - "docs/about.html"
+      - "docs/contact.html"
+      - "docs/privacy.html"
+      - "docs/terms.html"
+      - "docs/site.css"
+      - "docs/CNAME"
+      - "docs/brand/**"
+      - "docs/sales/landing-page.html"
+      - "docs/sales/brochure.html"
+      - "docs/screenshots/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the public site
+        run: |
+          set -euo pipefail
+          mkdir -p _site/sales _site/brand _site/screenshots
+          cp docs/index.html docs/about.html docs/contact.html docs/privacy.html docs/terms.html docs/site.css docs/CNAME _site/
+          cp docs/brand/* _site/brand/
+          cp docs/sales/landing-page.html docs/sales/brochure.html _site/sales/
+          find docs/screenshots -maxdepth 1 -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.gif' \) -exec cp {} _site/screenshots/ \;
+          touch _site/.nojekyll
+          find _site -type f | sort
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
