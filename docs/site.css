@@ -1,0 +1,66 @@
+/* VyuhaLens company pages (index, about, contact, privacy, terms).
+   Same tokens as docs/sales/landing-page.html so the company site and the Vyuha page read as one. */
+:root{
+  --bg:#05080f; --panel:#0d1320; --line:#1c2836;
+  --ember:#fb923c; --ember-dim:#f97316; --ember-ink:#2a1203;
+  --text:#eaf2fb; --muted:#94a7bd; --dim:#65788e;
+  --teal:#2dd4bf; --violet:#a78bfa; --amber:#fbbf24;
+  --r:18px; --maxw:1040px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{color:var(--text);background:var(--bg);
+  font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--teal);text-decoration:none}
+a:hover{text-decoration:underline}
+.mesh{position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(700px 420px at 12% -5%, #fb923c22, transparent 70%),
+    radial-gradient(760px 460px at 88% 8%, #a78bfa1c, transparent 70%)}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 16px}
+
+nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:#05080fcc;border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:22px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:19px;letter-spacing:-.02em;color:var(--text)}
+.brand:hover{text-decoration:none}
+.brand span{color:var(--ember)}
+.nav-links{display:flex;gap:18px;margin-left:auto;flex-wrap:wrap}
+.nav-links a{color:var(--muted);font-size:14.5px;font-weight:500}
+.nav-links a:hover,.nav-links a[aria-current]{color:var(--text);text-decoration:none}
+
+main{padding:56px 0 72px}
+h1{font-size:clamp(32px,5.4vw,56px);line-height:1.08;letter-spacing:-.03em;font-weight:820}
+h2{font-size:clamp(22px,3vw,30px);letter-spacing:-.02em;margin:52px 0 14px}
+h3{font-size:18px;margin-bottom:6px}
+p{margin:12px 0;color:var(--muted)}
+p strong,li strong{color:var(--text)}
+ul{margin:12px 0 12px 22px;color:var(--muted)}
+li{margin:6px 0}
+.lede{font-size:clamp(17px,2vw,20px);max-width:720px}
+.grad{background:linear-gradient(115deg,var(--ember) 8%,var(--amber) 48%,var(--teal) 92%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:22px}
+.card p{font-size:15px}
+.tag{display:inline-block;font-size:12px;font-weight:650;color:var(--ember);
+  border:1px solid #fb923c44;background:#fb923c14;border-radius:999px;padding:3px 10px;margin-bottom:10px}
+
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:18px}
+.fact{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#ffffff05}
+.fact b{display:block;font-size:12px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.fact span{color:var(--text);font-weight:600}
+
+.btn{display:inline-block;border-radius:12px;padding:12px 20px;font-weight:650;font-size:15px;margin:8px 10px 0 0}
+.btn-primary{background:linear-gradient(135deg,var(--ember),var(--ember-dim));color:var(--ember-ink)}
+.btn-ghost{background:#ffffff08;color:var(--text);border:1px solid var(--line)}
+.btn:hover{text-decoration:none;filter:brightness(1.08)}
+
+.note{border-left:3px solid var(--ember);padding:10px 16px;background:#fb923c0d;border-radius:0 12px 12px 0;margin:20px 0}
+.updated{font-size:13.5px;color:var(--dim)}
+
+footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--dim);font-size:14px}
+footer .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+footer .links{display:flex;gap:16px;flex-wrap:wrap;margin-left:auto}
+footer a{color:var(--muted)}

@@ -2,9 +2,34 @@
 
 Plan page (decision page, owner steps, spend plan): https://claude.ai/artifact/PFHxf1vCVRgBisqFHPNdFS
 Program: https://claude.com/programs/startups · Form: https://platform.claude.com/offers/startups-application
-SUBMITTED 2026-10-08 (see STATUS block). This file is the repo record.
+DECLINED 2026-10-09; REAPPLY in progress (see STATUS block). This file is the repo record.
 
-## STATUS 2026-10-08 14:15 IST — SUBMITTED, awaiting decision; SENTINEL already on the VyuhaLens org (read this block first)
+## STATUS 2026-10-09 — DECLINED (verification); fixing evidence, then REAPPLY (read this block first)
+
+**Decline:** claudestartups@mail.anthropic.com, 09 Oct 00:52 IST, "Your application was not approved". Usual causes per the
+mail: outside the founded-5y / funded-2y window, or "we couldn't verify it from the details in the application". Tips: work
+email matching the domain, add the company website. July 2026 is inside the window, so the cause is VERIFICATION.
+Evidence found 09 Oct (curl + RDAP + Fable research agent): (1) vyuhalens.com root was a 726-byte meta-refresh stub titled
+"Vyuha — Trade Journal" with no company, founder or location; (2) domain registered 2026-10-07T16:53Z, ~8 h before applying;
+(3) no third-party footprint (web search for VyuhaLens = nothing, no LinkedIn company page, no registry record); (4) the
+website field may have been left empty (owner does not remember). No appeal process and no program mailbox are published;
+replies to mail.anthropic.com reach no one. Support route if declined twice: Console -> initials -> Get help -> escalate.
+
+**Fix (owner ruling 09 Oct: fix evidence, reapply as soon as it is ready, no fixed date):**
+- Company site: `docs/index.html` (real VyuhaLens homepage + Organization JSON-LD), `docs/about.html`, `docs/contact.html`,
+  `docs/privacy.html`, `docs/terms.html`, shared `docs/site.css`; landing-page footer links back. Public details approved by
+  the owner: K. Thejeswar Reddy, Kadapa AP, +91 70131 61450, LinkedIn /in/k-thejeswar-reddy-81aa12116.
+- Owner: LinkedIn company page "VyuhaLens" (website = vyuhalens.com) + Founder role on the personal profile; then the
+  company-page URL goes into the site footer and JSON-LD.
+- Owner, optional: Udyam registration (free; Proprietary; NIC 62011) -> number in the site footer.
+- Reapply from the SAME Console org with founder@vyuhalens.com, website https://vyuhalens.com, LinkedIn = company page.
+
+**Reapply text — What are you building on Claude? (485 chars):**
+> VyuhaLens (vyuhalens.com; founded July 2026, Kadapa, India) builds one desk for Indian retail traders that explains the trader's own record and never advises. Shipping: Vyuha trade journal (paid since Aug 2026), MARKET SENTINEL market-intelligence bot, GAMMA-UNWIND F&O automation. Claude in production: SENTINEL extracts management guidance from NSE filings as verbatim quotes, each gated against the source. Next: Claude narration of the Vyuha journal, then an eval-gated desk coach.
+
+Support field: reuse the 471-char text below unchanged.
+
+### First submission (2026-10-08) — history
 
 Submitted 2026-10-08 ~00:35 IST from the Console org **VyuhaLens** (owner founder@vyuhalens.com). On-screen:
 "Thanks for submitting! We'll review your application and email you with next steps." Decision mail goes to
@@ -33,11 +58,11 @@ Where do you want support from Anthropic? (471 chars)
 
 **Pending, in order (owner unless marked):**
 0. Zoho -> Spam -> open the Anthropic receipt -> **Not Spam** (and allowlist `mail.anthropic.com` under Settings -> Anti-spam -> Allowed list), so the decision mail lands in Inbox.
-1. Decision email (submitted 00:35 IST 08 Oct, manual-review window = 2-3 business days -> by Tue 13 Oct; if nothing by Wed 14 Oct, support.claude.com ticket first, public post only after that) -> if accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
+1. REAPPLY (see the STATUS block): site live -> LinkedIn company page -> (optional) Udyam -> resubmit. Decision mail again to founder@ (check Spam). If accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
 2. Console -> Settings -> Members -> invite thejesh463.git@gmail.com as **Developer** (not Admin).
 3. DONE 08 Oct 12:15 (key swap + restart, usage confirmed). STILL OPEN: owner revokes the old key in the Gmail-org Console. SENTINEL session: ship the uncommitted config.yaml change via ship.py; remove the temperature=0 pins in verdict/llm.py so `llm.model` can follow to Haiku 5.5; watch quote-gate rejections / truncated JSON on guidance (Haiku 5.5 thinks by default; raise guidance.max_tokens or set effort low if seen).
 4. Team seat trial: one week of Claude Code on founder@ Premium seat; read the usage card; only then decide Max.
-5. If rejected: confirm site + email still resolve, resubmit the same texts; no appeal process published.
+5. Declined once (09 Oct) for verification — resubmitting the same texts unchanged is NOT the fix; see the STATUS block. If declined a second time: Console -> Get help -> escalate, citing the evidence URLs.
 6. Separate decisions, NOT part of this record: website redesign (Vyuha session, Opus builder, reference-first per design memory, v4.7/v4.8 features from VYUHA-STATE); support-email migration (RECEIPT_TEMPLATE.md + feedback-form OWNER_EMAIL still say the Gmail); buy `vyuhalens.in` as a redirect; Learn-brief Q1-Q8 (PLATFORM W2-00).
 
 Traps met on the way: Zoho "Forever Free" is NOT offered on the India DC (zoho.in) for new orgs -> Mail Lite; Cloudflare Registrar sells no .in; `gh api -f https_enforced=true` sends a string (422) -> use `-F`; Zoho's domain field shows a static `www.` prefix it strips itself.

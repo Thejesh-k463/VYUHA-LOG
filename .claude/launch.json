@@ -50,6 +50,13 @@
       ],
       "port": 3007,
       "autoPort": true
+    },
+    {
+      "name": "site-docs",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "3011", "--directory", "docs"],
+      "port": 3011,
+      "autoPort": false
     }
   ]
 }
