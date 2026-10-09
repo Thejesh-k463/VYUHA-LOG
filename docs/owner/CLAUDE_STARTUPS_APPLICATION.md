@@ -19,9 +19,18 @@ replies to mail.anthropic.com reach no one. Support route if declined twice: Con
 - Company site: `docs/index.html` (real VyuhaLens homepage + Organization JSON-LD), `docs/about.html`, `docs/contact.html`,
   `docs/privacy.html`, `docs/terms.html`, shared `docs/site.css`; landing-page footer links back. Public details approved by
   the owner: K. Thejeswar Reddy, Kadapa AP, +91 70131 61450, LinkedIn /in/k-thejeswar-reddy-81aa12116.
-- Owner: LinkedIn company page "VyuhaLens" (website = vyuhalens.com) + Founder role on the personal profile; then the
-  company-page URL goes into the site footer and JSON-LD.
-- Owner, optional: Udyam registration (free; Proprietary; NIC 62011) -> number in the site footer.
+- Logo (owner pick "D — family", 09 Oct): `docs/brand/vyuhalens-logo.svg` + 600/300/180/32 PNG; the Vyuha ring closed
+  with an ember arc, the व outline from `public/brand/vyuha-mark.svg` (never a text node). Favicon, og:image, nav, JSON-LD logo.
+- Site publishing (owner ruling 09 Oct): Pages build_type = workflow; `.github/workflows/pages.yml` deploys an ALLOWLIST
+  (company pages, brand/, sales/landing-page + brochure, screenshots/, CNAME). `docs/owner/`, DECISIONS, LEDGER etc. are no
+  longer served on the domain; they stay on github.com because the repo stays public (the updater reads its Releases).
+  A new public page must be added to the workflow's copy list AND its `paths:` filter.
+- Owner: LinkedIn company page "VyuhaLens" (website = vyuhalens.com; 0-1 employees; Sole proprietorship; logo = the 300 PNG)
+  + Founder role on the personal profile; then the company-page URL goes into the site footer and JSON-LD.
+- Owner, optional: Udyam registration (free; Proprietary; NIC 62011) -> number in the site footer. Facts read 09 Oct from
+  S.O. 2119(E) and the portal: one registration per enterprise (all of one PAN = one enterprise; more activities are ADDED,
+  a future company/LLP files its own); no GST needed below the s.22 threshold; no fee, no renewal; keep ITR/GST details
+  updated (para 8, else suspension); false declaration = MSMED s.27 penalty; cancel via "Update/Cancel Udyam Registration".
 - Reapply from the SAME Console org with founder@vyuhalens.com, website https://vyuhalens.com, LinkedIn = company page.
 
 **Reapply text — What are you building on Claude? (485 chars):**
