@@ -10,7 +10,7 @@ DECLINED 2026-10-09; REAPPLY in progress (see STATUS block). This file is the re
 mail: outside the founded-5y / funded-2y window, or "we couldn't verify it from the details in the application". Tips: work
 email matching the domain, add the company website. July 2026 is inside the window, so the cause is VERIFICATION.
 Evidence found 09 Oct (curl + RDAP + Fable research agent): (1) vyuhalens.com root was a 726-byte meta-refresh stub titled
-"Vyuha — Trade Journal" with no company, founder or location; (2) domain registered 2026-10-07T16:53Z, ~8 h before applying;
+"Vyuha — Trade Journal" with no company, founder or location; (2) domain registered 2026-10-07T16:53Z, ~2 h before applying (19:05Z);
 (3) no third-party footprint (web search for VyuhaLens = nothing, no LinkedIn company page, no registry record); (4) the
 website field may have been left empty (owner does not remember). No appeal process and no program mailbox are published;
 replies to mail.anthropic.com reach no one. Support route if declined twice: Console -> initials -> Get help -> escalate.
@@ -57,8 +57,8 @@ Where do you want support from Anthropic? (471 chars)
 > Applied AI office hours on the quote-verification gate behind MARKET SENTINEL's guidance extraction, and on the evaluation gate the desk's coach must pass before any prompt or model ships (text-to-SQL over the user's own data, user-approved proposals, refusal of advice prompts). API credits to move extraction from Haiku to Sonnet and to build the eval suites. Higher rate limits for the extraction pipeline. Claude Team for Claude Code, which builds all three products.
 
 **Pending, in order (owner unless marked):**
-0. Zoho -> Spam -> open the Anthropic receipt -> **Not Spam** (and allowlist `mail.anthropic.com` under Settings -> Anti-spam -> Allowed list), so the decision mail lands in Inbox.
-1. REAPPLY (see the STATUS block): site live -> LinkedIn company page -> (optional) Udyam -> resubmit. Decision mail again to founder@ (check Spam). If accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
+0. Zoho -> Spam -> open the Anthropic receipt -> **Not Spam** (and allowlist `mail.anthropic.com` under Settings -> Anti-spam -> Allowed list), so the next decision mail (the reapply) lands in Inbox.
+1. REAPPLY (see the STATUS block): site live (DONE 09 Oct, 82c4325) -> LinkedIn company page -> (optional) Udyam -> resubmit. Decision mail again to founder@ (check Spam). If accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
 2. Console -> Settings -> Members -> invite thejesh463.git@gmail.com as **Developer** (not Admin).
 3. DONE 08 Oct 12:15 (key swap + restart, usage confirmed). STILL OPEN: owner revokes the old key in the Gmail-org Console. SENTINEL session: ship the uncommitted config.yaml change via ship.py; remove the temperature=0 pins in verdict/llm.py so `llm.model` can follow to Haiku 5.5; watch quote-gate rejections / truncated JSON on guidance (Haiku 5.5 thinks by default; raise guidance.max_tokens or set effort low if seen).
 4. Team seat trial: one week of Claude Code on founder@ Premium seat; read the usage card; only then decide Max.
@@ -68,6 +68,7 @@ Where do you want support from Anthropic? (471 chars)
 Traps met on the way: Zoho "Forever Free" is NOT offered on the India DC (zoho.in) for new orgs -> Mail Lite; Cloudflare Registrar sells no .in; `gh api -f https_enforced=true` sends a string (422) -> use `-F`; Zoho's domain field shows a static `www.` prefix it strips itself.
 
 ## Decisions (reversible, recorded so they are not re-asked)
+- (Superseded in naming: the org and form became **VyuhaLens** — see the Domain bullet; "Vyuha" below is the pre-domain wording.)
 - **Identity (2026-10-07 evening):** apply ONCE, as one company, platform-first. The form says **Vyuha** because it is the
   only name with a site + matching email today; the description leads with the all-in-one desk that teaches by explaining
   the trader's own record, uses Vyuha / MARKET SENTINEL / GAMMA-UNWIND as shipped proof, and lays out Claude now (SENTINEL) /
@@ -81,19 +82,19 @@ Traps met on the way: Zoho "Forever Free" is NOT offered on the India DC (zoho.i
   Rejected: wait for brand; apply as MARKET SENTINEL (no public site, one key); apply as PLATFORM (not public).
   Console org is a label — rename when the house brand lands. Credits/Team attach to the org.
 - Domain (OWNER pick 2026-10-07 evening, PRIMARY = .com per owner "will go with Vyuhalens.com"): `vyuhalens.com` is the
-  website + email (`founder@vyuhalens.com`); `vyuhalens.in` bought as a defensive redirect (not needed for the
+  website + email (`founder@vyuhalens.com`); `vyuhalens.in` NOT bought (open decision, Pending 6; not needed for the
   application). The program scores neither TLD; .com clears every later surface (Rainmatter, VCs, KYC). Buy the .com at
   Cloudflare Registrar (at cost, card; DNS included) or at the Indian UPI registrar. Org + form name **VyuhaLens**,
   product stays Vyuha. `vyuhalens.in` DROPPED: B08 bans "trade-". Rejected: FinanceVyuha (12 letters, breaks B02;
   "Finance" prefix reads as a content channel under SEBI's educator guidance); vyuha.app / vyuhahq.in / vyuhalabs.in /
   vyuhadesk.in (free, not chosen). Fallback if taken: `vyuhahq.com` + `vyuhahq.in`.
   RDAP + NS 2026-10-07 evening: vyuhalens .in/.com/.app/.co.in free; vyuha .in/.com/.co.in/.co/.io/.dev/.ai/.net registered.
-- Email: `founder@vyuhalens.com` on Zoho Mail Free (send + receive). Cloudflare Email Routing is the fallback.
+- Email: `founder@vyuhalens.com` on Zoho Mail Lite (send + receive; Free is not offered on the India DC). Cloudflare Email Routing is the fallback.
 - Cloudflare (checked 2026-10-07, cloudflare.com/tld-policies): Registrar sells .com/.app at cost, NOT .in, cards only.
   Use it for DNS of both domains (free); Email Routing is receive-only so Zoho keeps the mailbox; Pages not needed
   (GitHub Pages already deploys). Proxy OFF on the GitHub records until HTTPS is enforced.
 - Website: GitHub Pages custom domain `vyuhalens.com`. Pages serves `docs/` on main → the CNAME file is `docs/CNAME`.
-- After acceptance: new API key in the Vyuha org → SENTINEL `.env` → restart; revoke the Gmail-org key.
+- DONE 08 Oct 12:15, before any decision: new API key in the VyuhaLens org → SENTINEL `.env` → restart. Still open: revoke the Gmail-org key.
 - Claude Team: claim on the domain-email org (new to Team). Measure one Premium seat for a week before touching Max.
 
 ## Program facts (official FAQ, read 2026-10-07)
@@ -103,7 +104,7 @@ seats, orgs new to Team only · higher rate limits · Startup Stack offers (Gamm
 OK; Console account + company email matching the website domain + short description · decision in minutes or
 2–3 business days · up to $100K extra only via a partner VC.
 
-## Paste text
+## Paste text — SUPERSEDED (never submitted; carries the retired "local-first" slogan and a stale model name). Use the STATUS block's reapply text.
 **Company / website:** VyuhaLens · https://vyuhalens.com
 
 **What are you building, and how does Claude fit?**

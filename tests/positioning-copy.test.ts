@@ -53,6 +53,11 @@ const STRUCK = [
 const SURFACES = [
   "README.md",
   "docs/index.html",
+  // The VyuhaLens company pages (2026-10-09) are served on vyuhalens.com beside the landing page.
+  "docs/about.html",
+  "docs/contact.html",
+  "docs/privacy.html",
+  "docs/terms.html",
   "docs/sales/landing-page.html",
   "docs/sales/brochure.html",
   "docs/client/README.md",
