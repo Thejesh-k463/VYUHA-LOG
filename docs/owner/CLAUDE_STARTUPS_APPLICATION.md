@@ -4,7 +4,7 @@ Plan page (decision page, owner steps, spend plan): https://claude.ai/artifact/P
 Program: https://claude.com/programs/startups · Form: https://platform.claude.com/offers/startups-application
 DECLINED 2026-10-09; REAPPLY in progress (see STATUS block). This file is the repo record.
 
-## STATUS 2026-10-09 — DECLINED (verification); fixing evidence, then REAPPLY (read this block first)
+## STATUS 2026-10-09 — DECLINED (verification); evidence FIXED (site + LinkedIn company page), owner REAPPLIES next (read this block first)
 
 **Decline:** claudestartups@mail.anthropic.com, 09 Oct 00:52 IST, "Your application was not approved". Usual causes per the
 mail: outside the founded-5y / funded-2y window, or "we couldn't verify it from the details in the application". Tips: work
@@ -18,20 +18,23 @@ replies to mail.anthropic.com reach no one. Support route if declined twice: Con
 **Fix (owner ruling 09 Oct: fix evidence, reapply as soon as it is ready, no fixed date):**
 - Company site: `docs/index.html` (real VyuhaLens homepage + Organization JSON-LD), `docs/about.html`, `docs/contact.html`,
   `docs/privacy.html`, `docs/terms.html`, shared `docs/site.css`; landing-page footer links back. Public details approved by
-  the owner: K. Thejeswar Reddy, Kadapa AP, +91 70131 61450, LinkedIn /in/k-thejeswar-reddy-81aa12116.
+  the owner: K. Thejeswar Reddy, Kadapa AP, +91 70131 61450, LinkedIn (founder) /in/k-thejeswar-reddy-81aa12116; company page below.
 - Logo (owner pick "D — family", 09 Oct): `docs/brand/vyuhalens-logo.svg` + 600/300/180/32 PNG; the Vyuha ring closed
   with an ember arc, the व outline from `public/brand/vyuha-mark.svg` (never a text node). Favicon, og:image, nav, JSON-LD logo.
 - Site publishing (owner ruling 09 Oct): Pages build_type = workflow; `.github/workflows/pages.yml` deploys an ALLOWLIST
   (company pages, brand/, sales/landing-page + brochure, screenshots/, CNAME). `docs/owner/`, DECISIONS, LEDGER etc. are no
   longer served on the domain; they stay on github.com because the repo stays public (the updater reads its Releases).
   A new public page must be added to the workflow's copy list AND its `paths:` filter.
-- Owner: LinkedIn company page "VyuhaLens" (website = vyuhalens.com; 0-1 employees; Sole proprietorship; logo = the 300 PNG)
-  + Founder role on the personal profile; then the company-page URL goes into the site footer and JSON-LD.
+- DONE 09 Oct: LinkedIn company page "VyuhaLens" = https://www.linkedin.com/company/vyuhalens/ (company id 143967797;
+  public, 200 logged-out, title "VyuhaLens | LinkedIn"). The admin/premium URLs need login and are never published. It is
+  the footer "LinkedIn" link on all five company pages + the landing page, the Organization JSON-LD `sameAs` (founder keeps
+  the personal profile), and a "LinkedIn (company)" row on contact.html. Owner still: Founder role on the personal profile.
 - Owner, optional: Udyam registration (free; Proprietary; NIC 62011) -> number in the site footer. Facts read 09 Oct from
   S.O. 2119(E) and the portal: one registration per enterprise (all of one PAN = one enterprise; more activities are ADDED,
   a future company/LLP files its own); no GST needed below the s.22 threshold; no fee, no renewal; keep ITR/GST details
   updated (para 8, else suspension); false declaration = MSMED s.27 penalty; cancel via "Update/Cancel Udyam Registration".
-- Reapply from the SAME Console org with founder@vyuhalens.com, website https://vyuhalens.com, LinkedIn = company page.
+- Reapply from the SAME Console org with founder@vyuhalens.com, website https://vyuhalens.com, LinkedIn =
+  https://www.linkedin.com/company/vyuhalens/.
 
 **Reapply text — What are you building on Claude? (485 chars):**
 > VyuhaLens (vyuhalens.com; founded July 2026, Kadapa, India) builds one desk for Indian retail traders that explains the trader's own record and never advises. Shipping: Vyuha trade journal (paid since Aug 2026), MARKET SENTINEL market-intelligence bot, GAMMA-UNWIND F&O automation. Claude in production: SENTINEL extracts management guidance from NSE filings as verbatim quotes, each gated against the source. Next: Claude narration of the Vyuha journal, then an eval-gated desk coach.
@@ -67,7 +70,7 @@ Where do you want support from Anthropic? (471 chars)
 
 **Pending, in order (owner unless marked):**
 0. Zoho -> Spam -> open the Anthropic receipt -> **Not Spam** (and allowlist `mail.anthropic.com` under Settings -> Anti-spam -> Allowed list), so the next decision mail (the reapply) lands in Inbox.
-1. REAPPLY (see the STATUS block): site live (DONE 09 Oct, 82c4325) -> LinkedIn company page -> (optional) Udyam -> resubmit. Decision mail again to founder@ (check Spam). If accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
+1. REAPPLY (see the STATUS block): site live (DONE 09 Oct, 82c4325) -> LinkedIn company page (DONE 09 Oct, on the site) -> resubmit NOW; Udyam is NOT a precondition (optional, any time; its number joins the footer later). Decision mail again to founder@ (check Spam). If accepted: Console -> Claude Startups page -> claim the $1,000 credits AND the Claude Team offer on the SAME org; note the grant date (credits expire 6 months later).
 2. Console -> Settings -> Members -> invite thejesh463.git@gmail.com as **Developer** (not Admin).
 3. DONE 08 Oct 12:15 (key swap + restart, usage confirmed). STILL OPEN: owner revokes the old key in the Gmail-org Console. SENTINEL session: ship the uncommitted config.yaml change via ship.py; remove the temperature=0 pins in verdict/llm.py so `llm.model` can follow to Haiku 5.5; watch quote-gate rejections / truncated JSON on guidance (Haiku 5.5 thinks by default; raise guidance.max_tokens or set effort low if seen).
 4. Team seat trial: one week of Claude Code on founder@ Premium seat; read the usage card; only then decide Max.
