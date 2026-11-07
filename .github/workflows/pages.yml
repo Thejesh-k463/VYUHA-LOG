@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "docs/index.html"
+      - "docs/sitemap.xml"
       - "docs/about.html"
       - "docs/contact.html"
       - "docs/privacy.html"
@@ -43,6 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site/sales _site/brand _site/screenshots
+          cp docs/sitemap.xml _site/
           cp docs/index.html docs/about.html docs/contact.html docs/privacy.html docs/terms.html docs/site.css docs/CNAME _site/
           cp docs/brand/* _site/brand/
           cp docs/sales/landing-page.html docs/sales/brochure.html _site/sales/
