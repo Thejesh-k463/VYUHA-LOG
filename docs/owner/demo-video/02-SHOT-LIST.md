@@ -116,7 +116,7 @@ Pricing is **not in the sidebar**. Reach it via Settings → License — the two
 | Step | Action | Hold |
 |---|---|---|
 | 1 | *System* → **Settings** → scroll to the **License** card | 2 s |
-| 2 | Hover the two plan pills so the struck-out list prices are visible | 4 s |
+| 2 | Hover the two plan pills so the struck-out planned future prices are visible | 4 s |
 | 3 | Stop. Hands still. (The end card is added in the edit.) | 2 s |
 
 *Do NOT click Activate, and the key field must be empty. Machine ID being visible is fine — it is a fingerprint, not a secret.*

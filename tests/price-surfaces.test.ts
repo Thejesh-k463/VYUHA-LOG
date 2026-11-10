@@ -128,6 +128,23 @@ function isRangeOrApprox(text: string, start: number, end: number): boolean {
   return /[–—-]\s?$/.test(before) || /≈\s?$/.test(before) || /^[–—-]\d/.test(after);
 }
 
+/**
+ * The text of every pre-filled WhatsApp link, decoded and appended, so a price
+ * inside a URL is scanned like prose. Added 2026-11-10: the landing page's
+ * "Get Pro Annual" link still sent ₹7,999 as `%E2%82%B97%2C999` after the
+ * reprice, and AMOUNT_RE never sees a percent-encoded rupee sign.
+ */
+function withDecodedLinks(text: string): string {
+  const decoded = [...text.matchAll(/wa\.me\/\d+\?text=([^"'\s)<>]+)/g)].map((m) => {
+    try {
+      return decodeURIComponent(m[1].replace(/&amp;/g, "&"));
+    } catch {
+      return "";
+    }
+  });
+  return decoded.length ? `${text}\n${decoded.join("\n")}` : text;
+}
+
 interface Hit {
   where: string;
   amount: string;
@@ -161,7 +178,7 @@ function strayPrices(rel: string, text: string): Hit[] {
 describe("price surfaces carry no price PRICING does not authorise", () => {
   it.each([...SURFACES, GENERATED])("%s quotes only derived rupee figures", (rel) => {
     if (!fs.existsSync(path.join(ROOT, rel))) return; // generated artefact, absent in a fresh clone
-    const hits = strayPrices(rel, read(rel));
+    const hits = strayPrices(rel, withDecodedLinks(read(rel)));
     expect(
       hits,
       `stale price string in ${rel}:\n${hits.map((h) => `  :${h.line}  ${h.amount}  …${h.excerpt}…`).join("\n")}`,
@@ -193,6 +210,12 @@ describe("price surfaces carry no price PRICING does not authorise", () => {
     }
   });
 
+  it("a stale price inside a WhatsApp link's encoded text is caught", () => {
+    const html = '<a href="https://wa.me/917393673714?text=Hi%2C%20I%27d%20like%20Pro%20Annual%20(%E2%82%B97%2C999%2Fyr)">Get</a>';
+    expect(strayPrices("synthetic.html", html)).toEqual([]); // the raw scan is blind to it
+    expect(strayPrices("synthetic.html", withDecodedLinks(html)).map((h) => h.amount)).toEqual(["₹7,999"]);
+  });
+
   it("the (historical price) opt-out frees ONE line, not the file around it", () => {
     // The opt-out is the only escape hatch this guard has, so it is exercised
     // here rather than trusted: a marked line is skipped, the identical line
@@ -218,10 +241,11 @@ describe("price surfaces carry no price PRICING does not authorise", () => {
     // and so invisible to AMOUNT_RE (₹9,999-shaped figures); ₹1,499 is not, and
     // is authorised as the monthly SKU's anchor (wasInr).
     expect([...ALLOWED_AMOUNTS].sort()).toEqual(
-      // 2026-11-10 (owner): annual ₹7,999 → ₹9,999, anchor ₹13,000 kept → 23%.
-      ["₹13,000", "₹29,999", "₹35,999", "₹9,999", "₹999", "₹1,499"].sort(),
+      // 2026-11-10 (owner): annual ₹7,999 → ₹9,999; anchors moved to the store's
+      // planned future prices ₹14,999 (→ 33%) and ₹75,000 (→ 60%).
+      ["₹14,999", "₹29,999", "₹75,000", "₹9,999", "₹999", "₹1,499"].sort(),
     );
-    expect([...ALLOWED_PCT].sort((a, b) => a - b)).toEqual([16, 23, 33]);
+    expect([...ALLOWED_PCT].sort((a, b) => a - b)).toEqual([33, 60]);
     expect(UPGRADE_DUE, "annual → lifetime upgrade due").toBe("₹20,000");
   });
 });

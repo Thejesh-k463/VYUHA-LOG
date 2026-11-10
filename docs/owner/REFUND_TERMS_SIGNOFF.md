@@ -34,8 +34,8 @@ technical one — so you can answer each question once, edit the exact line, and
 delete the banners.
 
 **Pricing is settled and is NOT reopened here:** Pro — Annual ₹9,999/yr launch
-(₹13,000 list), Journal — Lifetime ₹29,999 launch (₹35,999 list). See
-`MONETIZATION_PLAN.md` §2 and DECISIONS.md 2026-08-15.
+(₹14,999 planned), Journal — Lifetime ₹29,999 launch (₹75,000 planned). See
+`MONETIZATION_PLAN.md` §2 and DECISIONS.md 2026-11-10.
 
 Work through the steps in order. Each step is: what the file says today → the
 question you must answer → the options and what each one costs → the exact line

@@ -15,8 +15,8 @@ else to touch.
 
 | What | Source of truth | Pinned by |
 |---|---|---|
-| SKU prices and anchors (₹9,999 / ₹13,000 · ₹29,999 / ₹35,999) | `lib/domain/pricing.ts` (`PRICING`) | `tests/pricing.test.ts` — every amount must appear inside a `<div class="amt">` on the landing page |
-| The annual → lifetime upgrade sentence | `lib/domain/pricing.ts` (annual `includes`) | same test — must appear **verbatim** on the landing page, brochure and standalone |
+| SKU prices and anchors (₹9,999 / ₹14,999 · ₹29,999 / ₹75,000) | `lib/domain/pricing.ts` (`PRICING`) | `tests/pricing.test.ts` — every amount must appear inside a `<div class="amt">` on the landing page |
+| NO annual → lifetime upgrade-credit promise (withdrawn 2026-11-10, owner) | `lib/domain/pricing.ts` (annual `includes`) | same test — the promise must be **absent** from every SKU, the landing page, brochure and standalone |
 | Competitor table, "Features vs cost" summary, hero "why it wins" strip | `lib/domain/pricing-comparison.ts` (`COMPETITORS`, `VYUHA_ROW`, `WHY_VYUHA`, `COMPARISON_AS_OF`) | owner review — re-read the module when you edit any of those cells |
 | Feature copy (imports, skins, screens) | `docs/client/README.md` for the current release | `tests/no-indicators-in-client-docs.test.ts` forbids "indicator / TradingView / Pine" wording anywhere on the page |
 | WhatsApp number / email | the comment block at the top of `landing-page.html` | — |
@@ -71,7 +71,7 @@ npm run landing:build        # → docs/sales/landing-page.standalone.html
 
 This inlines every screenshot as a data: URI. **The public page is https://thejesh-k463.github.io/VYUHA-LOG/ (GitHub Pages, source `main:/docs`, `docs/index.html` redirects to `sales/landing-page.html`); the standalone is the fallback you email when a link is not wanted** — it opens offline with no broken images. It is gitignored and
 must be regenerated after every edit; `tests/pricing.test.ts` checks it (when present) for the
-current prices, the upgrade sentence and the "download-only" network answer, so a stale twin
+current prices, the absence of any upgrade-credit promise and the "download-only" network answer, so a stale twin
 fails the suite instead of rotting silently again.
 
 Size: at v2.99.99 it is ≈ 5.7 MB with 20 inlined images. Keep it under ~8 MB (mail attachment

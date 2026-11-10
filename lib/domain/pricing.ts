@@ -71,8 +71,10 @@ export const PRICING_STALE_AFTER_DAYS = 120;
 // TradingView indicators bundle came OFF the pricing surfaces entirely;
 // indicators remain a WhatsApp conversation.
 //
+// HISTORICAL — superseded 2026-11-10 (the anchors are now the store's planned
+// future prices ₹14,999 / ₹75,000 with NO date; see the notes on each SKU).
 // Launch offer, 2026-08-15 (owner decision, recorded in docs/DECISIONS.md):
-// the anchors below are the REAL list prices the owner has committed to
+// the anchors below were then the REAL list prices the owner has committed to
 // charging from 2027-01-01 — ₹13,000/yr and ₹35,999 — not invented
 // strike-throughs. The offer's end date is deliberately NOT rendered in-app
 // (owner's call); it lives here and in the owner docs so the claim stays
@@ -94,7 +96,8 @@ export const PRICING_STALE_AFTER_DAYS = 120;
 // render (renewalLabel), not a sentence one surface can forget.
 //
 // Two things deliberately NOT promised, because neither was ruled: there is no
-// upgrade credit from monthly (upgradeCredit stays annual → lifetime only),
+// upgrade credit from monthly (upgradeCredit stays annual → lifetime only;
+// that credit is itself not offered since 2026-11-10),
 // and there is no auto-renewal or stored card — each month is a fresh key
 // issued on request, which is exactly what the licence model already does.
 // Monthly is NOT featured: lifetime stays the single featured card.
@@ -111,7 +114,10 @@ export const PRICING: readonly PricingSku[] = [
     licenseSku: "app",
     name: "Journal — Lifetime",
     amountInr: 29999,
-    wasInr: 35999,
+    // 2026-11-10 (owner: "Use store's figures"): the anchor is the store's
+    // planned future price, ₹75,000 (was ₹35,999 from 2027-01-01). No date is
+    // stated anywhere any more. offerPct() derives 60% (1 − 29,999/75,000).
+    wasInr: 75000,
     term: "lifetime",
     featured: true,
     blurb: "one-time · lifetime licence",
@@ -132,11 +138,13 @@ export const PRICING: readonly PricingSku[] = [
     // floored). Lifetime deliberately untouched — the gap between the two is
     // the point, and the owner sells lifetime first.
     // Repriced 2026-11-10 (owner ruling, matching the KTR Khata Book store):
-    // 7,999 → 9,999. Anchor KEPT at ₹13,000 (owner's answer the same day), so
-    // offerPct() now derives 23% (13,000 → 9,999 is 23.08%, floored) and the
-    // annual → lifetime upgrade due becomes ₹20,000. Monthly and Lifetime unchanged.
+    // 7,999 → 9,999. Later the same day the owner moved both anchors to the
+    // store's planned future prices ("Use store's figures"): ₹14,999 here, so
+    // offerPct() derives 33% (1 − 9,999/14,999 = 33.34%, floored), with no
+    // start date; and the annual → lifetime upgrade credit was WITHDRAWN to
+    // match the store's "No upgrade credits initially" — its bullet is gone.
     amountInr: 9999,
-    wasInr: 13000,
+    wasInr: 14999,
     term: "annual",
     blurb: "per year · renews with a fresh key",
     includes: [
@@ -144,7 +152,6 @@ export const PRICING: readonly PricingSku[] = [
       "Every Pro analytics screen — risk, edge, discipline, options, full tax pack",
       "The charges engine verified within 0.69% of a real broker report",
       "All broker importers and free updates through the year",
-      "Upgrade to lifetime any time before your year ends — what you paid for the year comes off the lifetime price",
     ],
   },
   {
@@ -167,6 +174,10 @@ export const PRICING: readonly PricingSku[] = [
 ];
 
 /**
+ * NOT OFFERED since 2026-11-10 (owner, matching the store's "No upgrade credits
+ * initially"): no surface may promise it. Kept, unadvertised, for
+ * scripts/license-upgrade.mjs should the owner choose to grant one by hand.
+ *
  * Annual → Lifetime upgrade, owner decision 2026-08-15: FULL CREDIT within the
  * year. While the annual key is unexpired, the buyer owes the lifetime launch
  * price minus what they ACTUALLY paid for the year — not the list price, not a

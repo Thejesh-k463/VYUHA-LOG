@@ -34,7 +34,7 @@ TASK: <what you want done>
   you actually saw.
 - Already settled, do not re-open: Pro annual is ₹9,999; keep the v2.99.0 tag;
   the PDF parser returning trades: [] is by design; the `revocations` prerelease
-  exists (do not create it); annual→lifetime is full credit within the year;
+  exists (do not create it); NO annual→lifetime upgrade credit (owner 2026-11-10);
   delivery is manual mail/WhatsApp for now; intraday data is not required.
 ```
 
@@ -70,7 +70,7 @@ How I want you to work:
    the client package — that is a standing rule for every release.
 9. Already settled, do not re-open: Pro annual is ₹9,999; keep the v2.99.0 tag; the
    PDF parser returning trades: [] is by design; the `revocations` prerelease exists
-   (do not create it); annual→lifetime is full credit within the year; delivery is
+   (do not create it); NO annual→lifetime upgrade credit (owner 2026-11-10); delivery is
    manual mail/WhatsApp for now; intraday data is not required.
 10. When the task is done, update VYUHA-STATE.md with verified numbers and tell me
     it's a good point to /clear.
@@ -175,9 +175,9 @@ IF THE TASK IS A RELEASE: follow the `release` skill start to finish. Traps alre
 9. winget:manifest REQUIRES --sha, and it must be the PUBLISHED asset's hash, not your local
    build's. WDSI takes the ZIP's installer instead. DOC_AUDIT rows 15/16/20.
 
-ALREADY SETTLED — do not re-open: Pro annual Rs 9,999 / lifetime Rs 29,999 (list Rs 13,000 /
-Rs 35,999 from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
-revocations prerelease exists; annual->lifetime = full credit within the year; delivery is manual
+ALREADY SETTLED — do not re-open: Pro annual Rs 9,999 / lifetime Rs 29,999 (planned Rs 14,999 /
+Rs 75,000, no date; owner 2026-11-10); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
+revocations prerelease exists; NO annual->lifetime upgrade credit (owner 2026-11-10); delivery is manual
 mail/WhatsApp; intraday data not required; macOS is not sold; landing page = Pages redirect, not a
 copy; OpenAlgo is opt-in, off by default, server-gated, and not in BROKERS.
 

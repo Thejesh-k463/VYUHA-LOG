@@ -50,6 +50,9 @@ Thejesh K · ktr.thejesh463@gmail.com · WhatsApp +91 73936 73714
 
 ### Upgrade receipt (Annual → Lifetime)
 
+Upgrade credit is **not offered** since 2026-11-10 (owner, matching the store). Use this only when
+the owner grants one by hand.
+
 Same block, with the item, term and amount lines replaced by these. The credit is what the
 buyer actually paid for the year (§1.5 of `LICENSE_OPERATIONS.md`); the amount due is what
 `license-upgrade.mjs` quoted. Quote both key IDs.

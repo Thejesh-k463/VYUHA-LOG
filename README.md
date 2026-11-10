@@ -181,7 +181,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > every trade-form number goes through one rule ("1,23,456.50" is read as
 > written, "14,48" is refused); closing a stale lot refuses an unreadable stored
 > date; the **Signal book** has its help entry. Pro **Monthly is ₹999 for the
-> first month**, then **₹1,499/month**; **Annual ₹9,999** and **Lifetime
+> first month**, then **₹1,499/month**; **Annual ₹7,999** (historical price) and **Lifetime
 > ₹29,999** are unchanged. **One database upgrade, 0073**, applied on first
 > launch — it adds columns, moves no money and no cap. No dependency changes.
 >
@@ -527,9 +527,9 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > analytics-vs-primary hex.
 >
 > **v2.99.95 — launch pricing that survives division, and a comparison that hides nothing.**
-> List prices are ₹13,000/yr (Pro — Annual) and ₹35,999 (Journal — Lifetime), effective
-> 2027-01-01; until then the launch offer sells at ₹9,999/yr and ₹29,999, and the savings
-> badges are computed and floored — **23% off** and **16% off**, never rounded up. Lifetime is
+> List prices were ₹13,000/yr (Pro — Annual) and ₹35,999 (Journal — Lifetime) (historical price),
+> effective 2027-01-01; the launch offer sold at ₹7,999/yr and ₹29,999 (historical price), and
+> the badges were computed and floored — **38% off** and **16% off** (historical price). Lifetime is
 > now the featured plan and lists the roadmap. The pricing and landing pages carry a
 > seven-product comparison read from public pages on 2026-08-15, with "not stated" wherever a
 > claim could not be verified — the ₹999–₹2,499 Indian competitors included. macOS selling
@@ -601,7 +601,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > first run.
 >
 > **v2.99.76 — the price becomes the positioning.** Two plans, stated plainly in-app for the
-> first time: **Pro — Annual ₹9,999/yr** and **Journal — Lifetime ₹29,999**, with the free tier
+> first time: **Pro — Annual ₹7,999/yr** (historical price) and **Journal — Lifetime ₹29,999**, with the free tier
 > free forever. Prices carry the date they were set and the buy message quotes exactly what you
 > saw, because an offline app quoting a price is a promise the seller has to keep.
 >
@@ -752,8 +752,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 <img src="docs/screenshots/pricing.png" alt="Pricing — Pro Annual and Journal Lifetime plans shown in-app" width="900" />
 
 **Pro — Monthly ₹999 first month (launch offer), then ₹1,499/month · Pro — Annual ₹9,999/yr ·
-Journal — Lifetime ₹29,999**, launch prices (annual and lifetime list at ₹13,000/yr and ₹35,999
-from 2027-01-01). Monthly is **given on request** — message us and a one-month key is issued; each
+Journal — Lifetime ₹29,999**, launch prices (planned future prices: annual ₹14,999/yr, lifetime ₹75,000;
+no date is set). Monthly is **given on request** — message us and a one-month key is issued; each
 month renews with a fresh key, there is no auto-renewal and no card is stored. All three are quoted
 in-app with the date they were set, and the buy message embeds the price you saw.
 

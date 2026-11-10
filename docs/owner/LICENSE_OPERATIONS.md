@@ -160,6 +160,10 @@ Then email the buyer the key + the download link. The key is bound to their emai
 
 ## 1.5 Annual → Lifetime upgrade
 
+> **Not offered since 2026-11-10** (owner, matching the store's "No upgrade credits initially"):
+> no buyer surface promises a credit any more. This section stays for a credit the owner chooses
+> to grant by hand.
+
 **The rule (owner decision 2026-08-15): full credit within the year.** While the annual key is
 unexpired, the buyer owes the **lifetime launch price minus what they actually paid for the
 year** — ₹29,999 − ₹9,999 = **₹20,000** at today's prices; the arithmetic is

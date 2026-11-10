@@ -85,7 +85,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > - Nine skins including a custom theme builder and wallpaper.
 >
 > Pricing: the journal itself is free forever. Pro is ₹9,999/yr or ₹29,999 lifetime
-> (launch offer; list ₹13,000/yr and ₹35,999 from 1 Jan 2027). Everyone gets a
+> (launch offer; planned future prices ₹14,999/yr and ₹75,000). Everyone gets a
 > 7-day full trial before a key is needed.
 >
 > **The ask:** I'd like to send you a free lifetime key and have you review it —

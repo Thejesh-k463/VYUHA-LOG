@@ -5,6 +5,10 @@
 //   node scripts/license-upgrade.mjs <keyId|email> --paid <rupees> \
 //        --confirm "UTR 123456789012, ₹20,000 UPI 2026-08-15" [--machine ABCD-EF12-3456] [--save-dir <folder>]
 //
+// NOT ADVERTISED since 2026-11-10 (owner, matching the store's "No upgrade
+// credits initially"): no buyer surface promises a credit. This script stays for
+// a credit the owner chooses to grant by hand.
+//
 // THE RULE (owner decision 2026-08-15): FULL CREDIT WITHIN THE YEAR.
 //   due = lifetime launch price (lib/domain/pricing.ts) − what the buyer
 //         actually paid for the annual key (--paid, from the ledger note / receipt)
@@ -94,7 +98,7 @@ if (!old.expires) {
 }
 const today = new Date().toISOString().slice(0, 10);
 if (old.expires < today) {
-  console.error(`${old.keyId} (${old.email}) expired ${old.expires} — no upgrade credit. Sell lifetime at list price:`);
+  console.error(`${old.keyId} (${old.email}) expired ${old.expires} — no upgrade credit. Sell lifetime at the current price:`);
   console.error(`  VYUHA_LICENSE_NOTE="UTR …" node scripts/license-issue.mjs ${old.email} app --lifetime`);
   process.exit(1);
 }

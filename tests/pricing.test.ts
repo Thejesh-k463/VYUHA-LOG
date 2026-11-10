@@ -57,8 +57,9 @@ describe("shape", () => {
     expect(featuredSku().id).toBe("lifetime");
     expect(skuById("lifetime").amountInr).toBe(29999);
     expect(skuById("annual").amountInr).toBe(9999); // owner ruling 2026-11-10
-    expect(skuById("lifetime").wasInr).toBe(35999);
-    expect(skuById("annual").wasInr).toBe(13000);
+    // 2026-11-10 (owner: "Use store's figures"): the store's planned future prices.
+    expect(skuById("lifetime").wasInr).toBe(75000);
+    expect(skuById("annual").wasInr).toBe(14999);
   });
 
   it("three plans are on sale, and monthly is not the featured one", () => {
@@ -112,8 +113,8 @@ describe("shape", () => {
     // displayed percentage can never disagree with the arithmetic. Floored:
     // lifetime's true 16.67% must display as 16, never round up to 17 —
     // a discount claim never overstates.
-    expect(offerPct(skuById("annual"))).toBe(23); // 13,000 → 9,999 is 23.08%
-    expect(offerPct(skuById("lifetime"))).toBe(16);
+    expect(offerPct(skuById("annual"))).toBe(33); // 1 − 9,999/14,999 = 33.34%
+    expect(offerPct(skuById("lifetime"))).toBe(60); // 1 − 29,999/75,000 = 60.0013%, floored
     expect(offerPct({ ...skuById("annual"), wasInr: undefined })).toBeNull();
   });
 });
@@ -200,30 +201,27 @@ describe("the buy message carries the quote", () => {
   });
 });
 
-describe("annual → lifetime upgrade — one sentence, one formula, every surface", () => {
-  // Owner decision 2026-08-15: full credit within the year. The sentence the
-  // buyer reads must be the same on the pricing screen (module), the landing
-  // page and the brochure, and it must describe what upgradeCredit() computes.
-  const UPGRADE_COPY =
-    "Upgrade to lifetime any time before your year ends — what you paid for the year comes off the lifetime price";
+describe("annual → lifetime upgrade — NOT offered, on any surface", () => {
+  // Owner decision 2026-08-15 promised full credit within the year. WITHDRAWN
+  // 2026-11-10 (owner, matching the store's "No upgrade credits initially"):
+  // no buyer surface may promise it. upgradeCredit() stays for a credit the
+  // owner grants by hand (scripts/license-upgrade.mjs), unadvertised.
+  const UPGRADE_PROMISE = /Upgrade to lifetime any time|comes off the lifetime price|counts toward/;
 
-  it("the module carries the sentence and no older phrasing", () => {
-    const annual = skuById("annual");
-    expect(annual.includes).toContain(UPGRADE_COPY);
-    expect(annual.includes.join(" ")).not.toContain("counts toward");
+  it("no SKU promises an upgrade credit", () => {
+    for (const sku of PRICING) expect(sku.includes.join(" "), sku.id).not.toMatch(UPGRADE_PROMISE);
   });
 
-  it("the landing page and the brochure carry it verbatim, and the indicators FAQ is gone", () => {
+  it("the landing page and the brochure promise none, and the indicators FAQ is gone", () => {
     const landing = fs.readFileSync(path.join(process.cwd(), "docs", "sales", "landing-page.html"), "utf8");
-    expect(landing).toContain(UPGRADE_COPY);
-    expect(landing).not.toContain("counts toward it");
+    expect(landing).not.toMatch(UPGRADE_PROMISE);
     expect(landing).not.toContain("Do the indicators tell me what to buy?");
     const brochure = fs.readFileSync(path.join(process.cwd(), "docs", "sales", "brochure.html"), "utf8");
-    expect(brochure).toContain("Upgrade to lifetime any time before your year ends");
+    expect(brochure).not.toMatch(UPGRADE_PROMISE);
     expect(brochure).not.toMatch(/INDICATORS|Indicators band|indicator names/);
     const standalone = path.join(process.cwd(), "docs", "sales", "landing-page.standalone.html");
     if (fs.existsSync(standalone)) {
-      expect(fs.readFileSync(standalone, "utf8"), "run: npm run landing:build").toContain(UPGRADE_COPY);
+      expect(fs.readFileSync(standalone, "utf8"), "run: npm run landing:build").not.toMatch(UPGRADE_PROMISE);
     }
   });
 

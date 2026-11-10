@@ -317,7 +317,7 @@ describe("scripts/license-upgrade.mjs", () => {
   it("refuses: expired, already lifetime, no --paid, --confirm without a reference", () => {
     const expired = run("license-upgrade.mjs", ["old@x.com", "--paid", "9999"]);
     expect(expired.status).toBe(1);
-    expect(expired.err).toMatch(/expired .* list price/);
+    expect(expired.err).toMatch(/expired .* current price/); // "list price" until 2026-11-10 (anchors now carry no date)
     const life = run("license-upgrade.mjs", ["life@x.com", "--paid", "9999"]);
     expect(life.status).toBe(1);
     expect(life.err).toContain("already a LIFETIME");

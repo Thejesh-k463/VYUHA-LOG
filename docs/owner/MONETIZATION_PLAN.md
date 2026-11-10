@@ -338,13 +338,15 @@ six-broker import (incl. Angel One ≈15% of India's active accounts), clickable
 > reprice and again 2026-08-15 by the launch offer.** Shipped prices live in
 > **`lib/domain/pricing.ts`** (single source of truth).
 >
-> **Current (2026-08-15, owner decision):** list prices are **₹13,000/yr**
-> (Pro — Annual) and **₹35,999** (Journal — Lifetime) — the owner has committed
-> to charging these from **2027-01-01**, which is what makes the strike-through
-> honest. Until then the launch offer sells at **₹9,999/yr (23% off)** and
-> **₹29,999 (16% off, featured/best-value — the owner sells lifetime first)**.
-> The offer end date is deliberately NOT shown in-app (owner's call); it lives
-> here and in `docs/DECISIONS.md`. The percentages are DERIVED via `offerPct()`
+> **Current (2026-11-10, owner ruling — the store's figures):** planned future prices are
+> **₹14,999/yr** (Pro — Annual) and **₹75,000** (Journal — Lifetime), with NO start date —
+> they are real prices the owner intends to charge, which is what makes the strike-through
+> honest. Today the launch offer sells at **₹9,999/yr (33% off)** and
+> **₹29,999 (60% off, featured/best-value — the owner sells lifetime first)**. No
+> annual → lifetime upgrade credit is offered (the store's "No upgrade credits initially").
+> (Until 2026-11-10: list ₹13,000 / ₹35,999 from 2027-01-01 (historical price).)
+> No offer end date exists any more (the 2027-01-01 date was withdrawn
+> 2026-11-10), so none is shown anywhere. The percentages are DERIVED via `offerPct()`
 > and FLOORED (16.67% shows as 16, never 17 — a discount claim never
 > overstates) — the requested "30%/20%" labels did not survive division and
 > were corrected.
@@ -354,7 +356,8 @@ six-broker import (incl. Angel One ≈15% of India's active accounts), clickable
 > Annual and Lifetime are unchanged. Nothing auto-renews and no card is stored:
 > each month is a fresh key minted with
 > `license-issue.mjs <email> app --months 1`. No upgrade credit from monthly was
-> ruled, so none is promised (`upgradeCredit()` stays annual → lifetime).
+> ruled, so none is promised (`upgradeCredit()` stays annual → lifetime; since
+> 2026-11-10 that credit is not offered either — owner hand-grants only).
 > **Repriced 2026-09-18 for v4.4.0 (owner: "MONTHLY PLAN CHANGE IT TO 999 (original
 > price from second month will be 1499)"):** ₹999 for the first month (launch offer),
 > **₹1,499/month from the second month**; the real month-two anchor ₹1,499 makes

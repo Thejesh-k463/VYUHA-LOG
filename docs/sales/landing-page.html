@@ -37,7 +37,7 @@
       npm run landing:build        (= node scripts/build-landing.mjs)
   Copy facts (prices, competitor cells, "why it wins" numbers) come from
   lib/domain/pricing-comparison.ts and lib/domain/pricing.ts — tests/pricing.test.ts
-  pins the amounts and the upgrade sentence.
+  pins the amounts and the ABSENCE of any upgrade-credit promise (withdrawn 2026-11-10).
   ══════════════════════════════════════════════════════════════════════════
 -->
 
@@ -482,9 +482,9 @@
       <div class="plan featured">
         <div class="badge">Best value</div>
         <div class="name">Journal — Lifetime</div>
-        <div class="amt">₹29,999<span class="was">₹35,999</span></div>
+        <div class="amt">₹29,999<span class="was">₹75,000</span></div>
         <div class="per">one-time · lifetime licence</div>
-        <span class="offer">Launch offer · 16% off — save ₹6,000</span>
+        <span class="offer">Launch offer · 60% off — save ₹45,001</span>
         <ul>
           <li><span class="tick">✓</span> <b>Everything in Pro, forever</b> — no renewal, ever</li>
           <li><span class="tick">✓</span> Every Pro analytics screen, all broker importers</li>
@@ -497,17 +497,16 @@
 
       <div class="plan">
         <div class="name">Pro — Annual</div>
-        <div class="amt">₹9,999<span style="font-size:19px;color:var(--muted);font-weight:600">/yr</span><span class="was">₹13,000</span></div>
+        <div class="amt">₹9,999<span style="font-size:19px;color:var(--muted);font-weight:600">/yr</span><span class="was">₹14,999</span></div>
         <div class="per">per year · renews with a fresh key</div>
-        <span class="offer">Launch offer · 23% off — save ₹3,001</span>
+        <span class="offer">Launch offer · 33% off — save ₹5,000</span>
         <ul>
           <li><span class="tick">✓</span> The full Vyuha desktop app</li>
           <li><span class="tick">✓</span> Every Pro analytics screen — risk, edge, discipline, the Trade Review Desk, options, full tax pack</li>
           <li><span class="tick">✓</span> The charges engine verified within 0.69% of a real broker report</li>
           <li><span class="tick">✓</span> All broker importers and free updates through the year</li>
-          <li><span class="tick">✓</span> Upgrade to lifetime any time before your year ends — what you paid for the year comes off the lifetime price</li>
         </ul>
-        <a class="btn btn-ghost" href="https://wa.me/917393673714?text=Hi%2C%20I%27d%20like%20the%20Vyuha%20Pro%20Annual%20licence%20(%E2%82%B97%2C999%2Fyr)">Get Pro Annual</a>
+        <a class="btn btn-ghost" href="https://wa.me/917393673714?text=Hi%2C%20I%27d%20like%20the%20Vyuha%20Pro%20Annual%20licence%20(%E2%82%B99%2C999%2Fyr)">Get Pro Annual</a>
       </div>
 
       <div class="plan">
