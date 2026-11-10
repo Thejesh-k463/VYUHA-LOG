@@ -79,7 +79,7 @@ const ALLOWED_AMOUNTS = new Set(
 
 /**
  * The annual → lifetime upgrade figure the receipt template quotes, computed by
- * pricing.ts's OWN upgradeCredit() — ₹22,000 today. It is not a SKU price, so it
+ * pricing.ts's OWN upgradeCredit() — ₹20,000 today. It is not a SKU price, so it
  * stays out of ALLOWED_AMOUNTS (which the owner-ruling case pins to the four
  * prices), but it is exactly as derived: a reprice moves it and the receipt has
  * to follow.
@@ -198,13 +198,15 @@ describe("price surfaces carry no price PRICING does not authorise", () => {
     // here rather than trusted: a marked line is skipped, the identical line
     // without the marker is still caught.
     const text = [
-      "one forgotten flag on a ₹9,999 annual sale (historical price) minted a lifetime key",
-      "Pro is ₹9,999/yr today",
+      // ₹7,999 since 2026-11-10: the stray figure must be one PRICING does not
+      // authorise, and ₹9,999 is today's annual price again.
+      "one forgotten flag on a ₹7,999 annual sale (historical price) minted a lifetime key",
+      "Pro is ₹7,999/yr today",
     ].join("\n");
     const hits = strayPrices("synthetic.md", text);
 
     expect(hits.map((h) => h.line)).toEqual([2]);
-    expect(hits[0].amount).toBe("₹9,999");
+    expect(hits[0].amount).toBe("₹7,999");
   });
 
   it("the derived figures are the ones the owner ruled on 2026-08-31", () => {
@@ -216,9 +218,10 @@ describe("price surfaces carry no price PRICING does not authorise", () => {
     // and so invisible to AMOUNT_RE (₹9,999-shaped figures); ₹1,499 is not, and
     // is authorised as the monthly SKU's anchor (wasInr).
     expect([...ALLOWED_AMOUNTS].sort()).toEqual(
-      ["₹13,000", "₹29,999", "₹35,999", "₹7,999", "₹999", "₹1,499"].sort(),
+      // 2026-11-10 (owner): annual ₹7,999 → ₹9,999, anchor ₹13,000 kept → 23%.
+      ["₹13,000", "₹29,999", "₹35,999", "₹9,999", "₹999", "₹1,499"].sort(),
     );
-    expect([...ALLOWED_PCT].sort((a, b) => a - b)).toEqual([16, 33, 38]);
-    expect(UPGRADE_DUE, "annual → lifetime upgrade due").toBe("₹22,000");
+    expect([...ALLOWED_PCT].sort((a, b) => a - b)).toEqual([16, 23, 33]);
+    expect(UPGRADE_DUE, "annual → lifetime upgrade due").toBe("₹20,000");
   });
 });

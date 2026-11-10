@@ -86,7 +86,7 @@ describe("sale-flow helpers (pure)", () => {
     expect(r).toContain("Receipt no.    VY-2026-002");
     expect(r).toContain("Item           Vyuha — Pro (Annual)");
     expect(r).toContain("Licence term   1 year from 23 August 2026 (expires 23 August 2027)");
-    expect(r).toContain("Amount paid    ₹7,999"); // the 2026-08-31 reprice; the table read 9999 until 2026-09-18
+    expect(r).toContain("Amount paid    ₹9,999"); // owner ruling 2026-11-10 (read 7,999 from the 2026-08-31 reprice)
     expect(r).toContain("Not a tax invoice. No GST has been charged");
     expect(r).not.toMatch(/GSTIN|HSN|SAC|CGST|SGST|IGST/);
     expect(r).not.toMatch(/VYUHA-[A-Za-z0-9]/); // never the key itself

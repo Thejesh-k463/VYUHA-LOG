@@ -62,7 +62,7 @@ export interface PricingSku {
 }
 
 /** The date these numbers were last confirmed against the landing page. */
-export const PRICING_AS_OF = "2026-09-18";
+export const PRICING_AS_OF = "2026-11-10";
 
 /** After this many days, rendered prices say "confirm before paying". */
 export const PRICING_STALE_AFTER_DAYS = 120;
@@ -131,7 +131,11 @@ export const PRICING: readonly PricingSku[] = [
     // unchanged, so offerPct() now derives 38% (13,000 → 7,999 is 38.46%,
     // floored). Lifetime deliberately untouched — the gap between the two is
     // the point, and the owner sells lifetime first.
-    amountInr: 7999,
+    // Repriced 2026-11-10 (owner ruling, matching the KTR Khata Book store):
+    // 7,999 → 9,999. Anchor KEPT at ₹13,000 (owner's answer the same day), so
+    // offerPct() now derives 23% (13,000 → 9,999 is 23.08%, floored) and the
+    // annual → lifetime upgrade due becomes ₹20,000. Monthly and Lifetime unchanged.
+    amountInr: 9999,
     wasInr: 13000,
     term: "annual",
     blurb: "per year · renews with a fresh key",
@@ -190,7 +194,7 @@ export function featuredSku(): PricingSku {
   return PRICING.find((s) => s.featured) ?? PRICING[0];
 }
 
-/** ₹29,999 / ₹7,999 — en-IN grouping, matching the landing page exactly. */
+/** ₹29,999 / ₹9,999 — en-IN grouping, matching the landing page exactly. */
 export function formatInr(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
 }

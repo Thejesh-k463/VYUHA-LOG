@@ -32,7 +32,7 @@ TASK: <what you want done>
 - Respect the 10 invariants in AGENTS.md.
 - Run `npm run verify` before saying anything is done, and report the numbers
   you actually saw.
-- Already settled, do not re-open: Pro annual is ₹7,999; keep the v2.99.0 tag;
+- Already settled, do not re-open: Pro annual is ₹9,999; keep the v2.99.0 tag;
   the PDF parser returning trades: [] is by design; the `revocations` prerelease
   exists (do not create it); annual→lifetime is full credit within the year;
   delivery is manual mail/WhatsApp for now; intraday data is not required.
@@ -68,7 +68,7 @@ How I want you to work:
    docs/DECISIONS.md via the decision-log skill.
 8. If this touches a release, follow the release skill start to finish, and update
    the client package — that is a standing rule for every release.
-9. Already settled, do not re-open: Pro annual is ₹7,999; keep the v2.99.0 tag; the
+9. Already settled, do not re-open: Pro annual is ₹9,999; keep the v2.99.0 tag; the
    PDF parser returning trades: [] is by design; the `revocations` prerelease exists
    (do not create it); annual→lifetime is full credit within the year; delivery is
    manual mail/WhatsApp for now; intraday data is not required.
@@ -93,7 +93,7 @@ release history.
 
 **The "already settled" list prevents helpful damage.** All three items are
 recorded somewhere as open questions. Without that line a session will find the
-₹7,999 figure or the `trades: []` return and try to fix something that is not
+₹9,999 figure or the `trades: []` return and try to fix something that is not
 broken.
 
 **`npm run verify`, never `npm test`.** typecheck + lint + test all pass on code
@@ -175,7 +175,7 @@ IF THE TASK IS A RELEASE: follow the `release` skill start to finish. Traps alre
 9. winget:manifest REQUIRES --sha, and it must be the PUBLISHED asset's hash, not your local
    build's. WDSI takes the ZIP's installer instead. DOC_AUDIT rows 15/16/20.
 
-ALREADY SETTLED — do not re-open: Pro annual Rs 7,999 / lifetime Rs 29,999 (list Rs 13,000 /
+ALREADY SETTLED — do not re-open: Pro annual Rs 9,999 / lifetime Rs 29,999 (list Rs 13,000 /
 Rs 35,999 from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
 revocations prerelease exists; annual->lifetime = full credit within the year; delivery is manual
 mail/WhatsApp; intraday data not required; macOS is not sold; landing page = Pages redirect, not a

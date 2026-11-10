@@ -21,7 +21,7 @@
 // `sku` is display-only: it feeds SKU_LABELS in Settings and gates nothing.
 //
 //   Journal — Lifetime (₹29,999):  license-issue.mjs buyer@x.com app --lifetime
-//   Pro — Annual      (₹7,999/yr): license-issue.mjs buyer@x.com app --years 1
+//   Pro — Annual      (₹9,999/yr): license-issue.mjs buyer@x.com app --years 1
 //   Pro — Monthly (₹999 first month / ₹1,499 after, owner ruling 2026-09-18, repriced v4.4.0, and
 //   given ON REQUEST):             license-issue.mjs buyer@x.com app --months 1
 //
@@ -117,11 +117,11 @@ if (!email || !email.includes("@")) {
   console.error("");
   console.error("  A TERM is required — there is no default:");
   console.error("    Journal — Lifetime ₹29,999 : license-issue.mjs buyer@x.com app --lifetime");
-  console.error("    Pro — Annual ₹7,999/yr     : license-issue.mjs buyer@x.com app --years 1");
+  console.error("    Pro — Annual ₹9,999/yr     : license-issue.mjs buyer@x.com app --years 1");
   console.error("    Pro — Monthly ₹999 first month / ₹1,499 after : license-issue.mjs buyer@x.com app --months 1");
   console.error("");
   console.error("  A PAYMENT REFERENCE is required — set VYUHA_LICENSE_NOTE to the UTR:");
-  console.error('    VYUHA_LICENSE_NOTE="UTR 123456789012, ₹7,999 UPI 2026-08-22" node scripts/license-issue.mjs …');
+  console.error('    VYUHA_LICENSE_NOTE="UTR 123456789012, ₹9,999 UPI 2026-08-22" node scripts/license-issue.mjs …');
   console.error("    (or --no-payment for a genuine freebie: review copy, reissue, your own machine)");
   console.error("");
   console.error("  Referred by a creator? Add --ref <CODE> (their referral-form code; ledger only, not in the key).");
@@ -162,7 +162,7 @@ if (wantsLifetime) { args.splice(args.indexOf("--lifetime"), 1); termFlags.push(
 if (!expires && !wantsLifetime) {
   console.error(`Refusing to mint: no term given.\n`);
   console.error(`  Pro — Monthly (₹999 first month, ₹1,499 after) :  --months 1`);
-  console.error(`  Pro — Annual (₹7,999/yr) :  --years 1`);
+  console.error(`  Pro — Annual (₹9,999/yr) :  --years 1`);
   console.error(`  Journal — Lifetime (₹29,999) :  --lifetime\n`);
   console.error(`  Omitting the term used to mint a LIFETIME key silently, so a forgotten`);
   console.error(`  --years 1 gave away a ₹29,999 licence for a ₹9,999 payment (historical price).`);

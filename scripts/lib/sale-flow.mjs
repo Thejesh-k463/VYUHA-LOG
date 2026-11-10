@@ -11,7 +11,8 @@ export const PLANS = {
   lifetime: { item: "Vyuha — Journal (Lifetime)", amount: 29999, flag: "--lifetime" },
   // 7,999 since the 2026-08-31 reprice (lib/domain/pricing.ts). This read 9999 until 2026-09-18 and would have
   // printed a receipt for Rs 2,000 more than the buyer paid.
-  annual: { item: "Vyuha — Pro (Annual)", amount: 7999, flag: "--years 1" },
+  // 9,999 since the 2026-11-10 owner ruling (lib/domain/pricing.ts).
+  annual: { item: "Vyuha — Pro (Annual)", amount: 9999, flag: "--years 1" },
   // Monthly, owner ruling 2026-09-18 (repriced the same day, v4.4.0): Rs 999 for the FIRST month (launch offer), Rs 1,499 from the second.
   monthly: { item: "Vyuha — Pro (Monthly, first month — launch offer)", amount: 999, flag: "--months 1", termWord: "1 month" },
   monthlyRenewal: { item: "Vyuha — Pro (Monthly)", amount: 1499, flag: "--months 1", termWord: "1 month" },

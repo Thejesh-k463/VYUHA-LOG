@@ -80,7 +80,7 @@ in the password manager, not in the same folder as the bundle.
 > **Pro — Monthly goes through `sell.mjs` too** (2026-09-18):
 > `npm run sell -- buyer@email.com --months 1 --utr <UTR> --name "<Full Name>"` for the FIRST month (receipt ₹999, launch offer), and
 > the same with `--renewal` for every later month (receipt ₹1,499). Each month is a fresh one-month key; nothing renews by itself.
-> The annual receipt row reads ₹7,999 (it read ₹9,999 until this date).
+> The annual receipt row reads ₹9,999 since the 2026-11-10 owner ruling (₹7,999 from 2026-09-18 to then).
 >
 > It **spawns** `license-issue.mjs` and `license-backup.mjs` rather than re-implementing
 > them, so every guard below stays in force. Then it verifies the ledger and archive against
@@ -114,7 +114,7 @@ except the ledger line you are about to write, and `license-issue.mjs` now
 **refuses to mint without a payment reference** for exactly that reason.
 
 1. Send the amount and your UPI handle. Quote the plan by name — "Pro — Annual,
-   ₹7,999 for one year" — so the term is agreed in writing before it is signed
+   ₹9,999 for one year" — so the term is agreed in writing before it is signed
    into a key.
 2. Wait for the transfer, and ask for the **UTR / transaction id**. That string
    is the payment reference; it is what settles a dispute months later.
@@ -124,14 +124,14 @@ except the ledger line you are about to write, and `license-issue.mjs` now
    invoice**: there is no GSTIN, so it must never carry one.
 
 ```bash
-VYUHA_LICENSE_NOTE="UTR 123456789012, ₹7,999 UPI 2026-08-13" \
+VYUHA_LICENSE_NOTE="UTR 123456789012, ₹9,999 UPI 2026-08-13" \
   node scripts/license-issue.mjs buyer@email.com app --years 1
 ```
 
 | Plan (v2.99.76 pricing) | Command |
 |---|---|
 | **Journal — Lifetime ₹29,999** | `… buyer@email.com app --lifetime` |
-| **Pro — Annual ₹7,999/yr** | `… buyer@email.com app --years 1` |
+| **Pro — Annual ₹9,999/yr** | `… buyer@email.com app --years 1` |
 | **Pro — Monthly ₹999 first month, ₹1,499/month after** (2026-09-18, repriced in v4.4.0; **given on request** — each month is a fresh key, nothing auto-renews) | `… buyer@email.com app --months 1` |
 | Custom expiry | `… buyer@email.com app --expires 2027-03-31` |
 | Locked to one computer | `… app --machine EB42-FA73-9AD5` (see §6 — needs the buyer's Machine ID first) |
@@ -162,7 +162,7 @@ Then email the buyer the key + the download link. The key is bound to their emai
 
 **The rule (owner decision 2026-08-15): full credit within the year.** While the annual key is
 unexpired, the buyer owes the **lifetime launch price minus what they actually paid for the
-year** — ₹29,999 − ₹7,999 = **₹22,000** at today's prices; the arithmetic is
+year** — ₹29,999 − ₹9,999 = **₹20,000** at today's prices; the arithmetic is
 `upgradeCredit()` in `lib/domain/pricing.ts` and the script reads the price from there, so a
 reprice changes the quote without touching the script. An **expired** annual key gets no
 credit — sell lifetime at the current price with `license-issue.mjs … --lifetime`.
@@ -171,8 +171,8 @@ credit — sell lifetime at the current price with `license-issue.mjs … --life
 annual key. `--paid` is what they actually paid, from the ledger note / their receipt.
 
 ```bash
-node scripts/license-upgrade.mjs A1B2-C3D4-E5 --paid 7999
-#   lifetime price : ₹29,999    credit : ₹7,999    AMOUNT DUE : ₹22,000
+node scripts/license-upgrade.mjs A1B2-C3D4-E5 --paid 9999
+#   lifetime price : ₹29,999    credit : ₹9,999    AMOUNT DUE : ₹20,000
 ```
 
 **2. Collect the amount due**, get the UTR, send the upgrade receipt (`RECEIPT_TEMPLATE.md`,
@@ -181,11 +181,11 @@ upgrade variant — it shows the credit and the amount due).
 **3. Confirm.** `--confirm` MUST carry the payment reference; nothing mints without it.
 
 ```bash
-node scripts/license-upgrade.mjs A1B2-C3D4-E5 --paid 7999   --confirm "UTR 123456789012, ₹22,000 UPI 2026-08-15"        # add --machine … if their old key was bound and they moved
+node scripts/license-upgrade.mjs A1B2-C3D4-E5 --paid 9999   --confirm "UTR 123456789012, ₹20,000 UPI 2026-08-15"        # add --machine … if their old key was bound and they moved
 ```
 
 This mints a **lifetime** key for the same email (same machine binding as the old key unless
-`--machine` says otherwise), ledger note `upgrade from A1B2-C3D4-E5; annual paid ₹7,999
+`--machine` says otherwise), ledger note `upgrade from A1B2-C3D4-E5; annual paid ₹9,999
 credited; UTR …`, archives it if `VYUHA_KEY_ARCHIVE_DIR` is set, and **revokes the old key**
 through `license-revoke.mjs` (the build-time half — same code path, same files). The new key is
 on stdout; email it with the receipt.
