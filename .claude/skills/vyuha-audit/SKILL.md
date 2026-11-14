@@ -34,6 +34,7 @@ you gate. This skill does not fork; it runs in your context so you can hold the 
 
 - **Reopens work (a fix wave):** any PRODUCT defect, at any severity, and any test-integrity finding graded MEDIUM or above.
 - **Recorded, never a new wave:** LOW / cosmetic findings that live only in tests (a pin that could be stricter, a harness
+  nit). Write each into the round's `docs/DECISIONS.md` entry — id, `file:line`, why it is not fixed — and move on.
 - **Before the fix wave launches (2026-09-15 — the owner's ruling after waves 2H–2L: "zero repeated errors"):** the
   `vyuha-design-reviewer` agent reviews every DECIDED design — writers and readers of each changed value, the reachable
   sequences, the breaking case — and a design graded REVISE is rewritten before any builder sees it. Identity, IPO-link,
@@ -44,8 +45,6 @@ you gate. This skill does not fork; it runs in your context so you can hold the 
 - **Grade the re-check by INTRODUCED regressions** (`introduced_by` = this wave), reported apart from pre-existing finds.
   A wave that introduced a silent wrong number or data loss makes the next wave sequential and design-reviewed; two such
   waves in a row stop the parallel pattern for the rest of the release.
-
-  nit). Write each into the round's `docs/DECISIONS.md` entry — id, `file:line`, why it is not fixed — and move on.
 - **A fix wave is verified by a SCOPED re-check, not a new full round:** the skeptic re-checks each fix against its finding,
   every fix is red-on-revert with the assertion quoted, one `npm run verify`, CI green. A new full round only when the fix
   wave changed product code in an area no lens has audited.

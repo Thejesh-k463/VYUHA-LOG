@@ -133,25 +133,14 @@ close-out DECISIONS entry — a session that cannot cite that line did not run i
   mapper, where the user says whose it is — a question is always better than a confident wrong
   answer.
 - **Never invent a parser for a format nobody has published — a VERIFIED REAL EXPORT is what
-  "published" means.** Kotak Neo and Sahi still document their export columns nowhere (Fyers and
-  Nuvama left this list on 2026-09-25, when the owner filed real exports — their parsers are BUILT in v4.6.0
-  W9: `fyers-tradebook`, `fyers-realised-pnl`, `nuvama-pnl-report`; F&O and MCX verified, equity rows
-  UNVERIFIED), so their
+  "published" means.** Kotak Neo and Sahi document their export columns nowhere, so their
   files belong to `lib/import/generic-map.ts`, which asks; it refuses a row it cannot read rather
   than coercing a bad cell to 0, because a trade for zero shares at zero rupees is worse than no
-  trade. Paytm Money moved OFF this list on 2026-08-12 when a real export pinned its layout —
-  a deliberate exception recorded in docs/DECISIONS.md. That caveat is now DISCHARGED: on
-  2026-08-20 a real 414-execution export was reconciled against Paytm's own Realized P&L Detail
-  (47 of 52 in-window scrips within ₹25, closed net within 1.4%, charges conserved to ₹0.16).
-  Upstox was the last schema-only broker — its first three real exports carried zero data rows.
-  That caveat is DISCHARGED as of 2026-09-04: `tests/golden-books.test.ts` pins a POPULATED
-  realised-P&L export against Upstox's own stated figures (gross −1.05, net −4.28, charges 3.23,
-  met to the paisa) and a populated trade report (11 executions → 5 positions, net −443.14 — our
-  arithmetic, since a trade report states no P&L; it read 4 positions / −271.92 until v4.4.0 verified
-  the Upstox F&O grammar and priced the three option contracts as options, and −355.66 until v4.5.0's
-  findings D2/D3 corrected Upstox's delivery brokerage to min(₹20, 2.5%) and its DP charge to ₹20 —
-  gross is unchanged at −135.45 through both). Its layouts AND its
-  realised-P&L value behaviour are VERIFIED; the Upstox ledger has its own parser (`upstox-ledger`).
+  trade. Fyers (`fyers-tradebook`, `fyers-realised-pnl`) and Nuvama (`nuvama-pnl-report`) are
+  built from real exports — F&O and MCX verified, equity rows UNVERIFIED. Paytm Money and Upstox
+  (including `upstox-ledger`) are verified against the brokers' own figures:
+  `tests/golden-books.test.ts` pins Upstox to the paisa, and both reconciliations are recorded in
+  docs/DECISIONS.md.
 - **Every DB-reading page/layout is `force-dynamic`.**
 - **Native/heavy modules are `serverExternalPackages`** in `next.config.ts`: `better-sqlite3`,
   `pdf-parse`.
@@ -435,7 +424,7 @@ the sources and their sha256; the anchor refusal is the BUILD's own — `anchor(
 REFUSES when an anchor phrase is missing from that file, and no test reaches it); marks wait for the official close (CAS stock 15:36, other equity
 15:31, derivative 15:45); a special session whose hours are not bundled has no session row (callers refuse, never guess);
 past `coversThrough` a weekday is an UNVERIFIED session and Data Quality warns from 60 days before. `/instruments` shows
-`asOf`, `coversThrough` and the sources sha256. The one-year `nse-holidays.json` it replaced is retired.
+`asOf`, `coversThrough` and the sources sha256.
 
 
 # Desktop build and release
@@ -459,10 +448,8 @@ past `coversThrough` a weekday is an UNVERIFIED session and Data Quality warns f
   reason. Verify a release by decoding the signature's key id, not by trusting "✓ signed".
 - Version bumps: `npm run bump-version x.y.z` syncs package.json, tauri.conf.json, Cargo.toml AND
   the sidebar footer. **The footer is MAJOR.MINOR only** (`components/layout/sidebar.tsx`, e.g.
-  `v3.0`), so a PATCH bump leaves it unchanged and the script prints three files instead of four.
-  Do not read that as "it does not sync the sidebar" — a 2026-08-20 edit did, and was wrong; the
-  3.0.0 bump printed `sidebar.tsx footer -> v3.0` and "Synced 4 file(s)". **Nothing in the running
-  app surfaces the PATCH version** (the footer reads `v3.0`, never `v3.0.0`) — verified 2026-08-20.
+  `v4.7`), so a PATCH bump leaves it unchanged and the script prints three files instead of four —
+  that is correct, not a missed sync. **Nothing in the running app surfaces the PATCH version.**
   It does not touch **`src-tauri/Cargo.lock`**, which needs a `cargo` invocation, and
   **not package-lock.json's root version fields**. To sync those, edit the two version strings BY
   HAND — never by running npm. `--package-lock-only` drops the darwin/linux optional-dep variants

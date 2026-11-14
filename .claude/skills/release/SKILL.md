@@ -117,7 +117,7 @@ installed copy rejects the update**, which is exactly what it did to v2.98.0.
   signature exists, not that it is the right one.
 
 ```
-npm run release:verify v3.3.0 -- --deep
+npm run release:verify v<x.y.z> -- --deep
 ```
 
 **Use `--deep`.** Without it the script decodes key ids, which proves a signature
@@ -127,7 +127,7 @@ machines test, and the one v2.98.0 failed while every key id looked fine. It
 costs ~220 MB of downloads and a couple of minutes; a broken update costs a
 release.
 
-**STOP HERE from v4.6.0 onward — the OWNER publishes (ruled 2026-09-23).** Once `--deep`
+**STOP HERE — the OWNER publishes (ruled 2026-09-23).** Once `--deep`
 prints "Safe to publish", the session does NOT run `gh release edit <tag> --draft=false --latest`.
 It hands over, in its final message: the draft URL, the deep-verify line, the client ZIP's installer
 SHA-256 and the WDSI form (§9). The owner flips the draft to Latest; the post-publish proofs
