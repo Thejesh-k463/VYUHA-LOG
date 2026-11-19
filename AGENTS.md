@@ -139,8 +139,9 @@ close-out DECISIONS entry — a session that cannot cite that line did not run i
   trade. Fyers (`fyers-tradebook`, `fyers-realised-pnl`) and Nuvama (`nuvama-pnl-report`) are
   built from real exports — F&O and MCX verified, equity rows UNVERIFIED. Paytm Money and Upstox
   (including `upstox-ledger`) are verified against the brokers' own figures:
-  `tests/golden-books.test.ts` pins Upstox to the paisa, and both reconciliations are recorded in
-  docs/DECISIONS.md.
+  `tests/golden-books.test.ts` pins Upstox to the paisa (realised P&L: gross −1.05, net −4.28,
+  charges 3.23, Upstox's own stated figures; the trade report: 11 executions → 5 positions, net
+  −443.14, our arithmetic), and both reconciliations are recorded in docs/DECISIONS.md.
 - **Every DB-reading page/layout is `force-dynamic`.**
 - **Native/heavy modules are `serverExternalPackages`** in `next.config.ts`: `better-sqlite3`,
   `pdf-parse`.
