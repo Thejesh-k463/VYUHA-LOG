@@ -1,5 +1,151 @@
 # Changelog
 
+## v4.8.0 — 2026-11-19
+
+*The release where a second pull on the same day stops instead of counting a
+sale twice, one contract written two ways by one broker's two sources closes as
+one, the Clinic says when a setup has faded — in rupees — and Vyuha is sold for
+Windows and macOS.*
+
+- **Fixed — a second pull on the same day no longer adds a sale an earlier pull
+  already closed.** In the published v4.7.0, when a day's first pull closed a
+  sale against an older open position, a later pull the same day stating a
+  larger sale was *added beside it* — in the reviewer's test, 225 sold where the
+  broker stated 150. Now the later pull stops at the duplicate dialog and names
+  what closed the position — today's earlier pull, an earlier pull today (a
+  v4.7.0 close, which stored no file name), or a Data Quality join you made
+  today — and the steps that record the new total: in Trades, Un-close the
+  position (or undo the Data Quality join), delete the sale row that brings
+  back, then pull again, and the pull closes the position itself. **Nothing is
+  committed until you choose**; committing anyway records the pull's figure
+  beside the sale already counted, so the day is counted twice, and the dialog
+  says exactly that. The OpenAlgo pull now joins the pulls that restate each
+  other within a day (Dhan, Angel One, Upstox, Fyers, Kotak Neo, Nuvama), and a
+  pull that replaces today's earlier row now does what its preview said.
+- **Fixed — a close that would store a sale the journal already holds is
+  refused, not failed.** The close is refused in the preview and the commit
+  alike, where it used to fail with a database error (`UNIQUE constraint
+  failed`): nothing is closed automatically, the duplicate dialog marks the row
+  "already recorded", and it names the earlier record that holds the sale and
+  the step that resolves it — Un-close that record, delete that earlier row, or
+  undo that Data Quality join — or commit anyway to record the row beside it.
+- **A Data Quality join can be undone.** A position closed from Data Quality
+  carries **Undo Data Quality join** in its row menu on Trades: the position
+  reads open again and the row the join removed comes back from Deleted items.
+  Deleted items are kept beside the journal, not inside a backup, so a join
+  cannot be undone on a machine restored from one.
+- **Imports and pulls close more positions: one contract, two names.** When two
+  of your sources for one broker write a contract two ways — a weekly option by
+  the exchange's compact name (`NIFTY2692225000CE`) and by its date
+  (`OPT NIFTY 22 Sep 2026 25000 CE`), or a share with and without its series
+  suffix (`SBIN-EQ`, `SBIN`) — the two now match **exactly** and the sale closes
+  the position; this holds for every broker. Two stated ISINs of different
+  issuers never match. A **month-level** pair — a compact *monthly* option or a
+  future against a dated name, where the names alone cannot prove they are one
+  contract — is **never closed on its own**: both rows stay, the import says so,
+  and **Data Quality lists the pair with both names and a tick** ("These two
+  names are one contract") that must be ticked before it joins them; the server
+  refuses the join without it. **On the first launch after the update, Data
+  Quality's count can rise:** positions already split under two names in your
+  book are listed there, to join one at a time — the update rewrites nothing.
+- **The Clinic's decay card.** In each setup's Detail on the Clinic tab, a cell
+  with at least **60** trades carrying an R shows two figures first — **USUAL ·
+  first N trades** (the average R of the first half) → **RECENT · since trade M**
+  (the average since the trade where a possible drop was flagged; "RECENT · last
+  N trades" when nothing was flagged) — a chip ("−0.18R a trade", or "no drop
+  detected"), and a rupee restatement, for example **"For every ₹1,000 risked:
+  ₹548 → ₹370"**, over a small line of the 30-trade rolling average. The rupee
+  line appears only where every R in the cell is a multiple of a real risk (a
+  stop or a typed risk); one R from the default per-trade cap hides it, and a
+  trade with no R is not in the card's sample. A cell measured in units of your
+  per-trade cap says so instead. Every number is the engine's. **The Clinic
+  recomputes once per account after the update** (engine c4.0), and its cached
+  report no longer stores the band nothing drew.
+- **A currency derivative typed by hand is refused on create.** "Currency
+  derivatives are not priced by Vyuha (no charge profile covers them), so a
+  currency trade cannot be added by hand. Nothing is saved." — the manual-trade
+  form disables Save, and the charges preview and the save itself refuse. A
+  currency row already in your journal stays editable, closable and deletable.
+- **Currency and NCDEX rows in files: refused and named, the rest imports.** An
+  NCDEX row in the **column mapper** used to fail the whole file; it is now
+  refused and named — "N NCDEX rows were refused: NCDEX contracts are not
+  imported from this file (no charge profile covers them), so nothing was
+  imported for: …" — and Nuvama's P&L report says the same of its NCDEX lines.
+  Every broker-named parser (Zerodha, Angel One / Upstox, Fyers tradebook and
+  realised P&L, Dhan's Global Transaction Report, Nuvama, Paytm Money) now
+  refuses a currency contract by its name inside its own row loop, with
+  v4.7.0's shared check as the backstop, so a refused row never becomes a
+  trade and the Fyers realised-P&L import stores no reference figure for it (a
+  file's own stated totals still include it). A Zerodha Console file
+  whose own totals include refused currency rows now says: "This file's own
+  totals were added up by the broker with the refused currency rows in them, so
+  they will differ from your book by exactly those rows — that gap is expected,
+  not a missing trade." An Angel One Tax P&L derivative row whose Segment is
+  neither `NSEFO` nor `BSEFO` (the two a real export has shown) is imported as
+  the file names it, with a warning to check its segment and charges.
+- **Three heavy screens carry less of your book.** The Live Desk's
+  **Positions** tab now shows the **largest 150** positions by money deployed
+  ("Showing 150 of N positions, largest deployed first.") with a **Show 150
+  more** button, while the header totals, the risk lens and the cohorts still
+  read the whole book; `j` past the last shown row brings the next one
+  in. **/strategies** draws its payoff points in your browser from the same
+  arithmetic instead of shipping them, so no figure changes. **Arjun's Eye**
+  reads the Clinic card from a small stored summary instead of re-reading the
+  book and parsing the whole report.
+- **Fixed — the window no longer scrolls blank below the sidebar.** Scrolling
+  past the end of a page (the dashboard and Settings showed it) could move the
+  whole window up and leave an empty area under the sidebar; the app's frame now
+  stays the size of the window on every page.
+- **Sold for Windows and macOS** (from 19 November 2026), under the same licence
+  at the same price, one client package per kind of computer
+  (`…_Windows-x64_Client_Package.zip`, `…_macOS-Apple-Silicon_Client_Package.zip`,
+  `…_macOS-Intel_Client_Package.zip`). The Mac app is **not signed or notarised
+  by Apple**: the first time it opens, macOS says it cannot verify the
+  developer — System Settings → Privacy & Security → **Open Anyway** (on macOS 14
+  and earlier, Control-click the app → Open also works).
+- **The bundled market data is refreshed, as of 5 October 2026.** The ISIN →
+  symbol map holds **5,912** listed ISINs (was 5,745) with **7** superseded ISINs
+  linked to their successor; the stock universe classifies **5,617 of 5,649**
+  equities (99.4%) with the exchanges' own industry and carries AMFI's 30 June
+  2026 bands (large 100 / mid 147 / small 4,654) and the first **11** recorded
+  reclassifications; the NSE index map holds **62** indices (54 sectoral + 8
+  size) over **1,404** symbols and now carries **5 former tickers** (AMARAJABAT,
+  HEG, MINDAIND, TATAMOTORS, TATAMTRDVR) forward, so an option leg your journal
+  still holds under an old name keeps joining its ISIN after a refresh; the ETF
+  list holds **351** ETFs (261 equity-oriented / 90 other), as NSE last
+  published it on 17 September 2026. `/instruments` shows the as-of date and
+  sha256 of the stock universe, the index map and the ETF list. The bundled market calendar is unchanged and still ends on
+  **31 December 2026**.
+- **One database upgrade (0081)**, applied on first launch behind the automatic
+  pre-migration backup — take your own backup first, as always: it adds one
+  empty column to the Clinic's cache (derived data, outside your backup, filled
+  by the next compute). No money figure already stored on a trade moves. **No
+  new dependency. Nothing to re-accept.**
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).** On
+  Windows, the v4.8.0 installer runs the v4.7.0 uninstaller once before it
+  installs, and that one is the guarded one: ticking its
+  "Delete the application data" box erases the whole data folder, but not before your
+  journal and licence key have been named and copied to
+  `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is.
+
+Not in this release: the Windows installer is still unsigned (Windows
+SmartScreen warns once) and the Mac app is not signed or notarised by Apple
+(the "Open Anyway" step above). The Fyers, Kotak Neo and Nuvama pulls are still
+**not verified against a real account** (today's trades only); Kotak Neo and
+Sahi FILES still go to the column mapper. A month-level pair is never closed
+without your tick, and the positions already split in your book are listed, not
+rewritten. A Data Quality join cannot be undone after a restore from a backup.
+A currency contract is recognised by a stated currency segment or venue, or by
+a name Vyuha reads as one of the seven pairs: a contract whose name is outside
+both, listed under a non-currency heading of a Dhan P&L file, still imports (the
+file's own Currency block is skipped by its heading). Currency rows imported
+before v4.7.0 are not re-priced. Telegram alerts still stop after 31 December 2026
+until the 2027 holiday list is bundled. On the Positions tab, `k` with nothing
+focused lands on the last **shown** row, not the book's last. The decay card's
+small chart is pinned by tests; its drawing was not checked by eye in the
+production build. Rights, buyback and delisting chips are not on the Positions
+tab.
+
 ## v4.7.0 — 2026-10-05
 
 *The release where the journal tells you what your own record can and cannot

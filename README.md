@@ -28,7 +28,62 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v4.7.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v4.8.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v4.8.0 — a same-day pull that stops instead of counting a sale twice, one
+> contract under two names, a setup's fade in rupees, and Windows and macOS.** **Fixed:** a second pull on the same day used
+> to **add** a sale an earlier pull had already closed against an older position
+> (225 sold where the broker stated 150, in the reviewer's test); it now **stops**,
+> names what closed the position (today's earlier pull, an earlier pull today, or
+> a Data Quality join) and the steps that record the new total — Un-close it or
+> undo the join, delete the sale row that brings back, pull again — with nothing
+> committed until you choose, and the OpenAlgo pull joins the pulls that restate
+> each other within a day. A close that would store a sale the journal already
+> holds is refused and marked "already recorded" with the step that resolves it,
+> not failed with a database error, and a Data Quality join can be undone from
+> Trades (**Undo Data Quality join**). **Imports and pulls close more
+> positions:** a contract one broker's two sources write two ways — a weekly
+> option by its compact name and by its date, a share with and without its
+> series suffix — now matches **exactly**; a **month-level** pair (a compact
+> *monthly* or a future against a dated name) is **never closed on its own** —
+> both rows stay, the import says so, and **Data Quality lists the pair with
+> both names and a tick** for you; on the first launch Data Quality's count can
+> rise, because positions already split in your book are listed to join one at
+> a time. The Clinic recomputes once per account after the update (engine c4.0).
+> **The Clinic's decay card:** in each setup's Detail, a cell with **60** or
+> more trades carrying an R reads **USUAL · first N trades → RECENT · since
+> trade M**, a chip ("−0.18R a trade" / "no drop detected") and, where every R
+> is a multiple of a real risk, a rupee line such as **"For every ₹1,000 risked:
+> ₹548 → ₹370"**, over a small 30-trade rolling line. **Currency:** a currency
+> derivative **typed by hand is refused on create** ("Nothing is saved";
+> existing rows stay editable); an NCDEX row in the column mapper or a Nuvama
+> report is refused and **named** instead of failing the whole file; every
+> broker parser refuses a currency contract by name inside its own rows; a
+> Zerodha Console file says its own totals include the refused rows; an Angel
+> One Tax P&L segment other than `NSEFO` / `BSEFO` imports with a warning.
+> **Three heavy screens carry less of your book:** the Live Desk's Positions tab
+> shows the **largest 150** positions with **Show 150 more** (totals, risk lens
+> and cohorts still over the whole book); `/strategies` draws its payoff points
+> in the browser, no figure changed; Arjun's Eye reads the Clinic card from a
+> small stored summary. **Fixed:** scrolling past a page's end no longer leaves
+> a blank area under the sidebar. **Sold for Windows and macOS** from 19
+> November 2026 — one licence at one price, one client package per kind of
+> computer. **Market data as of 5 October 2026:** 5,912 ISINs (7 superseded
+> linked), 5,617 of 5,649 equities classified (99.4%) with AMFI's 30 June 2026
+> bands, 62 indices over 1,404 symbols with **5 former tickers** (TATAMOTORS
+> among them) carried forward so old option legs still join, 351 ETFs as NSE
+> published them on 17 September 2026. **One database upgrade, 0081** (an empty
+> column on the Clinic's cache), applied on first launch behind the automatic
+> backup — take a backup first, as always. No new dependency; nothing to
+> re-accept. Not in this release: the Windows installer is still **unsigned**
+> (Windows SmartScreen warns once) and the Mac app is **not signed or notarised
+> by Apple** (the first open needs System Settings → Privacy & Security → "Open
+> Anyway"); the Fyers, Kotak Neo and Nuvama pulls are still **not verified with
+> a real account**; a currency contract named outside the seven pairs under a
+> non-currency heading of a Dhan P&L file still imports; a Data Quality join
+> cannot be undone after a restore from a backup; alerts still stop after
+> **31 December 2026** until the 2027 calendar is bundled; the decay card's
+> drawing was pinned by tests, not checked by eye.
 >
 > **v4.7.0 — what your record can prove, a Positions view, stops on your
 > phone, and three more direct pulls.** The Edge Clinic gains its own **Clinic**
@@ -1052,7 +1107,7 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.6.x to v4.7.0:** the installer runs the v4.6.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0079–0080 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy; upgrading from v4.5.x applies 0075–0080 in order. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.7.x to v4.8.0:** on Windows the installer runs the v4.7.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migration 0081 runs on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy; upgrading from v4.6.x applies 0079–0081 in order (the v4.7.0 notes — four disclosures re-read once — are under "New in v4.7.0" in the client README). **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
@@ -1068,7 +1123,7 @@ macOS says it cannot verify the developer — System Settings → Privacy & Secu
 macOS 14 and earlier, Control-click the app → Open also works). Updates are signed with the updater key
 on every platform.
 
-Current release: **v4.7.0**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v4.8.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` (on a Mac,
 `~/Library/Application Support/in.vyuha.tradejournal/logs/sidecar.log`) — attach it to a bug report.
 

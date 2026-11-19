@@ -184,48 +184,48 @@ over your existing install; on a Mac, open the new DMG and drag Vyuha into Appli
 old copy. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
-**Upgrading from v4.6.x to v4.7.0 — nothing is asked of you during the install** (four disclosures
-are re-read once afterwards — below)**.** The v4.7.0 installer runs the
-v4.6.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
-"Delete the application data" checkbox appears, ticking it still erases the whole data folder, but
-not before your journal database and licence key have been named and copied to
-`Documents\Vyuha-backup-<date>`, and Cancel leaves everything exactly as it is.
+**Upgrading from v4.7.x to v4.8.0 on Windows — nothing is asked of you, during the install or after
+it.** The v4.8.0 installer runs the v4.7.0 uninstaller once before it installs, and that one is
+the *guarded* uninstaller: if its "Delete the application data" checkbox appears, ticking it still
+erases the whole data folder, but not before your journal database and licence key have been named
+and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything exactly as it is. On a
+Mac there is no uninstaller step: drag the new copy into Applications, replacing the old one; if
+macOS asks again whether to open it, use the **Open Anyway** step in section 1. No disclosure
+changed in this release, so nothing is re-read afterwards.
 
-**Migrations on first launch of v4.7.0.** **Two** database upgrades, applied behind the same
-automatic `backups\pre-migrate-<timestamp>.sqlite` copy described below: **0079** adds the optional
-setup grade and intra-trade high/low on a trade and the Edge Clinic's experiments and cache;
-**0080** adds the Telegram alert settings and the alert receipts (the receipts are machine state —
-never part of a backup). No money figure
-already stored on a trade moves. **Take your own backup first, as always.** Upgrading from
-**v4.5.x** applies **0075 to 0080** in order, and the notes for that step — Paytm Money and Groww
-ladders, the covered short, OpenAlgo 2.0.2.6 — are under "New in v4.6.0" in the README.
+**Migrations on first launch of v4.8.0.** **One** database upgrade, applied behind the same
+automatic `backups\pre-migrate-<timestamp>.sqlite` copy described below: **0081** adds one empty
+column to the Edge Clinic's cache — derived data that is never part of a backup and is filled by
+the next compute. No money figure already stored on a trade moves. **Take your own backup first,
+as always.** Upgrading from **v4.6.x** applies **0079 to 0081** in order, and the notes for that step — the
+four disclosures re-read once after the update, currency refused at import, the stream and the
+alerts — are under "New in v4.7.0" in the README.
 
-**What you will be asked once after the update.** Four disclosures changed, and each is re-read
-before its feature runs again: **Telegram (version 2)** — your end-of-day digest **pauses** until you
-re-accept it in Settings (a one-time strip on every page points there); **OpenAlgo (version 5)** —
-both its trade pull and its live feed (your own bridge, on `127.0.0.1` unless you entered another
-address) stay closed until you re-accept; **Upstox and Angel One live feeds (version 2 each)** — the
-feed stays closed and the desk uses the end-of-day price until you re-accept. While a feed is
-closed, the Live Desk says why and links to Settings → Live feed, and — if you have a saved
-OpenAlgo instance — the Import screen's OpenAlgo section states its reason instead of disappearing.
-
-**What changes with no switch to set.** **Currency derivatives are now refused at import** by
-every broker pull and by every file import, the column mapper included: the row is counted and its
-contract named, and nothing is imported for it. A contract is recognised by a stated currency segment
-or venue, or by a name Vyuha reads as one of the seven exchange-traded pairs; a file that states
-neither is not caught, and a trade typed in by hand is not refused. Currency rows you imported before v4.7.0 **keep the
-charges they were stored with** — the update does not re-price them, and importing the same file
-again refuses the row rather than correcting it — so delete those trades if you want them gone. A
-currency position still **open** from an earlier import will not close itself, because its sale is
-now refused; the refusal note names it for you to close or delete by hand. The duplicate check now
-matches one broker's contract written two ways by two of your sources, so a re-import or a pull may
-now stop at the duplicate dialog where it did not, and the launch auto-pull skips those rows for
-you to review. Every live feed stops at the end of the live window (about 15:45 IST). If your
-OpenAlgo's streaming port is not 8765, put its `WEBSOCKET_URL` in the OpenAlgo connection's
-**Streaming address** to get the stream; without it the desk keeps polling as before. `/reports/itr`
-now counts exited IPO allotments, so its capital gains can move if you exited one. Telegram
-stop/target alerts, where you switch them on, stop after **31 December 2026** until an update
-bundles the 2027 holiday list.
+**What changes with no switch to set.** **A second pull on the same day that restates a sale an
+earlier pull already closed against an older position now stops** at the duplicate dialog instead
+of adding the sale beside it: it names what closed the position (today's earlier pull, an earlier
+pull today, or a Data Quality join you made today) and the steps that record the new total — in
+Trades, Un-close the position (or undo the Data Quality join), delete the sale row that brings
+back, then pull again. Nothing is committed until you choose; committing anyway records the pull's
+figure beside the sale already counted, so the day is counted twice, and the dialog says so. This
+covers the OpenAlgo pull now too. **Imports and pulls close more positions:** when two of your
+sources for one broker write a contract two ways — a weekly option by the exchange's compact name
+and by its date, or a share with and without its series suffix — the two now match exactly and
+the sale closes the position. A **month-level** pair — a compact *monthly* or a future against a
+dated name — is **never closed on its own**: both rows stay, the import says so, and **Data
+Quality lists the pair with both names and a tick** for you to confirm. **On your first launch,
+Data Quality's count can rise**, because positions already split under two names in your book are
+listed there to join one at a time; nothing is rewritten. A Data Quality join can now be undone
+from Trades (the row's menu → **Undo Data Quality join**). **The Clinic recomputes once per
+account** after the update (the engine moved to c4.0), and each setup's Detail then carries a
+**decay card** where a cell has 60 or more trades with an R. **A currency derivative typed by hand
+is refused** when you create it (existing currency rows stay editable, closable and deletable), and
+an NCDEX row in the column mapper or a Nuvama report is refused and named instead of failing the
+whole file. The Live Desk's **Positions** tab shows the **largest 150** positions with a "Show 150
+more" button; its totals still read the whole book. The bundled market data (ISINs, industries
+and cap bands, index membership, ETFs) is refreshed as of **5 October 2026**; the market calendar
+still ends on **31 December 2026**, so Telegram alerts, where you switched them on, still stop
+after that day until an update bundles the 2027 holiday list.
 
 **One thing that happens on its own at first launch, and nothing to switch on.** The desktop
 rate-card refresh had failed on every launch since v3.2.0; 4.3.0 repairs the F&O STT rates for
@@ -289,7 +289,7 @@ removed. Leave the box unticked to keep the data where it is.
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_4.7.0_Windows-x64-Setup.exe` or `Vyuha_4.7.0_macOS-Apple-Silicon.dmg` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.7`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_4.8.0_Windows-x64-Setup.exe` or `Vyuha_4.8.0_macOS-Apple-Silicon.dmg` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.8`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---
