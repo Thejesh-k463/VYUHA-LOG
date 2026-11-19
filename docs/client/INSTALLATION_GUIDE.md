@@ -6,7 +6,7 @@
 computer**. No account, and nothing about you or
 your trades is uploaded by the desktop app unless you switch on a feature that sends it.
 
-- **Platform:** Windows 10 / 11 (64-bit), or macOS 10.15 or later on a Mac with Apple silicon or an
+- **Platform:** Windows 10 / 11 (64-bit), or macOS 11 (Big Sur) or later on a Mac with Apple silicon or an
   Intel processor — **one licence, the same price** on either. Each has its own client package (below).
 - **Disk:** ~200 MB
 - **Internet:** not needed to use Vyuha Desktop. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
@@ -46,7 +46,7 @@ Apple-Silicon; "Processor: … Intel …" means Intel.
 ### On a Mac
 
 1. Download the **macOS-Apple-Silicon** or **macOS-Intel** package (see the table above) from the
-   private link in your purchase email and unzip it. Vyuha needs **macOS 10.15 or later**.
+   private link in your purchase email and unzip it. Vyuha needs **macOS 11 (Big Sur) or later**.
 2. Open **`Vyuha_x.x.x_macOS-Apple-Silicon.dmg`** (or `…_macOS-Intel.dmg`) and drag **Vyuha** into
    **Applications**.
 3. Open Vyuha from Applications. **The Mac app is not signed or notarised by Apple**, so the first

@@ -27,7 +27,7 @@ per hash a customer might execute.
 
 1. Confirm the GitHub release `v<version>` is **public** with `Vyuha_<version>_x64-setup.exe` attached, and `npm run release:verify` has passed.
 2. Get the PUBLISHED asset's hash, then `npm run winget:manifest -- --sha <SHA256>` → `release-packages/winget/<version>/`. `--sha` is **required** — the script no longer hashes your local build, because that is a different binary (see *Which file?* above).
-3. First release ever: `wingetcreate submit --token <gh-token> release-packages/winget/<version>`. Every later release: `wingetcreate update ThejeshK.Vyuha --version <version> --urls <installer-url> --submit --token <gh-token>`.
+3. Sign in once with `wingetcreate token --store` (device flow — NEVER `--token <pat>` on the command line: the token gets logged; one was leaked this way on 2026-08-20). First release ever: `wingetcreate submit release-packages/winget/<version>`. Every later release: `wingetcreate update ThejeshK.Vyuha --version <version> --urls <installer-url> --submit`.
 4. Watch the PR on `microsoft/winget-pkgs` until the validation bot goes green (minutes) and a reviewer merges (first time: days; updates: usually same day).
 5. <https://www.microsoft.com/en-us/wdsi/filesubmission> → Software developer → upload **the `.exe` extracted from `release-packages/Vyuha_<version>_Windows-x64_Client_Package.zip`** (inside it, `Vyuha_<version>_Windows-x64-Setup.exe`) (the binary buyers run — NOT the release asset) → "incorrectly detected" → submit. Keep the submission ID.
 6. On another PC or a clean VM, download the `.exe` in a browser and note what SmartScreen shows; re-check in a week.
@@ -80,7 +80,8 @@ winget install --manifest release-packages/winget/<version>     # needs "Local m
 ### Step 3 — submit
 
 ```
-wingetcreate submit --token <gh-token> release-packages/winget/<version>
+wingetcreate token --store   # once: device-flow sign-in, NEVER --token <pat>
+wingetcreate submit release-packages/winget/<version>
 ```
 
 `wingetcreate` forks `microsoft/winget-pkgs` under your account (once), commits
@@ -115,7 +116,7 @@ Updates to an existing package are mostly bot-merged once validation passes.
 ```
 wingetcreate update ThejeshK.Vyuha --version <new-version> \
   --urls https://github.com/Thejesh-k463/VYUHA-LOG/releases/download/v<new-version>/Vyuha_<new-version>_x64-setup.exe \
-  --submit --token <gh-token>
+  --submit
 ```
 
 `update` copies the last merged manifest, rewrites version, URL, hash and

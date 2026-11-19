@@ -88,7 +88,7 @@ describe("every START_HERE.md says which package is whose", () => {
     expect(win).not.toMatch(/Open Anyway/);
     for (const platform of ["macos-apple-silicon", "macos-intel"]) {
       const mac = startHere({ version: V, platform });
-      expect(mac).toContain("macOS 10.15 or later");
+      expect(mac).toContain("macOS 11 or later");
       expect(mac).toContain("drag Vyuha into Applications");
       expect(mac).toContain("not signed or notarised by Apple");
       expect(mac).toContain('"Open Anyway"');

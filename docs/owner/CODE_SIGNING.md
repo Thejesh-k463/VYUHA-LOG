@@ -30,7 +30,8 @@ prints the submission command. It does **not** publish — that is a pull reques
 to `microsoft/winget-pkgs`, reviewed by a human:
 
 ```bash
-wingetcreate submit --token <gh-token> release-packages/winget/<version>
+wingetcreate token --store   # once: device-flow sign-in, NEVER --token <pat> on the command line
+wingetcreate submit release-packages/winget/<version>
 ```
 
 The **first** submission is the slow one (a few days, hand-reviewed). After it

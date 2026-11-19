@@ -41,7 +41,7 @@
     "copyright": "Copyright © Vyuha",
     "publisher": "Thejesh K",
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "11.0"
     },
     "createUpdaterArtifacts": true,
   "windows": {

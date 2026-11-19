@@ -107,7 +107,7 @@ export function startHere({ version, platform = "windows", licensed = false }) {
   const mac = platform !== "windows";
   const install = mac
     ? [
-        `1. Verify the checksum below, then open ${installerName} (macOS 10.15 or later, on a ${p.label}) and drag Vyuha into Applications.`,
+        `1. Verify the checksum below, then open ${installerName} (macOS 11 or later, on a ${p.label}) and drag Vyuha into Applications.`,
         `2. Open Vyuha from Applications. ${MAC_GATEKEEPER}`,
         "3. In Vyuha, go to Settings → License.",
         `4. ${activation}`,

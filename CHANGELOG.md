@@ -328,7 +328,7 @@ reach your phone, and three more brokers can be pulled directly.*
   leaves everything as it is.
 - **No new dependency.**
 
-Not in this release: no macOS build; the installer is still unsigned (Windows
+Not in this release: no macOS build *(true of v4.7.0; macOS is sold since 19 November 2026)*; the installer is still unsigned (Windows
 SmartScreen warns once). The Fyers, Kotak Neo and Nuvama pulls are not yet
 verified against a real account, and Fyers' history range is not read (today
 only). Kotak Neo and Sahi FILES still go to the column mapper. The real-network

@@ -62,7 +62,7 @@ The release where a second pull on the same day stops instead of counting a sale
 | **Upgrades in place** | A v4.7.0 journal opens straight into v4.8.0. **One database upgrade (0081)** is applied on first launch: one empty column on the Clinic's cache — derived data, outside your backup, filled by the next compute. No money figure already stored on a trade moves. Before it runs, the app writes a full copy of your database to `backups\pre-migrate-<timestamp>.sqlite` in your data folder; **take your own backup first, as always**. **The Clinic recomputes once per account** after the update (engine c4.0) — "Computing the Clinic…" shows while it does. On Windows the installer runs the v4.7.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. **Nothing to re-accept; no new dependency.** |
 
 **Windows and macOS, one licence (from 19 November 2026).** Vyuha Desktop is sold for **Windows 10/11 (64-bit)** and for
-**macOS 10.15 or later** — a Mac with Apple silicon or an Intel Mac — under the **same licence at the same price**. Each machine type
+**macOS 11 (Big Sur) or later** — a Mac with Apple silicon or an Intel Mac — under the **same licence at the same price**. Each machine type
 has its own client package (`…_Windows-x64_…`, `…_macOS-Apple-Silicon_…`, `…_macOS-Intel_…`); START_HERE.md in each says which is
 yours.
 
@@ -105,10 +105,7 @@ The release where the journal tells you what your own record can and cannot prov
 | **Re-accept four disclosures, once** | **Telegram v2 — your end-of-day digest pauses** until you re-read it (a one-time strip on every page says so). **OpenAlgo v5 — its trade pull and its live feed** both stay closed until you re-accept. **Upstox and Angel One feeds v2** — each feed stays closed until you re-accept, and the desk uses the end-of-day price meanwhile. Nothing new is sent until you accept. |
 | **Upgrades in place** | A v4.6.0 journal opens straight into v4.7.0. **Two database upgrades (0079–0080)** are applied on first launch: 0079 adds the setup grade, the intra-trade range and the Clinic's experiments and cache; 0080 adds the alert settings and the alert receipts (the receipts are machine state, not in a backup). No money figure already stored on a trade moves. Before either runs, the app writes a full copy of your database to `backups\pre-migrate-<timestamp>.sqlite` in your data folder; **take your own backup first, as always**. The installer runs the v4.6.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. |
 
-**Windows and macOS, one licence (from 19 November 2026).** Vyuha Desktop is sold for **Windows 10/11 (64-bit)** and for
-**macOS 10.15 or later** — a Mac with Apple silicon or an Intel Mac — under the **same licence at the same price**. Each machine type
-has its own client package (`…_Windows-x64_…`, `…_macOS-Apple-Silicon_…`, `…_macOS-Intel_…`); START_HERE.md in each says which is
-yours. A machine-bound key moved between a Windows PC and a Mac asks for the new Machine ID, exactly as a move between two PCs does.
+*v4.7.0 shipped for Windows only; since 19 November 2026 Vyuha is sold for Windows and macOS — see New in v4.8.0.*
 
 **Not in this release, said plainly.** The Windows installer is **not code-signed**, so
 Windows SmartScreen warns once ("More info → Run anyway"); that is expected. The Mac app is **not signed or notarised by Apple**, so
