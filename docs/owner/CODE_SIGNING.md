@@ -149,6 +149,27 @@ replace the `signCommand` in `src-tauri/tauri.signed.conf.json` with the vendor'
 the vendor's credentials in `release.yml`. The activation mechanism (config overlay + conditional
 step) stays identical.
 
+## macOS — not signed, not notarised (stated plainly since 2026-11-19)
+
+macOS is sold openly from 2026-11-19, under the same licence and price as Windows (owner ruling).
+The two DMGs (`Vyuha_<ver>_aarch64.dmg`, `Vyuha_<ver>_x64.dmg`, built by the macos-15 and
+macos-15-intel legs of `.github/workflows/release.yml`) are **not signed with an Apple Developer ID
+and not notarised**: neither `.github/workflows/release.yml` nor the Tauri config carries an
+`APPLE_*` secret or a `signingIdentity`.
+
+- **What the buyer sees:** the first time they open Vyuha, macOS says it cannot verify the
+  developer. They open **System Settings → Privacy & Security**, scroll to the message about
+  Vyuha and click **Open Anyway** (on macOS 14 and earlier, Control-click the app → **Open** also
+  works). Asked once. Every buyer surface that tells someone to install on a Mac carries that
+  sentence (`tests/platform-copy.test.ts`); none may call the app notarised or signed by Apple.
+- **What IS signed:** the update. The macOS updater bundles (`*.app.tar.gz`) carry the same
+  minisign update signature as the Windows installer (key id `4FF85F3BBE1DA21D`), and
+  `npm run release:verify` checks both Mac signatures alongside the Windows one.
+- **Removing the warning** needs an Apple Developer Program membership, a Developer ID
+  Application certificate and notarisation in CI (`APPLE_CERTIFICATE`, `APPLE_SIGNING_IDENTITY`,
+  `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` for Tauri). That is a spend decision for the
+  owner; nothing here is wired for it.
+
 ## Notes
 - **Never sign locally with production credentials** — keep signing in CI where the secret lives.
 - `cargo install trusted-signing-cli` adds a few minutes per release; a cache step can be added

@@ -178,7 +178,8 @@ IF THE TASK IS A RELEASE: follow the `release` skill start to finish. Traps alre
 ALREADY SETTLED — do not re-open: Pro annual Rs 9,999 / lifetime Rs 29,999 (planned Rs 14,999 /
 Rs 75,000, no date; owner 2026-11-10); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
 revocations prerelease exists; NO annual->lifetime upgrade credit (owner 2026-11-10); delivery is manual
-mail/WhatsApp; intraday data not required; macOS is not sold; landing page = Pages redirect, not a
+mail/WhatsApp; intraday data not required; macOS is sold openly at the same licence + price, one client package per
+machine type (owner 2026-11-19, replacing "macOS is not sold"); landing page = Pages redirect, not a
 copy; OpenAlgo is opt-in, off by default, server-gated, and not in BROKERS.
 
 MINE, NOT YOURS (do not attempt): publishing releases, running a live OpenAlgo or broker API pull,

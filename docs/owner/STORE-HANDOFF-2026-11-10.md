@@ -101,7 +101,9 @@ Facts from the app that are safe to state:
 - the core journal (trades, imports, dashboard, playbooks, backups) is free forever and never locked;
 - the paid part is the analytics;
 - a 7-day full Pro trial on a fresh install;
-- Windows x64 desktop, data on the user's own machine.
+- Windows x64 and macOS (Apple silicon and Intel) desktop, one licence at one price, data on the
+  user's own machine (owner ruling 2026-11-19; the Mac app is not notarised — any macOS install
+  line carries the "Open Anyway" step).
 
 ## 6. What the store session still owns
 

@@ -16,10 +16,12 @@ import { NAV_ITEMS } from "@/components/layout/nav-config";
  *     first draft of the guide had three wrong labels ("Risk", "Backup",
  *     "Pricing") — found by reading nav-config.ts, which is what this pins.
  *
- * The no-claims check deliberately also covers the standing rules: macOS is
- * not sold, indicators/TradingView/Pine Script are invite-only, OpenAlgo ships
- * off and undocumented. A demo that mentioned any of them would be a
- * buyer-facing claim the repo has already decided not to make.
+ * The no-claims check deliberately also covers the standing rules:
+ * indicators/TradingView/Pine Script are invite-only, OpenAlgo ships off and
+ * undocumented. A demo that mentioned any of them would be a buyer-facing claim
+ * the repo has already decided not to make. (The macOS ban was lifted on
+ * 2026-11-19 — the owner ruled macOS "sold openly now"; the platform rule moved
+ * to tests/platform-copy.test.ts, which requires Windows AND macOS instead.)
  */
 
 const root = process.cwd();
@@ -54,7 +56,6 @@ const BANNED: { re: RegExp; why: string }[] = [
   { re: /beat the market/i, why: "outcome claim" },
   { re: /\b(buy|sell) (calls?|tips?|recommendations?)\b|\btip service\b/i, why: "advisory framing" },
   { re: /\bAI[- ]powered\b/i, why: "not what the product does" },
-  { re: /\bmacOS\b|\bon (a )?Mac\b/i, why: "macOS is not sold (owner decision 2026-08-15)" },
   { re: /TradingView|Pine Script|\bindicators?\b/i, why: "invite-only, not sold" },
   { re: /OpenAlgo/i, why: "kept out of the MAIN tour video (owner decision 2026-08-28) — it is advertised in writing and in its own setup video" },
 ];

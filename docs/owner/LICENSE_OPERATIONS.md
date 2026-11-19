@@ -82,6 +82,12 @@ in the password manager, not in the same folder as the bundle.
 > the same with `--renewal` for every later month (receipt ₹1,499). Each month is a fresh one-month key; nothing renews by itself.
 > The annual receipt row reads ₹9,999 since the 2026-11-10 owner ruling (₹7,999 from 2026-09-18 to then).
 >
+> **A Mac buyer** (2026-11-19: macOS sold at the same licence + price): add
+> `--platform macos-apple-silicon` or `--platform macos-intel`. The key is the same kind of key; the send
+> message names `Vyuha_<ver>_macOS-…_Client_Package.zip` and the "Open Anyway" step instead of SmartScreen.
+> Without the flag it names the Windows-x64 package. Ask which Mac (Apple menu → About This Mac → "Chip: Apple M…"
+> or "Processor: … Intel") before you send.
+>
 > It **spawns** `license-issue.mjs` and `license-backup.mjs` rather than re-implementing
 > them, so every guard below stays in force. Then it verifies the ledger and archive against
 > disk, numbers and saves the receipt (`VY-<year>-NNN`, recorded on the ledger line), backs

@@ -126,7 +126,10 @@ describe("every Vyuha menu path the guide names exists in the app's own copy", (
     expect(builder).toContain('["docs/client/BROKER_API_SETUP_GUIDE.html", "BROKER_API_SETUP_GUIDE.html"]');
     expect(builder).toContain('["docs/client/BROKER_API_SETUP_GUIDE.docx", "BROKER_API_SETUP_GUIDE.docx"]');
     // The START_HERE.md the builder generates has to point at it, or the file
-    // sits in the ZIP unread.
-    expect(builder).toContain("Connecting a broker's API? Open BROKER_API_SETUP_GUIDE.html");
+    // sits in the ZIP unread. Since 2026-11-19 the text is generated per
+    // platform by scripts/lib/client-package.mjs, which the builder imports.
+    expect(builder).toContain('from "./lib/client-package.mjs"');
+    const lib = readFileSync(path.join(root, "scripts", "lib", "client-package.mjs"), "utf8");
+    expect(lib).toContain("Connecting a broker's API? Open BROKER_API_SETUP_GUIDE.html");
   });
 });

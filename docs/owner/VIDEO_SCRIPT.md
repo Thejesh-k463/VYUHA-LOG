@@ -30,7 +30,7 @@ demo run, `data/vyuha.sqlite` had an unchanged modification time.
 | **Import → Connect broker with credentials filled in** | API key, client code, PIN and TOTP secret. The demo book has no connections so the screen renders empty — that is the shot you want. This is the same reason `broker-connect.png` is hand-taken and excluded from the screenshot script. |
 | **Your real journal** | Use the demo server. Do not "just quickly" switch to your own book to show something. |
 | **A licence key, or Settings → License with a real key active** | Key IDs identify a buyer. |
-| **macOS, or any Mac reference** | macOS is not sold (owner decision 2026-08-15). |
+| **"Windows only", or a Mac install without its warning** | Vyuha is sold for Windows and macOS under one licence (owner ruling 2026-11-19, replacing the 2026-08-15 "not sold" decision). If a Mac is filmed, show the first-open "Open Anyway" step plainly — the Mac app is not notarised by Apple. |
 | **TradingView, Pine Script, "indicators"** | Invite-only, not part of this product. |
 | **OpenAlgo** | Ships switched off by default until a live pull is reconciled against a contract note. It is documented (its setup guide ships in the client package), but do not enable it for the camera. |
 | **Any return, win-rate or accuracy claim** | SEBI posture. See §4. |

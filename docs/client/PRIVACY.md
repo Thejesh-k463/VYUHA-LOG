@@ -19,7 +19,8 @@ One SQLite database file on your own computer, plus a folder of any screenshots
 you attached:
 
 ```
-%APPDATA%\in.vyuha.tradejournal\vyuha.sqlite
+Windows: %APPDATA%\in.vyuha.tradejournal\vyuha.sqlite
+macOS:   ~/Library/Application Support/in.vyuha.tradejournal/vyuha.sqlite
 ```
 
 Copy that file and you have backed up your entire trading history. Delete it and

@@ -6,11 +6,13 @@
 //   npm run release:archive -- D:\VyuhaArchive
 //
 // Copies, for the version in package.json: the NSIS installer + .sig, the MSI + .sig, the
-// client ZIP, CHECKSUMS (recomputed here), and the winget manifest folder if present.
+// three client ZIPs (Windows-x64, macOS-Apple-Silicon, macOS-Intel), CHECKSUMS (recomputed
+// here), and the winget manifest folder if present.
 // Refuses to overwrite an existing version folder. Never touches keys or the ledger.
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { PLATFORM_IDS, packageNames } from "./lib/client-package.mjs";
 
 const dest = process.argv[2];
 if (!dest) {
@@ -28,7 +30,9 @@ const candidates = [
   `src-tauri/target/release/bundle/nsis/Vyuha_${version}_x64-setup.exe.sig`,
   `src-tauri/target/release/bundle/msi/Vyuha_${version}_x64_en-US.msi`,
   `src-tauri/target/release/bundle/msi/Vyuha_${version}_x64_en-US.msi.sig`,
-  `release-packages/Vyuha_${version}_Client_Package.zip`,
+  // One client package per kind of computer (owner ruling 2026-11-19); a
+  // platform not packaged this release prints "(missing)" and is skipped.
+  ...PLATFORM_IDS.map((platform) => `release-packages/${packageNames({ version, platform }).archiveName}`),
 ];
 mkdirSync(out, { recursive: true });
 const lines = [];

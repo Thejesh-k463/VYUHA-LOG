@@ -12,7 +12,7 @@ before you can.
 There are plenty of trade journals now, and AI has made it easy for anyone to
 build another. Vyuha is different in what it does — and in where it runs.
 
-- **It runs on your own PC.** Unprompted, the desktop app
+- **It runs on your own computer — Windows or Mac.** Unprompted, the desktop app
   touches the internet exactly once: a check for updates at launch. Anything
   else — the end-of-day price download, broker pulls, the Telegram digest — is
   off until you switch it on.
@@ -68,8 +68,15 @@ The release where the journal tells you what your own record can and cannot prov
 | **Re-accept four disclosures, once** | **Telegram v2 — your end-of-day digest pauses** until you re-read it (a one-time strip on every page says so). **OpenAlgo v5 — its trade pull and its live feed** both stay closed until you re-accept. **Upstox and Angel One feeds v2** — each feed stays closed until you re-accept, and the desk uses the end-of-day price meanwhile. Nothing new is sent until you accept. |
 | **Upgrades in place** | A v4.6.0 journal opens straight into v4.7.0. **Two database upgrades (0079–0080)** are applied on first launch: 0079 adds the setup grade, the intra-trade range and the Clinic's experiments and cache; 0080 adds the alert settings and the alert receipts (the receipts are machine state, not in a backup). No money figure already stored on a trade moves. Before either runs, the app writes a full copy of your database to `backups\pre-migrate-<timestamp>.sqlite` in your data folder; **take your own backup first, as always**. The installer runs the v4.6.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. |
 
-**Not in this release, said plainly.** There is **no macOS build** — Windows only. The installer is **not code-signed**, so
-Windows SmartScreen warns once ("More info → Run anyway"); that is expected. The **Fyers, Kotak Neo and Nuvama pulls are not yet
+**Windows and macOS, one licence (from 19 November 2026).** Vyuha Desktop is sold for **Windows 10/11 (64-bit)** and for
+**macOS 10.15 or later** — a Mac with Apple silicon or an Intel Mac — under the **same licence at the same price**. Each machine type
+has its own client package (`…_Windows-x64_…`, `…_macOS-Apple-Silicon_…`, `…_macOS-Intel_…`); START_HERE.md in each says which is
+yours. A machine-bound key moved between a Windows PC and a Mac asks for the new Machine ID, exactly as a move between two PCs does.
+
+**Not in this release, said plainly.** The Windows installer is **not code-signed**, so
+Windows SmartScreen warns once ("More info → Run anyway"); that is expected. The Mac app is **not signed or notarised by Apple**, so
+the first time you open it macOS says it cannot verify the developer — open System Settings → Privacy & Security and click
+"Open Anyway" (on macOS 14 and earlier, Control-click the app → Open also works). The **Fyers, Kotak Neo and Nuvama pulls are not yet
 verified** against a real account, and Fyers' history range is not read (today only). **Kotak Neo and Sahi files** still go to
 the column mapper. The alerts, the three new pulls and the stream are proven against stand-ins, not against a real connection.
 **Alerts stop after 31 December 2026** until the 2027 NSE holiday list is bundled. **Currency rows imported before v4.7.0 are
@@ -99,7 +106,7 @@ The release where the journal learns the market's real clock, two more brokers i
 | **OpenAlgo: 2.0.2.6 or later** | Vyuha reads the running version from your own OpenAlgo and refuses a pull below **2.0.2.6** with the upgrade steps. A sandbox (Analyzer-mode) tradebook, an exchange Vyuha cannot price (NCO, NCDEX) and a zero-quantity MCX row are refused, never guessed. **Fyers** can be pulled through OpenAlgo; **Nuvama** cannot. If you use OpenAlgo you are asked once to re-acknowledge its disclosure (**version 4**). **OPENALGO_SETUP_GUIDE** in this package gains the version-and-upgrade section. |
 | **Upgrades in place** | A v4.5.0 journal opens straight into v4.6.0. **Four database upgrades (0075–0078)** are applied on first launch: 0075 moves a Telegram digest time still at the old **15:35** default to **15:45**, after the F&O close (a time you typed is left alone); 0076 adds the Atlas regime thresholds; 0077 adds the side column, and a one-time data fix states each existing trade's side from its own dates and notes (blank where they cannot tell); 0078 adds the **16 Fyers and Nuvama margin rows**. The first start also adds the **280 Fyers and Nuvama rate rows**. A row you added or edited yourself is never touched, and no money figure already stored on a trade moves. Before any of it runs, the app writes a full copy of your database to `backups\pre-migrate-<timestamp>.sqlite` in your data folder; **take your own backup first, as always**. The installer runs the v4.5.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. |
 
-**Not in this release, said plainly.** There is **no macOS build** — Windows only. The installer is **not code-signed**, so
+**Not in this release, said plainly.** There is **no macOS build** — Windows only *(true of that release; since 19 November 2026 macOS is sold under the same licence — see "New in v4.7.0" above)*. The installer is **not code-signed**, so
 Windows SmartScreen warns once ("More info → Run anyway"); that is expected. **No network host** is added: the market calendar,
 the stock universe and the index map are build-time snapshots, and the Atlas top-up reads the same NSE archive, under the same
 consent, as the end-of-day download. **Kotak Neo and Sahi** still import through the column mapper only. **Fyers and Nuvama
@@ -125,7 +132,7 @@ The release where a sale closes the position it sold, and where the tax pack kno
 | **A broker-stated bill survives a re-tag** | Re-tagging a trade that was imported from a file stating its own charges now **keeps those charges** rather than re-pricing them from the rate card. This applies to **imports made from this version on**; a row imported before v4.5.0 still re-prices on a re-tag. |
 | **Upgrades in place** | A v4.4.0 journal opens straight into v4.5.0. **One database upgrade (0074)** is applied on first launch — it adds the account's broker-plan columns and moves no money figure. Before it runs, the app writes a full copy of your database to `backups\pre-migrate-<timestamp>.sqlite` in your data folder; **take your own backup first, as always**. The installer runs the v4.4.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. |
 
-**Not in this release, said plainly.** There is **no macOS build** — Windows only. The installer is **not code-signed**, so
+**Not in this release, said plainly.** There is **no macOS build** — Windows only *(true of that release; since 19 November 2026 macOS is sold under the same licence — see "New in v4.7.0" above)*. The installer is **not code-signed**, so
 Windows SmartScreen warns once ("More info → Run anyway"); that is expected. **No network host** is added by this release: the
 ETF list and the index map are build-time snapshots, and the app contacts nothing to read them. The broker-stated-bill marker is
 written by **new imports only**. **F&O contract notes** are still not read; only the equity ones, from Groww and Upstox. Capital
@@ -500,7 +507,7 @@ books. Nothing new leaves your machine — the privacy note is unchanged.
 | **Lifetime carries the roadmap** | Lifetime includes every future upgrade at no extra cost — exciting, useful features are on the roadmap. |
 | **This deck caught up with the product** | The getting-started deck now names all six brokers, the column mapper and the three broker-API pulls, lists the full Pro screen set (Lenses included), and carries the SmartScreen note next to the install steps. |
 | **The refreshed mark, everywhere** | The landing page, brochure and this deck now carry the current Vyuha mark — the older flat tile is retired. |
-| **Windows-only, said plainly** | This package sells and supports the Windows desktop app. |
+| **Windows-only, said plainly** | This package sells and supports the Windows desktop app. *(True of that release; since 19 November 2026 Vyuha is sold for Windows and macOS under the same licence.)* |
 | **The refund policy states its edges** | A closing note now says refunds beyond the two named exceptions are at the owner's discretion, and that verified tampering or replication of Vyuha forfeits them. |
 
 ## New in v2.99.94
@@ -649,9 +656,13 @@ books. Nothing new leaves your machine — the privacy note is unchanged.
 
 ## Getting started
 
-1. **Install** — run `Vyuha_x.y.z_x64-setup.exe`. Windows may warn about an
-   unrecognised publisher; that is expected for an independently distributed
-   app. Full walkthrough: [`INSTALLATION_GUIDE.md`](INSTALLATION_GUIDE.md).
+1. **Install** — on Windows, run `Vyuha_x.y.z_Windows-x64-Setup.exe`; Windows may
+   warn about an unrecognised publisher, which is expected for an independently
+   distributed app. On a Mac, open `Vyuha_x.y.z_macOS-Apple-Silicon.dmg` (or
+   `…_macOS-Intel.dmg`) and drag Vyuha into Applications; the Mac app is not
+   signed or notarised by Apple, so the first open needs System Settings →
+   Privacy & Security → "Open Anyway". Full walkthrough:
+   [`INSTALLATION_GUIDE.md`](INSTALLATION_GUIDE.md).
 2. **Activate** — Settings → License, paste the `VYUHA-…` key from your
    purchase email. You get a **7-day full trial** before a key is needed.
 3. **Import your trades** — Import → pick the kind of file you have.
@@ -715,7 +726,8 @@ file import. The **Import Help** tab has step-by-step cards for setting it up.
 Everything lives in one SQLite file on your machine:
 
 ```
-%APPDATA%\in.vyuha.tradejournal\vyuha.sqlite
+Windows: %APPDATA%\in.vyuha.tradejournal\vyuha.sqlite
+macOS:   ~/Library/Application Support/in.vyuha.tradejournal/vyuha.sqlite
 ```
 
 **Back it up** from Backup & Restore inside the app. The backup includes the complete

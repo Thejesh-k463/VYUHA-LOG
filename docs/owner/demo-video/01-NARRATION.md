@@ -86,5 +86,5 @@ shots dropped. Nothing is re-recorded for the short version.
 | "ten thousand trades", "sub-second" | Performance numbers age badly and sound like marketing. The product is fast; the video shows it rather than says it. |
 | Broker names in VO-3 | "Six brokers" is true today and stays true if a seventh is added. Naming them dates the video. |
 | The Machine ID, licensing mechanics | Support detail. Not why anyone buys. |
-| OpenAlgo, Pine Script, macOS | Standing rules: not shipped / not sold / not on. |
+| OpenAlgo, Pine Script | Standing rules: kept out of the main tour / not sold. (macOS left this row on 19 Nov 2026: it is sold now, under the same licence as Windows.) |
 | "AI" | Not what the product does, and the word is now a red flag to the audience you want. |

@@ -12,15 +12,16 @@
 > Claims below are copied from the audited sales surfaces (README / landing page,
 > v3.0.0 audit). If a claim changes there, change it here in the same commit —
 > this file is buyer-adjacent copy and is part of every release's claims audit.
-> Deliberately absent, do not add: macOS (not sold — owner decision 2026-08-15)
-> and any price other than the two below.
+> Platforms: Windows and macOS, one licence at one price (owner ruling 2026-11-19,
+> replacing the 2026-08-15 decision that kept macOS off every selling surface). Deliberately absent, do not
+> add: any price other than the two below.
 
 ---
 
 # Welcome to the Vyuha creator programme, [[NAME]]
 
 Vyuha is a **fully local, offline trade journal + analytics cockpit for Indian
-retail traders** — Windows desktop, zero cloud, zero telemetry, the user's data
+retail traders** — Windows and macOS desktop, zero cloud, zero telemetry, the user's data
 never leaves their machine. You're getting the exact package a paying customer
 gets, plus a free lifetime licence, so what you show your audience is precisely
 what they'll experience.
@@ -78,7 +79,9 @@ than any feature. Please avoid:
 - ❌ "Guaranteed profits", "improves your win rate", or any outcome promise.
   Vyuha measures and reports; it does not predict or advise.
 - ❌ "Auto-trading" or "algo trading" — Vyuha places no orders, ever. Read-only.
-- ❌ "Works on Mac" — it is sold for **Windows** only.
+- ❌ Naming one platform as the only one — it is sold for **Windows and macOS** under one licence. If you show a Mac
+  install, say it plainly: the Mac app is not signed or notarised by Apple, so the first open
+  needs System Settings → Privacy & Security → "Open Anyway". Never call it notarised.
 - ❌ "Syncs to cloud", "mobile app", or "the web version does X" — Vyuha Desktop has
   none of these today. A web platform is in development; describe it only as
   "in development", never with a date and never as if you have used it.

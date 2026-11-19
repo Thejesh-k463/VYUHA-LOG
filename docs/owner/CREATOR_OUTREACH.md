@@ -69,7 +69,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > build something your audience keeps asking about: a proper trade journal for Indian
 > retail traders.
 >
-> **Vyuha** is a Windows desktop app. It is local-first — the database is a file on
+> **Vyuha** is a desktop app for Windows and macOS. It is local-first — the database is a file on
 > the trader's own computer; there is no login, no cloud sync and no telemetry.
 >
 > What it does, plainly:
@@ -131,8 +131,9 @@ Send this once they say yes. It is short on purpose.
    choice and your disclosure.
 4. **Include the link or file.** Point viewers at https://thejesh-k463.github.io/VYUHA-LOG/ (or the installer download we send you) so they can take the
    7-day trial themselves.
-5. **Windows.** Please review the Windows build. Do not tell viewers a macOS version
-   exists — it is not sold in this package.
+5. **Windows or Mac.** Review whichever you use — Windows and macOS are sold under one licence
+   at one price. On a Mac, tell viewers plainly that the app is not notarised by Apple, so the
+   first open needs System Settings → Privacy & Security → "Open Anyway".
 
 ---
 
@@ -200,7 +201,8 @@ Fill a row when you first message a creator, not when they accept — otherwise 
   hint at "maybe later" in the outreach.
 - **No exclusivity, no editorial control, no takedown requests** on an unfavourable
   review.
-- **No macOS.** Windows only; do not say a Mac build is "coming" on any surface.
+- **Windows and macOS, one licence** (owner ruling 2026-11-19). Never say "Windows only", and never
+  call the Mac app notarised or signed by Apple — it is neither.
 - **The public URL is https://thejesh-k463.github.io/VYUHA-LOG/** (GitHub Pages, live
   since 2026-08-15). Link it; attach the standalone HTML only as a fallback — never
   paste a placeholder link that 404s.

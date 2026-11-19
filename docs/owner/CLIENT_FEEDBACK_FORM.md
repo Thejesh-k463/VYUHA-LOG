@@ -36,7 +36,7 @@ API keys, TOTP secrets, PAN, or account numbers.
     comparison · Backup/restore · Appearance (skins/tint/custom/wallpaper)
 16. What is missing that would make you open Vyuha every day? (paragraph)- Optional
 17. Which broker would you most like connected next, and how — file, API, or "just Manual work"? (short)
-18. Would a Mac or web version matter to you? (No · Nice to have · I can't use it without)
+18. Would a web version matter to you? (No · Nice to have · I can't use it without)
 
 ## Section 4 — Price and trust
 

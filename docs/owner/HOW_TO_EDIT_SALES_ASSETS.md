@@ -22,7 +22,10 @@ else to touch.
 | WhatsApp number / email | the comment block at the top of `landing-page.html` | — |
 
 Rules that apply to every sentence: no returns, accuracy or win-rate promises (SEBI posture — it
-is an analytical tool, not advice); Windows only (never advertise macOS on a selling surface);
+is an analytical tool, not advice); the platforms are **Windows and macOS**, one licence at one
+price (owner ruling 2026-11-19) — name both wherever a platform is stated, and any sentence that
+tells a buyer to install on a Mac carries the Gatekeeper line (the Mac app is not signed or
+notarised by Apple; System Settings → Privacy & Security → "Open Anyway");
 "Not stated" in a competitor cell means exactly that.
 
 ## 2. Page map (landing-page.html)
@@ -61,7 +64,10 @@ overlay (plain JS at the bottom of the file — no library). To add a screenshot
 - Bump the version pill in the hero on every release.
 - Never write the word "indicator(s)", "TradingView" or "Pine Script" in the page body — the
   invite-only indicators are not part of what is sold and the test fails on the bare word.
-- Search for `macOS` / `Mac` before publishing — there must be none.
+- Search for `Windows` and `macOS` before publishing — a platform line names both, never
+  "Windows only", and a macOS install claim sits beside the "Open Anyway" sentence. Never write
+  "notarised" or "signed by Apple" as a claim — the Mac app is neither.
+  `tests/platform-copy.test.ts` fails on any of these.
 
 ## 4. Build the emailable single file
 

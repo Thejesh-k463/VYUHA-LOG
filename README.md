@@ -8,8 +8,8 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
 [![Tests](https://img.shields.io/badge/tests-13407%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-160%20flows-2ea44f)](e2e)
-[![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
+[![E2E](https://img.shields.io/badge/e2e-205%20flows-2ea44f)](e2e)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
 [![Where](https://img.shields.io/badge/where-desktop%20or%20web-black)](#-your-data-your-choice-of-home)
 [![Built for](https://img.shields.io/badge/built%20for-Indian%20retail%20traders-ff9933)](#why-vyuha)
@@ -72,9 +72,12 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > once:** Telegram v2 (**the digest pauses** until you do); OpenAlgo v5 (**its
 > trade pull closes too**, not only the prices from that bridge); the Upstox
 > and Angel One feeds v2. **Two database upgrades, 0079–0080**, applied on
-> first launch — take a backup first, as always. No new dependency. Not in
-> this release: **no macOS build**, the installer is still **unsigned**
-> (Windows SmartScreen warns once), the alerts, the three new pulls and the
+> first launch — take a backup first, as always. No new dependency. **Sold for
+> Windows and macOS from 19 November 2026**, one licence at one price, one client
+> package per machine type. Not in this release: the Windows installer is still
+> **unsigned** (Windows SmartScreen warns once) and the Mac app is **not signed or
+> notarised by Apple** (the first open needs System Settings → Privacy & Security →
+> "Open Anyway"), the alerts, the three new pulls and the
 > stream are proven against stand-ins, not against a live broker, and a
 > currency contract is recognised by a stated currency segment or venue or by
 > a name Vyuha reads as one of the seven pairs — a file that states neither is
@@ -112,7 +115,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > Quality names them**. OpenAlgo pulls need **2.0.2.6** or later. **Four
 > database upgrades, 0075–0078**, plus the Fyers and Nuvama rate and margin rows,
 > applied on first launch — take a backup first, as always. One new dependency,
-> `@radix-ui/react-accordion`. Not in this release: **no macOS build**, the
+> `@radix-ui/react-accordion`. Not in this release: **no macOS build** (true of
+> that release; macOS is sold from 19 November 2026), the
 > installer is still **unsigned** (Windows SmartScreen warns once), and **no
 > network host** is added.
 >
@@ -142,7 +146,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > the earlier year. **Dhan** rows regroup under **tickers**. A **broker-stated
 > bill survives a re-tag**, on imports made from this version on. **One
 > database upgrade, 0074**, applied on first launch — take a backup first, as
-> always. Not in this release: **no macOS build**, the installer is still
+> always. Not in this release: **no macOS build** (true of that release; macOS is
+> sold from 19 November 2026), the installer is still
 > **unsigned** (Windows SmartScreen warns once), and **no network host** is
 > added.
 >
@@ -729,7 +734,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery; Fyers' and Nuvama's lists are not bundled yet) | charge-engine error vs a real broker report |
 | **13407** | **45** | **0** |
-| tests, 160 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
+| tests, 205 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -1051,10 +1056,21 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 
 | Platform | File | Data lives in |
 |---|---|---|
-| **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
+| **Windows** (10/11, 64-bit) | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
+| **macOS, Apple silicon** (10.15 or later) | `Vyuha_x.y.z_aarch64.dmg` | `~/Library/Application Support/in.vyuha.tradejournal` |
+| **macOS, Intel** (10.15 or later) | `Vyuha_x.y.z_x64.dmg` | `~/Library/Application Support/in.vyuha.tradejournal` |
+
+These are the release-asset names. A buyer receives the same files inside a client package named for
+the machine — `Vyuha_x.y.z_Windows-x64_Client_Package.zip`, `…_macOS-Apple-Silicon_Client_Package.zip`,
+`…_macOS-Intel_Client_Package.zip` (`npm run client:package -- --platform …`). One licence covers both
+platforms at one price. The Mac app is **not signed or notarised by Apple**: the first time it opens,
+macOS says it cannot verify the developer — System Settings → Privacy & Security → **Open Anyway** (on
+macOS 14 and earlier, Control-click the app → Open also works). Updates are signed with the updater key
+on every platform.
 
 Current release: **v4.7.0**. If the window ever comes up blank, the sidecar's own log is at
-`%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
+`%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` (on a Mac,
+`~/Library/Application Support/in.vyuha.tradejournal/logs/sidecar.log`) — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all eight broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, the Edge Clinic hub (the Clinic's full report, weekly note and experiments; Setups, Discipline, Scaling & Replay — the Clinic's whole-book evidence grade stays a free teaser card), the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and the Capital & Expiry hub (Return on Margin, Expiry), the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), the Costs hub (Charges & MTF Leak, Broker Costs), per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.
 
@@ -1084,8 +1100,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       13407 unit + integration tests across 564 files (+ tests/load: 16 load cases, run separately)
-e2e/         160 Playwright flows through the real app, in 42 specs
+tests/       13407 unit + integration tests across 566 files (+ tests/load: 16 load cases, run separately)
+e2e/         205 Playwright flows through the real app, in 43 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -1122,7 +1138,7 @@ lines.
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
 | `npm test` | Vitest unit + integration suite (13407 tests) |
-| `npm run test:e2e` | Playwright e2e — 160 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm run test:e2e` | Playwright e2e — 205 flows incl. the shell-geometry check on every route, the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -1159,7 +1175,7 @@ npm run desktop:build
 macOS build needs a Mac. That is what the release matrix is for.
 
 Releases are built by CI on tag push (`v*`) across a matrix — Windows x64, macOS Apple silicon and
-macOS Intel (macOS is built by CI but not sold or supported) — signed with the updater keypair and published as **drafts**, so updates only reach
+macOS Intel (all three sold under one licence since 19 November 2026; the macOS app is not notarised) — signed with the updater keypair and published as **drafts**, so updates only reach
 users when a draft is explicitly published. macOS ships per-architecture rather than as one universal
 binary because the app carries a bundled Node runtime, and a universal bundle would embed a
 single-architecture Node that fails on the other kind of Mac.

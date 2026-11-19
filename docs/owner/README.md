@@ -35,7 +35,11 @@ npm run bump-version x.y.z
 #   package-lock.json — BOTH "version" fields (root and packages."")
 #   src-tauri/Cargo.lock — the [[package]] vyuha version
 npm run desktop:build   # builds, signs, and REFUSES to ship unsigned
-node scripts/build-client-package.mjs   # rebuild the client ZIP
+node scripts/build-client-package.mjs   # rebuild the Windows-x64 client ZIP
+# the two Mac client ZIPs, from the release draft's DMGs (no Mac needed):
+#   gh release download v<ver> --pattern "*_aarch64.dmg" --pattern "*_x64.dmg" --dir dmg
+#   node scripts/build-client-package.mjs --platform macos-apple-silicon --installer dmg/Vyuha_<ver>_aarch64.dmg
+#   node scripts/build-client-package.mjs --platform macos-intel         --installer dmg/Vyuha_<ver>_x64.dmg
 ```
 
 **EVERY release updates the client package — no exceptions.** Before building
@@ -104,6 +108,7 @@ duplicate-email and same-day-backup traps handled):
 ```bash
 npm run sell -- buyer@mail.com --years 1 --utr <12-digit-UTR> --name "Full Name"   # Annual
 npm run sell -- buyer@mail.com --lifetime --utr <12-digit-UTR> --name "Full Name"  # Lifetime
+#   a Mac buyer: add --platform macos-apple-silicon | macos-intel (same licence; default windows)
 npm run renewals                                 # monthly renewal outreach list (exit 2 on lapsed)
 ```
 

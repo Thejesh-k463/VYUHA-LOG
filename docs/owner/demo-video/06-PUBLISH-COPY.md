@@ -30,7 +30,7 @@ The core journal is free forever. A licence unlocks the analytics layer.
 Every fresh install starts with a 7-day full trial. No sign-up, no card.
 → https://thejesh-k463.github.io/VYUHA-LOG/
 
-Windows. Built by one person. Vyuha is a record-keeping and analytics tool, not investment advice.
+Windows and macOS. Built by one person. Vyuha is a record-keeping and analytics tool, not investment advice.
 ```
 
 **Tags**
@@ -53,7 +53,7 @@ A trade journal for Indian retail traders that recomputes every charge from your
 
 7-day full trial, no sign-up, no card → https://thejesh-k463.github.io/VYUHA-LOG/
 
-Not investment advice. Windows.
+Not investment advice. Windows and macOS.
 ```
 
 ---
@@ -85,7 +85,7 @@ It is a record-keeping tool. It will not tell you what to buy, and it does not c
 
 Seven-day full trial, no sign-up, no card: https://thejesh-k463.github.io/VYUHA-LOG/
 
-Windows only for now.
+Windows and macOS, one licence.
 ```
 
 ---
@@ -106,7 +106,7 @@ Happy to answer anything.
 
 The test fails if any of these appear anywhere above, case-insensitive:
 
-`improve your trading` · `become profitable` · `make money` · `win rate` · `win-rate` · `accuracy` · `guaranteed` · `returns` · `profits` (as a promise) · `beat the market` · `edge over` · `tips` · `calls` · `recommendation` · `AI-powered` · `macOS` · `Mac` · `TradingView` · `Pine Script` · `indicator` · `OpenAlgo`
+`improve your trading` · `become profitable` · `make money` · `win rate` · `win-rate` · `accuracy` · `guaranteed` · `returns` · `profits` (as a promise) · `beat the market` · `edge over` · `tips` · `calls` · `recommendation` · `AI-powered` · `TradingView` · `Pine Script` · `indicator` · `OpenAlgo`
 
 If you want to add copy here, keep it inside the rule: describe what the
 software **does**, never what the user will **get**.

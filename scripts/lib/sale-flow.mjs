@@ -92,14 +92,22 @@ export function receiptText({ receiptNo, issued, name, email, plan, keyId, utr, 
  * pastes it from the archived key file at send time, so a stray screenshot or
  * a synced folder cannot leak a credential that also lives in the ledger.
  */
-export function sendMessage({ receipt, email, zipName }) {
+export function sendMessage({ receipt, email, zipName, platform = "windows" }) {
+  // One licence for Windows and macOS (owner ruling 2026-11-19); the install
+  // line follows the package attached. The macOS app is not notarised, so the
+  // Mac line carries the Open Anyway step exactly as the Windows one carries
+  // SmartScreen's.
+  const install =
+    platform === "windows"
+      ? `Install from the attached ${zipName} — Windows will show "Unknown publisher", click More info → Run anyway.`
+      : `Install from the attached ${zipName} — open the .dmg and drag Vyuha into Applications. The Mac app is not notarised by Apple, so the first open says macOS cannot verify the developer: System Settings → Privacy & Security → "Open Anyway" (START_HERE.md in the ZIP has the steps).`;
   return [
     receipt.trimEnd(),
     "",
     "Your licence key:",
     "<<< PASTE THE KEY HERE, on its own line >>>",
     "",
-    `Install from the attached ${zipName} — Windows will show "Unknown publisher", click More info → Run anyway.`,
+    install,
     `Then open Vyuha → Settings → License → paste the key. It should show "Licensed to ${email}".`,
     "",
   ].join("\n");

@@ -145,7 +145,7 @@ Claude is already in production. MARKET SENTINEL uses Claude Haiku 4.5 to read N
 Founded 2026. Bootstrapped, single founder-developer. The credits move guidance extraction to Sonnet for accuracy and fund the Vyuha adapter and the evaluation suites.
 
 ## Never write
-Win rates / returns / signal accuracy (SEBI posture) · macOS as sold · revenue beyond the licence ledger
+Win rates / returns / signal accuracy (SEBI posture) · "Windows only" (macOS is sold too, owner ruling 2026-11-19) or a notarised Mac app · revenue beyond the licence ledger
 (`node scripts/license-list.mjs`) · internal study/candidate/exit names or spec versions.
 
 ## Sources outside the repo

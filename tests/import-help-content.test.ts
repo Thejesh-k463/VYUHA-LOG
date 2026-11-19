@@ -27,7 +27,8 @@ function cardText(c: (typeof IMPORT_HELP_CARDS)[number]): string {
 }
 
 /** Phrases that must never appear — same list as the demo video, minus the
- *  OpenAlgo ban (naming OpenAlgo is this screen's purpose). */
+ *  OpenAlgo ban (naming OpenAlgo is this screen's purpose). The macOS ban was
+ *  lifted 2026-11-19 (owner: macOS "sold openly now"). */
 const BANNED: { re: RegExp; why: string }[] = [
   { re: /improve your trading/i, why: "outcome claim" },
   { re: /become profitable|make (you )?money|more profitable/i, why: "outcome claim" },
@@ -38,7 +39,6 @@ const BANNED: { re: RegExp; why: string }[] = [
   { re: /beat the market/i, why: "outcome claim" },
   { re: /\b(buy|sell) (calls?|tips?|recommendations?)\b|\btip service\b/i, why: "advisory framing" },
   { re: /\bAI[- ]powered\b/i, why: "not what the product does" },
-  { re: /\bmacOS\b|\bon (a )?Mac\b/i, why: "macOS is not sold (owner decision 2026-08-15)" },
   { re: /TradingView|Pine Script|\bindicators?\b/i, why: "invite-only, not sold" },
 ];
 

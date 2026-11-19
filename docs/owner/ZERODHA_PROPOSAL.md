@@ -55,7 +55,7 @@ full contact map.
 > Dear Zerodha team,
 >
 > I am [[YOUR NAME]], the developer of **Vyuha**, a local-first trade journal for Indian
-> retail traders. It runs as a Windows desktop application; the trader's record lives in a
+> retail traders. It runs as a desktop application on Windows and macOS; the trader's record lives in a
 > SQLite file on their own machine, there is no server, no account and no telemetry. The
 > only network call the app makes is a download-only check for updates.
 >
@@ -154,7 +154,7 @@ image: `docs/screenshots/trades.png` or `dashboard.png` (synthetic data — neve
 - Do not imply Zerodha endorsement, listing or partnership until it exists.
 - Do not promise a delivery date for the integration; the mechanism is theirs to choose.
 - Do not offer revenue share or referral terms in the first contact.
-- macOS is not sold — say "Windows".
+- Platforms: say "Windows and macOS" (both sold, one licence — owner ruling 2026-11-19); never call the Mac app notarised.
 
 ## 4. If they reply
 

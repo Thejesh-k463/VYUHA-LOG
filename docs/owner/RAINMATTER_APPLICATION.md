@@ -25,7 +25,7 @@ record-keeping and analytics tool, not advice).
 > web-hosted too.
 
 **Describe your solution to the problem? (3–4 sentences)**
-> Vyuha is a Windows desktop journal where the trader's record lives in a SQLite file on their
+> Vyuha is a desktop journal for Windows and macOS where the trader's record lives in a SQLite file on their
 > own machine — no server, no account, no telemetry. It auto-detects six brokers' exports
 > (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money), maps any other CSV, and pulls
 > directly from the Kite and Dhan APIs (Angel One SmartAPI's unattended pull is fixed and
@@ -53,7 +53,7 @@ record-keeping and analytics tool, not advice).
 > Playwright flows on
 > every commit; 14 load tests to a 250k-trade book; per-buyer licensing, 7-day offline trial,
 > free tier that never gates the user's own record. In use by early traders and SEBI-RA
-> colleagues; first paid licences issued. Windows only today; the Mac build exists in CI but is not sold.
+> colleagues; first paid licences issued. Sold for Windows and macOS (Apple silicon and Intel) under one licence at one price.
 
 **Have you raised any external funding?**
 > No. Bootstrapped and built by a single founder-developer. [[edit if not accurate]]
@@ -70,7 +70,7 @@ product this is roughly −(tooling + hosting ≈ ₹0 + your time). State it pl
 
 **Current round size (in Rs):** [[decide: e.g. "Not raising a priced round today; seeking a
 Rainmatter partnership (Kite Connect read-scope / consent-based feed) first, and open to a
-₹25–50 lakh pre-seed to fund broker integrations, a Mac/Web build and creator-led distribution"]]
+₹25–50 lakh pre-seed to fund broker integrations, a web build, Apple notarisation of the Mac app and creator-led distribution"]]
 
 **Round structure — committed investors and soft commitments:** [[e.g. "None yet — this is the
 first conversation"]]
@@ -95,5 +95,5 @@ pre-seed) · Team. `docs/client/GETTING_STARTED_DECK.html` is a buyer walkthroug
 - "The core journal is free forever and never metered — the same reasoning as free equity delivery."
 
 ## What NOT to write
-No win-rate/edge/returns claims; no "Zerodha partner" implication; no macOS as a sold platform;
+No win-rate/edge/returns claims; no "Zerodha partner" implication; no "Windows only" (macOS is sold too, owner ruling 2026-11-19) and no claim that the Mac app is notarised;
 no invented revenue or valuation — a blank `[[…]]` is better than a made-up number.

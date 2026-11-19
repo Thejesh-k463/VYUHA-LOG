@@ -12,6 +12,10 @@
 //   to license-issue.mjs, lands in the ledger's `ref` field only (never in the
 //   key), and license-list.mjs --by-ref totals it per creator.
 //
+//   Add --platform macos-apple-silicon or --platform macos-intel for a Mac buyer
+//   (default windows). The licence is the same; only the ZIP named in the send
+//   message (scripts/lib/client-package.mjs) and its install line change.
+//
 // WHAT IT REPLACES. On the first two real sales (2026-08-23) one mint command
 // fanned out into eight manual steps: mkdir the archive folder, mint, eyeball
 // the ledger, derive the receipt number, fill the receipt, save it, back up
@@ -42,6 +46,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultLedgerPath, readLedger, archiveFileName, normaliseRef } from "./lib/license-mint.mjs";
 import { PLANS, nextReceiptNo, receiptText, sendMessage, chaseFrom } from "./lib/sale-flow.mjs";
+import { PLATFORM_IDS, packageNames } from "./lib/client-package.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -75,6 +80,7 @@ function usage(msg) {
   console.error(`Usage: npm run sell -- <buyer-email> (--lifetime | --years 1 | --months 1 [--renewal]) --utr <UTR> --name "<Full Name>" [--ref <CODE>]`);
   console.error(`       npm run sell -- <buyer-email> (--lifetime | --years 1 | --months 1 [--renewal]) --no-payment --name "<Name>"   # dry run`);
   console.error(`       --ref <CODE>: the creator who referred the sale (referral-form code; blank or NONE = nobody)`);
+  console.error(`       --platform windows|macos-apple-silicon|macos-intel: the client package the buyer gets (default windows; same licence)`);
   process.exit(1);
 }
 
@@ -91,6 +97,10 @@ if (has("--ref") && (refRaw === undefined || refRaw.startsWith("-") || refRaw.in
   usage(`--ref needs a code right after it (e.g. --ref RAVI, or --ref none)${refRaw === undefined ? "" : `, got "${refRaw}"`}`);
 }
 const ref = has("--ref") ? normaliseRef(refRaw) : null;
+// Which client package the buyer gets (owner ruling 2026-11-19: one licence,
+// one package per kind of computer). Checked before anything is minted.
+const platform = opt("--platform") ?? "windows";
+if (!PLATFORM_IDS.includes(platform)) usage(`--platform must be one of ${PLATFORM_IDS.join(", ")} (got "${platform}")`);
 
 const plan = lifetime ? "lifetime" : months ? (renewal ? "monthlyRenewal" : "monthly") : "annual";
 const P = PLANS[plan];
@@ -217,10 +227,10 @@ console.error(`   ✓ ${path.basename(bundle)} holds the ${ledgerBytes}-byte led
 
 // ── 5. the message to send ───────────────────────────────────────────────────
 console.error(`\n[5/5] send message …`);
-const zipName = `Vyuha_${JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version}_Client_Package.zip`;
+const { archiveName: zipName } = packageNames({ version: JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version, platform });
 const msgPath = path.join(archiveDir, `send-${rec.keyId}.txt`);
 if (existsSync(msgPath)) die(`refusing to overwrite ${msgPath}`);
-writeFileSync(msgPath, sendMessage({ receipt, email, zipName }), { flag: "wx" });
+writeFileSync(msgPath, sendMessage({ receipt, email, zipName, platform }), { flag: "wx" });
 console.error(`   ✓ ${path.basename(msgPath)}  (key is NOT in this file — paste it from ${path.basename(keyFile)})`);
 
 // ── done: what is left for a human ───────────────────────────────────────────

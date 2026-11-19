@@ -29,7 +29,7 @@ per hash a customer might execute.
 2. Get the PUBLISHED asset's hash, then `npm run winget:manifest -- --sha <SHA256>` → `release-packages/winget/<version>/`. `--sha` is **required** — the script no longer hashes your local build, because that is a different binary (see *Which file?* above).
 3. First release ever: `wingetcreate submit --token <gh-token> release-packages/winget/<version>`. Every later release: `wingetcreate update ThejeshK.Vyuha --version <version> --urls <installer-url> --submit --token <gh-token>`.
 4. Watch the PR on `microsoft/winget-pkgs` until the validation bot goes green (minutes) and a reviewer merges (first time: days; updates: usually same day).
-5. <https://www.microsoft.com/en-us/wdsi/filesubmission> → Software developer → upload **the `.exe` extracted from `release-packages/Vyuha_<version>_Client_Package.zip`** (the binary buyers run — NOT the release asset) → "incorrectly detected" → submit. Keep the submission ID.
+5. <https://www.microsoft.com/en-us/wdsi/filesubmission> → Software developer → upload **the `.exe` extracted from `release-packages/Vyuha_<version>_Windows-x64_Client_Package.zip`** (inside it, `Vyuha_<version>_Windows-x64-Setup.exe`) (the binary buyers run — NOT the release asset) → "incorrectly detected" → submit. Keep the submission ID.
 6. On another PC or a clean VM, download the `.exe` in a browser and note what SmartScreen shows; re-check in a week.
 
 ---
@@ -156,7 +156,7 @@ Microsoft account is fine.
 **Steps:**
 
 1. Sign in → **"Software developer"** (not "Home customer" or "Enterprise") — this is the path whose reviewers handle publisher-side false positives.
-2. Upload the `Vyuha_<version>_x64-setup.exe` **extracted from the client ZIP** (up to 500 MB; ours is ~35 MB). This is the binary buyers run; the release asset is a different file with a different hash, and reputation does not transfer between them — see *Which file?* at the top.
+2. Upload the `Vyuha_<version>_Windows-x64-Setup.exe` **extracted from the Windows-x64 client ZIP** (up to 500 MB; ours is ~35 MB). This is the binary buyers run; the release asset is a different file with a different hash, and reputation does not transfer between them — see *Which file?* at the top.
 3. **What do you believe this file is?** → **"Incorrectly detected as malware/malicious"** (false positive). If the form asks for the detection name and Defender has not actually flagged it, write "no detection — pre-emptive reputation submission for a new unsigned release" — the reviewers accept that.
 4. Company / product: Publisher **Thejesh K**, product **Vyuha**, version `<version>`, and paste the GitHub release URL so a reviewer can see the project. Say it is a NSIS installer built from a public repository, unsigned, and delivered to customers as a ZIP — note that the uploaded file is the locally built copy, which differs byte-for-byte from the release asset because the release is rebuilt in CI.
 5. Submit. You get a submission ID and an email; keep both with the release notes.

@@ -1,10 +1,22 @@
 #!/usr/bin/env node
-/** Build a source-free client ZIP from the signed installer. */
+/**
+ * Build a source-free client ZIP from one platform's installer.
+ *
+ *   node scripts/build-client-package.mjs                                   # Windows (the local NSIS build)
+ *   node scripts/build-client-package.mjs --platform macos-apple-silicon --installer Vyuha_<ver>_aarch64.dmg
+ *   node scripts/build-client-package.mjs --platform macos-intel         --installer Vyuha_<ver>_x64.dmg
+ *
+ * The DMGs come from the release draft (`gh release download v<ver> --pattern "*_aarch64.dmg"`,
+ * `--pattern "*_x64.dmg"`); a Mac is never needed to package them. Names and the
+ * START_HERE copy live in scripts/lib/client-package.mjs (owner ruling 2026-11-19:
+ * one package per kind of computer, named so the buyer can tell which is theirs).
+ */
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { PLATFORM_IDS, checksumsText, installerMismatch, packageNames, platformOf, startHere } from "./lib/client-package.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -15,18 +27,29 @@ const option = (name) => {
   return args[i + 1];
 };
 if (args.includes("--help") || args.includes("-h")) {
-  console.log("Usage: node scripts/build-client-package.mjs [--license-file PATH] [--out DIRECTORY]");
+  console.log(`Usage: node scripts/build-client-package.mjs [--platform ${PLATFORM_IDS.join("|")}] [--installer PATH] [--license-file PATH] [--out DIRECTORY]`);
+  console.log("  --platform   default windows. --installer is REQUIRED for the two macOS platforms (the DMG from the release draft);");
+  console.log("               for windows it defaults to the local NSIS build, which must have its .sig beside it.");
   process.exit(0);
 }
 
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const version = pkg.version;
-const installerName = `Vyuha_${version}_x64-setup.exe`;
-const installerPath = path.join(root, "src-tauri", "target", "release", "bundle", "nsis", installerName);
-const signaturePath = `${installerPath}.sig`;
+const platform = option("--platform") ?? "windows";
+const platformInfo = platformOf(platform);
+const installerOption = option("--installer");
+if (platform !== "windows" && !installerOption) throw new Error(`--platform ${platform} needs --installer PATH (the DMG from the release draft, e.g. gh release download v${version} --pattern "${platformInfo.releaseAsset(version).replace(/^Vyuha_[^_]+/, "*")}").`);
+const installerPath = installerOption
+  ? path.resolve(installerOption)
+  : path.join(root, "src-tauri", "target", "release", "bundle", "nsis", platformInfo.releaseAsset(version));
+const signaturePath = platformInfo.hasSignature ? `${installerPath}.sig` : null;
 const outputDir = path.resolve(option("--out") ?? path.join(root, "release-packages"));
 const licensePath = option("--license-file");
-if (!existsSync(installerPath) || !existsSync(signaturePath)) throw new Error(`Signed installer not found. Run npm run desktop:build first.\nExpected: ${installerPath}`);
+const mismatch = installerMismatch(platform, path.basename(installerPath));
+if (mismatch) throw new Error(mismatch);
+if (!existsSync(installerPath) || (signaturePath && !existsSync(signaturePath))) {
+  throw new Error(`${signaturePath ? "Signed installer" : "Installer"} not found.${platform === "windows" && !installerOption ? " Run npm run desktop:build first." : ""}\nExpected: ${installerPath}${signaturePath ? ` (and ${path.basename(signaturePath)} beside it)` : ""}`);
+}
 
 let license = null;
 if (licensePath) {
@@ -76,37 +99,25 @@ function createZip(files) {
 }
 
 const sha256 = (data) => createHash("sha256").update(data).digest("hex").toUpperCase();
+// The installer travels under a name that says which machine it is for; the
+// source file keeps Tauri's name (the release asset the updater reads).
+const { archiveName, installerName, signatureName } = packageNames({ version, platform, licensed: Boolean(license) });
 const installer = readFileSync(installerPath);
-const signature = readFileSync(signaturePath);
-const activation = license ? "Your individual activation key is included in LICENSE.txt. Keep it private and do not forward it." : "Your individual activation key is delivered separately by the vendor. Do not share it once received.";
-const readme = [
-  `# Vyuha ${version} — Client package`,
-  "",
-  "This package contains the official Windows installer only. It does not contain source code, your data, vendor signing keys, or any other customer's licence.",
-  "",
-  "## Install",
-  `1. Run ${installerName} on Windows 10 or 11 (64-bit).`,
-  "2. If Windows SmartScreen appears, choose More info → Run anyway only after verifying the installer checksum below.",
-  "3. Open Vyuha, then go to Settings → License.",
-  `4. ${activation}`,
-  "",
-  "Connecting a broker's API? Open BROKER_API_SETUP_GUIDE.html",
-  "",
-  "## Licence and support",
-  "The licence is signed by the vendor and verified locally; activation does not transmit trades or personal data. For support, quote the Key ID in Settings → License—never send the full key in a chat or screenshot.",
-  "For a machine-bound licence, install first and send the Machine ID shown in Settings → License to the vendor. They will issue a key that activates on that computer only.",
-  "",
-  "## Integrity",
-  "Compare the installer SHA-256 below before running it. The .sig file is the update signature for this installer and should stay alongside it when stored or published.",
-  "",
-  "## Honest security boundary",
-  "This package contains no build source or vendor private keys. Signed licences deter sharing, and machine-bound keys restrict normal use to one computer. Like any offline desktop software, copying or reverse engineering cannot be made mathematically impossible.",
-  "",
-  "Vyuha is a record-keeping and analytics product, not investment advice.",
-  "",
-].join("\n");
-const checksums = ["# SHA-256 checksums", `${sha256(installer)}  ${installerName}`, `${sha256(signature)}  ${installerName}.sig`, ""].join("\n");
-const files = [{ name: installerName, data: installer }, { name: `${installerName}.sig`, data: signature }, { name: "START_HERE.md", data: readme }, { name: "CHECKSUMS.txt", data: checksums }];
+const signature = signaturePath ? readFileSync(signaturePath) : null;
+// START_HERE.md (generated by startHere in scripts/lib/client-package.mjs) carries
+// the platform's install steps, the "Which package is mine?" block and the line
+// "Connecting a broker's API? Open BROKER_API_SETUP_GUIDE.html".
+const readme = startHere({ version, platform, licensed: Boolean(license) });
+const checksums = checksumsText([
+  { sha: sha256(installer), name: installerName },
+  ...(signature ? [{ sha: sha256(signature), name: signatureName }] : []),
+]);
+const files = [
+  { name: installerName, data: installer },
+  ...(signature ? [{ name: signatureName, data: signature }] : []),
+  { name: "START_HERE.md", data: readme },
+  { name: "CHECKSUMS.txt", data: checksums },
+];
 // The buyer-facing docs travel INSIDE the package, read fresh from
 // docs/client/ at build time — so the zip can never ship without the current
 // "New in" notes, install guide and deck. (Added 2026-08-12 after the docs
@@ -152,7 +163,6 @@ for (const [src, name] of clientDocs) {
 }
 if (license) files.push({ name: "LICENSE.txt", data: `${license}\n` });
 mkdirSync(outputDir, { recursive: true });
-const archiveName = `Vyuha_${version}_Client_Package${license ? "_Licensed" : ""}.zip`;
 const archivePath = path.join(outputDir, archiveName);
 if (existsSync(archivePath)) throw new Error(`Refusing to overwrite ${archivePath}. Move it, rename it, or choose --out.`);
 writeFileSync(archivePath, createZip(files));

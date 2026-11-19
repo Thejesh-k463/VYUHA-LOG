@@ -43,7 +43,7 @@ Type: one geometric sans for headings, the app's mono face for figures and small
 1. **Hero.** Left: the claim in one line, one sentence under it, the primary button (to the plans) and a
    quiet secondary link ("See it work", scrolls). Right: the dashboard screenshot as a glass panel tilted
    about 8 degrees in 3D, lit by the accent, parallax on pointer move. Behind: the point formation, slowly
-   rotating. A thin mono strip under the fold line: Windows + macOS, local database, 8 brokers imported.
+   rotating. A thin mono strip under the fold line: Windows and macOS (one licence), local database, 8 brokers imported.
 2. **"What it reads" strip.** Four counters that count up once when seen (figures come from the product's
    own facts in the store data, never invented).
 3. **Feature flight (the core).** A pinned, scroll-driven sequence: the formation re-forms and one screen

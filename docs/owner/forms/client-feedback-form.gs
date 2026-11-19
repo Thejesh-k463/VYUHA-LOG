@@ -84,7 +84,7 @@ function createVyuhaFeedbackForm() {
       .setValidation(FormApp.createCheckboxValidation().requireSelectAtMost(5).build());
   form.addParagraphTextItem().setTitle("What is missing that would make you open Vyuha every day? (optional)");
   form.addTextItem().setTitle("Which broker would you most like connected next - and how: file, API, or manual entry is fine?");
-  form.addMultipleChoiceItem().setTitle("Would a Mac or web version matter to you?")
+  form.addMultipleChoiceItem().setTitle("Would a web version matter to you?")
       .setChoiceValues(["No", "Nice to have", "I can't use it without"]);
 
   // -- Section 4 - Trust

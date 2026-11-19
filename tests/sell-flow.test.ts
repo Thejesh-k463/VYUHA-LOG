@@ -103,6 +103,15 @@ describe("sale-flow helpers (pure)", () => {
     expect(m).not.toMatch(/VYUHA-[A-Za-z0-9]/);
   });
 
+  it("a Mac buyer's message names the Mac package and the Open Anyway step, not SmartScreen", () => {
+    // Owner ruling 2026-11-19: macOS is sold under the same licence; the Mac app is not notarised.
+    const m = sendMessage({ receipt: "R", email: "x@y.com", zipName: "Vyuha_4.7.0_macOS-Intel_Client_Package.zip", platform: "macos-intel" });
+    expect(m).toContain("Vyuha_4.7.0_macOS-Intel_Client_Package.zip");
+    expect(m).toContain('"Open Anyway"');
+    expect(m).not.toMatch(/More info → Run anyway/);
+    expect(sendMessage({ receipt: "R", email: "x@y.com", zipName: "z.zip" })).toContain("More info → Run anyway");
+  });
+
   it("finds renewals inside the window, sorted soonest first, and ignores lifetime keys", () => {
     const recs = [
       { keyId: "L", expires: null },

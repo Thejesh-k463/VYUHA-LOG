@@ -6,7 +6,8 @@
 computer**. No account, and nothing about you or
 your trades is uploaded by the desktop app unless you switch on a feature that sends it.
 
-- **Platform:** Windows 10 / 11 (64-bit).
+- **Platform:** Windows 10 / 11 (64-bit), or macOS 10.15 or later on a Mac with Apple silicon or an
+  Intel processor — **one licence, the same price** on either. Each has its own client package (below).
 - **Disk:** ~200 MB
 - **Internet:** not needed to use Vyuha Desktop. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
 
@@ -14,9 +15,22 @@ your trades is uploaded by the desktop app unless you switch on a feature that s
 
 ## 1. Download & install (2 minutes)
 
-1. Download **`Vyuha_x.x.x_x64-setup.exe`** from the private link in your purchase email (it is
-   around 35 MB — too large to attach to an email).
-2. Double-click it.
+**Which package is mine?** There is one client package per kind of computer, and one licence covers all three:
+
+| Your computer | Package | Installer inside it |
+|---|---|---|
+| Windows PC (Windows 10 or 11, 64-bit) | `Vyuha_x.x.x_Windows-x64_Client_Package.zip` | `Vyuha_x.x.x_Windows-x64-Setup.exe` |
+| Mac with Apple silicon | `Vyuha_x.x.x_macOS-Apple-Silicon_Client_Package.zip` | `Vyuha_x.x.x_macOS-Apple-Silicon.dmg` |
+| Mac with an Intel processor | `Vyuha_x.x.x_macOS-Intel_Client_Package.zip` | `Vyuha_x.x.x_macOS-Intel.dmg` |
+
+On a Mac, open the Apple menu → **About This Mac**: "Chip: Apple M…" (M1, M2, M3, M4 …) means
+Apple-Silicon; "Processor: … Intel …" means Intel.
+
+### On Windows
+
+1. Download the **Windows-x64** package from the private link in your purchase email (the installer
+   is around 35 MB — too large to attach to an email) and unzip it.
+2. Double-click **`Vyuha_x.x.x_Windows-x64-Setup.exe`**.
 3. **Windows SmartScreen may warn you** ("Windows protected your PC"). This is normal for a new
    independent app that isn't yet code-signed — it is **not** a virus warning.
    → Click **More info** → **Run anyway**.
@@ -29,7 +43,28 @@ your trades is uploaded by the desktop app unless you switch on a feature that s
    (and only Vyuha's; no other Node process on your PC is touched). If you see that message on an
    older version, **Ignore** is safe: the file it could not replace is identical.
 
-> Your data lives in a local database file on your PC. Nothing is uploaded anywhere.
+### On a Mac
+
+1. Download the **macOS-Apple-Silicon** or **macOS-Intel** package (see the table above) from the
+   private link in your purchase email and unzip it. Vyuha needs **macOS 10.15 or later**.
+2. Open **`Vyuha_x.x.x_macOS-Apple-Silicon.dmg`** (or `…_macOS-Intel.dmg`) and drag **Vyuha** into
+   **Applications**.
+3. Open Vyuha from Applications. **The Mac app is not signed or notarised by Apple**, so the first
+   time you open it macOS says it cannot verify the developer. That is expected — it is not a virus
+   warning. Open **System Settings → Privacy & Security**, scroll to the message about Vyuha and
+   click **Open Anyway** (on macOS 14 and earlier, Control-click the app → **Open** also works).
+   You are asked once.
+4. Vyuha opens as a normal window. Your journal lives in
+   `~/Library/Application Support/in.vyuha.tradejournal` (the log is in its `logs` folder).
+5. **Removing Vyuha from a Mac:** drag Vyuha from Applications to the Bin. That removes the app
+   only — the data folder above stays until you delete it yourself, so back up first (section 7)
+   if you mean to delete it.
+
+The licence is the same on both: a machine-bound key moved from a Windows PC to a Mac (or back)
+asks for the new computer's Machine ID, exactly as a move between two PCs does. App updates are
+signed with Vyuha's update key and checked before they install, on macOS as on Windows.
+
+> Your data lives in a local database file on your computer. Nothing is uploaded anywhere.
 
 ## 2. Your 7-day trial, and activating a license
 
@@ -144,8 +179,9 @@ Because everything is local, **you** own the backup.
 
 ## 8. Updating
 
-When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run it over your
-existing install. Your local data is preserved (and a backup is taken automatically before any
+When a new version ships, on Windows download the new `Vyuha_x.x.x_Windows-x64-Setup.exe` and run it
+over your existing install; on a Mac, open the new DMG and drag Vyuha into Applications, replacing the
+old copy. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
 **Upgrading from v4.6.x to v4.7.0 — nothing is asked of you during the install** (four disclosures
@@ -243,6 +279,7 @@ removed. Leave the box unticked to keep the data where it is.
 | Symptom | Fix |
 |---|---|
 | SmartScreen blocks the installer | **More info → Run anyway** (unsigned app, expected) |
+| macOS says it cannot verify the developer | **System Settings → Privacy & Security → Open Anyway** (the Mac app is not signed or notarised by Apple — expected) |
 | Antivirus flags the new .exe | Whitelist it — false positive common for new unsigned binaries |
 | Numbers look wrong | Check **Settings → charge config** matches your broker's real rates |
 | F&O shows as equity after import | Re-tag in **Journal → Trades** (segment/strike/expiry/CE-PE) |
@@ -252,7 +289,7 @@ removed. Leave the box unticked to keep the data where it is.
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_4.7.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.7`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_4.7.0_Windows-x64-Setup.exe` or `Vyuha_4.7.0_macOS-Apple-Silicon.dmg` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v4.7`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---
