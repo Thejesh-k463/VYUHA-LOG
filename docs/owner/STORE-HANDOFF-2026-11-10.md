@@ -2,7 +2,8 @@
 
 For the session **"Payment gateway home redesign"**, which is building the KTR Khata Book store in
 `T:\Thejesh\CODEX\MY-PAYMENT GATEWAY`. The VYUHA session wrote this, and every fact below was checked
-in the VYUHA repo on `main` (the price tests pass; the change is being committed, not pushed). Nothing in the store repo was changed.
+in the VYUHA repo on `main` (pricing committed as `08e34e0` and `43a8322`, not pushed; the final pictures
+are on disk, not yet committed). Nothing in the store repo was changed.
 
 ## 1. What changed in VYUHA today: the app now matches the store
 
@@ -47,16 +48,35 @@ Honesty rules the app enforces, worth copying:
 - An introductory price is never shown without its next-period price beside it.
 - A higher price is a real price the owner intends to charge, never an invented strike-through.
 
-## 4. New screenshots (replace the six teal files in `public/assets/vyuha-app`)
+## 4. Screenshots: use `store-aurora-flat` (re-shot 10 Nov from a better demo book)
 
-Owner batch A item 5: "either use Terminal or aurora flat". Both sets now exist, in VYUHA v4.7.0 with
-demo data only. They were shot from a throwaway database seeded from `tests/fixtures/dhan-gtr.csv`, the
-dark theme was forced, and no email or licence key appears in them (the capture script refused to save
-any page showing one). Each file is a 1440×900 webp at quality 80.
+Owner, 10 Nov: "Use now, better book later", then "aurora theme and FLAT background". The FINAL set is:
 
-Folders:
-- `T:\Thejesh\CLAUDE-CODE\VYUHA\TRADE-JOURNAL\public\help\store-terminal\`: the "Terminal" skin (id `mono`), default panel style
-- `T:\Thejesh\CLAUDE-CODE\VYUHA\TRADE-JOURNAL\public\help\store-aurora-flat\`: the Aurora skin with the Flat panel style
+`T:\Thejesh\CLAUDE-CODE\VYUHA\TRADE-JOURNAL\public\help\store-aurora-flat\` (same 8 file names as before,
+so any reference already pointing at them keeps working; just copy the new files over).
+
+How they were made, so the store can state it honestly:
+- VYUHA v4.7.0, dark theme, Aurora skin, **Flat** panel style, **Tint intensity 0** (plain dark canvas,
+  no purple wash; Aurora pink/violet stays on buttons, the active menu item and charts).
+- 1440×900 webp, quality 80, not resized: make the store's own sizes (for example the 840-wide covers).
+- **Demo data only**, in a throwaway database; never the owner's journal. No email or licence key on
+  any page (the capture script refuses to save a page that shows one).
+- The "Pro trial — 7 days left" strip is hidden at capture time only (owner's choice); the app is unchanged.
+
+The demo book (built for these pictures):
+- 30 real NSE large caps (RELIANCE, TCS, SBIN, TITAN, ...); every entry and exit is a real NSE open or
+  close between 3 Aug and 9 Nov 2026, imported through the app's own import screen as a Dhan file.
+- A modest, MIXED record (sales pictures, not performance claims): 70 closed trades, 31 wins / 39 losses
+  (44.3%), net **+₹3,298** on ₹17 lakh capital (+0.34%), profit factor 1.05, max drawdown ₹13.4k;
+  Aug/Sep/Oct positive, Nov −₹7,827.
+- Stops on 67 of 70 trades, targets, 4 playbooks with rules, setup grades, emotion and mistake tags,
+  review stamps: so Arjun's Eye, Edge Clinic (incl. Discipline / Process Score) and R figures show content.
+- 4 open positions valued at the real 9 Nov close (Live Desk rows marked, none past stop or target).
+- Market Atlas computed from a real 252-session NSE end-of-day backfill (public NSE files), as of 9 Nov.
+- The "Getting started" card is dismissed, as a user would.
+
+Do NOT use `store-terminal\` any more: it is the earlier set from the old "Test Scrip" demo book
+(a losing record, unmarked positions).
 
 | File | Page |
 |---|---|
@@ -69,15 +89,8 @@ Folders:
 | `arjuns-eye.webp` | Arjun's Eye |
 | `market-atlas.webp` | Market Atlas |
 
-Limits of the demo data, so the page design does not lean on them:
-- The demo book loses money: net P&L shows −₹39,701 and the win rate is 36%.
-- Symbols read "Test Scrip 56" and similar.
-- The Live Desk rows say "No mark stored for this position yet".
-- The dashboard shows a "Getting started 3 of 5" card.
-
-Crop around these, or ask the VYUHA session for a richer demo book; do NOT shoot the owner's real
-journal. The images are not resized: make the store's own sizes (for example the 840-wide covers)
-from these files.
+Wording guard for captions: the numbers in the pictures are a DEMO book. Never present them as a
+user's result, a return, or a performance claim; "sample data" is the honest caption.
 
 ## 5. How VYUHA should be described (owner words, store DECISIONS batch C)
 
