@@ -172,7 +172,14 @@ export default function RootLayout({
             <div className="contents print:hidden">
               <Sidebar accounts={getAccounts().map((a)=>({id:a.id,name:a.name,archived:a.archived}))} selectedAccountId={selectedAccountId} workspace={workspace} />
             </div>
-            <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
+            {/* `relative` is LOAD-BEARING (STATE row 25, 2026-11-19): it makes <main>
+                the containing block of every absolutely positioned descendant
+                without a positioned ancestor (the sr-only live regions), so its
+                overflow clips them. Static, they escaped to the page, made the
+                DOCUMENT scrollable, and a wheel past main's end scrolled the
+                whole shell up — blank canvas below the sidebar.
+                e2e/z-shell-geometry.spec.ts holds it on every route. */}
+            <main className="relative flex-1 overflow-y-auto print:overflow-visible">{children}</main>
           </div>
           {/* KEYED ON THE ACCOUNT. The palette is mounted once for the whole
               app, so its search results and session stack would otherwise

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ensureTrades } from "./helpers";
+import { ensureTrades, gotoHydrated } from "./helpers";
 
 /**
  * The Lenses screen: six cuts of the same book, and the drill-down.
@@ -94,7 +94,11 @@ test("a group drills down to its own trades and back again", async ({ page }) =>
 });
 
 test("an app-level back control appears only once there is somewhere to go", async ({ page }) => {
-  await page.goto("/lenses");
+  // HYDRATED, not just loaded: a link clicked before React attaches is a FULL
+  // page load, which starts a fresh in-app history — the back control then never
+  // appears and the test reads as a broken feature (red on the macos-15 runner,
+  // CI 44528987133, 2026-11-19; NavHistoryTracker records only once mounted).
+  await gotoHydrated(page, "/lenses");
   // A full load starts a fresh in-app history, so nothing is offered yet.
   await expect(page.locator('[aria-label^="Back to"]')).toHaveCount(0);
 
