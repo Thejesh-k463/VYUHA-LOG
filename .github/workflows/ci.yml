@@ -93,7 +93,10 @@ jobs:
         # binary, paths are case-sensitive with a different separator, and the
         # per-user data dir resolves somewhere else entirely. None of that is
         # exercised by a Linux run.
-        os: [ubuntu-latest, macos-14]
+        # macos-15 (arm64), NOT macos-14: GitHub retired every macos-14 image on
+        # 2026-11-02 and a retired label CANCELS the job in one second ("The
+        # configuration 'macos-14-arm64-us-default' is not supported").
+        os: [ubuntu-latest, macos-15]
     steps:
       - uses: actions/checkout@v4
 
@@ -135,7 +138,7 @@ jobs:
   # to every push — the release workflow covers that on tag.
   desktop-bundle-macos:
     name: Desktop bundle assembles (macOS)
-    runs-on: macos-14
+    runs-on: macos-15   # see the matrix note above — macos-14 is retired
     steps:
       - uses: actions/checkout@v4
 

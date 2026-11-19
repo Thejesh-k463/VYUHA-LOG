@@ -62,7 +62,8 @@ jobs:
           # startup on any Intel Mac, in a way no CI check would notice. Building
           # per-arch keeps each bundle's node matched to the machine that will
           # run it.
-          - os: macos-14
+          # macos-15 (arm64): macos-14 was retired 2026-11-02 and now cancels.
+          - os: macos-15
             label: macOS (Apple silicon)
             rust-target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
