@@ -104,3 +104,36 @@ in the Panel style with a 12 px radius and a 1 px border; no fake browser chrome
 
 The headline and all copy (the store session drafts, the owner approves), whether broker logos may be
 shown, and the GAMMA page (out of scope here; the same scene and palette roles can be re-coloured for it).
+
+## 8. Addendum, 20 Nov 2026: what changed after this plan (the store session reads this FIRST)
+
+Written by the VYUHA session after v4.8.0 was tagged; the BUILD still belongs to the store session (the store repo is
+another session's — this file is the hand-over). Facts below are checked against VYUHA's tree at tag `v4.8.0` (`5b5bfb2`).
+
+1. **macOS is sold** (owner, 19 Nov: "Sold openly now", "Same licence + price"). Every place the page names a platform says
+   **Windows 10/11 (64-bit) and macOS 11 or later (Apple silicon and Intel), one licence, one price** — not "macOS 10.15":
+   the app bundles Node 22, which supports macOS 11+ only. The hero's mono strip (§3.1) becomes:
+   `Windows + macOS · one licence · data on your computer · 8 brokers imported`.
+2. **Three downloads, one per computer** (owner: "share mac package separately so that users will have clarity to download
+   which one"). After purchase, and on any download link, the page offers exactly one of:
+   `Vyuha_<ver>_Windows-x64_Client_Package.zip`, `Vyuha_<ver>_macOS-Apple-Silicon_Client_Package.zip`,
+   `Vyuha_<ver>_macOS-Intel_Client_Package.zip` (names from VYUHA `scripts/lib/client-package.mjs`). Add a small
+   **"Which one is mine?"** helper: Windows PC → Windows; Mac → Apple menu → About This Mac → "Chip: Apple M…" = Apple
+   silicon, "Processor: Intel" = Intel. Where the browser exposes it, pre-select the likely one (`navigator.userAgentData`
+   platform; Apple silicon cannot be told from Intel reliably in a browser — always show the helper, never guess silently).
+3. **FAQ additions (store's own FAQ, §3.7), honest first-open lines**, copied from VYUHA's landing page:
+   Windows — the installer is not code-signed yet; SmartScreen → More info → Run anyway.
+   Mac — not notarised by Apple; the first open says macOS cannot verify the developer → System Settings → Privacy &
+   Security → **Open Anyway** (macOS 14 and earlier: Control-click → Open). Owner-confirmed by his Mac users. Never say
+   "notarised" or "signed by Apple".
+4. **Brokers (§3.5):** the eight import sources by name — Angel One, Dhan, Fyers, Groww, Nuvama, Paytm Money, Upstox,
+   Zerodha (VYUHA `lib/import/registry-meta.ts`) — plus "any other broker: the column mapper asks". Fyers and Nuvama
+   EQUITY rows and the Fyers / Kotak Neo / Nuvama API pulls are not yet verified against a real account: do not list
+   API pulls as a feature without that qualifier (VYUHA's landing says "not yet verified").
+5. **New in v4.8.0, usable as a ninth feature-flight step or a caption (§3.3):** the Edge Clinic **decay card** ("For every
+   ₹1,000 risked: ₹548 → ₹370" style — figures from the DEMO book only); the Live Desk Positions tab showing the largest
+   150 with Show more; one contract written two ways by one broker's two sources closes as one. **No speed or percentage
+   claims** (owner rule — the release carries none). No new screenshot exists for the decay card yet; the store session
+   asks the VYUHA session for one (demo data, 1440×900, aurora-flat) rather than cropping a help shot.
+6. **Prices unchanged** (VYUHA `lib/domain/pricing.ts` = the store: ₹999 monthly, ₹9,999 annual, ₹29,999 lifetime; the
+   struck-through figures are planned future prices with no date; no upgrade credit).
