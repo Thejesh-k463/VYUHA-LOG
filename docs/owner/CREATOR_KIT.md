@@ -57,11 +57,11 @@ These sentences are true, verified, and safe to use verbatim:
   excluded from the claim because no file states it."
 - "A live broker pull was reconciled against the broker's **signed contract
   note**: all 9 contracts matched to the 4th decimal and STT to the exact paisa."
-- "Imports from Zerodha, Dhan, Groww, Angel One, Upstox and Paytm Money files
-  are auto-detected; any other broker's CSV works through the column mapper;
-  Zerodha, Dhan, Angel One and Upstox also pull live through their APIs —
+- "Imports from Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money, Fyers and
+  Nuvama files are auto-detected; any other broker's CSV works through the column mapper;
+  Zerodha, Dhan, Angel One and Upstox also pull through their APIs —
   four broker-API pulls in total."
-- "Brokers with no API of their own — Groww, Paytm Money, Kotak — can pull
+- "Brokers with no API of their own — Groww, Paytm Money — can pull
   same-day through OpenAlgo, an open-source bridge you run on your own
   computer. It is off by default, and your broker credentials go into your own
   OpenAlgo instance, never into Vyuha."

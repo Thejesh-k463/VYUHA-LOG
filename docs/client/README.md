@@ -729,7 +729,7 @@ states it outright and you are never asked again.
 
 ### Brokers with no API of their own — OpenAlgo (optional)
 
-Groww, Paytm Money and Kotak offer no trade-book API, but they can still pull
+Groww and Paytm Money offer no trade-book API, but they can still pull
 same-day fills into Vyuha through **OpenAlgo** — an open-source bridge you run
 on your own computer. It is **off by default** behind an in-app disclosure,
 because it means running one more program that holds a broker credential: your
@@ -737,6 +737,9 @@ broker login goes into **your own OpenAlgo instance, never into Vyuha**, the
 data flows only from your broker to your machine, and Vyuha's pull is read-only
 and goes through the same preview → charges → duplicate-check pipeline as every
 file import. The **Import Help** tab has step-by-step cards for setting it up.
+**Kotak Neo** has its own direct pull since v4.7.0 (Import → Connect broker →
+Kotak Neo, today's trade book, not yet verified with a real account), and it
+also works through OpenAlgo.
 
 ---
 

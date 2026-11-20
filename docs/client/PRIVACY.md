@@ -393,8 +393,12 @@ That is the complete list for Vyuha Desktop. There is no fifth thing.
 ## Your credentials and licence key
 
 Broker API credentials, TOTP secrets and your licence key are stored
-**encrypted**, with a key bound to your machine and your OS user profile. A copy
-of the database file alone — synced, shared or stolen — carries nothing usable.
+**encrypted**. On Windows the key is normally bound to your machine and your
+Windows user profile (if Windows' own encryption is unavailable, to the machine
+only). On macOS it is bound to this Mac's hardware identity, not to your user
+account. On either system this protects a copied file; it does not protect
+against software already running on your computer. A copy of the database file
+alone — synced, shared or stolen — carries nothing usable.
 
 Backups deliberately **exclude** your licence key and broker credentials, so
 sharing a backup file never shares a credential.
