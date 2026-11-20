@@ -10307,3 +10307,28 @@ The owner flipped the draft to Latest at 2026-10-05 08:23:19 UTC, 25 minutes aft
 - Fixed: the PRIVACY Windows overclaim and the CREATOR_KIT 6-broker list.
 - Its "landing says 4 broker APIs" finding was REFUTED by the C6 ruling above.
 - The in-app string and the deck chip are recorded above.
+
+## 2026-11-20 — v4.8.0 PUBLISHED by the owner; post-publish proofs PASSED; winget manifest built from the PUBLISHED digest
+
+**Owner (verbatim):** "I have already published V4.8.0 before you have fixed the docs , should we do something about it ?" Then: "Yes, run them".
+
+**Published:** `gh release list`: v4.8.0 Latest, `2026-11-20T02:00:21Z`. That was before `435a5f9`, the A2 doc fix.
+- Nothing published carried the two wrong claims. The installers bundle only `THIRD-PARTY-NOTICES.txt` (`src-tauri/tauri.conf.json` resources), not PRIVACY or the client README. The release notes name Kotak Neo among the direct pulls and say nothing about credential binding.
+- Only the pre-A2 client ZIPs (built 19 Nov 21:49 and 20 Nov 00:13) did. The remedy is to resend the rebuilt ZIP, or PRIVACY.md, to any buyer who received one; the owner knows who.
+- The in-app OpenAlgo blurb (`components/import/broker-connect.tsx:849-850`) waits for v4.8.1.
+
+**Proofs, run by the session:**
+- `releases/latest/download/latest.json` serves 4.8.0 for 6 platform keys, each pointing at a v4.8.0 asset.
+- `gh release view revocations --json isPrerelease` returns true.
+- `npm run release:verify v4.8.0 -- --deep` over the published bytes: 3 signatures, all `4FF85F3BBE1DA21D`, all "verifies over". It printed "Safe to publish."
+- The published `Vyuha_4.8.0_x64-setup.exe` was downloaded with `gh release download`. Its local `sha256sum` is `30ea5a42…add410`, 38,062,722 B, equal to GitHub's asset `digest`.
+- `npm run winget:manifest -- --sha 30EA5A4245DD4937C3B5E5B301060B7D26B7CCE30C7A90F05AFE221DDEADD410` wrote `release-packages/winget/4.8.0` (3 files). `winget validate` reported "Manifest validation succeeded", and the InstallerUrl answers HTTP 200.
+- It is NOT the local exe's hash (`0DC5FF1F…`, the one in the client ZIP; L-53: two binaries per release).
+
+**Owed by the OWNER:**
+- `wingetcreate token --store` once, then `wingetcreate submit release-packages/winget/4.8.0` (never `--token`).
+- The 4.7.0 winget submission and the token revocation (still open).
+- WDSI.
+- An off-machine install of the published exe, with the cold-start reading for STATE row 24.
+
+**prose pass:** none. This entry and STATE §0 / row 21 are the only doc changes, and both restate command output quoted above. `drift:close-out` re-derives the rest.
