@@ -290,7 +290,7 @@ export const METRIC_HELP = {
     meaning:
       "The money actually left in your hands after the broker and the government took their cut. Realised only — open positions live on the trackers, not here.",
     formula:
-      "Gross P&L of closed trades − total charges (computed per broker × segment × exchange from the editable rate table).",
+      "Gross P&L of closed trades − total charges (computed per broker × plan × segment × exchange from the editable rate table).",
     healthyRange:
       "Above zero you kept money after the broker and the government took their cut — arithmetic, not a target. For context on an F&O book: SEBI found 93% of individual traders lost money over FY22–FY24, an average of about ₹2 lakh each (SEBI, 2024). Commonly read with the capital base in mind, because the same ₹1 lakh means different things on ₹2 lakh and on ₹2 crore — it depends entirely on that base.",
     caveat:
@@ -378,7 +378,7 @@ export const METRIC_HELP = {
     meaning:
       "The full cost of doing business for these trades: brokerage plus every statutory levy — STT/CTT, GST, stamp duty, DP, MTF interest — priced from your broker's own editable rate card.",
     formula:
-      "Sum of per-trade charges computed per broker × segment × exchange from charge_config; never a hard-coded statutory rate.",
+      "Sum of per-trade charges computed per broker × plan × segment × exchange from charge_config; never a hard-coded statutory rate.",
     healthyRange:
       "Charges are already subtracted from every net figure here — this is money gone, not a forecast. SEBI put individual F&O transaction costs at about ₹26,000 per trader in FY24 (SEBI, 2024). Commonly read as a share of gross P&L; what is sustainable depends on the segment and the style, since scalping runs structurally higher.",
     caveat:

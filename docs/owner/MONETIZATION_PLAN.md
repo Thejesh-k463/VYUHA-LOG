@@ -256,7 +256,7 @@ to flatter them.
 
 | Capability | Why a trader pays for it |
 |---|---|
-| **Exact Indian cost engine** | STT, exchange, SEBI, stamp, IPFT, GST, DP, pledge — per broker × segment × exchange, integer paise, statutory rounding. Reconciles to **0.69% of the broker's own statutory charges** on a real 92-row report, brokerage excluded because it is not derivable. |
+| **Exact Indian cost engine** | STT, exchange, SEBI, stamp, IPFT, GST, DP, pledge — per broker × plan × segment × exchange, integer paise, statutory rounding. Reconciles to **0.69% of the broker's own statutory charges** on a real 92-row report, brokerage excluded because it is not derivable. |
 | **MTF done properly** | Interest on the funded portion only, correct T+1 day count, broker-specific own-margin %. The **ledger import reads the interest actually charged**, and shows it against Vyuha's estimate. |
 | **Arjun's Eye** (Pro) | Session and weekday edge, winners-vs-losers hold time, post-loss tilt, expectancy by size quartile — with a 15-trade honesty gate. Nothing else in the Indian market does this. |
 | **Return on Margin** (Pro) | P&L against **capital actually blocked**, instrument-aware. Turnover-based returns are close to meaningless for F&O. |

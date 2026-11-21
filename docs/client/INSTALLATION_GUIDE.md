@@ -268,8 +268,10 @@ Leaving that checkbox unticked is what keeps the key.
 **Uninstalling.** The uninstaller offers a "Delete the application data" checkbox — at
 uninstall, and mid-upgrade if you choose to uninstall the old version first. Ticking it erases
 the whole data folder: journal, licence key and attachments. Before it runs, Vyuha copies your
-journal database and licence key (both live in `vyuha.sqlite`), the pre-migration backups it
-took for you and your attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm;
+journal database (`vyuha.sqlite`), the pre-migration backups it took for you and your
+attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm. The licence key inside
+that copy is encrypted to this installation and cannot be unlocked after a reinstall, so keep
+your key email to enter it again;
 Cancel keeps everything in place, and if that copy cannot be made — a full disk, or a
 files-on-demand placeholder OneDrive will not hydrate — the uninstall stops with nothing
 removed. Leave the box unticked to keep the data where it is.

@@ -159,7 +159,7 @@ export const WHY_VYUHA: readonly { claim: string; detail: string }[] = [
   {
     claim: "Indian statutory charges are computed, not copied",
     detail:
-      "STT/CTT, stamp duty, GST, exchange and SEBI charges from a broker × segment × exchange rate table — within 0.69% of a real broker report across 92 verified rows. None above states an independent charges engine; parsing the charges a broker already reported is not computing them.",
+      "STT/CTT, stamp duty, GST, exchange and SEBI charges from a broker × plan × segment × exchange rate table — within 0.69% of a real broker report across 92 verified rows. None above states an independent charges engine; parsing the charges a broker already reported is not computing them.",
   },
   {
     claim: "The core journal is never metered",

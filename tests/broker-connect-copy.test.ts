@@ -860,3 +860,14 @@ describe("C6 — the card imports only the PURE disclosure module, never a serve
     expect(src).toContain('const consentShowing = pullSheet != null && saveTargetConn?.pullAckCurrent !== true;');
   });
 });
+
+// v4.8.1 (STATE row 30): the OpenAlgo blurb said Kotak had no API of its own, while Kotak Neo
+// has had its own pull tab since v4.7.0 C6. The same claim was fixed in the client docs by A2.
+it("the OpenAlgo blurb never lists Kotak among brokers with no API of their own", async () => {
+  const src = (await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  const at = src.indexOf('openalgo: {\n    label: "OpenAlgo"');
+  expect(at).toBeGreaterThan(-1);
+  const blurb = src.slice(at, src.indexOf("},\n", at)).replace(/\s+/g, " ");
+  expect(blurb).toContain("the same-day path for Groww and Paytm Money, which have none of their own");
+  expect(blurb).not.toMatch(/Paytm Money and Kotak, which have none/);
+});

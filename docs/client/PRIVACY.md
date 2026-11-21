@@ -27,8 +27,10 @@ Copy that file and you have backed up your entire trading history. Delete it and
 it is gone — including from us, because we never had it.
 
 Ticking the uninstaller's "Delete the application data" checkbox erases that folder, so
-before it can, a non-update uninstall first writes an unencrypted copy of the journal and
-licence key to `Documents\Vyuha-backup-<date>` — still on your own machine, but a Documents
+before it can, a non-update uninstall first writes an unencrypted copy of the journal to
+`Documents\Vyuha-backup-<date>` (your licence key is inside it only in encrypted form, which
+that copy cannot unlock, so keep your purchase message to re-enter the key after a reinstall)
+— still on your own machine, but a Documents
 folder redirected to OneDrive (or any other sync client) will sync that copy along with
 everything else, so move or delete it if you would rather it did not.
 

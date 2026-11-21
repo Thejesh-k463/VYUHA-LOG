@@ -487,6 +487,43 @@ if (closeOut) {
   }
 }
 
+// ── C2b. The same key in buyer-facing copy outside README ───────────────────
+// C2 read README only, so the live landing page, the in-app metric help and the
+// pricing comparison kept "broker × segment × exchange" for six releases after the
+// key gained `plan` (prose pass 2026-11-21). Same rule, more files.
+{
+  const schemaRel = "lib/db/schema.ts";
+  const schema = doc(schemaRel);
+  const idx = schema ? /uniqueIndex\("charge_config_uq"\)\.on\(([^)]*)\)/.exec(schema) : null;
+  const files = [
+    "docs/sales/landing-page.html",
+    "docs/sales/landing-page.standalone.html",
+    "lib/domain/metric-help.ts",
+    "lib/domain/pricing-comparison.ts",
+    "docs/owner/MONETIZATION_PLAN.md",
+  ];
+  const hits = [];
+  for (const rel of files) {
+    const text = doc(rel);
+    if (!text) continue;
+    for (const m of text.matchAll(/broker × (?:\w+ × )*exchange/g)) hits.push({ rel, text, m });
+  }
+  if (!idx) skip("copy-rate-key", `${schemaRel} has no parsable \`charge_config_uq\` index`, schemaRel);
+  else if (hits.length === 0) skip("copy-rate-key", "no buyer-facing file names a `broker × … × exchange` key", files.join(", "));
+  else {
+    const actual = idx[1].split(",").map((s) => s.trim().replace(/^t\./, "")).filter((c) => c && c !== "effectiveFrom").join(" × ");
+    const bad = hits.filter((h) => h.m[0] !== actual);
+    cmp(
+      "copy-rate-key",
+      bad.length,
+      0,
+      bad.length ? bad.map((h) => `"${h.m[0]}" at ${h.rel}:${lineAt(h.text, h.m.index)}`).join(", ") : `${hits.length} phrase(s) in ${files.length} files = ${actual}`,
+      `${schemaRel} charge_config_uq: ${actual}`,
+      `buyer-facing copy vs ${schemaRel}:${lineAt(schema, idx.index)}`,
+    );
+  }
+}
+
 // ── C3. STATE's preamble date vs §0's own "reconciled" date ─────────────────
 // The preamble above §0 says which date the §0 record carries; §0's header says it
 // too. A rewrite of §0 left the preamble a session behind twice (prose passes

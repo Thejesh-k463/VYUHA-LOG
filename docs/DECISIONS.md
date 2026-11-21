@@ -10332,3 +10332,47 @@ The owner flipped the draft to Latest at 2026-10-05 08:23:19 UTC, 25 minutes aft
 - An off-machine install of the published exe, with the cold-start reading for STATE row 24.
 
 **prose pass:** none. This entry and STATE §0 / row 21 are the only doc changes, and both restate command output quoted above. `drift:close-out` re-derives the rest.
+
+## 2026-11-21 — audit before the account switch: stale claims removed, winget 4.8.0 merged, a hand-off for the second Claude account
+
+**Owner (verbatim):** "Instead of doing it here i will do it in another calude account that runs on this laptop , as limits are near to weekly limits … 1. Project audit to update the latest state of the project, files , code and vyuha version and remove any stale or contradicting statements and code 2. After that prepare a hand off markdown file with all the details required for that to pick up straightaway from you left off , there is no restriction on part or item both are my accounts and product is mine 3. I also want second account to review a adversarial of the "C:\Users\theje\Downloads\VYUHA-AMBITION-REPORT.html" analysis once again and provide me updated file with or without changes and then wait for my go for questions and then plan and then build"
+
+**Gate (by command):**
+- HEAD `be70f80`. Tag `v4.8.0` = `5b5bfb2`. v4.8.0 Latest. `revocations` prerelease `true`.
+- `gh pr view 484636 --repo microsoft/winget-pkgs`: **MERGED 2026-11-20T04:45:09Z**, so 4.8.0 is in winget. STATE had said OPEN.
+- `drift:close-out` at the start: 23 PASS / 0 FAIL / 4 SKIP.
+- `get_usage`: weekly all-model 81 %.
+
+**Fixed (stale or contradicting):**
+- `components/import/broker-connect.tsx`: the in-app OpenAlgo blurb no longer lists Kotak among brokers with no API of their own. Kotak Neo has had its own tab since v4.7.0 C6 (STATE row 30, the code twin of A2's doc fix).
+  - Pinned by a new test in `tests/broker-connect-copy.test.ts`: 68/68 green, red on revert (67/1).
+- `docs/client/PRIVACY.md` and `docs/client/INSTALLATION_GUIDE.md`: the uninstall copy no longer claims to save a usable licence key.
+  - `settings.license_key` is vault ciphertext.
+  - The hook does not copy `vault.key`, so a reinstall cannot decrypt the key (`41-AUDIT-SECURITY.md` F2, its doc half).
+  - The code half stays open in STATE row 30: copy `vault.key` in `src-tauri/installer-hooks.nsh`.
+- The charge key gained `plan` in v4.5.0, but these still said "broker × segment × exchange":
+  - `docs/sales/landing-page.html` (deploys live with Pages), plus the gitignored `landing-page.standalone.html`;
+  - `lib/domain/metric-help.ts` ×2 (in-app);
+  - `lib/domain/pricing-comparison.ts` (in-app);
+  - `docs/owner/MONETIZATION_PLAN.md`.
+  
+  The new `copy-rate-key` check in `scripts/state-drift-check.mjs` covers these files. It is red on revert (FAIL at `pricing-comparison.ts:162`) and green after (6 phrases in 5 files).
+- `docs/client/README.md` ×2: the macOS pointer now says "New in v4.8.0", not v4.7.0.
+- `VYUHA-STATE.md` §0:
+  - The NEXT line, the owed line and row 21 now say winget is merged.
+  - Row 30 updated.
+  - The read-order line says six 2026-11-19 entries, not five.
+  - V7 now says 205 flows in 43 specs (the `--list` figure), not 160 / 42.
+- **Not changed, deliberately:**
+  - The v4.8.0 client ZIPs. The store session recorded their hashes (2026-11-20), and v4.8.1's packages carry the corrected PRIVACY and guide.
+  - `docs/owner/pitch-deck/deck.html` (a dated pitch artefact).
+  - README:1011 "margin … broker × segment" (that is `margin_config`'s key, which is correct).
+
+**Hand-off:** `docs/owner/HANDOFF-2026-11-21.md`. The second account's order:
+1. An adversarial re-review of `25-AMBITION-RESEARCH/VYUHA-AMBITION-REPORT.html`, which is sha-identical to the owner's Downloads copy. It produces a `-v2-` file beside the original, with or without changes.
+2. Wait for the owner's GO.
+3. Record CONFIRMED answers only.
+4. Plan.
+5. Build v4.8.1: row 28 is date-critical (7 Dec), then rows 29 and 30, then rows 27 and 24.
+
+**prose pass: 15 files (9 read + 6 grep-only) / 8 findings (all CONFIRMED and fixed; the rate key was confirmed by drift's schema read) / 43 tool calls** (doc-auditor on Opus; over the 40 cap by 3). The pass also listed 5 rate-key sightings outside its scope; 4 are fixed above and the margin one was correct.

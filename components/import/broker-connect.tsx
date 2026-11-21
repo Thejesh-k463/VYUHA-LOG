@@ -847,7 +847,8 @@ const BROKERS: Record<BrokerId, {
     blurb: (
       <>
         Pulls <span className="font-medium">today&apos;s executions</span> from an OpenAlgo instance you run
-        yourself — the same-day path for Groww, Paytm Money and Kotak, which have none of their own.{" "}
+        yourself — the same-day path for Groww and Paytm Money, which have none of their own (Kotak Neo
+        has its own tab and also works through OpenAlgo).{" "}
         <b>Your broker credentials go into OpenAlgo, not Vyuha</b>, and charges are computed here rather than
         stated by the API. The full disclosure is in Settings → Integrations.
       </>
